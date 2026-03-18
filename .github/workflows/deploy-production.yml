@@ -1,0 +1,82 @@
+name: Deploy Production
+
+on:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-production
+  cancel-in-progress: true
+
+jobs:
+  deploy-production:
+    runs-on: ubuntu-latest
+    environment: production
+
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      CLOUDFLARE_D1_DATABASE_ID: ${{ secrets.CLOUDFLARE_D1_DATABASE_ID }}
+      CLOUDFLARE_SESSION_KV_ID: ${{ secrets.CLOUDFLARE_SESSION_KV_ID }}
+      APP_URL: ${{ secrets.APP_URL }}
+      TWITCH_BOT_USERNAME: ${{ vars.TWITCH_BOT_USERNAME }}
+      TWITCH_SCOPES: ${{ vars.TWITCH_SCOPES }}
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run CI checks
+        run: |
+          npm run lint
+          npm run typecheck
+          npm run test
+          npm run build
+
+      - name: Generate production Wrangler configs
+        run: npm run deploy:prepare
+
+      - name: Deploy production backend
+        shell: bash
+        run: |
+          for attempt in 1 2 3; do
+            if npx wrangler deploy --config .generated/wrangler.aux.production.jsonc; then
+              exit 0
+            fi
+
+            if [ "$attempt" -lt 3 ]; then
+              echo "Backend deploy failed on attempt $attempt. Retrying in 15 seconds..."
+              sleep 15
+            fi
+          done
+
+          echo "Backend deploy failed after 3 attempts."
+          exit 1
+
+      - name: Deploy production frontend
+        shell: bash
+        run: |
+          for attempt in 1 2 3; do
+            if npx wrangler deploy --config .generated/wrangler.production.jsonc; then
+              exit 0
+            fi
+
+            if [ "$attempt" -lt 3 ]; then
+              echo "Frontend deploy failed on attempt $attempt. Retrying in 15 seconds..."
+              sleep 15
+            fi
+          done
+
+          echo "Frontend deploy failed after 3 attempts."
+          exit 1

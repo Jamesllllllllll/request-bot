@@ -1,0 +1,43 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "request-bot-backend",
+  "main": "./src/workers/backend/index.ts",
+  "compatibility_date": "2026-03-12",
+  "compatibility_flags": ["nodejs_compat"],
+  "durable_objects": {
+    "bindings": [
+      {
+        "name": "CHANNEL_PLAYLIST_DO",
+        "class_name": "ChannelPlaylistDurableObject"
+      }
+    ]
+  },
+  "migrations": [
+    {
+      "tag": "v1",
+      "new_sqlite_classes": ["ChannelPlaylistDurableObject"]
+    }
+  ],
+  "triggers": {
+    "crons": ["17 9 * * *"]
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "request_bot",
+      "database_id": "replace-with-d1-database-id",
+      "migrations_dir": "drizzle"
+    }
+  ],
+  "queues": {
+    "consumers": [
+      {
+        "queue": "twitch-reply-queue"
+      }
+    ]
+  },
+  "vars": {
+    "APP_URL": "http://localhost:9000",
+    "TWITCH_BOT_USERNAME": "requestbot"
+  }
+}

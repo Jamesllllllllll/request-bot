@@ -1,0 +1,181 @@
+@import url("https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=Space+Grotesk:wght@500;700&display=swap");
+@import "tailwindcss";
+@source "./**/*.{ts,tsx}";
+
+:root {
+  color-scheme: dark;
+  --bg: #08090b;
+  --bg-elevated: #101216;
+  --panel: rgba(18, 20, 26, 0.86);
+  --panel-strong: #13161d;
+  --panel-soft: #181c24;
+  --panel-muted: #0f1218;
+  --text: #f4f2ed;
+  --muted: #8e95a3;
+  --brand: #da4f36;
+  --brand-strong: #f06642;
+  --brand-deep: #f1d2ac;
+  --accent: #6d7688;
+  --accent-strong: #9aa4bb;
+  --success: #3ecf8e;
+  --warning: #f4b861;
+  --danger: #ff6b6b;
+  --border: rgba(255, 255, 255, 0.08);
+  --border-strong: rgba(255, 255, 255, 0.14);
+  --shadow: 0 28px 80px rgba(0, 0, 0, 0.45);
+  --shadow-soft: 0 12px 32px rgba(0, 0, 0, 0.24);
+  --glow: 0 0 0 1px rgba(240, 102, 66, 0.1), 0 18px 50px rgba(218, 79, 54, 0.14);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  min-height: 100%;
+  background: var(--bg);
+}
+
+html.overlay-mode {
+  background: transparent;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  color: var(--text);
+  font-family: "IBM Plex Sans", sans-serif;
+  background:
+    radial-gradient(circle at top left, rgba(240, 102, 66, 0.18), transparent 24%),
+    radial-gradient(circle at top right, rgba(145, 159, 188, 0.11), transparent 22%),
+    radial-gradient(circle at 50% 120%, rgba(241, 210, 172, 0.08), transparent 28%),
+    linear-gradient(180deg, #090a0d 0%, #08090b 100%);
+  position: relative;
+}
+
+body.overlay-mode {
+  background: transparent;
+}
+
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0.28;
+  background:
+    linear-gradient(rgba(255, 255, 255, 0.015), rgba(255, 255, 255, 0.015)),
+    repeating-linear-gradient(
+      0deg,
+      rgba(255, 255, 255, 0.02) 0,
+      rgba(255, 255, 255, 0.02) 1px,
+      transparent 1px,
+      transparent 3px
+    );
+  mix-blend-mode: soft-light;
+}
+
+body.overlay-mode::before {
+  display: none;
+}
+
+a {
+  color: inherit;
+}
+
+button:not(:disabled),
+[role="button"]:not([aria-disabled="true"]) {
+  cursor: pointer;
+}
+
+h1,
+h2,
+h3,
+h4,
+h5,
+h6 {
+  font-family: "Space Grotesk", sans-serif;
+  letter-spacing: -0.03em;
+}
+
+#app {
+  min-height: 100vh;
+}
+
+::selection {
+  background: rgba(240, 102, 66, 0.3);
+  color: var(--text);
+}
+
+@layer utilities {
+  .surface-grid {
+    position: relative;
+    background-image:
+      linear-gradient(rgba(255, 255, 255, 0.04) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(255, 255, 255, 0.04) 1px, transparent 1px);
+    background-size: 24px 24px;
+    background-position: -1px -1px;
+  }
+
+  .surface-noise {
+    position: relative;
+  }
+
+  .surface-noise::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    pointer-events: none;
+    opacity: 0.16;
+    background-image:
+      radial-gradient(rgba(255, 255, 255, 0.14) 0.6px, transparent 0.6px),
+      radial-gradient(rgba(255, 255, 255, 0.1) 0.6px, transparent 0.6px);
+    background-position: 0 0, 11px 13px;
+    background-size: 18px 18px;
+    mix-blend-mode: soft-light;
+  }
+
+  .text-balance {
+    text-wrap: balance;
+  }
+
+  .p-3 { padding: calc(var(--spacing) * 3); }
+  .p-4 { padding: calc(var(--spacing) * 4); }
+  .p-5 { padding: calc(var(--spacing) * 5); }
+  .p-6 { padding: calc(var(--spacing) * 6); }
+  .p-8 { padding: calc(var(--spacing) * 8); }
+  .p-10 { padding: calc(var(--spacing) * 10); }
+
+  .px-3 {
+    padding-inline: calc(var(--spacing) * 3);
+  }
+
+  .px-4 {
+    padding-inline: calc(var(--spacing) * 4);
+  }
+
+  .px-5 {
+    padding-inline: calc(var(--spacing) * 5);
+  }
+
+  .px-6 {
+    padding-inline: calc(var(--spacing) * 6);
+  }
+
+  .py-2 {
+    padding-block: calc(var(--spacing) * 2);
+  }
+
+  .py-3 {
+    padding-block: calc(var(--spacing) * 3);
+  }
+
+  .py-4 {
+    padding-block: calc(var(--spacing) * 4);
+  }
+
+  .py-6 {
+    padding-block: calc(var(--spacing) * 6);
+  }
+}

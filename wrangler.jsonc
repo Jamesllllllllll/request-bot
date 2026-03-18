@@ -1,0 +1,46 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "request-bot",
+  "main": "@tanstack/react-start/server-entry",
+  "compatibility_date": "2026-03-12",
+  "compatibility_flags": ["nodejs_compat"],
+  "assets": {
+    "directory": ".output/public"
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "request_bot",
+      "database_id": "replace-with-d1-database-id",
+      "migrations_dir": "drizzle"
+    }
+  ],
+  "kv_namespaces": [
+    {
+      "binding": "SESSION_KV",
+      "id": "replace-with-kv-namespace-id"
+    }
+  ],
+  "queues": {
+    "producers": [
+      {
+        "binding": "TWITCH_REPLY_QUEUE",
+        "queue": "twitch-reply-queue"
+      }
+    ]
+  },
+  "services": [
+    {
+      "binding": "BACKEND_SERVICE",
+      "service": "request-bot-backend"
+    }
+  ],
+  "vars": {
+    "APP_URL": "http://localhost:9000",
+    "TWITCH_BOT_USERNAME": "requestbot",
+    "TWITCH_SCOPES": "openid user:read:moderated_channels channel:bot"
+  },
+  "observability": {
+    "enabled": true
+  }
+}

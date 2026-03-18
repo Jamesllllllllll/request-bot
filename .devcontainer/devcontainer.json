@@ -1,0 +1,44 @@
+{
+  "name": "request-bot",
+  "build": {
+    "dockerfile": "Dockerfile",
+    "context": ".."
+  },
+  "remoteUser": "node",
+  "features": {
+    "ghcr.io/devcontainers/features/git:1": {},
+    "ghcr.io/devcontainers/features/github-cli:1": {}
+  },
+  "forwardPorts": [6666, 8787],
+  "portsAttributes": {
+    "6666": {
+      "label": "TanStack Start app",
+      "onAutoForward": "notify"
+    },
+    "8787": {
+      "label": "Wrangler dev",
+      "onAutoForward": "notify"
+    }
+  },
+  "containerEnv": {
+    "PLAYWRIGHT_BROWSERS_PATH": "/ms-playwright",
+    "CI": "true"
+  },
+  "postCreateCommand": "bash .devcontainer/scripts/post-create.sh",
+  "postStartCommand": "bash .devcontainer/scripts/post-start.sh",
+  "customizations": {
+    "vscode": {
+      "settings": {
+        "terminal.integrated.defaultProfile.linux": "bash",
+        "typescript.tsdk": "node_modules/typescript/lib",
+        "editor.formatOnSave": true
+      },
+      "extensions": [
+        "dbaeumer.vscode-eslint",
+        "esbenp.prettier-vscode",
+        "ms-playwright.playwright",
+        "bradlc.vscode-tailwindcss"
+      ]
+    }
+  }
+}

@@ -1,0 +1,19 @@
+export type SongSearchResult = {
+  id: string;
+  title: string;
+  artist?: string;
+  album?: string;
+  creator?: string;
+  tuning?: string;
+  parts?: string[];
+  durationText?: string;
+  year?: number;
+  sourceUpdatedAt?: number;
+  sourceId?: number;
+  platforms?: string[];
+  hasLyrics?: boolean;
+  downloads?: number;
+  source: string;
+  sourceUrl?: string;
+  score?: number;
+};

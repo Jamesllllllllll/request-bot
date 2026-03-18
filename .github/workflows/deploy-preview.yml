@@ -1,0 +1,112 @@
+name: Deploy Preview
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: read
+  pull-requests: write
+
+concurrency:
+  group: deploy-preview-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  deploy-preview:
+    runs-on: ubuntu-latest
+
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      CLOUDFLARE_D1_DATABASE_ID: ${{ secrets.CLOUDFLARE_D1_DATABASE_ID }}
+      CLOUDFLARE_SESSION_KV_ID: ${{ secrets.CLOUDFLARE_SESSION_KV_ID }}
+      TWITCH_BOT_USERNAME: ${{ vars.TWITCH_BOT_USERNAME }}
+      TWITCH_SCOPES: ${{ vars.TWITCH_SCOPES }}
+      PREVIEW_SUFFIX: pr-${{ github.event.pull_request.number }}
+      CLOUDFLARE_WORKERS_SUBDOMAIN: ${{ secrets.CLOUDFLARE_WORKERS_SUBDOMAIN }}
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build preview app URL
+        id: preview-url
+        shell: bash
+        run: |
+          if [ -n "${CLOUDFLARE_WORKERS_SUBDOMAIN}" ]; then
+            echo "app_url=https://request-bot-${PREVIEW_SUFFIX}.${CLOUDFLARE_WORKERS_SUBDOMAIN}.workers.dev" >> "$GITHUB_OUTPUT"
+          else
+            echo "app_url=" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Build app
+        run: npm run build
+
+      - name: Generate preview Wrangler configs
+        run: >
+          node scripts/write-deploy-configs.mjs
+          --mode preview
+          --artifact build
+          --suffix "${{ env.PREVIEW_SUFFIX }}"
+          --app-url "${{ steps.preview-url.outputs.app_url || 'https://example.workers.dev' }}"
+
+      - name: Deploy preview backend
+        shell: bash
+        run: |
+          for attempt in 1 2 3; do
+            if npx wrangler deploy --config .generated/wrangler.aux.preview.jsonc; then
+              exit 0
+            fi
+
+            if [ "$attempt" -lt 3 ]; then
+              echo "Preview backend deploy failed on attempt $attempt. Retrying in 15 seconds..."
+              sleep 15
+            fi
+          done
+
+          echo "Preview backend deploy failed after 3 attempts."
+          exit 1
+
+      - name: Deploy preview frontend
+        shell: bash
+        run: |
+          for attempt in 1 2 3; do
+            if npx wrangler deploy --config .generated/wrangler.preview.jsonc; then
+              exit 0
+            fi
+
+            if [ "$attempt" -lt 3 ]; then
+              echo "Preview frontend deploy failed on attempt $attempt. Retrying in 15 seconds..."
+              sleep 15
+            fi
+          done
+
+          echo "Preview frontend deploy failed after 3 attempts."
+          exit 1
+
+      - name: Comment preview details
+        if: ${{ steps.preview-url.outputs.app_url != '' }}
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const body = [
+              "Preview deployment updated.",
+              "",
+              `App: ${{ steps.preview-url.outputs.app_url }}`,
+              `Frontend worker: request-bot-${process.env.PREVIEW_SUFFIX}`,
+              `Backend worker: request-bot-backend-${process.env.PREVIEW_SUFFIX}`,
+            ].join("\n");
+            github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              body,
+            });

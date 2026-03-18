@@ -1,0 +1,280 @@
+# Deployment Workflow
+
+## What exists
+
+### Deployment shape
+
+This repo deploys two Cloudflare Workers:
+
+- `request-bot` for the app frontend and server routes
+- `request-bot-backend` for playlist mutations, queue consumers, and scheduled work
+
+The frontend Worker has a service binding to the backend Worker, so the backend deploys first.
+
+### Prerequisites
+
+- Cloudflare account
+- Wrangler authenticated locally
+- Node 22+
+- npm
+
+Check Wrangler auth:
+
+```bash
+npx wrangler whoami
+```
+
+If needed:
+
+```bash
+npx wrangler login
+```
+
+### Cloudflare resources to create
+
+Create these resources once per environment:
+
+- one D1 database
+- one KV namespace
+- one Queue
+
+Create them with Wrangler:
+
+```bash
+npx wrangler d1 create request_bot
+npx wrangler kv namespace create SESSION_KV
+npx wrangler queues create twitch-reply-queue
+```
+
+Keep the command output. You will need:
+
+- the D1 `database_id`
+- the KV namespace `id`
+
+### Keep committed Wrangler files as templates
+
+The committed [wrangler.jsonc](/C:/Users/james/Documents/Projects/request-bot/wrangler.jsonc) and [wrangler.aux.jsonc](/C:/Users/james/Documents/Projects/request-bot/wrangler.aux.jsonc) keep placeholder IDs on purpose.
+
+Do not commit your real Cloudflare resource IDs into those files.
+
+This repo generates gitignored deploy configs in `.generated/` from `.env.deploy`.
+
+The committed template files keep these stable values:
+
+- frontend Worker name: `request-bot`
+- backend Worker name: `request-bot-backend`
+- frontend service binding: `BACKEND_SERVICE -> request-bot-backend`
+- queue name: `twitch-reply-queue`
+
+The Durable Object migration for `ChannelPlaylistDurableObject` is already declared in [wrangler.aux.jsonc](/C:/Users/james/Documents/Projects/request-bot/wrangler.aux.jsonc). You do not need to create it separately.
+
+### Environment values
+
+Set these in `.env.deploy` before a real deployment:
+
+- `APP_URL`
+- `CLOUDFLARE_D1_DATABASE_ID`
+- `CLOUDFLARE_SESSION_KV_ID`
+- `TWITCH_CLIENT_ID`
+- `TWITCH_CLIENT_SECRET`
+- `TWITCH_EVENTSUB_SECRET`
+- `SESSION_SECRET`
+- `TWITCH_BOT_USERNAME`
+- `ADMIN_TWITCH_USER_IDS`
+
+The checked-in default broadcaster scope is:
+
+```text
+openid user:read:moderated_channels channel:bot
+```
+
+Notes:
+
+- `.dev.vars` does not need to be committed. It is a generated local artifact used by the build/dev tooling.
+- `.generated/` is gitignored and is where the deploy configs are written.
+- `SESSION_KV`, `DB`, `TWITCH_REPLY_QUEUE`, `BACKEND_SERVICE`, and `CHANNEL_PLAYLIST_DO` are bindings, not secrets.
+- local CLI deploys read `.env.deploy`
+- GitHub Actions only need these repository values:
+  - secrets: `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID`, `CLOUDFLARE_D1_DATABASE_ID`, `CLOUDFLARE_SESSION_KV_ID`, `APP_URL`
+  - variables: `TWITCH_BOT_USERNAME`, `TWITCH_SCOPES`
+- Twitch and session secrets are set on the Cloudflare Workers with `wrangler secret put`, not as GitHub repository secrets for this deploy workflow
+
+### Worker secrets
+
+Set secrets per Worker with Wrangler.
+
+Frontend Worker (`request-bot`) required secrets:
+
+```bash
+echo "<TWITCH_CLIENT_ID>" | npx wrangler secret put TWITCH_CLIENT_ID --config wrangler.jsonc
+echo "<TWITCH_CLIENT_SECRET>" | npx wrangler secret put TWITCH_CLIENT_SECRET --config wrangler.jsonc
+echo "<TWITCH_EVENTSUB_SECRET>" | npx wrangler secret put TWITCH_EVENTSUB_SECRET --config wrangler.jsonc
+echo "<SESSION_SECRET>" | npx wrangler secret put SESSION_SECRET --config wrangler.jsonc
+echo "<ADMIN_TWITCH_USER_IDS>" | npx wrangler secret put ADMIN_TWITCH_USER_IDS --config wrangler.jsonc
+```
+
+Backend Worker (`request-bot-backend`) required secrets:
+
+```bash
+echo "<TWITCH_CLIENT_ID>" | npx wrangler secret put TWITCH_CLIENT_ID --config wrangler.aux.jsonc
+echo "<TWITCH_CLIENT_SECRET>" | npx wrangler secret put TWITCH_CLIENT_SECRET --config wrangler.aux.jsonc
+echo "<TWITCH_EVENTSUB_SECRET>" | npx wrangler secret put TWITCH_EVENTSUB_SECRET --config wrangler.aux.jsonc
+```
+
+Notes:
+
+- if the Worker does not exist yet, `wrangler secret put` creates it before uploading the secret
+- `SESSION_SECRET` is only needed by the frontend Worker because it signs and verifies sessions
+- `SESSION_KV` is a KV binding, not a secret
+- `TWITCH_BOT_USERNAME` and `TWITCH_SCOPES` are not secrets
+- `ADMIN_TWITCH_USER_IDS` is only needed by the frontend Worker
+
+### Initialize remote data
+
+Apply migrations and load the bundled sample catalog:
+
+```bash
+npm run db:bootstrap:remote
+```
+
+That runs:
+
+- remote D1 migrations
+- sample catalog seed import
+
+If you only need migrations:
+
+```bash
+npm run db:migrate:remote
+```
+
+The sample seed works remotely without an explicit SQL transaction wrapper. Remote D1 rejects uploaded seed files that include `BEGIN TRANSACTION` / `COMMIT`.
+
+### Deploy from your machine
+
+Preferred:
+
+```bash
+npm run deploy
+```
+
+`npm run deploy`:
+
+1. builds the app
+2. generates built deploy configs in `.generated/`
+3. deploys the backend Worker
+4. deploys the frontend Worker
+
+The frontend Worker cannot be deployed directly from the source `wrangler.jsonc` file because its Worker entry is generated during `vite build`.
+
+### First `workers.dev` deployment
+
+If you do not already know your final public URL:
+
+1. set a temporary `APP_URL` in `.env.deploy`
+2. run `npm run deploy`
+3. copy the frontend `workers.dev` URL from the deploy output
+4. update `APP_URL` in `.env.deploy`
+5. run `npm run deploy` again
+
+If you already know your final custom domain or `workers.dev` URL, set `APP_URL` to that before the first deploy.
+
+### Verify remote data
+
+After `npm run db:bootstrap:remote`, confirm the sample catalog exists:
+
+```bash
+npx wrangler d1 execute request_bot --remote --config .generated/wrangler.production.jsonc --command "select count(*) as song_count from catalog_songs;"
+```
+
+### GitHub deployment workflow
+
+This repo includes:
+
+- CI on pull requests
+- preview deploy workflow for pull requests
+- production deploy workflow on push to `main`
+
+#### GitHub secrets
+
+Add these repository secrets:
+
+- `CLOUDFLARE_API_TOKEN`
+- `CLOUDFLARE_ACCOUNT_ID`
+- `CLOUDFLARE_D1_DATABASE_ID`
+- `CLOUDFLARE_SESSION_KV_ID`
+- `APP_URL`
+
+Optional:
+
+- `CLOUDFLARE_WORKERS_SUBDOMAIN`
+
+Add these repository variables:
+
+- `TWITCH_BOT_USERNAME`
+- `TWITCH_SCOPES`
+
+Use the deployed public URL here, not your local tunnel URL.
+
+Where to find them:
+
+- `CLOUDFLARE_ACCOUNT_ID`
+  - Cloudflare dashboard
+  - select the target account
+  - copy `Account ID` from the account overview or Workers & Pages overview
+- `CLOUDFLARE_API_TOKEN`
+  - Cloudflare dashboard
+  - profile icon → `My Profile`
+  - `API Tokens`
+  - `Create Token`
+  - create a token scoped to the account you are deploying into
+  - if deploys fail on `/workers/subdomain` or `/workers/scripts/.../schedules`, replace this token with a fresh one scoped to the same account as the D1/KV/Workers resources
+
+CLI setup example:
+
+```bash
+gh secret set CLOUDFLARE_API_TOKEN
+gh secret set CLOUDFLARE_ACCOUNT_ID
+gh secret set CLOUDFLARE_D1_DATABASE_ID
+gh secret set CLOUDFLARE_SESSION_KV_ID
+gh secret set APP_URL --body "https://your-production-url.example"
+gh variable set TWITCH_BOT_USERNAME --body "your_bot_username"
+gh variable set TWITCH_SCOPES --body "openid user:read:moderated_channels channel:bot"
+```
+
+#### Production deploy
+
+The production workflow:
+
+- runs lint, typecheck, tests, and build
+- generates built production Wrangler configs
+- deploys backend first
+- deploys frontend second
+
+#### Preview deploys
+
+The preview workflow:
+
+- creates preview Worker names per PR
+- rewrites service bindings so preview frontend talks to preview backend
+- builds the app before generating preview deploy configs
+- deploys both preview Workers
+
+Important:
+
+- preview Worker names are isolated
+- D1, KV, and Queue resources are not automatically created per preview
+- use a dedicated staging resource set before relying on preview deploys for contributors
+
+### First deployment checklist
+
+1. `npx wrangler login`
+2. Create D1, KV, and Queue
+3. Copy `.env.deploy.example` to `.env.deploy`
+4. Set `CLOUDFLARE_D1_DATABASE_ID` and `CLOUDFLARE_SESSION_KV_ID` in `.env.deploy`
+5. Set Worker secrets with `wrangler secret put`
+6. Set the other required `.env.deploy` values, including `APP_URL`
+7. Run `npm run db:bootstrap:remote`
+8. Run `npm run deploy`
+9. If you started with a temporary `APP_URL`, update it in `.env.deploy` to the real deployed URL and run `npm run deploy` again
+10. Open the deployed `APP_URL` and test sign-in, dashboard, and search

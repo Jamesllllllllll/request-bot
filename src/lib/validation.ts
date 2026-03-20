@@ -87,19 +87,23 @@ export const moderationActionSchema = z.discriminatedUnion("action", [
   }),
   z.object({
     action: z.literal("addBlacklistedArtist"),
+    artistId: z.number().int().positive(),
     artistName: z.string().trim().min(1).max(200),
   }),
   z.object({
     action: z.literal("removeBlacklistedArtist"),
-    artistName: z.string().trim().min(1).max(200),
+    artistId: z.number().int().positive(),
   }),
   z.object({
     action: z.literal("addBlacklistedSong"),
+    songId: z.number().int().positive(),
     songTitle: z.string().trim().min(1).max(200),
+    artistId: z.number().int().positive().nullable().optional(),
+    artistName: z.string().trim().min(1).max(200).optional(),
   }),
   z.object({
     action: z.literal("removeBlacklistedSong"),
-    songTitle: z.string().trim().min(1).max(200),
+    songId: z.number().int().positive(),
   }),
   z.object({
     action: z.literal("addSetlistArtist"),
@@ -215,11 +219,15 @@ export type OverlaySettingsInputData = z.infer<
 >;
 
 export const artistListItemSchema = z.object({
+  artistId: z.number().int().positive(),
   artistName: z.string().trim().min(1).max(200),
 });
 
 export const songListItemSchema = z.object({
+  songId: z.number().int().positive(),
   songTitle: z.string().trim().min(1).max(200),
+  artistId: z.number().int().positive().nullable().optional(),
+  artistName: z.string().trim().min(1).max(200).optional(),
 });
 
 export const playlistMutationSchema = z.discriminatedUnion("action", [

@@ -249,6 +249,31 @@ export function SongSearchPanel(props: {
     gcTime: 60 * 60 * 1000,
   });
 
+  const catalogTotalQuery = useQuery<Pick<SearchResponse, "total">>({
+    queryKey: ["song-search-total-count"],
+    queryFn: async () => {
+      const response = await fetch(
+        "/api/search?page=1&pageSize=1&field=any&sortBy=relevance&sortDirection=desc"
+      );
+      const body = (await response.json().catch(() => null)) as
+        | SearchResponse
+        | { message?: string }
+        | null;
+
+      if (!response.ok) {
+        throw new Error(
+          body && "message" in body
+            ? (body.message ?? "Search failed.")
+            : "Search failed."
+        );
+      }
+
+      return { total: (body as SearchResponse).total };
+    },
+    staleTime: 60 * 60 * 1000,
+    gcTime: 60 * 60 * 1000,
+  });
+
   const { data, error, isFetching, isLoading } = useQuery<SearchResponse>({
     queryKey: ["song-search", searchParams.toString()],
     enabled: !queryTooShort && !requiresCoreSearchTerm,
@@ -276,7 +301,7 @@ export function SongSearchPanel(props: {
     !queryTooShort && !requiresCoreSearchTerm ? (data?.results ?? []) : [];
   const resolvedInfoNote = props.infoNote?.replace(
     "{count}",
-    String(data?.total ?? 0)
+    String(catalogTotalQuery.data?.total ?? 0)
   );
   const totalPages = Math.max(
     1,

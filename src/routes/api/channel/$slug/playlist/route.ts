@@ -4,6 +4,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { desc, eq } from "drizzle-orm";
 import { getDb } from "~/lib/db/client";
 import {
+  getChannelBlacklistByChannelId,
   getChannelBySlug,
   getChannelSettingsByChannelId,
   getPlaylistByChannelId,
@@ -31,16 +32,21 @@ export const Route = createFileRoute("/api/channel/$slug/playlist")({
           return json({ error: "Playlist is private" }, { status: 403 });
         }
 
-        const playlist = await getPlaylistByChannelId(runtimeEnv, channel.id);
-        const playedRows = await getDb(runtimeEnv).query.playedSongs.findMany({
-          where: eq(playedSongs.channelId, channel.id),
-          orderBy: [desc(playedSongs.playedAt)],
-          limit: 500,
-        });
+        const [playlist, playedRows, blacklist] = await Promise.all([
+          getPlaylistByChannelId(runtimeEnv, channel.id),
+          getDb(runtimeEnv).query.playedSongs.findMany({
+            where: eq(playedSongs.channelId, channel.id),
+            orderBy: [desc(playedSongs.playedAt)],
+            limit: 500,
+          }),
+          getChannelBlacklistByChannelId(runtimeEnv, channel.id),
+        ]);
         return json({
           channel,
           items: playlist?.items ?? [],
           playedSongs: playedRows,
+          blacklistArtists: blacklist.blacklistArtists,
+          blacklistSongs: blacklist.blacklistSongs,
         });
       },
     },

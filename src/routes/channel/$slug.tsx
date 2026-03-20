@@ -3,6 +3,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
 import { ChevronDown, ChevronUp, History } from "lucide-react";
 import { useEffect, useState } from "react";
+import { BlacklistPanel } from "~/components/blacklist-panel";
 import { Button } from "~/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "~/components/ui/card";
 import {
@@ -44,6 +45,12 @@ type ChannelPageData = {
     };
     items?: EnrichedChannelPlaylistItem[];
     playedSongs?: PlayedSongRow[];
+    blacklistArtists?: Array<{ artistId: number; artistName: string }>;
+    blacklistSongs?: Array<{
+      songId: number;
+      songTitle: string;
+      artistName?: string | null;
+    }>;
   };
 };
 
@@ -120,6 +127,8 @@ function ChannelPage() {
         channel?: ChannelPageData["playlist"]["channel"];
         items?: ChannelPlaylistItem[];
         playedSongs?: PlayedSongRow[];
+        blacklistArtists?: ChannelPageData["playlist"]["blacklistArtists"];
+        blacklistSongs?: ChannelPageData["playlist"]["blacklistSongs"];
       };
 
       return {
@@ -195,6 +204,12 @@ function ChannelPage() {
           ) : null}
         </div>
       </div>
+
+      <BlacklistPanel
+        artists={data?.playlist.blacklistArtists ?? []}
+        songs={data?.playlist.blacklistSongs ?? []}
+        description="These exact artist IDs and track IDs are blocked for requests in this channel."
+      />
 
       <Card>
         <CardHeader className="flex flex-row items-center justify-between gap-4">

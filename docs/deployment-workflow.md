@@ -309,6 +309,7 @@ The preview workflow:
 - rewrites service bindings so preview frontend talks to preview backend
 - builds the app before generating preview deploy configs
 - removes backend cron triggers from preview Workers
+- removes backend queue consumers from preview Workers
 - deploys both preview Workers
 
 Important:
@@ -316,6 +317,7 @@ Important:
 - preview Worker names are isolated
 - D1, KV, and Queue resources are not automatically created per preview
 - preview deployments do not register scheduled cron triggers, which avoids Cloudflare account cron limits for per-PR Workers
+- preview deployments do not register queue consumers, which avoids conflicts with the single consumer attached to the shared queue
 - use a dedicated staging resource set before relying on preview deploys for contributors
 
 ### First deployment checklist

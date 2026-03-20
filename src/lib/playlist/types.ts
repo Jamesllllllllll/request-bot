@@ -45,6 +45,12 @@ export interface SetCurrentInput {
   actorUserId: string;
 }
 
+export interface RestorePlayedInput {
+  channelId: string;
+  playedSongId: string;
+  actorUserId: string;
+}
+
 export interface SkipItemInput {
   channelId: string;
   itemId: string;
@@ -126,6 +132,7 @@ export interface PlaylistCoordinator {
   addRequest(input: AddRequestInput): Promise<PlaylistMutationResult>;
   removeRequests(input: RemoveRequestsInput): Promise<PlaylistMutationResult>;
   markPlayed(input: MarkPlayedInput): Promise<PlaylistMutationResult>;
+  restorePlayed(input: RestorePlayedInput): Promise<PlaylistMutationResult>;
   setCurrent(input: SetCurrentInput): Promise<PlaylistMutationResult>;
   skipItem(input: SkipItemInput): Promise<PlaylistMutationResult>;
   shuffleNext(input: ShuffleNextInput): Promise<PlaylistMutationResult>;

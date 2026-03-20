@@ -224,6 +224,7 @@ export const songListItemSchema = z.object({
 
 export const playlistMutationSchema = z.discriminatedUnion("action", [
   z.object({ action: z.literal("markPlayed"), itemId: z.string() }),
+  z.object({ action: z.literal("restorePlayed"), playedSongId: z.string() }),
   z.object({ action: z.literal("skipItem"), itemId: z.string() }),
   z.object({ action: z.literal("setCurrent"), itemId: z.string() }),
   z.object({ action: z.literal("deleteItem"), itemId: z.string() }),

@@ -64,7 +64,9 @@ type PlayedSong = {
   id: string;
   songTitle: string;
   songArtist?: string;
+  requestKind?: "regular" | "vip";
   requestedByDisplayName?: string;
+  requestedByLogin?: string;
   playedAt: number;
 };
 
@@ -222,7 +224,9 @@ function DashboardPlaylistPage() {
           ? body.songId
           : typeof body.candidateId === "string"
             ? body.candidateId
-            : undefined;
+            : typeof body.playedSongId === "string"
+              ? body.playedSongId
+              : undefined;
       if (action === "manualAdd") {
         setManualAddError(null);
       } else {
@@ -248,7 +252,7 @@ function DashboardPlaylistPage() {
           {
             ...previous,
             items: [],
-            playedSongs: [],
+            playedSongs: previous.playedSongs,
           }
         );
       }
@@ -363,6 +367,10 @@ function DashboardPlaylistPage() {
     mutation.isPending &&
     pendingRowAction?.action === "manualAdd" &&
     pendingRowAction.songId === songId;
+  const isRestorePending = (playedSongId: string) =>
+    mutation.isPending &&
+    pendingRowAction?.action === "restorePlayed" &&
+    pendingRowAction.songId === playedSongId;
   return (
     <div className="grid gap-6">
       <section className="surface-grid surface-noise rounded-[34px] border border-(--border-strong) bg-(--panel) p-6 shadow-(--shadow) md:p-8">
@@ -411,7 +419,7 @@ function DashboardPlaylistPage() {
               onClick={() => {
                 if (
                   window.confirm(
-                    "Reset the session? This will clear the playlist and played-song history."
+                    "Reset the session? This will clear the current playlist."
                   )
                 ) {
                   mutation.mutate({ action: "resetSession" });
@@ -421,7 +429,7 @@ function DashboardPlaylistPage() {
                 mutation.isPending &&
                 pendingRowAction?.action === "resetSession"
                   ? true
-                  : items.length === 0 && playedSongs.length === 0
+                  : items.length === 0
               }
             >
               Reset session
@@ -841,14 +849,9 @@ function DashboardPlaylistPage() {
 
       <Card>
         <CardHeader>
-          <CardTitle>Played songs</CardTitle>
+          <CardTitle>Played history</CardTitle>
         </CardHeader>
         <CardContent className="grid gap-3">
-          {accessRole === "moderator" ? (
-            <p className="text-sm text-(--muted)">
-              Played song history is only shown for your own channel right now.
-            </p>
-          ) : null}
           {playedSongs.map((song, index) => (
             <div
               key={song.id}
@@ -858,23 +861,45 @@ function DashboardPlaylistPage() {
                   : "border-(--border) bg-(--panel-muted)"
               }`}
             >
-              <p className="font-medium text-(--text)">
-                {song.songTitle}
-                {song.songArtist ? ` by ${song.songArtist}` : ""}
-              </p>
-              <p className="mt-1 text-sm text-(--muted)">
-                {song.requestedByDisplayName
-                  ? `Requested by ${song.requestedByDisplayName} · `
-                  : ""}
-                {new Date(song.playedAt).toLocaleString()}
-              </p>
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <p className="font-medium text-(--text)">
+                    {song.songTitle}
+                    {song.songArtist ? ` by ${song.songArtist}` : ""}
+                  </p>
+                  <p className="mt-1 text-sm text-(--muted)">
+                    {(song.requestedByDisplayName ?? song.requestedByLogin)
+                      ? `Requested by ${song.requestedByDisplayName ?? song.requestedByLogin} · `
+                      : ""}
+                    {new Date(song.playedAt).toLocaleString()}
+                  </p>
+                </div>
+                <div className="flex shrink-0 items-center gap-2">
+                  {song.requestKind === "vip" ? (
+                    <Badge className="border-violet-400/30 bg-violet-500/10 text-violet-300 hover:bg-violet-500/10">
+                      VIP
+                    </Badge>
+                  ) : null}
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() =>
+                      mutation.mutate({
+                        action: "restorePlayed",
+                        playedSongId: song.id,
+                      })
+                    }
+                    disabled={isRestorePending(song.id)}
+                  >
+                    {isRestorePending(song.id) ? "Restoring..." : "Restore"}
+                  </Button>
+                </div>
+              </div>
             </div>
           ))}
           {playedSongs.length === 0 ? (
             <p className="text-sm leading-7 text-(--muted)">
-              {accessRole === "moderator"
-                ? "No played songs shown."
-                : "Nothing has been marked played yet."}
+              Nothing has been marked played yet.
             </p>
           ) : null}
         </CardContent>

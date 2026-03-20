@@ -15,6 +15,13 @@
       "when": 1773950400000,
       "tag": "0001_true_ares",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1774041600000,
+      "tag": "0002_clever_justice",
+      "breakpoints": true
     }
   ]
 }

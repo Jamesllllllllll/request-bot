@@ -15,6 +15,7 @@ function SearchPage() {
     <SongSearchPanel
       eyebrow="Search"
       title="Songs"
+      infoNote="This demo only contains {count} songs."
       placeholder="Search by song title, artist or album"
     />
   );

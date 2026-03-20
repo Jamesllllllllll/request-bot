@@ -1,8 +1,18 @@
 // Route: Shows the public playlist page for a single channel by slug.
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
-import { useEffect } from "react";
+import { ChevronDown, ChevronUp, History } from "lucide-react";
+import { useEffect, useState } from "react";
 import { SongSearchPanel } from "~/components/song-search-panel";
+import { Button } from "~/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "~/components/ui/card";
+import {
+  Pagination,
+  PaginationContent,
+  PaginationItem,
+  PaginationNext,
+  PaginationPrevious,
+} from "~/components/ui/pagination";
 import { formatSlugTitle, pageTitle } from "~/lib/page-title";
 import { decodeHtmlEntities } from "~/lib/utils";
 
@@ -37,6 +47,22 @@ type PublicChannelPageData = {
     items?: EnrichedPublicPlaylistItem[];
     playedSongs?: PlayedSongRow[];
   };
+};
+
+type PublicPlayedSong = {
+  id: string;
+  songTitle: string;
+  songArtist?: string | null;
+  requestedByDisplayName?: string | null;
+  requestedByLogin?: string | null;
+  playedAt: number;
+};
+
+type PublicPlayedHistoryResponse = {
+  results: PublicPlayedSong[];
+  page: number;
+  pageSize: number;
+  hasNextPage: boolean;
 };
 
 export const Route = createFileRoute("/$slug/")({
@@ -86,6 +112,8 @@ function toPlaylistItems(
 function PublicChannelPage() {
   const { slug } = Route.useParams();
   const queryClient = useQueryClient();
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const [historyPage, setHistoryPage] = useState(1);
   const { data, isLoading } = useQuery({
     queryKey: ["public-channel-page", slug],
     queryFn: async (): Promise<PublicChannelPageData> => {
@@ -140,6 +168,17 @@ function PublicChannelPage() {
     };
   }, [queryClient, slug]);
 
+  const playedHistoryQuery = useQuery<PublicPlayedHistoryResponse>({
+    queryKey: ["public-played-history", slug, historyPage],
+    queryFn: async () => {
+      const response = await fetch(
+        `/api/channel/${slug}/played?page=${historyPage}&pageSize=20`
+      );
+      return response.json() as Promise<PublicPlayedHistoryResponse>;
+    },
+    enabled: historyOpen,
+  });
+
   const channelDisplayName = data?.playlist?.channel?.displayName ?? slug;
 
   return (
@@ -172,6 +211,103 @@ function PublicChannelPage() {
         description="Copy the request command and use it in Twitch chat."
         placeholder={`Search songs for ${channelDisplayName}`}
       />
+
+      <Card>
+        <CardHeader className="flex flex-row items-center justify-between gap-4">
+          <div className="flex items-center gap-3">
+            <div className="rounded-full border border-(--border) bg-(--panel-soft) p-2 text-(--brand)">
+              <History className="h-4 w-4" />
+            </div>
+            <div>
+              <CardTitle>Played history</CardTitle>
+              <p className="mt-1 text-sm text-(--muted)">
+                View the 20 most recent played songs.
+              </p>
+            </div>
+          </div>
+          <Button
+            variant="outline"
+            onClick={() => setHistoryOpen((current) => !current)}
+          >
+            {historyOpen ? (
+              <>
+                <ChevronUp className="h-4 w-4" />
+                Hide history
+              </>
+            ) : (
+              <>
+                <ChevronDown className="h-4 w-4" />
+                Show history
+              </>
+            )}
+          </Button>
+        </CardHeader>
+        {historyOpen ? (
+          <CardContent className="grid gap-3">
+            {playedHistoryQuery.isLoading ? (
+              <p className="text-sm text-(--muted)">
+                Loading played history...
+              </p>
+            ) : null}
+            {!playedHistoryQuery.isLoading &&
+            (playedHistoryQuery.data?.results.length ?? 0) === 0 ? (
+              <p className="text-sm text-(--muted)">
+                No songs have been marked played yet.
+              </p>
+            ) : null}
+            {playedHistoryQuery.data?.results.map((song, index) => (
+              <div
+                key={song.id}
+                className={`rounded-[22px] border px-4 py-3 ${
+                  index % 2 === 0
+                    ? "border-(--border) bg-(--panel-soft)"
+                    : "border-(--border) bg-(--panel-muted)"
+                }`}
+              >
+                <p className="font-medium text-(--text)">
+                  {decodeHtmlEntities(song.songTitle)}
+                  {song.songArtist
+                    ? ` by ${decodeHtmlEntities(song.songArtist)}`
+                    : ""}
+                </p>
+                <p className="mt-1 text-sm text-(--muted)">
+                  {(song.requestedByDisplayName ?? song.requestedByLogin)
+                    ? `Requested by ${song.requestedByDisplayName ?? song.requestedByLogin} · `
+                    : ""}
+                  {new Date(song.playedAt).toLocaleString()}
+                </p>
+              </div>
+            ))}
+            {playedHistoryQuery.data &&
+            ((playedHistoryQuery.data.page ?? 1) > 1 ||
+              playedHistoryQuery.data.hasNextPage) ? (
+              <div className="flex flex-wrap items-center justify-between gap-4 pt-2">
+                <p className="text-sm text-(--muted)">
+                  Page {playedHistoryQuery.data.page}
+                </p>
+                <Pagination className="mx-0 w-auto justify-end">
+                  <PaginationContent>
+                    <PaginationItem>
+                      <PaginationPrevious
+                        onClick={() =>
+                          setHistoryPage((current) => Math.max(1, current - 1))
+                        }
+                        disabled={(playedHistoryQuery.data.page ?? 1) <= 1}
+                      />
+                    </PaginationItem>
+                    <PaginationItem>
+                      <PaginationNext
+                        onClick={() => setHistoryPage((current) => current + 1)}
+                        disabled={!playedHistoryQuery.data.hasNextPage}
+                      />
+                    </PaginationItem>
+                  </PaginationContent>
+                </Pagination>
+              </div>
+            ) : null}
+          </CardContent>
+        ) : null}
+      </Card>
     </section>
   );
 }

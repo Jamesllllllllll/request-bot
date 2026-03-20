@@ -30,6 +30,7 @@ import type {
   RemoveRequestsInput,
   ReorderItemsInput,
   ResetSessionInput,
+  RestorePlayedInput,
   SetCurrentInput,
   ShuffleNextInput,
   ShufflePlaylistInput,
@@ -411,6 +412,83 @@ class D1PlaylistCoordinator implements PlaylistCoordinator {
     );
   }
 
+  async restorePlayed(
+    input: RestorePlayedInput
+  ): Promise<PlaylistMutationResult> {
+    const db = getDb(this.env);
+    const { playlist, items } = await this.getPlaylist(input.channelId);
+    const playedSong = await db.query.playedSongs.findFirst({
+      where: and(
+        eq(schema.playedSongs.channelId, input.channelId),
+        eq(schema.playedSongs.id, input.playedSongId)
+      ),
+    });
+
+    if (!playedSong) {
+      throw new Error("Played song not found");
+    }
+
+    const nextPosition = items.length
+      ? Math.max(...items.map((item) => item.position)) + 1
+      : 1;
+    const itemId = createId("pli");
+    const createdAt = playedSong.requestedAt ?? Date.now();
+
+    await db.insert(playlistItems).values({
+      id: itemId,
+      playlistId: playlist.id,
+      channelId: input.channelId,
+      songId: playedSong.songId,
+      songTitle: playedSong.songTitle,
+      songArtist: playedSong.songArtist,
+      songAlbum: playedSong.songAlbum,
+      songCreator: playedSong.songCreator,
+      songTuning: playedSong.songTuning,
+      songPartsJson: playedSong.songPartsJson,
+      songDurationText: playedSong.songDurationText,
+      songCatalogSourceId: playedSong.songCatalogSourceId,
+      songSource: playedSong.songSource,
+      songUrl: playedSong.songUrl,
+      status: "queued",
+      requestedByTwitchUserId: playedSong.requestedByTwitchUserId,
+      requestedByLogin: playedSong.requestedByLogin,
+      requestedByDisplayName: playedSong.requestedByDisplayName,
+      requestKind: playedSong.requestKind,
+      position: nextPosition,
+      createdAt,
+      updatedAt: Date.now(),
+    });
+
+    await db
+      .delete(schema.playedSongs)
+      .where(eq(schema.playedSongs.id, input.playedSongId));
+    await db
+      .update(playlists)
+      .set({
+        updatedAt: Date.now(),
+      })
+      .where(eq(playlists.id, playlist.id));
+
+    await this.audit(
+      input.channelId,
+      input.actorUserId,
+      "played_item_restored",
+      itemId,
+      {
+        playedSongId: input.playedSongId,
+      }
+    );
+    await this.notify(input.channelId);
+
+    return {
+      ok: true,
+      playlistId: playlist.id,
+      currentItemId: playlist.currentItemId,
+      changedItemId: itemId,
+      message: "Played request restored",
+    };
+  }
+
   async skipItem(input: SkipItemInput) {
     return this.advanceItem(
       input.channelId,
@@ -455,6 +533,7 @@ class D1PlaylistCoordinator implements PlaylistCoordinator {
         requestedByTwitchUserId: current.requestedByTwitchUserId,
         requestedByLogin: current.requestedByLogin,
         requestedByDisplayName: current.requestedByDisplayName,
+        requestKind: current.requestKind,
         requestedAt: current.createdAt,
         playedAt: Date.now(),
       });
@@ -890,9 +969,6 @@ class D1PlaylistCoordinator implements PlaylistCoordinator {
       .delete(playlistItems)
       .where(eq(playlistItems.playlistId, playlist.id));
     await db
-      .delete(schema.playedSongs)
-      .where(eq(schema.playedSongs.channelId, input.channelId));
-    await db
       .update(playlists)
       .set({
         currentItemId: null,
@@ -913,7 +989,7 @@ class D1PlaylistCoordinator implements PlaylistCoordinator {
       ok: true,
       playlistId: playlist.id,
       currentItemId: null,
-      message: "Session reset",
+      message: "Session reset; played history kept",
     };
   }
 }
@@ -1060,6 +1136,10 @@ async function handleMutation(
   switch (payload.action) {
     case "markPlayed":
       return coordinator.markPlayed(payload as unknown as MarkPlayedInput);
+    case "restorePlayed":
+      return coordinator.restorePlayed(
+        payload as unknown as RestorePlayedInput
+      );
     case "skipItem":
       return coordinator.skipItem(payload as unknown as SkipItemInput);
     case "setCurrent":

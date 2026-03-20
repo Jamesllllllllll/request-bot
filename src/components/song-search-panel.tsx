@@ -50,6 +50,7 @@ import {
   TooltipTrigger,
 } from "~/components/ui/tooltip";
 import { pathOptions } from "~/lib/channel-options";
+import { formatPathLabel } from "~/lib/request-policy";
 import { cn, getErrorMessage } from "~/lib/utils";
 
 type SearchField = "any" | "title" | "artist" | "album" | "creator";
@@ -109,6 +110,7 @@ export function SongSearchPanel(props: {
   title: string;
   eyebrow?: string;
   description?: string;
+  infoNote?: string;
   placeholder?: string;
   className?: string;
 }) {
@@ -249,7 +251,7 @@ export function SongSearchPanel(props: {
 
   const { data, error, isFetching, isLoading } = useQuery<SearchResponse>({
     queryKey: ["song-search", searchParams.toString()],
-    enabled: hasSearchInput && !queryTooShort && !requiresCoreSearchTerm,
+    enabled: !queryTooShort && !requiresCoreSearchTerm,
     placeholderData: keepPreviousData,
     queryFn: async (): Promise<SearchResponse> => {
       const response = await fetch(`/api/search?${searchParams.toString()}`);
@@ -271,9 +273,11 @@ export function SongSearchPanel(props: {
   });
 
   const results =
-    hasSearchInput && !queryTooShort && !requiresCoreSearchTerm
-      ? (data?.results ?? [])
-      : [];
+    !queryTooShort && !requiresCoreSearchTerm ? (data?.results ?? []) : [];
+  const resolvedInfoNote = props.infoNote?.replace(
+    "{count}",
+    String(data?.total ?? 0)
+  );
   const totalPages = Math.max(
     1,
     Math.ceil((data?.total ?? 0) / (data?.pageSize ?? 25))
@@ -353,7 +357,7 @@ export function SongSearchPanel(props: {
   }
 
   function renderPagination(position: "top" | "bottom") {
-    if (!hasSearchInput || totalPages <= 1) {
+    if (totalPages <= 1) {
       return null;
     }
 
@@ -441,11 +445,19 @@ export function SongSearchPanel(props: {
                     {props.description}
                   </p>
                 ) : null}
+                {resolvedInfoNote ? (
+                  <div className="mt-4 rounded-[20px] border border-sky-400/30 bg-sky-500/10 px-4 py-3 text-sm text-sky-100">
+                    <p className="font-semibold uppercase tracking-[0.18em] text-sky-200">
+                      Note:
+                    </p>
+                    <p className="mt-2">{resolvedInfoNote}</p>
+                  </div>
+                ) : null}
               </div>
-              {hasSearchInput && !queryTooShort && !error ? (
+              {!queryTooShort && !error ? (
                 <div className="rounded-[24px] border border-(--border) bg-(--panel-soft) px-4 py-3 text-right">
                   <p className="text-lg font-semibold text-(--text)">
-                    {data?.total ?? 0} matching songs
+                    {data?.total ?? 0} songs
                   </p>
                   {isFetching ? (
                     <p className="mt-1 text-xs font-medium text-(--muted)">
@@ -605,15 +617,15 @@ export function SongSearchPanel(props: {
                   <Label>Path</Label>
                   <MultiSelectSelect
                     label="Path"
-                    options={pathOptions.map(
-                      (part) => part.charAt(0).toUpperCase() + part.slice(1)
+                    options={pathOptions.map((part) => formatPathLabel(part))}
+                    selectedValues={advancedFilters.parts.map((part) =>
+                      formatPathLabel(part)
                     )}
-                    selectedValues={advancedFilters.parts.map(
-                      (part) => part.charAt(0).toUpperCase() + part.slice(1)
-                    )}
-                    onAdd={(value) => toggleAdvancedPart(value.toLowerCase())}
+                    onAdd={(value) =>
+                      toggleAdvancedPart(getPathTokenFromLabel(value))
+                    }
                     onRemove={(value) =>
-                      toggleAdvancedPart(value.toLowerCase())
+                      toggleAdvancedPart(getPathTokenFromLabel(value))
                     }
                     toneByValue={getPathToneByValue}
                   />
@@ -651,25 +663,25 @@ export function SongSearchPanel(props: {
           <CardContent className="p-0">
             {renderPagination("top")}
 
-            {hasSearchInput ? (
-              <div className="grid grid-cols-[minmax(0,2.1fr)_minmax(0,1.4fr)_minmax(0,1.2fr)_minmax(0,1fr)_72px] gap-4 border-b border-(--border) px-5 py-4 text-[11px] font-semibold uppercase tracking-[0.22em] text-(--muted)">
-                <span>Song</span>
-                <span>Details</span>
-                <span>Paths / Tuning</span>
-                <span>Stats</span>
-                <span className="text-right">Copy</span>
-              </div>
-            ) : null}
+            <div className="grid grid-cols-[minmax(0,2.1fr)_minmax(0,1.4fr)_minmax(0,1.2fr)_minmax(0,1fr)_72px] gap-4 border-b border-(--border) px-5 py-4 text-[11px] font-semibold uppercase tracking-[0.22em] text-(--muted)">
+              <span>Song</span>
+              <span>Details</span>
+              <span>Paths / Tuning</span>
+              <span>Stats</span>
+              <span className="text-right">Copy</span>
+            </div>
 
             {isLoading && results.length === 0 ? (
               <div className="px-5 py-8 text-sm text-(--muted)">
-                Searching...
+                Loading songs...
               </div>
             ) : null}
 
             {!isLoading && queryTooShort && !hasAdvancedFilter ? (
-              <div className="px-5 py-8 text-sm text-(--muted)">
-                Search terms must be at least 3 characters.
+              <div className="grid grid-cols-[minmax(0,2.1fr)_minmax(0,1.4fr)_minmax(0,1.2fr)_minmax(0,1fr)_72px] gap-4 border-b border-(--border) px-5 py-4 text-[11px] font-semibold uppercase tracking-[0.22em] text-(--muted)">
+                <span className="col-span-full normal-case tracking-normal text-sm font-normal text-(--muted)">
+                  Search terms must be at least 3 characters.
+                </span>
               </div>
             ) : null}
 
@@ -686,13 +698,13 @@ export function SongSearchPanel(props: {
             ) : null}
 
             {!isLoading &&
-            hasSearchInput &&
             !queryTooShort &&
             !requiresCoreSearchTerm &&
             results.length === 0 ? (
               <div className="px-5 py-8 text-sm text-(--muted)">
-                No songs matched those filters yet. Try broadening the search
-                field or clearing one of the advanced inputs.
+                {hasSearchInput
+                  ? "No songs matched those filters yet. Try broadening the search field or clearing one of the advanced inputs."
+                  : "No songs are available in the demo catalog yet."}
               </div>
             ) : null}
 
@@ -760,7 +772,7 @@ export function SongSearchPanel(props: {
                       {song.parts?.includes("voice") ||
                       song.parts?.includes("vocals") ? (
                         <Badge className="border-violet-400/30 bg-violet-500/10 text-violet-300 hover:bg-violet-500/10">
-                          Voice
+                          Lyrics
                         </Badge>
                       ) : null}
                     </div>
@@ -774,11 +786,6 @@ export function SongSearchPanel(props: {
                   <div className="min-w-0 text-sm">
                     {song.durationText ? (
                       <p className="text-(--text)">{song.durationText}</p>
-                    ) : null}
-                    {song.downloads != null ? (
-                      <p className="mt-1 text-(--muted)">
-                        {song.downloads.toLocaleString()} downloads
-                      </p>
                     ) : null}
                     {song.year ? (
                       <p className="mt-1 text-(--muted)">{String(song.year)}</p>
@@ -834,6 +841,10 @@ function getPathToneByValue(value: string) {
     default:
       return "border-(--border-strong) bg-(--panel) text-(--text)";
   }
+}
+
+function getPathTokenFromLabel(value: string) {
+  return value.toLowerCase() === "lyrics" ? "voice" : value.toLowerCase();
 }
 
 function MultiSelectSelect(props: {

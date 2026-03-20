@@ -66,6 +66,7 @@ const adminNav: DashboardNavItem[] = [
     to: "/dashboard/admin" as const,
     label: "Operations",
     icon: Wrench,
+    exact: true,
   },
   {
     to: "/dashboard/admin/logs" as const,

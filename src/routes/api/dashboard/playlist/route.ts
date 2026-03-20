@@ -4,6 +4,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { getSessionUserId } from "~/lib/auth/session.server";
 import { callBackend } from "~/lib/backend";
 import {
+  getCatalogSongsByIds,
   getChannelSettingsByChannelId,
   getDashboardChannelAccess,
   getDashboardState,
@@ -74,6 +75,32 @@ async function requireDashboardState(
   };
 }
 
+async function enrichPlaylistItems(
+  runtimeEnv: AppEnv,
+  items: Array<Record<string, unknown>>
+) {
+  const songIds = items
+    .map((item) => (typeof item.songId === "string" ? item.songId : null))
+    .filter((songId): songId is string => Boolean(songId));
+
+  const catalogSongs = await getCatalogSongsByIds(runtimeEnv, songIds);
+  const catalogById = new Map(catalogSongs.map((song) => [song.id, song]));
+
+  return items.map((item) => {
+    const songId = typeof item.songId === "string" ? item.songId : null;
+    const catalogSong = songId ? catalogById.get(songId) : null;
+
+    return {
+      ...item,
+      songCatalogSourceId:
+        item.songCatalogSourceId ?? catalogSong?.sourceId ?? null,
+      songUrl: item.songUrl ?? catalogSong?.sourceUrl ?? null,
+      songSourceUpdatedAt: catalogSong?.sourceUpdatedAt ?? null,
+      songDownloads: catalogSong?.downloads ?? null,
+    };
+  });
+}
+
 export const Route = createFileRoute("/api/dashboard/playlist")({
   server: {
     handlers: {
@@ -94,7 +121,7 @@ export const Route = createFileRoute("/api/dashboard/playlist")({
           return json({
             channel: state.channel,
             playlist: state.playlist,
-            items: state.items,
+            items: await enrichPlaylistItems(runtimeEnv, state.items),
             playedSongs: state.playedSongs,
             accessRole: state.accessRole,
             requiredPaths: state.settings

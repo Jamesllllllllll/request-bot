@@ -13,6 +13,7 @@ import {
 } from "~/lib/db/repositories";
 import * as schema from "~/lib/db/schema";
 import type { AppEnv, BackendEnv } from "~/lib/env";
+import { getSentryD1Database } from "~/lib/sentry";
 import {
   createEventSubSubscription,
   deleteEventSubSubscription,
@@ -40,7 +41,7 @@ function asAppEnv(env: RuntimeEnv) {
 }
 
 function getDb(env: RuntimeEnv) {
-  return drizzle(env.DB, { schema });
+  return drizzle(getSentryD1Database(env), { schema });
 }
 
 async function ensureSubscription(input: {

@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Documentation
+    url: https://github.com/Jamesllllllllll/request-bot/blob/main/README.md
+    about: Review the README and deployment docs before opening a support issue.
+  - name: Deployment workflow
+    url: https://github.com/Jamesllllllllll/request-bot/blob/main/docs/deployment-workflow.md
+    about: Check the deployment guide for Cloudflare setup and production configuration.

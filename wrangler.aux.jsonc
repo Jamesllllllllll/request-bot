@@ -36,8 +36,12 @@
       }
     ]
   },
+  "version_metadata": {
+    "binding": "CF_VERSION_METADATA"
+  },
   "vars": {
     "APP_URL": "http://localhost:9000",
+    "SENTRY_ENVIRONMENT": "development",
     "TWITCH_BOT_USERNAME": "requestbot"
   }
 }

@@ -535,7 +535,6 @@ export const catalogSongs = sqliteTable(
     id: text("id").primaryKey(),
     source: text("source").notNull().default("library"),
     sourceSongId: integer("source_song_id").notNull(),
-    sourceUrl: text("source_url").notNull(),
     title: text("title").notNull(),
     artistName: text("artist_name").notNull(),
     albumName: text("album_name"),

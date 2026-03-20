@@ -124,3 +124,19 @@ export function parseJsonStringArray(input: string | null | undefined) {
     return [];
   }
 }
+
+const CUSTOMSFORGE_IGNITION_BASE_URL = "https://ignition4.customsforge.com";
+
+export function normalizeSongSourceUrl(input: {
+  source?: string | null;
+  sourceUrl?: string | null;
+  sourceId?: number | null;
+}) {
+  const sourceId = input.sourceId ?? null;
+
+  if (sourceId != null) {
+    return `${CUSTOMSFORGE_IGNITION_BASE_URL}/cdlc/${sourceId}`;
+  }
+
+  return input.sourceUrl?.trim() || undefined;
+}

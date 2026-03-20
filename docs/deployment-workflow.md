@@ -73,6 +73,8 @@ The Durable Object migration for `ChannelPlaylistDurableObject` is already decla
 Set these in `.env.deploy` before a real deployment:
 
 - `APP_URL`
+- `SENTRY_ENVIRONMENT`
+- `SENTRY_TRACES_SAMPLE_RATE` (optional)
 - `CLOUDFLARE_D1_DATABASE_ID`
 - `CLOUDFLARE_SESSION_KV_ID`
 - `TWITCH_CLIENT_ID`
@@ -111,6 +113,7 @@ echo "<TWITCH_CLIENT_SECRET>" | npx wrangler secret put TWITCH_CLIENT_SECRET --c
 echo "<TWITCH_EVENTSUB_SECRET>" | npx wrangler secret put TWITCH_EVENTSUB_SECRET --config wrangler.jsonc
 echo "<SESSION_SECRET>" | npx wrangler secret put SESSION_SECRET --config wrangler.jsonc
 echo "<ADMIN_TWITCH_USER_IDS>" | npx wrangler secret put ADMIN_TWITCH_USER_IDS --config wrangler.jsonc
+echo "<SENTRY_DSN>" | npx wrangler secret put SENTRY_DSN --config wrangler.jsonc
 ```
 
 Backend Worker (`request-bot-backend`) required secrets:
@@ -119,6 +122,7 @@ Backend Worker (`request-bot-backend`) required secrets:
 echo "<TWITCH_CLIENT_ID>" | npx wrangler secret put TWITCH_CLIENT_ID --config wrangler.aux.jsonc
 echo "<TWITCH_CLIENT_SECRET>" | npx wrangler secret put TWITCH_CLIENT_SECRET --config wrangler.aux.jsonc
 echo "<TWITCH_EVENTSUB_SECRET>" | npx wrangler secret put TWITCH_EVENTSUB_SECRET --config wrangler.aux.jsonc
+echo "<SENTRY_DSN>" | npx wrangler secret put SENTRY_DSN --config wrangler.aux.jsonc
 ```
 
 Notes:
@@ -128,6 +132,11 @@ Notes:
 - `SESSION_KV` is a KV binding, not a secret
 - `TWITCH_BOT_USERNAME` and `TWITCH_SCOPES` are not secrets
 - `ADMIN_TWITCH_USER_IDS` is only needed by the frontend Worker
+- Sentry is enabled whenever `SENTRY_DSN` is present
+- local development can use a personal test DSN in `.env`
+- `SENTRY_DSN` should be set on both Workers so frontend/server routes and backend worker errors report to the same Sentry project
+- `SENTRY_TRACES_SAMPLE_RATE` is optional and defaults to `0`
+- release tagging uses Cloudflare Worker version metadata automatically, with `SENTRY_RELEASE` available as an override if you want one
 
 ### Initialize remote data
 
@@ -148,7 +157,40 @@ If you only need migrations:
 npm run db:migrate:remote
 ```
 
+Use the remote migration commands above for initial environment setup and deliberate operator-driven maintenance.
+Once GitHub production deploys are enabled, normal production schema changes should land through pull requests and be migrated by CI after merge to `main`.
+
+Remote-affecting npm scripts are blocked outside CI by default and print a helper that points contributors back to the local workflow.
+If you intentionally need an operator-only override, run:
+
+```bash
+ALLOW_REMOTE_OPERATIONS=1 npm run db:migrate:remote
+```
+
+The same override applies to:
+
+- `npm run db:seed:sample:remote`
+- `npm run db:bootstrap:remote`
+- `npm run deploy`
+
 The sample seed works remotely without an explicit SQL transaction wrapper. Remote D1 rejects uploaded seed files that include `BEGIN TRANSACTION` / `COMMIT`.
+
+### Local migrations for contributors
+
+Contributors should apply schema changes to local D1 only:
+
+```bash
+npm run db:migrate
+```
+
+For a clean local rebuild with sample data:
+
+```bash
+npm run db:bootstrap:local
+```
+
+Use `db:migrate` for normal local schema updates.
+Use `db:bootstrap:local` when you want to reset local state completely.
 
 ### Deploy from your machine
 
@@ -213,6 +255,7 @@ Add these repository variables:
 
 - `TWITCH_BOT_USERNAME`
 - `TWITCH_SCOPES`
+- `SENTRY_ENVIRONMENT`
 
 Use the deployed public URL here, not your local tunnel URL.
 
@@ -240,6 +283,7 @@ gh secret set CLOUDFLARE_SESSION_KV_ID
 gh secret set APP_URL --body "https://your-production-url.example"
 gh variable set TWITCH_BOT_USERNAME --body "your_bot_username"
 gh variable set TWITCH_SCOPES --body "openid user:read:moderated_channels channel:bot"
+gh variable set SENTRY_ENVIRONMENT --body "production"
 ```
 
 #### Production deploy
@@ -247,9 +291,15 @@ gh variable set TWITCH_SCOPES --body "openid user:read:moderated_channels channe
 The production workflow:
 
 - runs lint, typecheck, tests, and build
+- applies remote D1 migrations
 - generates built production Wrangler configs
 - deploys backend first
 - deploys frontend second
+
+Recommended practice:
+
+- do not apply production D1 migrations from contributor machines
+- let GitHub Actions apply remote migrations during the production deploy workflow after changes land on `main`
 
 #### Preview deploys
 
@@ -273,7 +323,7 @@ Important:
 3. Copy `.env.deploy.example` to `.env.deploy`
 4. Set `CLOUDFLARE_D1_DATABASE_ID` and `CLOUDFLARE_SESSION_KV_ID` in `.env.deploy`
 5. Set Worker secrets with `wrangler secret put`
-6. Set the other required `.env.deploy` values, including `APP_URL`
+6. Set the other required `.env.deploy` values, including `APP_URL` and `SENTRY_ENVIRONMENT=production`
 7. Run `npm run db:bootstrap:remote`
 8. Run `npm run deploy`
 9. If you started with a temporary `APP_URL`, update it in `.env.deploy` to the real deployed URL and run `npm run deploy` again

@@ -16,11 +16,12 @@ import { Card, CardContent, CardHeader, CardTitle } from "~/components/ui/card";
 import { Input } from "~/components/ui/input";
 import { pageTitle } from "~/lib/page-title";
 import { formatPathLabel } from "~/lib/request-policy";
-import { getErrorMessage } from "~/lib/utils";
+import { getErrorMessage, normalizeSongSourceUrl } from "~/lib/utils";
 
 type PlaylistItem = {
   id: string;
   songId?: string;
+  songCatalogSourceId?: number | null;
   songTitle: string;
   songArtist?: string;
   songAlbum?: string;
@@ -29,6 +30,8 @@ type PlaylistItem = {
   songPartsJson?: string;
   songDurationText?: string;
   songUrl?: string;
+  songSourceUpdatedAt?: number | null;
+  songDownloads?: number | null;
   requestedByTwitchUserId?: string;
   requestedByLogin?: string;
   requestedByDisplayName?: string;
@@ -360,12 +363,6 @@ function DashboardPlaylistPage() {
     mutation.isPending &&
     pendingRowAction?.action === "manualAdd" &&
     pendingRowAction.songId === songId;
-  const isChoosingVersion = (itemId: string, candidateId: string) =>
-    mutation.isPending &&
-    pendingRowAction?.action === "chooseVersion" &&
-    pendingRowAction.itemId === itemId &&
-    pendingRowAction.songId === candidateId;
-
   return (
     <div className="grid gap-6">
       <section className="surface-grid surface-noise rounded-[34px] border border-(--border-strong) bg-(--panel) p-6 shadow-(--shadow) md:p-8">
@@ -663,112 +660,109 @@ function DashboardPlaylistPage() {
                         View {getResolvedCandidates(item).length} version
                         {getResolvedCandidates(item).length === 1 ? "" : "s"}
                       </summary>
-                      <div className="mt-4 overflow-hidden rounded-[16px] border border-(--border)">
-                        <div className="grid grid-cols-[minmax(0,2fr)_120px_120px_160px_90px_120px_88px_220px] gap-3 bg-(--panel-muted) px-4 py-3 text-[11px] font-semibold uppercase tracking-[0.16em] text-(--muted)">
-                          <div>Song</div>
-                          <div>Tuning</div>
-                          <div>Paths</div>
-                          <div>DLC Creator</div>
-                          <div>Duration</div>
-                          <div>Updated</div>
-                          <div>DL Count</div>
-                          <div>Actions</div>
-                        </div>
-                        {getResolvedCandidates(item).map(
-                          (candidate, candidateIndex) => (
-                            <div
-                              key={`${item.id}-${candidate.id}-${candidateIndex}`}
-                              className={`grid grid-cols-[minmax(0,2fr)_120px_120px_160px_90px_120px_88px_220px] gap-3 border-t border-(--border) px-4 py-3 text-sm ${
-                                candidateIndex % 2 === 0
-                                  ? "bg-(--panel-strong)"
-                                  : "bg-(--panel-soft)"
-                              }`}
-                            >
-                              <div className="min-w-0">
-                                <p className="truncate font-medium text-(--text)">
-                                  {candidate.artist
-                                    ? `${candidate.artist} - ${candidate.title}`
-                                    : candidate.title}
-                                </p>
-                              </div>
-                              <div className="truncate text-(--text)">
-                                {candidate.tuning ?? "Unknown"}
-                              </div>
-                              <div className="truncate text-(--text)">
-                                {candidate.parts?.length
-                                  ? candidate.parts
-                                      .map((part) => formatPathLabel(part))
-                                      .join(", ")
-                                  : "Unknown"}
-                              </div>
-                              <div className="truncate text-(--text)">
-                                {candidate.creator ?? "Unknown"}
-                              </div>
-                              <div className="text-(--text)">
-                                {candidate.durationText ?? "??:??"}
-                              </div>
-                              <div className="text-(--text)">
-                                {candidate.sourceUpdatedAt
-                                  ? formatDate(candidate.sourceUpdatedAt)
-                                  : "Unknown"}
-                              </div>
-                              <div className="text-(--text)">
-                                {candidate.downloads != null
-                                  ? candidate.downloads.toLocaleString()
-                                  : "Unknown"}
-                              </div>
-                              <div className="flex flex-wrap items-center justify-end gap-2">
-                                {candidate.sourceUrl ? (
-                                  <Button size="sm" variant="outline" asChild>
-                                    <a
-                                      href={candidate.sourceUrl}
-                                      target="_blank"
-                                      rel="noreferrer"
-                                      className="no-underline"
-                                    >
-                                      Download
-                                    </a>
-                                  </Button>
-                                ) : null}
-                                <Button
-                                  size="sm"
-                                  onClick={() =>
-                                    mutation.mutate({
-                                      action: "chooseVersion",
-                                      itemId: item.id,
-                                      candidateId: candidate.id,
-                                    })
-                                  }
-                                  disabled={
-                                    item.songId === candidate.id ||
-                                    isChoosingVersion(item.id, candidate.id)
-                                  }
+                      <div className="mt-4 overflow-x-auto rounded-[16px] border border-(--border)">
+                        <table className="min-w-full table-fixed border-collapse">
+                          <thead className="bg-(--panel-muted)">
+                            <tr className="text-left text-[11px] font-semibold uppercase tracking-[0.16em] text-(--muted)">
+                              <th className="w-[30%] px-4 py-3">Song</th>
+                              <th className="w-[12%] px-4 py-3">Tuning</th>
+                              <th className="w-[14%] px-4 py-3">Paths</th>
+                              <th className="w-[14%] px-4 py-3">Creator</th>
+                              <th className="w-[8%] px-4 py-3">Length</th>
+                              <th className="w-[10%] px-4 py-3">Updated</th>
+                              <th className="w-[6%] px-4 py-3">DLs</th>
+                              <th className="w-[6%] px-4 py-3 text-right">
+                                Action
+                              </th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {getResolvedCandidates(item).map(
+                              (candidate, candidateIndex) => (
+                                <tr
+                                  key={`${item.id}-${candidate.id}-${candidateIndex}`}
+                                  className={`border-t border-(--border) text-sm ${
+                                    candidateIndex % 2 === 0
+                                      ? "bg-(--panel-strong)"
+                                      : "bg-(--panel-soft)"
+                                  }`}
                                 >
-                                  {item.songId === candidate.id
-                                    ? "Selected"
-                                    : "Choose this version"}
-                                </Button>
-                              </div>
-                            </div>
-                          )
-                        )}
+                                  <td className="px-4 py-3 align-top">
+                                    <div className="min-w-0">
+                                      <p className="truncate font-medium text-(--text)">
+                                        {candidate.artist
+                                          ? `${candidate.artist} - ${candidate.title}`
+                                          : candidate.title}
+                                      </p>
+                                      {candidate.album ? (
+                                        <p className="mt-1 truncate text-xs text-(--muted)">
+                                          {candidate.album}
+                                        </p>
+                                      ) : null}
+                                    </div>
+                                  </td>
+                                  <td className="px-4 py-3 align-top text-(--text)">
+                                    <span className="block truncate">
+                                      {candidate.tuning ?? "Unknown"}
+                                    </span>
+                                  </td>
+                                  <td className="px-4 py-3 align-top text-(--text)">
+                                    <span className="block truncate">
+                                      {candidate.parts?.length
+                                        ? candidate.parts
+                                            .map((part) =>
+                                              formatPathLabel(part)
+                                            )
+                                            .join(", ")
+                                        : "Unknown"}
+                                    </span>
+                                  </td>
+                                  <td className="px-4 py-3 align-top text-(--text)">
+                                    <span className="block truncate">
+                                      {candidate.creator ?? "Unknown"}
+                                    </span>
+                                  </td>
+                                  <td className="px-4 py-3 align-top text-(--text)">
+                                    {candidate.durationText ?? "??:??"}
+                                  </td>
+                                  <td className="px-4 py-3 align-top text-(--text)">
+                                    {candidate.sourceUpdatedAt
+                                      ? formatDate(candidate.sourceUpdatedAt)
+                                      : "Unknown"}
+                                  </td>
+                                  <td className="px-4 py-3 align-top text-(--text)">
+                                    {candidate.downloads != null
+                                      ? candidate.downloads.toLocaleString()
+                                      : "Unknown"}
+                                  </td>
+                                  <td className="px-4 py-3 align-top text-right">
+                                    {candidate.sourceUrl ? (
+                                      <Button
+                                        size="sm"
+                                        variant="outline"
+                                        asChild
+                                      >
+                                        <a
+                                          href={candidate.sourceUrl}
+                                          target="_blank"
+                                          rel="noreferrer"
+                                          className="no-underline"
+                                        >
+                                          Download
+                                        </a>
+                                      </Button>
+                                    ) : null}
+                                  </td>
+                                </tr>
+                              )
+                            )}
+                          </tbody>
+                        </table>
                       </div>
                     </details>
                   </div>
 
                   <div className="flex max-w-full flex-col items-end gap-3">
-                    {item.songUrl ? (
-                      <Button asChild>
-                        <a
-                          href={item.songUrl}
-                          target="_blank"
-                          rel="noreferrer"
-                          className="no-underline"
-                        >
-                          Open source
-                        </a>
-                      </Button>
-                    ) : null}
                     <div className="flex flex-wrap justify-end gap-2">
                       <Button
                         size="sm"
@@ -949,7 +943,14 @@ function getPlaylistCandidates(candidateMatchesJson?: string) {
 function getResolvedCandidates(item: PlaylistItem) {
   const candidates = getPlaylistCandidates(item.candidateMatchesJson);
   if (candidates.length > 0) {
-    return candidates;
+    return candidates.map((candidate) => ({
+      ...candidate,
+      sourceUrl: normalizeSongSourceUrl({
+        source: "library",
+        sourceUrl: candidate.sourceUrl,
+        sourceId: candidate.sourceId,
+      }),
+    }));
   }
 
   return [
@@ -961,8 +962,14 @@ function getResolvedCandidates(item: PlaylistItem) {
       tuning: item.songTuning,
       parts: getSongParts(item.songPartsJson),
       durationText: item.songDurationText,
-      sourceUrl: item.songUrl,
-      sourceId: undefined,
+      sourceUpdatedAt: item.songSourceUpdatedAt ?? undefined,
+      downloads: item.songDownloads ?? undefined,
+      sourceUrl: normalizeSongSourceUrl({
+        source: "library",
+        sourceUrl: item.songUrl,
+        sourceId: item.songCatalogSourceId ?? undefined,
+      }),
+      sourceId: item.songCatalogSourceId ?? undefined,
     } satisfies PlaylistCandidate,
   ];
 }

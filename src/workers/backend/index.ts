@@ -1,3 +1,4 @@
+import { withMonitor, withSentry } from "@sentry/cloudflare";
 import { and, eq } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/d1";
 import {
@@ -35,6 +36,7 @@ import type {
   SkipItemInput,
 } from "~/lib/playlist/types";
 import { formatPathLabel, getMissingRequiredPaths } from "~/lib/request-policy";
+import { getSentryD1Database, getSentryOptions } from "~/lib/sentry";
 import {
   getAppAccessToken,
   getTwitchUserByLogin,
@@ -42,11 +44,17 @@ import {
   sendChatReply,
 } from "~/lib/twitch/api";
 import { reconcileChannelBotState } from "~/lib/twitch/bot";
-import { createId, json } from "~/lib/utils";
+import { createId, json, normalizeSongSourceUrl } from "~/lib/utils";
 
 function getDb(env: BackendEnv) {
-  return drizzle(env.DB, { schema });
+  return drizzle(getSentryD1Database(env), { schema });
 }
+
+type ReplyQueueMessage = {
+  channelId: string;
+  broadcasterUserId: string;
+  message: string;
+};
 
 interface PlaylistStreamClient {
   id: string;
@@ -790,7 +798,12 @@ class D1PlaylistCoordinator implements PlaylistCoordinator {
         songPartsJson: JSON.stringify(candidate.parts ?? []),
         songDurationText: candidate.durationText ?? null,
         songCatalogSourceId: candidate.sourceId ?? null,
-        songUrl: candidate.sourceUrl ?? null,
+        songUrl:
+          normalizeSongSourceUrl({
+            source: "library",
+            sourceUrl: candidate.sourceUrl ?? null,
+            sourceId: candidate.sourceId ?? null,
+          }) ?? null,
         warningCode:
           missingRequiredPaths.length > 0 ? "missing_required_paths" : null,
         warningMessage,
@@ -905,7 +918,7 @@ class D1PlaylistCoordinator implements PlaylistCoordinator {
   }
 }
 
-export class ChannelPlaylistDurableObject {
+class ChannelPlaylistDurableObjectBase {
   private coordinator: D1PlaylistCoordinator;
   private streamClients = new Set<PlaylistStreamClient>();
 
@@ -1038,6 +1051,8 @@ export class ChannelPlaylistDurableObject {
   }
 }
 
+export class ChannelPlaylistDurableObject extends ChannelPlaylistDurableObjectBase {}
+
 async function handleMutation(
   coordinator: PlaylistCoordinator,
   payload: MutationPayload
@@ -1164,7 +1179,7 @@ async function sendReply(
   }
 }
 
-export default {
+const backendHandler = {
   async fetch(request: Request, env: BackendEnv) {
     await assertDatabaseSchemaCurrent(env);
     const url = new URL(request.url);
@@ -1273,14 +1288,7 @@ export default {
 
     return new Response("Not found", { status: 404 });
   },
-  async queue(
-    batch: MessageBatch<{
-      channelId: string;
-      broadcasterUserId: string;
-      message: string;
-    }>,
-    env: BackendEnv
-  ) {
+  async queue(batch: MessageBatch<ReplyQueueMessage>, env: BackendEnv) {
     await assertDatabaseSchemaCurrent(env);
     for (const message of batch.messages) {
       try {
@@ -1300,9 +1308,16 @@ export default {
     }
   },
   async scheduled(_controller: ScheduledController, env: BackendEnv) {
-    await assertDatabaseSchemaCurrent(env);
+    await withMonitor("request-bot-backend-scheduled", async () => {
+      await assertDatabaseSchemaCurrent(env);
+    });
   },
-};
+} satisfies ExportedHandler<BackendEnv, ReplyQueueMessage>;
+
+export default withSentry<BackendEnv, ReplyQueueMessage>(
+  (env) => getSentryOptions(env),
+  backendHandler
+);
 
 async function resolveTwitchUserForRequester(
   env: BackendEnv,

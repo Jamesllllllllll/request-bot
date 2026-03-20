@@ -50,6 +50,9 @@ jobs:
       - name: Apply production D1 migrations
         run: npm run db:migrate:remote
 
+      - name: Regenerate production Wrangler configs
+        run: npm run deploy:prepare
+
       - name: Deploy production backend
         shell: bash
         run: |

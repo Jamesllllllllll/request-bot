@@ -363,7 +363,10 @@ export async function getDashboardState(env: AppEnv, ownerUserId: string) {
     }),
     db.query.blacklistedSongs.findMany({
       where: eq(blacklistedSongs.channelId, channel.id),
-      orderBy: [asc(blacklistedSongs.songTitle)],
+      orderBy: [
+        asc(blacklistedSongs.songTitle),
+        asc(blacklistedSongs.artistName),
+      ],
     }),
     db.query.setlistArtists.findMany({
       where: eq(setlistArtists.channelId, channel.id),
@@ -462,6 +465,30 @@ export async function getPlaylistByChannelId(env: AppEnv, channelId: string) {
     items: items.filter(
       (item) => item.status === "queued" || item.status === "current"
     ),
+  };
+}
+
+export async function getChannelBlacklistByChannelId(
+  env: AppEnv,
+  channelId: string
+) {
+  const [artistRows, songRows] = await Promise.all([
+    getDb(env).query.blacklistedArtists.findMany({
+      where: eq(blacklistedArtists.channelId, channelId),
+      orderBy: [asc(blacklistedArtists.artistName)],
+    }),
+    getDb(env).query.blacklistedSongs.findMany({
+      where: eq(blacklistedSongs.channelId, channelId),
+      orderBy: [
+        asc(blacklistedSongs.songTitle),
+        asc(blacklistedSongs.artistName),
+      ],
+    }),
+  ]);
+
+  return {
+    blacklistArtists: artistRows,
+    blacklistSongs: songRows,
   };
 }
 
@@ -1027,6 +1054,7 @@ export async function searchCatalogSongs(
   const rows = await db.all<{
     id: string;
     sourceSongId: number;
+    artistId: number | null;
     title: string;
     artistName: string;
     albumName: string | null;
@@ -1052,6 +1080,7 @@ export async function searchCatalogSongs(
     SELECT
       catalog_songs.id,
       catalog_songs.source_song_id AS sourceSongId,
+      catalog_songs.artist_id AS artistId,
       catalog_songs.title,
       catalog_songs.artist_name AS artistName,
       catalog_songs.album_name AS albumName,
@@ -1079,6 +1108,7 @@ export async function searchCatalogSongs(
   return {
     results: resultRows.map((row) => ({
       id: row.id,
+      artistId: row.artistId ?? undefined,
       title: decodeHtmlEntities(row.title),
       artist: decodeHtmlEntities(row.artistName),
       album: row.albumName ? decodeHtmlEntities(row.albumName) : undefined,
@@ -1122,6 +1152,7 @@ export async function getCatalogSongBySourceId(
 
   return {
     id: row.id,
+    artistId: row.artistId ?? undefined,
     title: decodeHtmlEntities(row.title),
     artist: decodeHtmlEntities(row.artistName),
     album: row.albumName ? decodeHtmlEntities(row.albumName) : undefined,
@@ -1141,6 +1172,90 @@ export async function getCatalogSongBySourceId(
       sourceId: row.sourceSongId,
     }),
   };
+}
+
+export async function searchCatalogArtistsForBlacklist(
+  env: AppEnv,
+  input: {
+    query: string;
+    limit?: number;
+  }
+) {
+  const normalizedQuery = escapeLikeValue(input.query.toLowerCase());
+  if (normalizedQuery.length < 2) {
+    return [];
+  }
+
+  const rows = await getDb(env).all<{
+    artistId: number;
+    artistName: string;
+    trackCount: number;
+  }>(sql`
+    SELECT
+      artist_id AS artistId,
+      artist_name AS artistName,
+      COUNT(*) AS trackCount
+    FROM catalog_songs
+    WHERE artist_id IS NOT NULL
+      AND lower(artist_name) LIKE ${`%${normalizedQuery}%`}
+    GROUP BY artist_id, artist_name
+    ORDER BY
+      CASE
+        WHEN lower(artist_name) LIKE ${`${normalizedQuery}%`} THEN 0
+        ELSE 1
+      END,
+      artist_name ASC
+    LIMIT ${Math.min(Math.max(input.limit ?? 8, 1), 25)}
+  `);
+
+  return unwrapD1Rows(rows).map((row) => ({
+    artistId: row.artistId,
+    artistName: decodeHtmlEntities(row.artistName),
+    trackCount: row.trackCount,
+  }));
+}
+
+export async function searchCatalogSongsForBlacklist(
+  env: AppEnv,
+  input: {
+    query: string;
+    limit?: number;
+  }
+) {
+  const normalizedQuery = escapeLikeValue(input.query.toLowerCase());
+  if (normalizedQuery.length < 2) {
+    return [];
+  }
+
+  const rows = await getDb(env).all<{
+    songId: number;
+    title: string;
+    artistId: number | null;
+    artistName: string;
+  }>(sql`
+    SELECT
+      source_song_id AS songId,
+      title,
+      artist_id AS artistId,
+      artist_name AS artistName
+    FROM catalog_songs
+    WHERE lower(title) LIKE ${`%${normalizedQuery}%`}
+    ORDER BY
+      CASE
+        WHEN lower(title) LIKE ${`${normalizedQuery}%`} THEN 0
+        ELSE 1
+      END,
+      title ASC,
+      artist_name ASC
+    LIMIT ${Math.min(Math.max(input.limit ?? 8, 1), 25)}
+  `);
+
+  return unwrapD1Rows(rows).map((row) => ({
+    songId: row.songId,
+    songTitle: decodeHtmlEntities(row.title),
+    artistId: row.artistId,
+    artistName: decodeHtmlEntities(row.artistName),
+  }));
 }
 
 export async function getCatalogSongsByIds(env: AppEnv, songIds: string[]) {
@@ -1726,59 +1841,47 @@ function normalizeListValue(input: string) {
 
 export async function addBlacklistedArtist(
   env: AppEnv,
-  input: Omit<BlacklistedArtistInsert, "normalizedArtistName" | "createdAt">
+  input: Omit<BlacklistedArtistInsert, "createdAt">
 ) {
   await getDb(env)
     .insert(blacklistedArtists)
-    .values({
-      ...input,
-      normalizedArtistName: normalizeListValue(input.artistName),
-    })
+    .values(input)
     .onConflictDoNothing();
 }
 
 export async function removeBlacklistedArtist(
   env: AppEnv,
   channelId: string,
-  artistName: string
+  artistId: number
 ) {
   await getDb(env)
     .delete(blacklistedArtists)
     .where(
       and(
         eq(blacklistedArtists.channelId, channelId),
-        eq(
-          blacklistedArtists.normalizedArtistName,
-          normalizeListValue(artistName)
-        )
+        eq(blacklistedArtists.artistId, artistId)
       )
     );
 }
 
 export async function addBlacklistedSong(
   env: AppEnv,
-  input: Omit<BlacklistedSongInsert, "normalizedSongTitle" | "createdAt">
+  input: Omit<BlacklistedSongInsert, "createdAt">
 ) {
-  await getDb(env)
-    .insert(blacklistedSongs)
-    .values({
-      ...input,
-      normalizedSongTitle: normalizeListValue(input.songTitle),
-    })
-    .onConflictDoNothing();
+  await getDb(env).insert(blacklistedSongs).values(input).onConflictDoNothing();
 }
 
 export async function removeBlacklistedSong(
   env: AppEnv,
   channelId: string,
-  songTitle: string
+  songId: number
 ) {
   await getDb(env)
     .delete(blacklistedSongs)
     .where(
       and(
         eq(blacklistedSongs.channelId, channelId),
-        eq(blacklistedSongs.normalizedSongTitle, normalizeListValue(songTitle))
+        eq(blacklistedSongs.songId, songId)
       )
     );
 }

@@ -1,5 +1,6 @@
 export type SongSearchResult = {
   id: string;
+  artistId?: number;
   title: string;
   artist?: string;
   album?: string;

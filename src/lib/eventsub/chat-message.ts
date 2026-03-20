@@ -48,8 +48,12 @@ export interface EventSubChatSettings {
 
 export interface EventSubChatState {
   settings: EventSubChatSettings & Parameters<typeof isRequesterAllowed>[0];
-  blacklistArtists: Array<{ artistName: string }>;
-  blacklistSongs: Array<{ songTitle: string }>;
+  blacklistArtists: Array<{ artistId: number; artistName: string }>;
+  blacklistSongs: Array<{
+    songId: number;
+    songTitle: string;
+    artistName?: string | null;
+  }>;
   setlistArtists: Array<{ artistName: string }>;
   logs: Array<{
     matchedSongId: string | null;

@@ -153,14 +153,17 @@ export function getRateLimitWindow(
 export function isSongAllowed(input: {
   song: SongSearchResult;
   settings: ChannelRequestSettings;
-  blacklistArtists: Array<{ artistName: string }>;
-  blacklistSongs: Array<{ songTitle: string }>;
+  blacklistArtists: Array<{ artistId: number; artistName: string }>;
+  blacklistSongs: Array<{
+    songId: number;
+    songTitle: string;
+    artistName?: string | null;
+  }>;
   setlistArtists: Array<{ artistName: string }>;
   requester: RequesterContext;
 }) {
   const allowedTunings = getArraySetting(input.settings.allowedTuningsJson);
   const songArtist = normalize(input.song.artist);
-  const songTitle = normalize(input.song.title);
   const setlistValues = input.setlistArtists
     .map((entry) => normalize(entry.artistName))
     .filter(Boolean);
@@ -201,10 +204,12 @@ export function isSongAllowed(input: {
 
   if (input.settings.blacklistEnabled) {
     const artistBlocked = input.blacklistArtists.some(
-      (entry) => normalize(entry.artistName) === songArtist
+      (entry) =>
+        input.song.artistId != null && entry.artistId === input.song.artistId
     );
     const songBlocked = input.blacklistSongs.some(
-      (entry) => normalize(entry.songTitle) === songTitle
+      (entry) =>
+        input.song.sourceId != null && entry.songId === input.song.sourceId
     );
     const bypass = input.settings.letSetlistBypassBlacklist && inSetlist;
 
@@ -253,8 +258,12 @@ export function formatPathLabel(path: string) {
 export function buildHowMessage(input: {
   commandPrefix: string;
   appUrl: string;
-  blacklistArtists: Array<{ artistName: string }>;
-  blacklistSongs: Array<{ songTitle: string }>;
+  blacklistArtists: Array<{ artistId?: number; artistName: string }>;
+  blacklistSongs: Array<{
+    songId?: number;
+    songTitle: string;
+    artistName?: string | null;
+  }>;
   setlistArtists: Array<{ artistName: string }>;
 }) {
   const normalized = normalizeCommandPrefix(input.commandPrefix);
@@ -289,8 +298,12 @@ export function buildSearchMessage(appUrl: string) {
 }
 
 export function buildBlacklistMessage(
-  artists: Array<{ artistName: string }>,
-  songs: Array<{ songTitle: string }>
+  artists: Array<{ artistId?: number; artistName: string }>,
+  songs: Array<{
+    songId?: number;
+    songTitle: string;
+    artistName?: string | null;
+  }>
 ) {
   if (artists.length === 0 && songs.length === 0) {
     return "No blacklisted artists or songs.";
@@ -305,7 +318,11 @@ export function buildBlacklistMessage(
   const songText = songs.length
     ? songs
         .slice(0, 5)
-        .map((entry) => entry.songTitle)
+        .map((entry) =>
+          entry.artistName
+            ? `${entry.songTitle} - ${entry.artistName}`
+            : entry.songTitle
+        )
         .join(", ")
     : "none";
   return `Artists: ${artistText}. Songs: ${songText}.`;

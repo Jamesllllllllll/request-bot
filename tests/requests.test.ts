@@ -4,6 +4,7 @@ import {
   getActiveRequestLimit,
   getRateLimitWindow,
   isRequesterAllowed,
+  isSongAllowed,
   normalizeCommandPrefix,
 } from "~/lib/request-policy";
 import {
@@ -159,6 +160,68 @@ describe("request policy", () => {
     ).toEqual({
       limit: 2,
       periodSeconds: 120,
+    });
+  });
+
+  it("blocks artists and songs by exact IDs", () => {
+    expect(
+      isSongAllowed({
+        song: {
+          id: "song-1",
+          sourceId: 12345,
+          artistId: 777,
+          title: "Heroes",
+          artist: "David Bowie",
+          source: "library",
+        },
+        settings: {
+          ...baseSettings,
+          blacklistEnabled: true,
+        },
+        blacklistArtists: [{ artistId: 777, artistName: "David Bowie" }],
+        blacklistSongs: [],
+        setlistArtists: [],
+        requester: {
+          isBroadcaster: false,
+          isModerator: false,
+          isVip: false,
+          isSubscriber: false,
+        },
+      })
+    ).toEqual({
+      allowed: false,
+      reason: "That song is blocked in this channel.",
+    });
+
+    expect(
+      isSongAllowed({
+        song: {
+          id: "song-2",
+          sourceId: 67890,
+          artistId: 888,
+          title: "Heroes",
+          artist: "Other Artist",
+          source: "library",
+        },
+        settings: {
+          ...baseSettings,
+          blacklistEnabled: true,
+        },
+        blacklistArtists: [],
+        blacklistSongs: [
+          { songId: 67890, songTitle: "Heroes", artistName: "Other Artist" },
+        ],
+        setlistArtists: [],
+        requester: {
+          isBroadcaster: false,
+          isModerator: false,
+          isVip: false,
+          isSubscriber: false,
+        },
+      })
+    ).toEqual({
+      allowed: false,
+      reason: "That song is blocked in this channel.",
     });
   });
 });

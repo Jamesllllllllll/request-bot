@@ -3,6 +3,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
 import { ChevronDown, ChevronUp, History } from "lucide-react";
 import { useEffect, useState } from "react";
+import { BlacklistPanel } from "~/components/blacklist-panel";
 import { SongSearchPanel } from "~/components/song-search-panel";
 import { Button } from "~/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "~/components/ui/card";
@@ -46,6 +47,12 @@ type PublicChannelPageData = {
     };
     items?: EnrichedPublicPlaylistItem[];
     playedSongs?: PlayedSongRow[];
+    blacklistArtists?: Array<{ artistId: number; artistName: string }>;
+    blacklistSongs?: Array<{
+      songId: number;
+      songTitle: string;
+      artistName?: string | null;
+    }>;
   };
 };
 
@@ -122,6 +129,8 @@ function PublicChannelPage() {
         channel?: PublicChannelPageData["playlist"]["channel"];
         items?: PublicPlaylistItem[];
         playedSongs?: PlayedSongRow[];
+        blacklistArtists?: PublicChannelPageData["playlist"]["blacklistArtists"];
+        blacklistSongs?: PublicChannelPageData["playlist"]["blacklistSongs"];
       };
 
       return {
@@ -210,6 +219,12 @@ function PublicChannelPage() {
         title="Search to add a song"
         description="Copy the request command and use it in Twitch chat."
         placeholder={`Search songs for ${channelDisplayName}`}
+      />
+
+      <BlacklistPanel
+        artists={data?.playlist.blacklistArtists ?? []}
+        songs={data?.playlist.blacklistSongs ?? []}
+        description="These exact artist IDs and track IDs are blocked for requests in this channel."
       />
 
       <Card>

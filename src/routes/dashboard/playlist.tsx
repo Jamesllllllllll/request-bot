@@ -10,6 +10,7 @@ import {
 } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
 import { useEffect, useMemo, useState } from "react";
+import { BlacklistPanel } from "~/components/blacklist-panel";
 import { Badge } from "~/components/ui/badge";
 import { Button } from "~/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "~/components/ui/card";
@@ -135,6 +136,12 @@ function DashboardPlaylistPage() {
         channel: { id: string; slug: string; displayName: string };
         items: PlaylistItem[];
         playedSongs: PlayedSong[];
+        blacklistArtists: Array<{ artistId: number; artistName: string }>;
+        blacklistSongs: Array<{
+          songId: number;
+          songTitle: string;
+          artistName?: string | null;
+        }>;
         accessRole?: "owner" | "moderator";
         requiredPaths?: string[];
       }>;
@@ -239,6 +246,12 @@ function DashboardPlaylistPage() {
         channel: { id: string; slug: string; displayName: string };
         items: PlaylistItem[];
         playedSongs: PlayedSong[];
+        blacklistArtists: Array<{ artistId: number; artistName: string }>;
+        blacklistSongs: Array<{
+          songId: number;
+          songTitle: string;
+          artistName?: string | null;
+        }>;
         accessRole?: "owner" | "moderator";
       }>(["dashboard-playlist", selectedChannelSlug ?? null]);
 
@@ -352,6 +365,8 @@ function DashboardPlaylistPage() {
 
   const items = playlistQuery.data?.items ?? [];
   const playedSongs = playlistQuery.data?.playedSongs ?? [];
+  const blacklistArtists = playlistQuery.data?.blacklistArtists ?? [];
+  const blacklistSongs = playlistQuery.data?.blacklistSongs ?? [];
   const managedChannel = playlistQuery.data?.channel ?? null;
   const accessRole = playlistQuery.data?.accessRole ?? "owner";
   const requiredPaths = playlistQuery.data?.requiredPaths ?? [];
@@ -560,6 +575,12 @@ function DashboardPlaylistPage() {
           ) : null}
         </CardContent>
       </Card>
+
+      <BlacklistPanel
+        artists={blacklistArtists}
+        songs={blacklistSongs}
+        description="These exact artist IDs and track IDs are currently blocked for this channel."
+      />
 
       <Card>
         <CardHeader>

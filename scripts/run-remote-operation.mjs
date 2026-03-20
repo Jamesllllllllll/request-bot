@@ -12,7 +12,7 @@ const operations = {
     localAlternative: "npm run db:seed:sample:local",
     commands: [
       "npm run deploy:prepare:source",
-      "wrangler d1 execute request_bot --remote --config .generated/wrangler.production.jsonc --file data/sample-catalog.sql",
+      "node scripts/seed-sample-catalog.mjs remote",
     ],
   },
   "db:bootstrap:remote": {
@@ -20,7 +20,7 @@ const operations = {
     commands: [
       "npm run deploy:prepare:source",
       "wrangler d1 migrations apply request_bot --remote --config .generated/wrangler.production.jsonc",
-      "wrangler d1 execute request_bot --remote --config .generated/wrangler.production.jsonc --file data/sample-catalog.sql",
+      "node scripts/seed-sample-catalog.mjs remote",
     ],
   },
   "deploy:backend": {

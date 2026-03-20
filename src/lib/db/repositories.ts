@@ -47,17 +47,32 @@ import {
 } from "./schema";
 
 const CATALOG_SONG_MUTABLE_FIELDS: Array<keyof CatalogSongInsert> = [
+  "artistId",
   "title",
   "artistName",
   "albumName",
+  "authorId",
   "creatorName",
+  "groupedProjectId",
   "artistsFtJson",
+  "tagsJson",
+  "genresJson",
+  "subgenresJson",
   "genreName",
   "subgenreName",
   "tuningSummary",
+  "leadTuningId",
   "leadTuningName",
+  "rhythmTuningId",
   "rhythmTuningName",
+  "bassTuningId",
   "bassTuningName",
+  "altLeadTuningId",
+  "altRhythmTuningId",
+  "altBassTuningId",
+  "bonusLeadTuningId",
+  "bonusRhythmTuningId",
+  "bonusBassTuningId",
   "partsJson",
   "platformsJson",
   "durationText",
@@ -1207,17 +1222,32 @@ export async function upsertCatalogSongs(
         id: string;
         source: string;
         sourceSongId: number;
+        artistId: number | null;
         title: string;
         artistName: string;
         albumName: string | null;
+        authorId: number | null;
         creatorName: string | null;
+        groupedProjectId: number | null;
         artistsFtJson: string | null;
+        tagsJson: string | null;
+        genresJson: string | null;
+        subgenresJson: string | null;
         genreName: string | null;
         subgenreName: string | null;
         tuningSummary: string | null;
+        leadTuningId: number | null;
         leadTuningName: string | null;
+        rhythmTuningId: number | null;
         rhythmTuningName: string | null;
+        bassTuningId: number | null;
         bassTuningName: string | null;
+        altLeadTuningId: number | null;
+        altRhythmTuningId: number | null;
+        altBassTuningId: number | null;
+        bonusLeadTuningId: number | null;
+        bonusRhythmTuningId: number | null;
+        bonusBassTuningId: number | null;
         partsJson: string;
         platformsJson: string | null;
         durationText: string | null;
@@ -1254,17 +1284,32 @@ export async function upsertCatalogSongs(
             id,
             source,
             source_song_id AS sourceSongId,
+            artist_id AS artistId,
             title,
             artist_name AS artistName,
             album_name AS albumName,
+            author_id AS authorId,
             creator_name AS creatorName,
+            grouped_project_id AS groupedProjectId,
             artists_ft_json AS artistsFtJson,
+            tags_json AS tagsJson,
+            genres_json AS genresJson,
+            subgenres_json AS subgenresJson,
             genre_name AS genreName,
             subgenre_name AS subgenreName,
             tuning_summary AS tuningSummary,
+            lead_tuning_id AS leadTuningId,
             lead_tuning_name AS leadTuningName,
+            rhythm_tuning_id AS rhythmTuningId,
             rhythm_tuning_name AS rhythmTuningName,
+            bass_tuning_id AS bassTuningId,
             bass_tuning_name AS bassTuningName,
+            alt_lead_tuning_id AS altLeadTuningId,
+            alt_rhythm_tuning_id AS altRhythmTuningId,
+            alt_bass_tuning_id AS altBassTuningId,
+            bonus_lead_tuning_id AS bonusLeadTuningId,
+            bonus_rhythm_tuning_id AS bonusRhythmTuningId,
+            bonus_bass_tuning_id AS bonusBassTuningId,
             parts_json AS partsJson,
             platforms_json AS platformsJson,
             duration_text AS durationText,
@@ -1330,17 +1375,32 @@ export async function upsertCatalogSongs(
       await db
         .update(catalogSongs)
         .set({
+          artistId: song.artistId ?? null,
           title: song.title,
           artistName: song.artistName,
           albumName: song.albumName ?? null,
+          authorId: song.authorId ?? null,
           creatorName: song.creatorName ?? null,
+          groupedProjectId: song.groupedProjectId ?? null,
           artistsFtJson: song.artistsFtJson ?? "[]",
+          tagsJson: song.tagsJson ?? "[]",
+          genresJson: song.genresJson ?? "[]",
+          subgenresJson: song.subgenresJson ?? "[]",
           genreName: song.genreName ?? null,
           subgenreName: song.subgenreName ?? null,
           tuningSummary: song.tuningSummary ?? null,
+          leadTuningId: song.leadTuningId ?? null,
           leadTuningName: song.leadTuningName ?? null,
+          rhythmTuningId: song.rhythmTuningId ?? null,
           rhythmTuningName: song.rhythmTuningName ?? null,
+          bassTuningId: song.bassTuningId ?? null,
           bassTuningName: song.bassTuningName ?? null,
+          altLeadTuningId: song.altLeadTuningId ?? null,
+          altRhythmTuningId: song.altRhythmTuningId ?? null,
+          altBassTuningId: song.altBassTuningId ?? null,
+          bonusLeadTuningId: song.bonusLeadTuningId ?? null,
+          bonusRhythmTuningId: song.bonusRhythmTuningId ?? null,
+          bonusBassTuningId: song.bonusBassTuningId ?? null,
           partsJson: song.partsJson ?? "[]",
           platformsJson: song.platformsJson ?? "[]",
           durationText: song.durationText ?? null,

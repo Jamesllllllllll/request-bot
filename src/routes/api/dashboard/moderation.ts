@@ -78,6 +78,7 @@ export const Route = createFileRoute("/api/dashboard/moderation")({
           case "addBlacklistedArtist":
             await addBlacklistedArtist(runtimeEnv, {
               channelId: state.channel.id,
+              artistId: body.artistId,
               artistName: body.artistName,
             });
             break;
@@ -85,20 +86,23 @@ export const Route = createFileRoute("/api/dashboard/moderation")({
             await removeBlacklistedArtist(
               runtimeEnv,
               state.channel.id,
-              body.artistName
+              body.artistId
             );
             break;
           case "addBlacklistedSong":
             await addBlacklistedSong(runtimeEnv, {
               channelId: state.channel.id,
+              songId: body.songId,
               songTitle: body.songTitle,
+              artistId: body.artistId ?? null,
+              artistName: body.artistName ?? null,
             });
             break;
           case "removeBlacklistedSong":
             await removeBlacklistedSong(
               runtimeEnv,
               state.channel.id,
-              body.songTitle
+              body.songId
             );
             break;
           case "addSetlistArtist":

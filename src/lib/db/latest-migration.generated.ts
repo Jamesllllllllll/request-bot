@@ -1,1 +1,1 @@
-export const LATEST_MIGRATION_NAME = "0003_catalog_metadata_enrichment.sql";
+export const LATEST_MIGRATION_NAME = "0004_blacklist_ids.sql";

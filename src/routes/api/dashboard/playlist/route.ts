@@ -7,6 +7,7 @@ import { callBackend } from "~/lib/backend";
 import { getDb } from "~/lib/db/client";
 import {
   getCatalogSongsByIds,
+  getChannelBlacklistByChannelId,
   getChannelSettingsByChannelId,
   getDashboardChannelAccess,
   getDashboardState,
@@ -68,6 +69,10 @@ async function requireDashboardState(
     orderBy: [desc(playedSongs.playedAt)],
     limit: 100,
   });
+  const blacklist = await getChannelBlacklistByChannelId(
+    runtimeEnv,
+    access.channel.id
+  );
   if (!playlistState) {
     return null;
   }
@@ -78,6 +83,8 @@ async function requireDashboardState(
     playlist: playlistState.playlist,
     items: playlistState.items,
     playedSongs: playedRows,
+    blacklistArtists: blacklist.blacklistArtists,
+    blacklistSongs: blacklist.blacklistSongs,
     accessRole: access.accessRole,
     actorUserId: access.actorUserId,
   };
@@ -131,6 +138,8 @@ export const Route = createFileRoute("/api/dashboard/playlist")({
             playlist: state.playlist,
             items: await enrichPlaylistItems(runtimeEnv, state.items),
             playedSongs: state.playedSongs,
+            blacklistArtists: state.blacklistArtists,
+            blacklistSongs: state.blacklistSongs,
             accessRole: state.accessRole,
             requiredPaths: state.settings
               ? getArraySetting(state.settings.requiredPathsJson)

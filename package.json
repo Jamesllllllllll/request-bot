@@ -31,7 +31,7 @@
     "db:migrate": "wrangler d1 migrations apply request_bot --local",
     "db:migrate:remote": "node scripts/run-remote-operation.mjs db:migrate:remote",
     "db:reset:local": "node scripts/reset-local-d1.mjs",
-    "db:seed:sample:local": "wrangler d1 execute request_bot --local --file data/sample-catalog.sql",
+    "db:seed:sample:local": "node scripts/seed-sample-catalog.mjs local",
     "db:seed:sample:remote": "node scripts/run-remote-operation.mjs db:seed:sample:remote",
     "db:bootstrap:local": "npm run db:reset:local && npm run db:migrate && npm run db:seed:sample:local",
     "db:bootstrap:remote": "node scripts/run-remote-operation.mjs db:bootstrap:remote",

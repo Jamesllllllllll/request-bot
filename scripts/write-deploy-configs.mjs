@@ -108,6 +108,14 @@ const backendName =
 
 frontendConfig.name = frontendName;
 backendConfig.name = backendName;
+
+if (mode === "preview" && backendConfig.triggers?.crons) {
+  backendConfig.triggers = {
+    ...backendConfig.triggers,
+    crons: [],
+  };
+}
+
 frontendConfig.assets = frontendConfig.assets
   ? {
       ...frontendConfig.assets,

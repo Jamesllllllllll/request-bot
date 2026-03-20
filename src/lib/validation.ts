@@ -65,14 +65,6 @@ export const searchInputSchema = z
       });
     }
 
-    if (!input.query && !hasAdvancedFilter) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        message: "Enter a search query or at least one advanced filter.",
-        path: ["query"],
-      });
-    }
-
     if (
       !hasCoreText &&
       ((input.tuning && input.tuning.length > 0) ||

@@ -244,7 +244,7 @@ export function formatPathLabel(path: string) {
       return "Bass";
     case "voice":
     case "vocals":
-      return "Voice";
+      return "Lyrics";
     default:
       return path.trim();
   }

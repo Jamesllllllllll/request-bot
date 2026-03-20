@@ -42,6 +42,7 @@ function createSong(
 ): SongSearchResult {
   return {
     id: "song-1",
+    artistId: 77,
     title: "Cherub Rock",
     artist: "The Smashing Pumpkins",
     album: "Siamese Dream",

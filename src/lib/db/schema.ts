@@ -292,15 +292,13 @@ export const blacklistedArtists = sqliteTable(
     channelId: text("channel_id")
       .notNull()
       .references(() => channels.id),
+    artistId: integer("artist_id").notNull(),
     artistName: text("artist_name").notNull(),
-    normalizedArtistName: text("normalized_artist_name").notNull(),
     createdAt: integer("created_at")
       .notNull()
       .default(sql`(unixepoch() * 1000)`),
   },
-  (table) => [
-    primaryKey({ columns: [table.channelId, table.normalizedArtistName] }),
-  ]
+  (table) => [primaryKey({ columns: [table.channelId, table.artistId] })]
 );
 
 export const blacklistedSongs = sqliteTable(
@@ -309,15 +307,15 @@ export const blacklistedSongs = sqliteTable(
     channelId: text("channel_id")
       .notNull()
       .references(() => channels.id),
+    songId: integer("song_id").notNull(),
     songTitle: text("song_title").notNull(),
-    normalizedSongTitle: text("normalized_song_title").notNull(),
+    artistId: integer("artist_id"),
+    artistName: text("artist_name"),
     createdAt: integer("created_at")
       .notNull()
       .default(sql`(unixepoch() * 1000)`),
   },
-  (table) => [
-    primaryKey({ columns: [table.channelId, table.normalizedSongTitle] }),
-  ]
+  (table) => [primaryKey({ columns: [table.channelId, table.songId] })]
 );
 
 export const setlistArtists = sqliteTable(

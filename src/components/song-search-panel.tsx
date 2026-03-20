@@ -50,8 +50,8 @@ import {
   TooltipTrigger,
 } from "~/components/ui/tooltip";
 import { pathOptions } from "~/lib/channel-options";
-import { cn, getErrorMessage } from "~/lib/utils";
 import { formatPathLabel } from "~/lib/request-policy";
+import { cn, getErrorMessage } from "~/lib/utils";
 
 type SearchField = "any" | "title" | "artist" | "album" | "creator";
 type SearchSort =

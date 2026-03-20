@@ -40,15 +40,6 @@ export const searchInputSchema = z
     sortDirection: z.enum(["asc", "desc"]).default("desc"),
   })
   .superRefine((input, ctx) => {
-    const hasAdvancedFilter = !!(
-      input.title ||
-      input.artist ||
-      input.album ||
-      input.creator ||
-      (input.tuning && input.tuning.length > 0) ||
-      (input.parts && input.parts.length > 0) ||
-      (input.year && input.year.length > 0)
-    );
     const hasCoreText = !!(
       input.query ||
       input.title ||

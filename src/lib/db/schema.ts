@@ -451,6 +451,7 @@ export const playedSongs = sqliteTable(
     requestedByTwitchUserId: text("requested_by_twitch_user_id"),
     requestedByLogin: text("requested_by_login"),
     requestedByDisplayName: text("requested_by_display_name"),
+    requestKind: text("request_kind").notNull().default("regular"),
     requestedAt: integer("requested_at"),
     playedAt: integer("played_at").notNull(),
     createdAt: integer("created_at")

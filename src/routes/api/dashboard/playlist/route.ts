@@ -1,8 +1,10 @@
 // Route: Reads and mutates playlist state for the active dashboard channel.
 import { env } from "cloudflare:workers";
 import { createFileRoute } from "@tanstack/react-router";
+import { desc, eq } from "drizzle-orm";
 import { getSessionUserId } from "~/lib/auth/session.server";
 import { callBackend } from "~/lib/backend";
+import { getDb } from "~/lib/db/client";
 import {
   getCatalogSongsByIds,
   getChannelSettingsByChannelId,
@@ -10,6 +12,7 @@ import {
   getDashboardState,
   getPlaylistByChannelId,
 } from "~/lib/db/repositories";
+import { playedSongs } from "~/lib/db/schema";
 import {
   assertDatabaseSchemaCurrent,
   DatabaseSchemaOutOfDateError,
@@ -60,6 +63,11 @@ async function requireDashboardState(
     runtimeEnv,
     access.channel.id
   );
+  const playedRows = await getDb(runtimeEnv).query.playedSongs.findMany({
+    where: eq(playedSongs.channelId, access.channel.id),
+    orderBy: [desc(playedSongs.playedAt)],
+    limit: 100,
+  });
   if (!playlistState) {
     return null;
   }
@@ -69,7 +77,7 @@ async function requireDashboardState(
     settings,
     playlist: playlistState.playlist,
     items: playlistState.items,
-    playedSongs: [],
+    playedSongs: playedRows,
     accessRole: access.accessRole,
     actorUserId: access.actorUserId,
   };

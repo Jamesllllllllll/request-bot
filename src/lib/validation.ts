@@ -40,15 +40,6 @@ export const searchInputSchema = z
     sortDirection: z.enum(["asc", "desc"]).default("desc"),
   })
   .superRefine((input, ctx) => {
-    const hasAdvancedFilter = !!(
-      input.title ||
-      input.artist ||
-      input.album ||
-      input.creator ||
-      (input.tuning && input.tuning.length > 0) ||
-      (input.parts && input.parts.length > 0) ||
-      (input.year && input.year.length > 0)
-    );
     const hasCoreText = !!(
       input.query ||
       input.title ||
@@ -61,14 +52,6 @@ export const searchInputSchema = z
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
         message: "Search terms must be at least 3 characters.",
-        path: ["query"],
-      });
-    }
-
-    if (!input.query && !hasAdvancedFilter) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        message: "Enter a search query or at least one advanced filter.",
         path: ["query"],
       });
     }
@@ -241,6 +224,7 @@ export const songListItemSchema = z.object({
 
 export const playlistMutationSchema = z.discriminatedUnion("action", [
   z.object({ action: z.literal("markPlayed"), itemId: z.string() }),
+  z.object({ action: z.literal("restorePlayed"), playedSongId: z.string() }),
   z.object({ action: z.literal("skipItem"), itemId: z.string() }),
   z.object({ action: z.literal("setCurrent"), itemId: z.string() }),
   z.object({ action: z.literal("deleteItem"), itemId: z.string() }),

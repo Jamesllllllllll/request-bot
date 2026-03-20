@@ -274,6 +274,10 @@ export function SongSearchPanel(props: {
 
   const results =
     !queryTooShort && !requiresCoreSearchTerm ? (data?.results ?? []) : [];
+  const resolvedInfoNote = props.infoNote?.replace(
+    "{count}",
+    String(data?.total ?? 0)
+  );
   const totalPages = Math.max(
     1,
     Math.ceil((data?.total ?? 0) / (data?.pageSize ?? 25))
@@ -441,12 +445,12 @@ export function SongSearchPanel(props: {
                     {props.description}
                   </p>
                 ) : null}
-                {props.infoNote ? (
+                {resolvedInfoNote ? (
                   <div className="mt-4 rounded-[20px] border border-sky-400/30 bg-sky-500/10 px-4 py-3 text-sm text-sky-100">
                     <p className="font-semibold uppercase tracking-[0.18em] text-sky-200">
                       Note:
                     </p>
-                    <p className="mt-2">{props.infoNote}</p>
+                    <p className="mt-2">{resolvedInfoNote}</p>
                   </div>
                 ) : null}
               </div>

@@ -206,6 +206,12 @@ function PublicChannelPage() {
         </div>
       </div>
 
+      <SongSearchPanel
+        title="Search to add a song"
+        description="Copy the request command and use it in Twitch chat."
+        placeholder={`Search songs for ${channelDisplayName}`}
+      />
+
       <Card>
         <CardHeader className="flex flex-row items-center justify-between gap-4">
           <div className="flex items-center gap-3">
@@ -302,12 +308,6 @@ function PublicChannelPage() {
           </CardContent>
         ) : null}
       </Card>
-
-      <SongSearchPanel
-        title="Search to add a song"
-        description="Copy the request command and use it in Twitch chat."
-        placeholder={`Search songs for ${channelDisplayName}`}
-      />
     </section>
   );
 }

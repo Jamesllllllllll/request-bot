@@ -1,1 +1,1 @@
-export const LATEST_MIGRATION_NAME = "0000_sturdy_hobgoblin.sql";
+export const LATEST_MIGRATION_NAME = "0001_true_ares.sql";

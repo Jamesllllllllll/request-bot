@@ -73,6 +73,9 @@ Current `.env.example`:
 
 ```env
 APP_URL=http://localhost:9000
+SENTRY_ENVIRONMENT=development
+SENTRY_DSN=
+SENTRY_TRACES_SAMPLE_RATE=
 TWITCH_CLIENT_ID=
 TWITCH_CLIENT_SECRET=
 TWITCH_EVENTSUB_SECRET=local-dev-eventsub-secret
@@ -102,6 +105,16 @@ To test Twitch sign-in, bot behavior, and EventSub locally, also set:
 
 `ADMIN_TWITCH_USER_IDS` should contain the Twitch user ID for the admin account that is allowed to connect the shared bot account and access admin pages.
 
+Sentry stays off locally unless you explicitly set a DSN:
+
+- `SENTRY_DSN`
+
+If you want to test Sentry locally, use your own test DSN in `.env` and keep:
+
+- `SENTRY_ENVIRONMENT=development`
+
+Production should keep using the deployed Worker secret for `SENTRY_DSN`.
+
 URL split:
 
 - `.env` is for local development
@@ -128,6 +141,14 @@ That does three things:
 
 The bundled sample catalog is intended for local development and preview deployments.
 `db:bootstrap:local` is destructive for local D1 data by design.
+
+For day-to-day schema changes during local development, use:
+
+```bash
+npm run db:migrate
+```
+
+That applies any new checked-in Drizzle SQL migrations to your local D1 database without resetting local data.
 
 ### 5. Start the app
 
@@ -322,6 +343,7 @@ echo "<TWITCH_CLIENT_SECRET>" | npx wrangler secret put TWITCH_CLIENT_SECRET --c
 echo "<TWITCH_EVENTSUB_SECRET>" | npx wrangler secret put TWITCH_EVENTSUB_SECRET --config wrangler.jsonc
 echo "<SESSION_SECRET>" | npx wrangler secret put SESSION_SECRET --config wrangler.jsonc
 echo "<ADMIN_TWITCH_USER_IDS>" | npx wrangler secret put ADMIN_TWITCH_USER_IDS --config wrangler.jsonc
+echo "<SENTRY_DSN>" | npx wrangler secret put SENTRY_DSN --config wrangler.jsonc
 ```
 
 Backend Worker:
@@ -330,6 +352,7 @@ Backend Worker:
 echo "<TWITCH_CLIENT_ID>" | npx wrangler secret put TWITCH_CLIENT_ID --config wrangler.aux.jsonc
 echo "<TWITCH_CLIENT_SECRET>" | npx wrangler secret put TWITCH_CLIENT_SECRET --config wrangler.aux.jsonc
 echo "<TWITCH_EVENTSUB_SECRET>" | npx wrangler secret put TWITCH_EVENTSUB_SECRET --config wrangler.aux.jsonc
+echo "<SENTRY_DSN>" | npx wrangler secret put SENTRY_DSN --config wrangler.aux.jsonc
 ```
 
 If the Worker does not exist yet, `wrangler secret put` creates it before uploading the secret.
@@ -345,6 +368,9 @@ Add the returned D1 and KV IDs to `.env.deploy` instead of editing the committed
 ```env
 CLOUDFLARE_D1_DATABASE_ID=<d1 database id>
 CLOUDFLARE_SESSION_KV_ID=<kv namespace id>
+SENTRY_ENVIRONMENT=production
+# Optional
+SENTRY_TRACES_SAMPLE_RATE=0.1
 ```
 
 Use:
@@ -357,15 +383,36 @@ GitHub Actions does not use a checked-in `.env.deploy` file. The deploy workflow
 
 - repository secrets for Cloudflare IDs and tokens
 - the repository `APP_URL` secret for the deployed public URL
-- repository variables for non-secret runtime values such as `TWITCH_BOT_USERNAME` and `TWITCH_SCOPES`
+- repository variables for non-secret runtime values such as `TWITCH_BOT_USERNAME`, `TWITCH_SCOPES`, `SENTRY_ENVIRONMENT`, and optionally `SENTRY_TRACES_SAMPLE_RATE`
 
 The repo generates gitignored deploy configs in `.generated/` from `.env.deploy`, so your real Cloudflare IDs stay out of tracked files.
+
+Sentry runtime notes:
+
+- events are sent whenever `SENTRY_DSN` is present
+- local development should use your own test Sentry DSN in `.env`
+- the DSN should be set as a Cloudflare Worker secret on both deployed Workers
+- release tagging uses the Worker version metadata binding automatically, with `SENTRY_RELEASE` as an optional override
+- D1 access is instrumented automatically when Sentry is enabled
 
 Seed the remote D1 database with the bundled catalog:
 
 ```bash
 npm run db:bootstrap:remote
 ```
+
+After GitHub production deploys are enabled, normal production schema changes should go through pull requests and merge to `main`.
+The production GitHub Actions workflow applies remote D1 migrations before deploying the Workers, so contributors only need to run local migrations during development.
+
+Remote-affecting npm scripts are guarded and exit with a helper message outside CI.
+That includes:
+
+- `npm run db:migrate:remote`
+- `npm run db:seed:sample:remote`
+- `npm run db:bootstrap:remote`
+- `npm run deploy`
+
+If you intentionally need an operator-only override for maintenance, rerun them with `ALLOW_REMOTE_OPERATIONS=1`.
 
 Deploy with the repo script:
 
@@ -384,6 +431,9 @@ npx wrangler d1 execute request_bot --remote --config .generated/wrangler.produc
 ## GitHub and CI/CD
 
 Once the repo is on GitHub, `main` can deploy automatically through the included GitHub Actions workflows.
+
+Production deploys from GitHub Actions also apply remote D1 migrations before the backend and frontend Workers are deployed.
+The remote migration script is blocked outside CI by default so normal contributor workflows stay local-only.
 
 Before enabling GitHub deploys:
 

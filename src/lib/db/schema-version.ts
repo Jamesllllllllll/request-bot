@@ -1,9 +1,29 @@
 import type { AppEnv, BackendEnv } from "~/lib/env";
+import { getSentryD1Database } from "~/lib/sentry";
 import { LATEST_MIGRATION_NAME } from "./latest-migration.generated";
 
 const SCHEMA_CHECK_TTL_MS = 30_000;
+const COMPATIBLE_MIGRATION_NAMES = new Set([LATEST_MIGRATION_NAME]);
 
-type DatabaseEnv = Pick<AppEnv, "DB"> | Pick<BackendEnv, "DB">;
+type DatabaseEnv =
+  | Pick<
+      AppEnv,
+      | "DB"
+      | "CF_VERSION_METADATA"
+      | "SENTRY_DSN"
+      | "SENTRY_ENVIRONMENT"
+      | "SENTRY_RELEASE"
+      | "SENTRY_TRACES_SAMPLE_RATE"
+    >
+  | Pick<
+      BackendEnv,
+      | "DB"
+      | "CF_VERSION_METADATA"
+      | "SENTRY_DSN"
+      | "SENTRY_ENVIRONMENT"
+      | "SENTRY_RELEASE"
+      | "SENTRY_TRACES_SAMPLE_RATE"
+    >;
 
 let cachedSchemaCheck:
   | {
@@ -30,11 +50,12 @@ export async function assertDatabaseSchemaCurrent(env: DatabaseEnv) {
   }
 
   let latestMigrationName: string | null = null;
+  const db = getSentryD1Database(env);
 
   try {
-    const result = await env.DB.prepare(
-      "select name from d1_migrations order by id desc limit 1"
-    ).first<{ name: string }>();
+    const result = (await db
+      .prepare("select name from d1_migrations order by id desc limit 1")
+      .first()) as { name?: string } | null;
     latestMigrationName = result?.name ?? null;
   } catch (error) {
     throw new DatabaseSchemaOutOfDateError(
@@ -45,7 +66,10 @@ export async function assertDatabaseSchemaCurrent(env: DatabaseEnv) {
     );
   }
 
-  if (latestMigrationName !== LATEST_MIGRATION_NAME) {
+  if (
+    !latestMigrationName ||
+    !COMPATIBLE_MIGRATION_NAMES.has(latestMigrationName)
+  ) {
     throw new DatabaseSchemaOutOfDateError(
       getSchemaMismatchMessage(
         `Expected ${LATEST_MIGRATION_NAME} but found ${latestMigrationName ?? "no applied migrations"}.`

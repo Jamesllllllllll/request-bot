@@ -11,6 +11,7 @@ import {
   createId,
   decodeHtmlEntities,
   encodeHtmlEntities,
+  normalizeSongSourceUrl,
   parseJsonStringArray,
   slugify,
 } from "~/lib/utils";
@@ -46,7 +47,6 @@ import {
 } from "./schema";
 
 const CATALOG_SONG_MUTABLE_FIELDS: Array<keyof CatalogSongInsert> = [
-  "sourceUrl",
   "title",
   "artistName",
   "albumName",
@@ -1024,7 +1024,6 @@ export async function searchCatalogSongs(
     sourceUpdatedAt: number | null;
     downloads: number;
     hasLyrics: number;
-    sourceUrl: string;
     source: string;
     relevance: number;
   }>(sql`
@@ -1050,7 +1049,6 @@ export async function searchCatalogSongs(
       catalog_songs.source_updated_at AS sourceUpdatedAt,
       catalog_songs.downloads,
       catalog_songs.has_lyrics AS hasLyrics,
-      catalog_songs.source_url AS sourceUrl,
       catalog_songs.source,
       (${relevanceSql}) AS relevance
     FROM catalog_songs
@@ -1083,7 +1081,10 @@ export async function searchCatalogSongs(
       hasLyrics: !!row.hasLyrics,
       downloads: row.downloads,
       source: row.source,
-      sourceUrl: row.sourceUrl,
+      sourceUrl: normalizeSongSourceUrl({
+        source: row.source,
+        sourceId: row.sourceSongId,
+      }),
       score: row.relevance,
     })),
     total: totalRows[0]?.count ?? 0,
@@ -1120,8 +1121,34 @@ export async function getCatalogSongBySourceId(
     hasLyrics: !!row.hasLyrics,
     downloads: row.downloads,
     source: row.source,
-    sourceUrl: row.sourceUrl,
+    sourceUrl: normalizeSongSourceUrl({
+      source: row.source,
+      sourceId: row.sourceSongId,
+    }),
   };
+}
+
+export async function getCatalogSongsByIds(env: AppEnv, songIds: string[]) {
+  const uniqueIds = [...new Set(songIds.filter(Boolean))];
+  if (uniqueIds.length === 0) {
+    return [];
+  }
+
+  const rows = await getDb(env).query.catalogSongs.findMany({
+    where: inArray(catalogSongs.id, uniqueIds),
+  });
+
+  return rows.map((row) => ({
+    id: row.id,
+    sourceId: row.sourceSongId,
+    source: row.source,
+    sourceUrl: normalizeSongSourceUrl({
+      source: row.source,
+      sourceId: row.sourceSongId,
+    }),
+    sourceUpdatedAt: row.sourceUpdatedAt ?? undefined,
+    downloads: row.downloads,
+  }));
 }
 
 export async function getCatalogSearchFilterOptions(env: AppEnv) {
@@ -1180,7 +1207,6 @@ export async function upsertCatalogSongs(
         id: string;
         source: string;
         sourceSongId: number;
-        sourceUrl: string;
         title: string;
         artistName: string;
         albumName: string | null;
@@ -1228,7 +1254,6 @@ export async function upsertCatalogSongs(
             id,
             source,
             source_song_id AS sourceSongId,
-            source_url AS sourceUrl,
             title,
             artist_name AS artistName,
             album_name AS albumName,
@@ -1305,7 +1330,6 @@ export async function upsertCatalogSongs(
       await db
         .update(catalogSongs)
         .set({
-          sourceUrl: song.sourceUrl,
           title: song.title,
           artistName: song.artistName,
           albumName: song.albumName ?? null,

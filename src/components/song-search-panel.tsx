@@ -7,7 +7,14 @@ import {
   SlidersHorizontal,
   X,
 } from "lucide-react";
-import { Fragment, startTransition, useEffect, useMemo, useState } from "react";
+import {
+  Fragment,
+  type ReactNode,
+  startTransition,
+  useEffect,
+  useMemo,
+  useState,
+} from "react";
 import { Badge } from "~/components/ui/badge";
 import { Button } from "~/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "~/components/ui/card";
@@ -111,6 +118,11 @@ export function buildEditRequestCommand(song: SearchSong) {
   return buildRequestCommand(song).replace(/^!sr\b/, "!edit");
 }
 
+export type SearchSongResultState = {
+  disabled?: boolean;
+  reasons?: string[];
+};
+
 export function SongSearchPanel(props: {
   title: string;
   eyebrow?: string;
@@ -118,6 +130,9 @@ export function SongSearchPanel(props: {
   infoNote?: string;
   placeholder?: string;
   className?: string;
+  resultFilter?: (song: SearchSong) => boolean;
+  resultState?: (song: SearchSong) => SearchSongResultState;
+  advancedFiltersContent?: ReactNode;
 }) {
   const [query, setQuery] = useState("");
   const [debouncedQuery, setDebouncedQuery] = useState("");
@@ -269,7 +284,7 @@ export function SongSearchPanel(props: {
     gcTime: 60 * 60 * 1000,
   });
 
-  const { data, error, isFetching, isLoading } = useQuery<SearchResponse>({
+  const { data, error, isLoading } = useQuery<SearchResponse>({
     queryKey: ["song-search", searchParams.toString()],
     enabled: !queryTooShort && !requiresCoreSearchTerm,
     placeholderData: keepPreviousData,
@@ -294,6 +309,13 @@ export function SongSearchPanel(props: {
 
   const results =
     !queryTooShort && !requiresCoreSearchTerm ? (data?.results ?? []) : [];
+  const visibleResults = useMemo(
+    () =>
+      props.resultFilter
+        ? results.filter((song) => props.resultFilter?.(song))
+        : results,
+    [props.resultFilter, results]
+  );
   const resolvedInfoNote = props.infoNote?.replace(
     "{count}",
     String(catalogTotalQuery.data?.total ?? 0)
@@ -488,19 +510,14 @@ export function SongSearchPanel(props: {
               {!queryTooShort && !error ? (
                 <div className="search-panel__summary rounded-[24px] border border-(--border) bg-(--panel-soft) px-4 py-3 text-right">
                   <p className="text-lg font-semibold text-(--text)">
-                    {data?.total ?? 0} songs
+                    Found {visibleResults.length} songs
                   </p>
-                  {isFetching ? (
-                    <p className="mt-1 text-xs font-medium text-(--muted)">
-                      Searching...
-                    </p>
-                  ) : null}
                 </div>
               ) : null}
             </div>
           </CardHeader>
           <CardContent className="grid gap-5">
-            <div className="search-panel__controls grid gap-3 lg:grid-cols-[1.8fr_190px_190px_170px]">
+            <div className="search-panel__controls grid gap-3 lg:grid-cols-[1.8fr_190px_170px]">
               <div className="relative">
                 <SearchIcon className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-(--muted)" />
                 <Input
@@ -530,9 +547,6 @@ export function SongSearchPanel(props: {
                   <SelectItem value="creator">Creator only</SelectItem>
                 </SelectContent>
               </Select>
-            </div>
-
-            <div className="flex flex-wrap items-center justify-start gap-3">
               <Button
                 type="button"
                 variant="secondary"
@@ -652,6 +666,11 @@ export function SongSearchPanel(props: {
                     Clear advanced filters
                   </Button>
                 </div>
+                {props.advancedFiltersContent ? (
+                  <div className="grid gap-2 md:col-span-2 xl:col-span-4">
+                    {props.advancedFiltersContent}
+                  </div>
+                ) : null}
               </div>
             ) : null}
           </CardContent>
@@ -661,7 +680,7 @@ export function SongSearchPanel(props: {
           <CardContent className="p-0">
             {renderPagination("top")}
 
-            <div className="search-panel__table-head grid grid-cols-[minmax(0,2.2fr)_minmax(0,1.05fr)_minmax(0,1.15fr)_136px] gap-4 border-b border-(--border) px-5 py-4 text-[11px] font-semibold uppercase tracking-[0.22em] text-(--muted)">
+            <div className="search-panel__table-head grid grid-cols-[minmax(0,2.2fr)_minmax(0,1.05fr)_minmax(0,1.15fr)_188px] gap-4 border-b border-(--border) px-5 py-4 text-[11px] font-semibold uppercase tracking-[0.22em] text-(--muted)">
               <span>Song</span>
               <span>Paths</span>
               <span>Stats</span>
@@ -675,7 +694,7 @@ export function SongSearchPanel(props: {
             ) : null}
 
             {!isLoading && queryTooShort && !hasAdvancedFilter ? (
-              <div className="grid grid-cols-[minmax(0,2.2fr)_minmax(0,1.05fr)_minmax(0,1.15fr)_136px] gap-4 border-b border-(--border) px-5 py-4 text-[11px] font-semibold uppercase tracking-[0.22em] text-(--muted)">
+              <div className="grid grid-cols-[minmax(0,2.2fr)_minmax(0,1.05fr)_minmax(0,1.15fr)_188px] gap-4 border-b border-(--border) px-5 py-4 text-[11px] font-semibold uppercase tracking-[0.22em] text-(--muted)">
                 <span className="col-span-full normal-case tracking-normal text-sm font-normal text-(--muted)">
                   Search terms must be at least 3 characters.
                 </span>
@@ -697,7 +716,7 @@ export function SongSearchPanel(props: {
             {!isLoading &&
             !queryTooShort &&
             !requiresCoreSearchTerm &&
-            results.length === 0 ? (
+            visibleResults.length === 0 ? (
               <div className="px-5 py-8 text-sm text-(--muted)">
                 {hasSearchInput
                   ? "No songs matched those filters yet. Try broadening the search field or clearing one of the advanced inputs."
@@ -705,31 +724,54 @@ export function SongSearchPanel(props: {
               </div>
             ) : null}
 
-            {results.map((song, index) => {
+            {visibleResults.map((song, index) => {
               const copiedType =
                 copiedCommand?.songId === song.id ? copiedCommand.type : null;
+              const resultState = props.resultState?.(song) ?? {};
+              const isDisabled = resultState.disabled === true;
+              const disabledReason =
+                resultState.reasons && resultState.reasons.length > 0
+                  ? resultState.reasons.join(" · ")
+                  : "Blacklisted";
 
               return (
                 <div
                   key={song.id}
                   className={cn(
-                    "search-panel__row grid w-full cursor-pointer grid-cols-[minmax(0,2.2fr)_minmax(0,1.05fr)_minmax(0,1.15fr)_136px] gap-4 border-b border-(--border) px-5 py-4 text-left transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-(--brand) focus-visible:ring-inset",
+                    "search-panel__row grid w-full grid-cols-[minmax(0,2.2fr)_minmax(0,1.05fr)_minmax(0,1.15fr)_188px] gap-4 border-b border-(--border) px-5 py-4 text-left transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-(--brand) focus-visible:ring-inset",
                     index % 2 === 0
                       ? "bg-(--panel-strong)"
                       : "bg-(--panel-soft)",
-                    "hover:border-(--brand) hover:bg-(--bg-elevated)"
+                    isDisabled
+                      ? "border-amber-400/35 bg-amber-500/8"
+                      : "hover:border-(--brand) hover:bg-(--bg-elevated)"
                   )}
                 >
                   <button
                     type="button"
-                    onClick={() => copyRequest(song, "sr")}
-                    className="search-panel__row-main col-span-3 grid min-w-0 grid-cols-[minmax(0,2.2fr)_minmax(0,1.05fr)_minmax(0,1.15fr)] gap-4 text-left"
+                    onClick={() => {
+                      if (!isDisabled) {
+                        void copyRequest(song, "sr");
+                      }
+                    }}
+                    disabled={isDisabled}
+                    className={cn(
+                      "search-panel__row-main col-span-2 grid min-w-0 grid-cols-[minmax(0,2.2fr)_minmax(0,1.05fr)] gap-4 text-left",
+                      isDisabled
+                        ? "cursor-not-allowed opacity-85"
+                        : "cursor-pointer"
+                    )}
                   >
                     <div className="search-panel__song min-w-0">
                       <div className="flex flex-wrap items-center gap-2">
                         <p className="truncate text-[15px] font-semibold text-(--text)">
                           {song.title}
                         </p>
+                        {isDisabled ? (
+                          <span className="inline-flex items-center rounded-full border border-amber-400/35 bg-amber-500/12 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.16em] text-amber-100">
+                            Blacklisted
+                          </span>
+                        ) : null}
                       </div>
                       <p className="mt-1 truncate text-sm text-(--brand-deep)">
                         {song.artist ?? "Unknown artist"}
@@ -775,44 +817,46 @@ export function SongSearchPanel(props: {
                         ) : null}
                       </div>
                     </div>
-
-                    <div className="search-panel__stats min-w-0 text-sm">
-                      {song.creator ? (
-                        <p className="truncate text-sm text-(--muted)">
-                          Charted by {song.creator}
-                        </p>
-                      ) : null}
-                      {song.tuning ? (
-                        <p className="search-panel__desktop-stat mt-1 truncate text-sm text-(--muted)">
-                          {song.tuning}
-                        </p>
-                      ) : null}
-                      {song.durationText ? (
-                        <p className="search-panel__desktop-stat mt-1 inline-flex items-center gap-1 text-(--text)">
-                          <Clock3 className="h-3.5 w-3.5 text-(--muted)" />
-                          <span>{song.durationText}</span>
-                        </p>
-                      ) : null}
-                      {song.sourceUpdatedAt ? (
-                        <p className="mt-1 text-(--muted)">
-                          Updated{" "}
-                          {updatedDateFormatter.format(
-                            new Date(song.sourceUpdatedAt)
-                          )}
-                        </p>
-                      ) : null}
-                    </div>
                   </button>
 
+                  <div className="search-panel__stats min-w-0 text-sm">
+                    {song.creator ? (
+                      <p className="truncate text-sm text-(--muted)">
+                        Charted by {song.creator}
+                      </p>
+                    ) : null}
+                    {song.tuning ? (
+                      <p className="search-panel__desktop-stat mt-1 truncate text-sm text-(--muted)">
+                        {song.tuning}
+                      </p>
+                    ) : null}
+                    {song.durationText ? (
+                      <p className="search-panel__desktop-stat mt-1 inline-flex items-center gap-1 text-(--text)">
+                        <Clock3 className="h-3.5 w-3.5 text-(--muted)" />
+                        <span>{song.durationText}</span>
+                      </p>
+                    ) : null}
+                    {song.sourceUpdatedAt ? (
+                      <p className="mt-1 text-(--muted)">
+                        Updated{" "}
+                        {updatedDateFormatter.format(
+                          new Date(song.sourceUpdatedAt)
+                        )}
+                      </p>
+                    ) : null}
+                  </div>
+
                   <div className="search-panel__copy flex items-center justify-end">
-                    <div className="flex flex-wrap justify-end gap-2">
+                    <div className="grid grid-cols-3 gap-2">
                       <Tooltip>
                         <TooltipTrigger asChild>
                           <button
                             type="button"
                             onClick={() => void copyRequest(song, "sr")}
+                            disabled={isDisabled}
                             className={cn(
                               "flex h-11 min-w-[3.25rem] items-center justify-center rounded-full border border-(--border) bg-(--panel) px-3 text-[11px] font-semibold uppercase tracking-[0.16em] transition-colors",
+                              isDisabled && "cursor-not-allowed opacity-45",
                               copiedType === "sr"
                                 ? "border-emerald-400 text-emerald-400"
                                 : "text-(--brand)"
@@ -826,9 +870,11 @@ export function SongSearchPanel(props: {
                           </button>
                         </TooltipTrigger>
                         <TooltipContent>
-                          {copiedType === "sr"
-                            ? "Copied !sr command"
-                            : "Copy !sr command"}
+                          {isDisabled
+                            ? disabledReason
+                            : copiedType === "sr"
+                              ? "Copied !sr command"
+                              : "Copy !sr command"}
                         </TooltipContent>
                       </Tooltip>
                       <Tooltip>
@@ -836,8 +882,10 @@ export function SongSearchPanel(props: {
                           <button
                             type="button"
                             onClick={() => void copyRequest(song, "edit")}
+                            disabled={isDisabled}
                             className={cn(
                               "flex h-11 min-w-[3.75rem] items-center justify-center rounded-full border border-(--border) bg-(--panel) px-3 text-[11px] font-semibold uppercase tracking-[0.16em] transition-colors",
+                              isDisabled && "cursor-not-allowed opacity-45",
                               copiedType === "edit"
                                 ? "border-emerald-400 text-emerald-400"
                                 : "text-(--brand)"
@@ -851,9 +899,11 @@ export function SongSearchPanel(props: {
                           </button>
                         </TooltipTrigger>
                         <TooltipContent>
-                          {copiedType === "edit"
-                            ? "Copied !edit command"
-                            : "Copy !edit command"}
+                          {isDisabled
+                            ? disabledReason
+                            : copiedType === "edit"
+                              ? "Copied !edit command"
+                              : "Copy !edit command"}
                         </TooltipContent>
                       </Tooltip>
                       <Tooltip>
@@ -861,8 +911,10 @@ export function SongSearchPanel(props: {
                           <button
                             type="button"
                             onClick={() => void copyRequest(song, "vip")}
+                            disabled={isDisabled}
                             className={cn(
                               "flex h-11 min-w-[3.5rem] items-center justify-center rounded-full border border-(--border) bg-(--panel) px-3 text-[11px] font-semibold uppercase tracking-[0.16em] transition-colors",
+                              isDisabled && "cursor-not-allowed opacity-45",
                               copiedType === "vip"
                                 ? "border-emerald-400 text-emerald-400"
                                 : "text-(--brand-deep)"
@@ -876,9 +928,11 @@ export function SongSearchPanel(props: {
                           </button>
                         </TooltipTrigger>
                         <TooltipContent>
-                          {copiedType === "vip"
-                            ? "Copied !vip command"
-                            : "Copy !vip command"}
+                          {isDisabled
+                            ? disabledReason
+                            : copiedType === "vip"
+                              ? "Copied !vip command"
+                              : "Copy !vip command"}
                         </TooltipContent>
                       </Tooltip>
                     </div>

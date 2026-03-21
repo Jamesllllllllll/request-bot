@@ -751,7 +751,7 @@ function DashboardPlaylistPage() {
         artists={blacklistArtists}
         charters={blacklistCharters}
         songs={blacklistSongs}
-        description="These exact artist IDs, charter IDs, and track IDs are currently blocked for this channel."
+        description="These exact artist IDs and track IDs are currently blocked for this channel."
         collapsible
         defaultOpen={false}
       />

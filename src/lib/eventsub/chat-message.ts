@@ -207,6 +207,7 @@ function buildCandidateMatchesJson(results: SongSearchResult[]) {
   return JSON.stringify(
     results.slice(0, 5).map((result) => ({
       id: result.id,
+      authorId: result.authorId,
       title: result.title,
       artist: result.artist,
       album: result.album,
@@ -221,6 +222,20 @@ function buildCandidateMatchesJson(results: SongSearchResult[]) {
       sourceId: result.sourceId,
     }))
   );
+}
+
+function getRejectedSongMessage(input: {
+  login: string;
+  reason?: string;
+  reasonCode?: string;
+}) {
+  if (input.reasonCode === "charter_blacklist") {
+    return `${mention(input.login)} this song cannot be played in this channel.`;
+  }
+
+  return `${mention(input.login)} ${
+    input.reason ?? "that song is not allowed in this channel."
+  }`;
 }
 
 function extractRequestedSourceSongId(query: string | undefined) {
@@ -644,6 +659,13 @@ export async function processEventSubChatMessage(input: {
 
   let firstMatch: SongSearchResult | null = null;
   let candidateMatchesJson: string | undefined;
+  let firstRejectedMatch:
+    | {
+        song: SongSearchResult;
+        reason?: string;
+        reasonCode?: string;
+      }
+    | undefined;
   const normalizedQuery = parsed.query?.trim() ?? "";
 
   try {
@@ -660,7 +682,31 @@ export async function processEventSubChatMessage(input: {
         pageSize: 5,
       });
       candidateMatchesJson = buildCandidateMatchesJson(search.results);
-      firstMatch = search.results[0] ?? null;
+      for (const result of search.results) {
+        const songAllowed = isSongAllowed({
+          song: result,
+          settings: state.settings,
+          blacklistArtists: state.blacklistArtists,
+          blacklistCharters: state.blacklistCharters,
+          blacklistSongs: state.blacklistSongs,
+          setlistArtists: state.setlistArtists,
+          requester: requesterContext,
+        });
+
+        if (songAllowed.allowed) {
+          firstMatch = result;
+          break;
+        }
+
+        if (!firstRejectedMatch) {
+          firstRejectedMatch = {
+            song: result,
+            reason: songAllowed.reason,
+            reasonCode:
+              "reasonCode" in songAllowed ? songAllowed.reasonCode : undefined,
+          };
+        }
+      }
     }
   } catch (error) {
     console.error("EventSub song lookup failed", {
@@ -692,6 +738,33 @@ export async function processEventSubChatMessage(input: {
   let warningMessage: string | undefined;
 
   if (!firstMatch) {
+    if (firstRejectedMatch) {
+      await deps.createRequestLog(env, {
+        channelId: channel.id,
+        twitchMessageId: event.messageId,
+        twitchUserId: requesterIdentity.twitchUserId,
+        requesterLogin: requesterIdentity.login,
+        requesterDisplayName: requesterIdentity.displayName,
+        rawMessage: event.rawMessage,
+        normalizedQuery: parsed.query,
+        matchedSongId: firstRejectedMatch.song.id,
+        matchedSongTitle: firstRejectedMatch.song.title,
+        matchedSongArtist: firstRejectedMatch.song.artist,
+        outcome: "rejected",
+        outcomeReason: firstRejectedMatch.reason,
+      });
+      await deps.sendChatReply(env, {
+        channelId: channel.id,
+        broadcasterUserId: channel.twitchChannelId,
+        message: getRejectedSongMessage({
+          login: requesterIdentity.login,
+          reason: firstRejectedMatch.reason,
+          reasonCode: firstRejectedMatch.reasonCode,
+        }),
+      });
+      return { body: "Rejected", status: 202 };
+    }
+
     warningCode = "no_song_match";
     warningMessage = `No matching track found for "${unmatchedQuery}".`;
   }
@@ -725,7 +798,12 @@ export async function processEventSubChatMessage(input: {
       await deps.sendChatReply(env, {
         channelId: channel.id,
         broadcasterUserId: channel.twitchChannelId,
-        message: `${mention(requesterIdentity.login)} ${songAllowed.reason ?? "that song is not allowed in this channel."}`,
+        message: getRejectedSongMessage({
+          login: requesterIdentity.login,
+          reason: songAllowed.reason,
+          reasonCode:
+            "reasonCode" in songAllowed ? songAllowed.reasonCode : undefined,
+        }),
       });
       return { body: "Rejected", status: 202 };
     }

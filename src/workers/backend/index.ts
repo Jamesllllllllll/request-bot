@@ -4,6 +4,7 @@ import { drizzle } from "drizzle-orm/d1";
 import {
   createPlayedSong,
   getBotAuthorization,
+  getChannelBlacklistByChannelId,
   updateTwitchAuthorizationTokens,
 } from "~/lib/db/repositories";
 import * as schema from "~/lib/db/schema";
@@ -35,7 +36,7 @@ import type {
   ShuffleNextInput,
   ShufflePlaylistInput,
 } from "~/lib/playlist/types";
-import { getRequiredPathsWarning } from "~/lib/request-policy";
+import { getRequiredPathsWarning, isSongAllowed } from "~/lib/request-policy";
 import { getSentryD1Database, getSentryOptions } from "~/lib/sentry";
 import {
   getAppAccessToken,
@@ -65,6 +66,7 @@ type MutationPayload = Record<string, unknown>;
 
 type PlaylistCandidate = {
   id: string;
+  authorId?: number;
   title: string;
   artist?: string;
   album?: string;
@@ -828,6 +830,11 @@ class D1PlaylistCoordinator implements PlaylistCoordinator {
       where: eq(channelSettings.channelId, input.channelId),
     });
 
+    const blacklist = await getChannelBlacklistByChannelId(
+      this.env as unknown as never,
+      input.channelId
+    );
+
     if (!settings) {
       throw new Error("Channel settings not found");
     }
@@ -847,6 +854,38 @@ class D1PlaylistCoordinator implements PlaylistCoordinator {
     );
     if (!candidate) {
       throw new Error("Candidate version not found");
+    }
+
+    const songAllowed = isSongAllowed({
+      song: {
+        id: candidate.id,
+        authorId: candidate.authorId,
+        title: candidate.title,
+        artist: candidate.artist,
+        album: candidate.album,
+        creator: candidate.creator,
+        tuning: candidate.tuning,
+        parts: candidate.parts,
+        durationText: candidate.durationText,
+        sourceId: candidate.sourceId,
+        source: "library",
+        sourceUrl: candidate.sourceUrl,
+      },
+      settings,
+      blacklistArtists: blacklist.blacklistArtists,
+      blacklistCharters: blacklist.blacklistCharters,
+      blacklistSongs: blacklist.blacklistSongs,
+      setlistArtists: [],
+      requester: {
+        isBroadcaster: false,
+        isModerator: false,
+        isVip: false,
+        isSubscriber: false,
+      },
+    });
+
+    if (!songAllowed.allowed) {
+      throw new Error(songAllowed.reason ?? "That version is not allowed.");
     }
 
     const warningMessage = getRequiredPathsWarning({

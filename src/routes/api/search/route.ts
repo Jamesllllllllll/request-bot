@@ -30,8 +30,8 @@ function normalizeSearchCacheInput(
     year: input.year ?? [],
     page: input.page,
     pageSize: input.pageSize,
-    sortBy: input.sortBy,
-    sortDirection: input.sortDirection,
+    sortBy: "updated",
+    sortDirection: "desc",
   };
 }
 
@@ -101,6 +101,12 @@ export const Route = createFileRoute("/api/search")({
           return json({ error: "invalid_search", message }, { status: 400 });
         }
 
+        const normalizedInput = {
+          ...parsed.data,
+          sortBy: "updated" as const,
+          sortDirection: "desc" as const,
+        };
+
         const identity = await getSearchIdentity(request, runtimeEnv);
         const rateLimit = await consumeSearchRateLimit(runtimeEnv, {
           rateLimitKey: identity,
@@ -118,7 +124,7 @@ export const Route = createFileRoute("/api/search")({
           );
         }
 
-        const cacheInput = normalizeSearchCacheInput(parsed.data);
+        const cacheInput = normalizeSearchCacheInput(normalizedInput);
         const cacheKey = await sha256(JSON.stringify(cacheInput));
         const cached = await getCachedSearchResult(runtimeEnv, cacheKey);
 
@@ -131,7 +137,10 @@ export const Route = createFileRoute("/api/search")({
         }
 
         try {
-          const results = await searchCatalogSongsInDb(runtimeEnv, parsed.data);
+          const results = await searchCatalogSongsInDb(
+            runtimeEnv,
+            normalizedInput
+          );
 
           await upsertCachedSearchResult(runtimeEnv, {
             cacheKey,

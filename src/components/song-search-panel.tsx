@@ -107,6 +107,10 @@ export function buildVipRequestCommand(song: SearchSong) {
   return buildRequestCommand(song).replace(/^!sr\b/, "!vip");
 }
 
+export function buildEditRequestCommand(song: SearchSong) {
+  return buildRequestCommand(song).replace(/^!sr\b/, "!edit");
+}
+
 export function SongSearchPanel(props: {
   title: string;
   eyebrow?: string;
@@ -122,7 +126,7 @@ export function SongSearchPanel(props: {
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [copiedCommand, setCopiedCommand] = useState<{
     songId: string;
-    type: "sr" | "vip";
+    type: "sr" | "edit" | "vip";
   } | null>(null);
   const [advancedFilters, setAdvancedFilters] = useState({
     title: "",
@@ -305,10 +309,17 @@ export function SongSearchPanel(props: {
       .sort((a, b) => a - b);
   }, [page, totalPages]);
 
-  async function copyRequest(song: SearchSong, type: "sr" | "vip" = "sr") {
-    await navigator.clipboard.writeText(
-      type === "vip" ? buildVipRequestCommand(song) : buildRequestCommand(song)
-    );
+  async function copyRequest(
+    song: SearchSong,
+    type: "sr" | "edit" | "vip" = "sr"
+  ) {
+    const command =
+      type === "vip"
+        ? buildVipRequestCommand(song)
+        : type === "edit"
+          ? buildEditRequestCommand(song)
+          : buildRequestCommand(song);
+    await navigator.clipboard.writeText(command);
     setCopiedCommand({ songId: song.id, type });
     window.setTimeout(() => {
       setCopiedCommand((current) =>
@@ -818,6 +829,31 @@ export function SongSearchPanel(props: {
                           {copiedType === "sr"
                             ? "Copied !sr command"
                             : "Copy !sr command"}
+                        </TooltipContent>
+                      </Tooltip>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <button
+                            type="button"
+                            onClick={() => void copyRequest(song, "edit")}
+                            className={cn(
+                              "flex h-11 min-w-[3.75rem] items-center justify-center rounded-full border border-(--border) bg-(--panel) px-3 text-[11px] font-semibold uppercase tracking-[0.16em] transition-colors",
+                              copiedType === "edit"
+                                ? "border-emerald-400 text-emerald-400"
+                                : "text-(--brand)"
+                            )}
+                          >
+                            {copiedType === "edit" ? (
+                              <Check className="h-4 w-4" />
+                            ) : (
+                              "!edit"
+                            )}
+                          </button>
+                        </TooltipTrigger>
+                        <TooltipContent>
+                          {copiedType === "edit"
+                            ? "Copied !edit command"
+                            : "Copy !edit command"}
                         </TooltipContent>
                       </Tooltip>
                       <Tooltip>

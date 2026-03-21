@@ -4,6 +4,7 @@ import { getSessionUserId } from "~/lib/auth/session.server";
 import {
   getDashboardState,
   searchCatalogArtistsForBlacklist,
+  searchCatalogChartersForBlacklist,
   searchCatalogSongsForBlacklist,
 } from "~/lib/db/repositories";
 import type { AppEnv } from "~/lib/env";
@@ -35,6 +36,7 @@ export const Route = createFileRoute("/api/dashboard/moderation/search")({
         if (query.length < 2) {
           return json({
             artists: [],
+            charters: [],
             songs: [],
           });
         }
@@ -42,6 +44,14 @@ export const Route = createFileRoute("/api/dashboard/moderation/search")({
         if (type === "artist") {
           return json({
             artists: await searchCatalogArtistsForBlacklist(runtimeEnv, {
+              query,
+            }),
+          });
+        }
+
+        if (type === "charter") {
+          return json({
+            charters: await searchCatalogChartersForBlacklist(runtimeEnv, {
               query,
             }),
           });
@@ -55,12 +65,13 @@ export const Route = createFileRoute("/api/dashboard/moderation/search")({
           });
         }
 
-        const [artists, songs] = await Promise.all([
+        const [artists, charters, songs] = await Promise.all([
           searchCatalogArtistsForBlacklist(runtimeEnv, { query }),
+          searchCatalogChartersForBlacklist(runtimeEnv, { query }),
           searchCatalogSongsForBlacklist(runtimeEnv, { query }),
         ]);
 
-        return json({ artists, songs });
+        return json({ artists, charters, songs });
       },
     },
   },

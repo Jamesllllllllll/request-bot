@@ -43,6 +43,7 @@ function createSong(
   return {
     id: "song-1",
     artistId: 77,
+    authorId: 101,
     title: "Cherub Rock",
     artist: "The Smashing Pumpkins",
     album: "Siamese Dream",
@@ -89,6 +90,7 @@ function createState(overrides: Record<string, unknown> = {}) {
       ...overrides,
     },
     blacklistArtists: [],
+    blacklistCharters: [],
     blacklistSongs: [],
     setlistArtists: [],
     logs: [],
@@ -459,6 +461,7 @@ describe("processEventSubChatMessage", () => {
       getDashboardState: vi.fn().mockResolvedValue({
         ...createState(),
         blacklistArtists: [{ artistName: "Chevelle" }],
+        blacklistCharters: [{ charterName: "Frif" }],
         blacklistSongs: [{ songTitle: "The Red" }],
         setlistArtists: [{ artistName: "Smashing Pumpkins" }],
       }),
@@ -484,7 +487,37 @@ describe("processEventSubChatMessage", () => {
       env,
       expect.objectContaining({
         message:
-          "Commands: !sr artist, song; !sr song; !vip artist, song; !edit artist, song; !remove reg; !remove vip; !remove all. !blacklist: Artists: Chevelle. Songs: The Red. !setlist: Artists: Smashing Pumpkins. Search for songs to request: https://example.com/search",
+          "Commands: !sr artist, song; !sr song; !vip artist, song; !edit artist, song; !remove reg; !remove vip; !remove all. !blacklist: Artists: Chevelle. Charters: Frif. Songs: The Red. !setlist: Artists: Smashing Pumpkins. Search for songs to request: https://example.com/search",
+      })
+    );
+  });
+
+  it("rejects songs when the matched charter is blacklisted", async () => {
+    const deps = createDeps({
+      getDashboardState: vi.fn().mockResolvedValue({
+        ...createState({
+          blacklistEnabled: true,
+        }),
+        blacklistCharters: [{ charterId: 101, charterName: "charter" }],
+      }),
+    });
+
+    const result = await processEventSubChatMessage({
+      env,
+      event: createEvent(),
+      parsed: createParsed(),
+      deps,
+    });
+
+    expect(result).toEqual({
+      body: "Rejected",
+      status: 202,
+    });
+    expect(deps.addRequestToPlaylist).not.toHaveBeenCalled();
+    expect(deps.sendChatReply).toHaveBeenCalledWith(
+      env,
+      expect.objectContaining({
+        message: "@viewer_one charter is blacklisted in this channel.",
       })
     );
   });

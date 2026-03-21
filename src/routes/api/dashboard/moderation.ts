@@ -4,6 +4,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { getSessionUserId } from "~/lib/auth/session.server";
 import {
   addBlacklistedArtist,
+  addBlacklistedCharter,
   addBlacklistedSong,
   addBlockedUser,
   addSetlistArtist,
@@ -11,6 +12,7 @@ import {
   getDashboardState,
   grantVipToken,
   removeBlacklistedArtist,
+  removeBlacklistedCharter,
   removeBlacklistedSong,
   removeSetlistArtist,
   revokeVipToken,
@@ -44,6 +46,7 @@ export const Route = createFileRoute("/api/dashboard/moderation")({
           },
           blocks: state.blocks,
           blacklistArtists: state.blacklistArtists,
+          blacklistCharters: state.blacklistCharters,
           blacklistSongs: state.blacklistSongs,
           setlistArtists: state.setlistArtists,
           vipTokens: state.vipTokens,
@@ -90,6 +93,20 @@ export const Route = createFileRoute("/api/dashboard/moderation")({
               runtimeEnv,
               state.channel.id,
               body.artistId
+            );
+            break;
+          case "addBlacklistedCharter":
+            await addBlacklistedCharter(runtimeEnv, {
+              channelId: state.channel.id,
+              charterId: body.charterId,
+              charterName: body.charterName,
+            });
+            break;
+          case "removeBlacklistedCharter":
+            await removeBlacklistedCharter(
+              runtimeEnv,
+              state.channel.id,
+              body.charterId
             );
             break;
           case "addBlacklistedSong":

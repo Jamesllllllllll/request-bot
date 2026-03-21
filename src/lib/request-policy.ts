@@ -159,6 +159,7 @@ export function isSongAllowed(input: {
   song: SongSearchResult;
   settings: ChannelRequestSettings;
   blacklistArtists: Array<{ artistId: number; artistName: string }>;
+  blacklistCharters: Array<{ charterId: number; charterName: string }>;
   blacklistSongs: Array<{
     songId: number;
     songTitle: string;
@@ -213,16 +214,22 @@ export function isSongAllowed(input: {
       (entry) =>
         input.song.artistId != null && entry.artistId === input.song.artistId
     );
+    const charterBlocked = input.blacklistCharters.find(
+      (entry) =>
+        input.song.authorId != null && entry.charterId === input.song.authorId
+    );
     const songBlocked = input.blacklistSongs.some(
       (entry) =>
         input.song.sourceId != null && entry.songId === input.song.sourceId
     );
     const bypass = input.settings.letSetlistBypassBlacklist && inSetlist;
 
-    if (!bypass && (artistBlocked || songBlocked)) {
+    if (!bypass && (artistBlocked || charterBlocked || songBlocked)) {
       return {
         allowed: false,
-        reason: "That song is blocked in this channel.",
+        reason: charterBlocked
+          ? `${charterBlocked.charterName} is blacklisted in this channel.`
+          : "That song is blocked in this channel.",
       };
     }
   }
@@ -312,6 +319,7 @@ export function buildHowMessage(input: {
   commandPrefix: string;
   appUrl: string;
   blacklistArtists: Array<{ artistId?: number; artistName: string }>;
+  blacklistCharters: Array<{ charterId?: number; charterName: string }>;
   blacklistSongs: Array<{
     songId?: number;
     songTitle: string;
@@ -328,6 +336,7 @@ export function buildHowMessage(input: {
     parts.push(
       `${normalized}blacklist: ${buildBlacklistMessage(
         input.blacklistArtists,
+        input.blacklistCharters,
         input.blacklistSongs
       )}`
     );
@@ -352,20 +361,27 @@ export function buildSearchMessage(appUrl: string) {
 
 export function buildBlacklistMessage(
   artists: Array<{ artistId?: number; artistName: string }>,
+  charters: Array<{ charterId?: number; charterName: string }>,
   songs: Array<{
     songId?: number;
     songTitle: string;
     artistName?: string | null;
   }>
 ) {
-  if (artists.length === 0 && songs.length === 0) {
-    return "No blacklisted artists or songs.";
+  if (artists.length === 0 && charters.length === 0 && songs.length === 0) {
+    return "No blacklisted artists, charters, or songs.";
   }
 
   const artistText = artists.length
     ? artists
         .slice(0, 5)
         .map((entry) => entry.artistName)
+        .join(", ")
+    : "none";
+  const charterText = charters.length
+    ? charters
+        .slice(0, 5)
+        .map((entry) => entry.charterName)
         .join(", ")
     : "none";
   const songText = songs.length
@@ -378,7 +394,7 @@ export function buildBlacklistMessage(
         )
         .join(", ")
     : "none";
-  return `Artists: ${artistText}. Songs: ${songText}.`;
+  return `Artists: ${artistText}. Charters: ${charterText}. Songs: ${songText}.`;
 }
 
 export function buildSetlistMessage(

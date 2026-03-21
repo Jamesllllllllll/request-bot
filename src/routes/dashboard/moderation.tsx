@@ -39,6 +39,12 @@ type ArtistMatch = {
   trackCount: number;
 };
 
+type CharterMatch = {
+  charterId: number;
+  charterName: string;
+  trackCount: number;
+};
+
 type SongMatch = {
   songId: number;
   songTitle: string;
@@ -56,6 +62,7 @@ type ModerationData = {
     reason?: string;
   }>;
   blacklistArtists: Array<{ artistId: number; artistName: string }>;
+  blacklistCharters: Array<{ charterId: number; charterName: string }>;
   blacklistSongs: Array<{
     songId: number;
     songTitle: string;
@@ -83,6 +90,8 @@ function DashboardModerationPage() {
   const queryClient = useQueryClient();
   const [artistQuery, setArtistQuery] = useState("");
   const [debouncedArtistQuery, setDebouncedArtistQuery] = useState("");
+  const [charterQuery, setCharterQuery] = useState("");
+  const [debouncedCharterQuery, setDebouncedCharterQuery] = useState("");
   const [songQuery, setSongQuery] = useState("");
   const [debouncedSongQuery, setDebouncedSongQuery] = useState("");
   const [setlistArtistQuery, setSetlistArtistQuery] = useState("");
@@ -93,6 +102,7 @@ function DashboardModerationPage() {
   useEffect(() => {
     const timeout = window.setTimeout(() => {
       setDebouncedArtistQuery(artistQuery.trim());
+      setDebouncedCharterQuery(charterQuery.trim());
       setDebouncedSongQuery(songQuery.trim());
       setDebouncedSetlistArtistQuery(setlistArtistQuery.trim());
     }, 400);
@@ -100,7 +110,7 @@ function DashboardModerationPage() {
     return () => {
       window.clearTimeout(timeout);
     };
-  }, [artistQuery, setlistArtistQuery, songQuery]);
+  }, [artistQuery, charterQuery, setlistArtistQuery, songQuery]);
 
   const { data } = useQuery({
     queryKey: ["dashboard-moderation"],
@@ -134,6 +144,19 @@ function DashboardModerationPage() {
       return response.json() as Promise<{ songs: SongMatch[] }>;
     },
     enabled: debouncedSongQuery.length >= 2,
+  });
+
+  const charterSearchQuery = useQuery({
+    queryKey: ["dashboard-moderation-charter-search", debouncedCharterQuery],
+    queryFn: async () => {
+      const response = await fetch(
+        `/api/dashboard/moderation/search?type=charter&query=${encodeURIComponent(
+          debouncedCharterQuery
+        )}`
+      );
+      return response.json() as Promise<{ charters: CharterMatch[] }>;
+    },
+    enabled: debouncedCharterQuery.length >= 2,
   });
 
   const setlistArtistSearchQuery = useQuery({
@@ -178,6 +201,9 @@ function DashboardModerationPage() {
   const blacklistedArtistIds = new Set(
     (data?.blacklistArtists ?? []).map((item) => item.artistId)
   );
+  const blacklistedCharterIds = new Set(
+    (data?.blacklistCharters ?? []).map((item) => item.charterId)
+  );
   const blacklistedSongIds = new Set(
     (data?.blacklistSongs ?? []).map((item) => item.songId)
   );
@@ -187,6 +213,9 @@ function DashboardModerationPage() {
   const visibleSongMatches = (songSearchQuery.data?.songs ?? []).filter(
     (song) => !blacklistedSongIds.has(song.songId)
   );
+  const visibleCharterMatches = (
+    charterSearchQuery.data?.charters ?? []
+  ).filter((charter) => !blacklistedCharterIds.has(charter.charterId));
   const setlistArtistIds = new Set(
     (data?.setlistArtists ?? []).map((item) => item.artistId)
   );
@@ -343,6 +372,113 @@ function DashboardModerationPage() {
               ) : (
                 <p className="px-4 py-3 text-sm text-(--muted)">
                   No blacklisted artists.
+                </p>
+              )}
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card className="dashboard-moderation__section">
+          <CardHeader>
+            <div className="flex items-center justify-between gap-3">
+              <CardTitle>Blacklisted charters</CardTitle>
+              {!blacklistEnabled ? (
+                <Badge variant="outline">Disabled</Badge>
+              ) : null}
+            </div>
+          </CardHeader>
+          <CardContent
+            className={`grid gap-4 ${!blacklistEnabled ? "opacity-60" : ""}`}
+          >
+            <Input
+              value={charterQuery}
+              onChange={(event) => setCharterQuery(event.target.value)}
+              placeholder="Search charters by name"
+              disabled={!blacklistEnabled}
+            />
+            {blacklistEnabled &&
+            debouncedCharterQuery.length > 0 &&
+            debouncedCharterQuery.length < 2 ? (
+              <p className="text-sm text-(--muted)">
+                Type at least 2 characters to search.
+              </p>
+            ) : null}
+            {blacklistEnabled && debouncedCharterQuery.length >= 2 ? (
+              <div className="grid gap-3">
+                {visibleCharterMatches.map((charter) => (
+                  <div
+                    key={charter.charterId}
+                    className="dashboard-moderation__entry flex items-center justify-between gap-4 rounded-2xl border border-(--border) bg-(--panel-soft) px-4 py-3"
+                  >
+                    <div>
+                      <p className="font-medium text-(--text)">
+                        {charter.charterName}
+                      </p>
+                      <p className="text-xs text-(--muted)">
+                        Charter ID {charter.charterId} · {charter.trackCount}{" "}
+                        tracks
+                      </p>
+                    </div>
+                    <Button
+                      size="sm"
+                      onClick={() =>
+                        mutation.mutate({
+                          action: "addBlacklistedCharter",
+                          charterId: charter.charterId,
+                          charterName: charter.charterName,
+                        })
+                      }
+                      disabled={mutation.isPending || !blacklistEnabled}
+                    >
+                      Add
+                    </Button>
+                  </div>
+                ))}
+                {charterSearchQuery.data &&
+                visibleCharterMatches.length === 0 ? (
+                  <p className="text-sm text-(--muted)">
+                    {charterSearchQuery.data.charters.length === 0
+                      ? "No matching charters."
+                      : "All matching charters are already blacklisted."}
+                  </p>
+                ) : null}
+              </div>
+            ) : null}
+            <div className="max-h-[400px] overflow-y-auto rounded-2xl border border-(--border) bg-(--panel-soft)">
+              {data?.blacklistCharters?.length ? (
+                <div className="divide-y divide-(--border)">
+                  {data.blacklistCharters.map((item) => (
+                    <div
+                      key={item.charterId}
+                      className="flex items-start justify-between gap-4 px-4 py-3"
+                    >
+                      <div className="min-w-0">
+                        <p className="truncate text-sm font-medium text-(--text)">
+                          {item.charterName}
+                        </p>
+                        <p className="text-xs text-(--muted)">
+                          Charter ID {item.charterId}
+                        </p>
+                      </div>
+                      <button
+                        type="button"
+                        className="shrink-0 text-sm text-(--brand-deep) underline-offset-4 hover:underline disabled:cursor-not-allowed disabled:no-underline"
+                        onClick={() =>
+                          mutation.mutate({
+                            action: "removeBlacklistedCharter",
+                            charterId: item.charterId,
+                          })
+                        }
+                        disabled={!blacklistEnabled || mutation.isPending}
+                      >
+                        Remove
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="px-4 py-3 text-sm text-(--muted)">
+                  No blacklisted charters.
                 </p>
               )}
             </div>

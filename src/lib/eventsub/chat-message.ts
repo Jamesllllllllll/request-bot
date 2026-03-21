@@ -48,6 +48,7 @@ export interface EventSubChatSettings {
 export interface EventSubChatState {
   settings: EventSubChatSettings & Parameters<typeof isRequesterAllowed>[0];
   blacklistArtists: Array<{ artistId: number; artistName: string }>;
+  blacklistCharters: Array<{ charterId: number; charterName: string }>;
   blacklistSongs: Array<{
     songId: number;
     songTitle: string;
@@ -440,6 +441,7 @@ export async function processEventSubChatMessage(input: {
         commandPrefix: state.settings.commandPrefix,
         appUrl: env.APP_URL,
         blacklistArtists: state.blacklistArtists,
+        blacklistCharters: state.blacklistCharters,
         blacklistSongs: state.blacklistSongs,
         setlistArtists: state.setlistArtists,
       }),
@@ -462,6 +464,7 @@ export async function processEventSubChatMessage(input: {
       broadcasterUserId: channel.twitchChannelId,
       message: buildBlacklistMessage(
         state.blacklistArtists,
+        state.blacklistCharters,
         state.blacklistSongs
       ),
     });
@@ -698,6 +701,7 @@ export async function processEventSubChatMessage(input: {
       song: firstMatch,
       settings: state.settings,
       blacklistArtists: state.blacklistArtists,
+      blacklistCharters: state.blacklistCharters,
       blacklistSongs: state.blacklistSongs,
       setlistArtists: state.setlistArtists,
       requester: requesterContext,

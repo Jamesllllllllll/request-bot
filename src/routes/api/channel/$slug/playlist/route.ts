@@ -37,6 +37,7 @@ export const Route = createFileRoute("/api/channel/$slug/playlist")({
           items: playlist?.items ?? [],
           playedSongs: playedRows,
           blacklistArtists: blacklist.blacklistArtists,
+          blacklistCharters: blacklist.blacklistCharters,
           blacklistSongs: blacklist.blacklistSongs,
         });
       },

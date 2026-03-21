@@ -95,6 +95,15 @@ export const moderationActionSchema = z.discriminatedUnion("action", [
     artistId: z.number().int().positive(),
   }),
   z.object({
+    action: z.literal("addBlacklistedCharter"),
+    charterId: z.number().int().positive(),
+    charterName: z.string().trim().min(1).max(200),
+  }),
+  z.object({
+    action: z.literal("removeBlacklistedCharter"),
+    charterId: z.number().int().positive(),
+  }),
+  z.object({
     action: z.literal("addBlacklistedSong"),
     songId: z.number().int().positive(),
     songTitle: z.string().trim().min(1).max(200),

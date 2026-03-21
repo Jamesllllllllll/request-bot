@@ -20,8 +20,10 @@ import {
   type AuditLogInsert,
   auditLogs,
   type BlacklistedArtistInsert,
+  type BlacklistedCharterInsert,
   type BlacklistedSongInsert,
   blacklistedArtists,
+  blacklistedCharters,
   blacklistedSongs,
   blockedUsers,
   type CatalogSongInsert,
@@ -329,6 +331,7 @@ export async function getDashboardState(env: AppEnv, ownerUserId: string) {
     audits,
     blacklistArtistsRows,
     blacklistSongsRows,
+    blacklistCharterRows,
     setlistArtistRows,
     vipTokenRows,
     playedRows,
@@ -368,6 +371,10 @@ export async function getDashboardState(env: AppEnv, ownerUserId: string) {
         asc(blacklistedSongs.artistName),
       ],
     }),
+    db.query.blacklistedCharters.findMany({
+      where: eq(blacklistedCharters.channelId, channel.id),
+      orderBy: [asc(blacklistedCharters.charterName)],
+    }),
     db.query.setlistArtists.findMany({
       where: eq(setlistArtists.channelId, channel.id),
       orderBy: [asc(setlistArtists.artistName)],
@@ -394,6 +401,7 @@ export async function getDashboardState(env: AppEnv, ownerUserId: string) {
     logs,
     audits,
     blacklistArtists: blacklistArtistsRows,
+    blacklistCharters: blacklistCharterRows,
     blacklistSongs: blacklistSongsRows,
     setlistArtists: setlistArtistRows,
     vipTokens: vipTokenRows,
@@ -472,10 +480,14 @@ export async function getChannelBlacklistByChannelId(
   env: AppEnv,
   channelId: string
 ) {
-  const [artistRows, songRows] = await Promise.all([
+  const [artistRows, charterRows, songRows] = await Promise.all([
     getDb(env).query.blacklistedArtists.findMany({
       where: eq(blacklistedArtists.channelId, channelId),
       orderBy: [asc(blacklistedArtists.artistName)],
+    }),
+    getDb(env).query.blacklistedCharters.findMany({
+      where: eq(blacklistedCharters.channelId, channelId),
+      orderBy: [asc(blacklistedCharters.charterName)],
     }),
     getDb(env).query.blacklistedSongs.findMany({
       where: eq(blacklistedSongs.channelId, channelId),
@@ -488,6 +500,7 @@ export async function getChannelBlacklistByChannelId(
 
   return {
     blacklistArtists: artistRows,
+    blacklistCharters: charterRows,
     blacklistSongs: songRows,
   };
 }
@@ -1155,6 +1168,7 @@ export async function searchCatalogSongs(
     id: string;
     sourceSongId: number;
     artistId: number | null;
+    authorId: number | null;
     title: string;
     artistName: string;
     albumName: string | null;
@@ -1178,10 +1192,11 @@ export async function searchCatalogSongs(
       }
     )
     SELECT
-      catalog_songs.id,
-      catalog_songs.source_song_id AS sourceSongId,
-      catalog_songs.artist_id AS artistId,
-      catalog_songs.title,
+        catalog_songs.id,
+        catalog_songs.source_song_id AS sourceSongId,
+        catalog_songs.artist_id AS artistId,
+        catalog_songs.author_id AS authorId,
+        catalog_songs.title,
       catalog_songs.artist_name AS artistName,
       catalog_songs.album_name AS albumName,
       catalog_songs.creator_name AS creatorName,
@@ -1209,6 +1224,7 @@ export async function searchCatalogSongs(
     results: resultRows.map((row) => ({
       id: row.id,
       artistId: row.artistId ?? undefined,
+      authorId: row.authorId ?? undefined,
       title: decodeHtmlEntities(row.title),
       artist: decodeHtmlEntities(row.artistName),
       album: row.albumName ? decodeHtmlEntities(row.albumName) : undefined,
@@ -1253,6 +1269,7 @@ export async function getCatalogSongBySourceId(
   return {
     id: row.id,
     artistId: row.artistId ?? undefined,
+    authorId: row.authorId ?? undefined,
     title: decodeHtmlEntities(row.title),
     artist: decodeHtmlEntities(row.artistName),
     album: row.albumName ? decodeHtmlEntities(row.albumName) : undefined,
@@ -1355,6 +1372,48 @@ export async function searchCatalogSongsForBlacklist(
     songTitle: decodeHtmlEntities(row.title),
     artistId: row.artistId,
     artistName: decodeHtmlEntities(row.artistName),
+  }));
+}
+
+export async function searchCatalogChartersForBlacklist(
+  env: AppEnv,
+  input: {
+    query: string;
+    limit?: number;
+  }
+) {
+  const normalizedQuery = escapeLikeValue(input.query.toLowerCase());
+  if (normalizedQuery.length < 2) {
+    return [];
+  }
+
+  const rows = await getDb(env).all<{
+    charterId: number;
+    charterName: string;
+    trackCount: number;
+  }>(sql`
+    SELECT
+      author_id AS charterId,
+      creator_name AS charterName,
+      COUNT(*) AS trackCount
+    FROM catalog_songs
+    WHERE author_id IS NOT NULL
+      AND trim(coalesce(creator_name, '')) != ''
+      AND lower(creator_name) LIKE ${`%${normalizedQuery}%`}
+    GROUP BY author_id, creator_name
+    ORDER BY
+      CASE
+        WHEN lower(creator_name) LIKE ${`${normalizedQuery}%`} THEN 0
+        ELSE 1
+      END,
+      creator_name ASC
+    LIMIT ${Math.min(Math.max(input.limit ?? 8, 1), 25)}
+  `);
+
+  return unwrapD1Rows(rows).map((row) => ({
+    charterId: row.charterId,
+    charterName: decodeHtmlEntities(row.charterName),
+    trackCount: row.trackCount,
   }));
 }
 
@@ -1967,6 +2026,16 @@ export async function addBlacklistedSong(
   await getDb(env).insert(blacklistedSongs).values(input).onConflictDoNothing();
 }
 
+export async function addBlacklistedCharter(
+  env: AppEnv,
+  input: Omit<BlacklistedCharterInsert, "createdAt">
+) {
+  await getDb(env)
+    .insert(blacklistedCharters)
+    .values(input)
+    .onConflictDoNothing();
+}
+
 export async function removeBlacklistedSong(
   env: AppEnv,
   channelId: string,
@@ -1978,6 +2047,21 @@ export async function removeBlacklistedSong(
       and(
         eq(blacklistedSongs.channelId, channelId),
         eq(blacklistedSongs.songId, songId)
+      )
+    );
+}
+
+export async function removeBlacklistedCharter(
+  env: AppEnv,
+  channelId: string,
+  charterId: number
+) {
+  await getDb(env)
+    .delete(blacklistedCharters)
+    .where(
+      and(
+        eq(blacklistedCharters.channelId, channelId),
+        eq(blacklistedCharters.charterId, charterId)
       )
     );
 }

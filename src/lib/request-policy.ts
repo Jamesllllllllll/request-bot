@@ -193,6 +193,7 @@ export function isSongAllowed(input: {
       return {
         allowed: false,
         reason: "That song's tuning is not allowed in this channel.",
+        reasonCode: "disallowed_tuning",
       };
     }
   }
@@ -205,6 +206,7 @@ export function isSongAllowed(input: {
       return {
         allowed: false,
         reason: "That artist is not in the current setlist.",
+        reasonCode: "artist_not_in_setlist",
       };
     }
   }
@@ -230,6 +232,7 @@ export function isSongAllowed(input: {
         reason: charterBlocked
           ? `${charterBlocked.charterName} is blacklisted in this channel.`
           : "That song is blocked in this channel.",
+        reasonCode: charterBlocked ? "charter_blacklist" : "song_blacklist",
       };
     }
   }

@@ -517,7 +517,130 @@ describe("processEventSubChatMessage", () => {
     expect(deps.sendChatReply).toHaveBeenCalledWith(
       env,
       expect.objectContaining({
-        message: "@viewer_one charter is blacklisted in this channel.",
+        message: "@viewer_one this song cannot be played in this channel.",
+      })
+    );
+  });
+
+  it("falls through to the first allowed search candidate when an earlier charter is blacklisted", async () => {
+    const deps = createDeps({
+      getDashboardState: vi.fn().mockResolvedValue({
+        ...createState({
+          blacklistEnabled: true,
+        }),
+        blacklistCharters: [{ charterId: 101, charterName: "charter" }],
+      }),
+      searchSongs: vi.fn().mockResolvedValue({
+        results: [
+          createSong({
+            id: "song-blocked",
+            authorId: 101,
+            creator: "charter",
+            sourceId: 11111,
+          }),
+          createSong({
+            id: "song-allowed",
+            authorId: 202,
+            creator: "other-charter",
+            sourceId: 22222,
+          }),
+        ],
+      }),
+    });
+
+    const result = await processEventSubChatMessage({
+      env,
+      event: createEvent({
+        rawMessage: "!sr cherub rock",
+      }),
+      parsed: createParsed({
+        query: "cherub rock",
+      }),
+      deps,
+    });
+
+    expect(result).toEqual({
+      body: "Accepted",
+      status: 202,
+    });
+    expect(deps.addRequestToPlaylist).toHaveBeenCalledWith(
+      env,
+      expect.objectContaining({
+        song: expect.objectContaining({
+          id: "song-allowed",
+          cdlcId: 22222,
+          title: "Cherub Rock",
+          creator: "other-charter",
+          candidateMatchesJson: expect.any(String),
+        }),
+      })
+    );
+
+    const addCall = vi.mocked(deps.addRequestToPlaylist).mock.calls[0]?.[1];
+    const candidates = JSON.parse(
+      addCall?.song.candidateMatchesJson ?? "[]"
+    ) as Array<{ id: string; authorId?: number }>;
+    expect(candidates.map((candidate) => candidate.id)).toEqual([
+      "song-blocked",
+      "song-allowed",
+    ]);
+    expect(candidates.map((candidate) => candidate.authorId)).toEqual([
+      101, 202,
+    ]);
+    expect(deps.sendChatReply).toHaveBeenCalledWith(
+      env,
+      expect.objectContaining({
+        message: expect.stringContaining(
+          'your song "The Smashing Pumpkins - Cherub Rock" has been added to the playlist.'
+        ),
+      })
+    );
+  });
+
+  it("rejects search requests when every matched version is by a blacklisted charter", async () => {
+    const deps = createDeps({
+      getDashboardState: vi.fn().mockResolvedValue({
+        ...createState({
+          blacklistEnabled: true,
+        }),
+        blacklistCharters: [{ charterId: 101, charterName: "charter" }],
+      }),
+      searchSongs: vi.fn().mockResolvedValue({
+        results: [
+          createSong({
+            id: "song-blocked-1",
+            authorId: 101,
+            sourceId: 11111,
+          }),
+          createSong({
+            id: "song-blocked-2",
+            authorId: 101,
+            sourceId: 22222,
+          }),
+        ],
+      }),
+    });
+
+    const result = await processEventSubChatMessage({
+      env,
+      event: createEvent({
+        rawMessage: "!sr cherub rock",
+      }),
+      parsed: createParsed({
+        query: "cherub rock",
+      }),
+      deps,
+    });
+
+    expect(result).toEqual({
+      body: "Rejected",
+      status: 202,
+    });
+    expect(deps.addRequestToPlaylist).not.toHaveBeenCalled();
+    expect(deps.sendChatReply).toHaveBeenCalledWith(
+      env,
+      expect.objectContaining({
+        message: "@viewer_one this song cannot be played in this channel.",
       })
     );
   });
@@ -685,10 +808,13 @@ describe("processEventSubChatMessage", () => {
     const addCall = vi.mocked(deps.addRequestToPlaylist).mock.calls[0]?.[1];
     const candidates = JSON.parse(
       addCall?.song.candidateMatchesJson ?? "[]"
-    ) as Array<{ id: string }>;
+    ) as Array<{ id: string; authorId?: number }>;
     expect(candidates.map((candidate) => candidate.id)).toEqual([
       "song-1",
       "song-2",
+    ]);
+    expect(candidates.map((candidate) => candidate.authorId)).toEqual([
+      101, 101,
     ]);
   });
 });

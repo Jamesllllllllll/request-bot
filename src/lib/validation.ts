@@ -263,6 +263,7 @@ export const playlistMutationSchema = z.discriminatedUnion("action", [
     songId: z.string(),
     requesterLogin: z.string().trim().min(2).max(25).optional(),
     title: z.string().min(1),
+    authorId: z.number().optional(),
     artist: z.string().optional(),
     album: z.string().optional(),
     creator: z.string().optional(),
@@ -272,5 +273,6 @@ export const playlistMutationSchema = z.discriminatedUnion("action", [
     source: z.string(),
     sourceUrl: z.string().optional(),
     sourceId: z.number().optional(),
+    candidateMatchesJson: z.string().optional(),
   }),
 ]);

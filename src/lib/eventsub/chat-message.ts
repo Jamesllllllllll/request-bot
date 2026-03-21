@@ -229,8 +229,11 @@ function getRejectedSongMessage(input: {
   reason?: string;
   reasonCode?: string;
 }) {
-  if (input.reasonCode === "charter_blacklist") {
-    return `${mention(input.login)} this song cannot be played in this channel.`;
+  if (
+    input.reasonCode === "charter_blacklist" ||
+    input.reasonCode === "song_blacklist"
+  ) {
+    return `${mention(input.login)} I cannot add that song to the playlist.`;
   }
 
   return `${mention(input.login)} ${

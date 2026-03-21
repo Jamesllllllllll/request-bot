@@ -6,7 +6,6 @@ import { getDb } from "~/lib/db/client";
 import {
   getChannelBlacklistByChannelId,
   getChannelBySlug,
-  getChannelSettingsByChannelId,
   getPlaylistByChannelId,
 } from "~/lib/db/repositories";
 import { playedSongs } from "~/lib/db/schema";
@@ -22,14 +21,6 @@ export const Route = createFileRoute("/api/channel/$slug/playlist")({
 
         if (!channel) {
           return json({ error: "Channel not found" }, { status: 404 });
-        }
-
-        const settings = await getChannelSettingsByChannelId(
-          runtimeEnv,
-          channel.id
-        );
-        if (settings && !settings.publicPlaylistEnabled) {
-          return json({ error: "Playlist is private" }, { status: 403 });
         }
 
         const [playlist, playedRows, blacklist] = await Promise.all([

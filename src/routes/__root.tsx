@@ -10,13 +10,7 @@ import {
   useRouterState,
 } from "@tanstack/react-router";
 import { TanStackRouterDevtools } from "@tanstack/react-router-devtools";
-import {
-  Headphones,
-  Radio,
-  ShieldAlert,
-  SlidersHorizontal,
-} from "lucide-react";
-import { Badge } from "~/components/ui/badge";
+import { Headphones, LogOut, Radio, SlidersHorizontal } from "lucide-react";
 import { Button } from "~/components/ui/button";
 import "~/app.css";
 import type { AppRouterContext } from "~/router";
@@ -33,6 +27,7 @@ function RootComponent() {
     <html lang="en">
       <head>
         <HeadContent />
+        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
         <link rel="icon" href="https://fav.farm/%F0%9F%8E%B8" />
       </head>
       <body>
@@ -87,73 +82,63 @@ function AppShell() {
   }
 
   return (
-    <div className="mx-auto flex min-h-screen w-full max-w-[1480px] flex-col px-4 py-4 md:px-6 md:py-6">
-      <header className="surface-grid surface-noise mb-8 rounded-[32px] border border-(--border) bg-(--panel) px-5 py-4 shadow-(--shadow) backdrop-blur-xl md:px-7">
+    <div className="app-shell mx-auto flex min-h-screen w-full max-w-[1480px] flex-col">
+      <header className="app-shell__header surface-grid surface-noise mb-8 rounded-[32px] border border-(--border) bg-(--panel) shadow-(--shadow) backdrop-blur-xl">
         <div className="flex flex-wrap items-center justify-between gap-4">
-          <div className="flex items-center gap-4">
+          <div className="min-w-0 flex items-center gap-4">
             <Link to="/" className="group flex items-center gap-4 no-underline">
               <div className="flex h-12 w-12 items-center justify-center rounded-[18px] border border-(--border-strong) bg-(--panel-soft) text-(--brand)">
                 <Headphones className="h-5 w-5" />
               </div>
-              <div>
-                <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-(--brand-deep)">
+              <div className="min-w-0">
+                <p className="app-shell__brand-meta text-[11px] font-semibold uppercase tracking-[0.22em] text-(--brand-deep)">
                   Twitch Song Requests
                 </p>
-                <p className="mt-1 text-2xl font-semibold tracking-tight text-(--text)">
+                <p className="app-shell__brand-title truncate text-2xl font-semibold tracking-tight text-(--text)">
                   Request Bot
                 </p>
               </div>
             </Link>
           </div>
 
-          <div className="flex flex-wrap items-center gap-3">
-            <nav className="flex items-center gap-2 rounded-full border border-(--border) bg-(--panel-soft) p-1.5 text-sm">
+          <div className="app-shell__controls flex min-w-0 flex-1 flex-wrap items-center justify-end gap-3">
+            <nav className="app-shell__nav flex items-center gap-2 rounded-full border border-(--border) bg-(--panel-soft) p-1.5 text-sm">
               <NavLink to="/search" label="Search" icon={Radio} />
               {viewer ? (
-                <>
-                  <NavLink
-                    to="/dashboard"
-                    label="Dashboard"
-                    icon={SlidersHorizontal}
-                    active={
-                      pathname === "/dashboard" ||
-                      pathname.startsWith("/dashboard/playlist") ||
-                      pathname.startsWith("/dashboard/moderation") ||
-                      pathname.startsWith("/dashboard/overlay") ||
-                      pathname.startsWith("/dashboard/settings")
-                    }
-                  />
-                  {viewer.user.isAdmin ? (
-                    <NavLink
-                      to="/dashboard/admin"
-                      label="Admin"
-                      icon={ShieldAlert}
-                      active={pathname.startsWith("/dashboard/admin")}
-                    />
-                  ) : null}
-                </>
+                <NavLink
+                  to="/dashboard"
+                  label="Dashboard"
+                  icon={SlidersHorizontal}
+                  active={
+                    pathname === "/dashboard" ||
+                    pathname.startsWith("/dashboard/playlist") ||
+                    pathname.startsWith("/dashboard/moderation") ||
+                    pathname.startsWith("/dashboard/overlay") ||
+                    pathname.startsWith("/dashboard/settings")
+                  }
+                />
               ) : null}
             </nav>
 
             {viewer ? (
-              <div className="flex items-center gap-3 rounded-full border border-(--border) bg-(--panel-soft) px-3 py-2">
+              <div className="app-shell__user flex min-w-0 items-center gap-2 rounded-full border border-(--border) bg-(--panel-soft) p-1.5">
                 <Link
                   to={viewer.channel ? "/$slug" : "/dashboard"}
                   params={
                     viewer.channel ? { slug: viewer.channel.slug } : undefined
                   }
-                  className="flex items-center gap-3 no-underline"
+                  className="app-shell__user-link flex min-w-0 items-center gap-2 px-1.5 no-underline"
                 >
                   {viewer.user.profileImageUrl ? (
                     <span
                       className="block shrink-0 overflow-hidden rounded-full border border-(--border-strong)"
                       style={{
-                        width: 38,
-                        height: 38,
-                        minWidth: 38,
-                        minHeight: 38,
-                        maxWidth: 38,
-                        maxHeight: 38,
+                        width: 34,
+                        height: 34,
+                        minWidth: 34,
+                        minHeight: 34,
+                        maxWidth: 34,
+                        maxHeight: 34,
                       }}
                     >
                       <img
@@ -171,23 +156,25 @@ function AppShell() {
                       />
                     </span>
                   ) : (
-                    <div className="flex h-9 w-9 min-h-9 min-w-9 shrink-0 items-center justify-center rounded-full border border-(--border-strong) bg-(--brand) text-xs font-semibold uppercase text-white">
+                    <div className="flex h-[34px] w-[34px] min-h-[34px] min-w-[34px] shrink-0 items-center justify-center rounded-full border border-(--border-strong) bg-(--brand) text-xs font-semibold uppercase text-white">
                       {viewer.user.displayName.slice(0, 2)}
                     </div>
                   )}
-                  <div>
-                    <p className="font-medium text-(--text)">
+                  <div className="min-w-0">
+                    <p className="app-shell__user-name truncate text-sm font-medium text-(--text)">
                       {viewer.user.displayName}
-                    </p>
-                    <p className="text-xs uppercase tracking-[0.16em] text-(--muted)">
-                      @{viewer.user.login}
                     </p>
                   </div>
                 </Link>
-                {viewer.user.isAdmin ? <Badge>Admin</Badge> : null}
-                <Button asChild variant="outline" size="sm">
+                <Button
+                  asChild
+                  variant="outline"
+                  size="sm"
+                  className="h-[34px] px-3"
+                >
                   <a href="/auth/logout" className="no-underline">
-                    Log out
+                    <LogOut className="h-4 w-4" />
+                    <span className="app-shell__logout-label">Log out</span>
                   </a>
                 </Button>
               </div>
@@ -201,7 +188,7 @@ function AppShell() {
           </div>
         </div>
       </header>
-      <main className="flex-1">
+      <main className="app-shell__main flex-1">
         <Outlet />
       </main>
     </div>
@@ -209,7 +196,7 @@ function AppShell() {
 }
 
 function NavLink(props: {
-  to: "/search" | "/dashboard" | "/dashboard/admin";
+  to: "/search" | "/dashboard";
   label: string;
   icon: React.ComponentType<{ className?: string }>;
   exact?: boolean;
@@ -217,9 +204,9 @@ function NavLink(props: {
 }) {
   const Icon = props.icon;
   const activeClassName =
-    "block rounded-full bg-(--brand) px-4 py-2 text-white no-underline shadow-(--glow)";
+    "flex items-center justify-center rounded-full bg-(--brand) px-4 py-2 text-white no-underline shadow-(--glow)";
   const inactiveClassName =
-    "block rounded-full px-4 py-2 text-(--muted) no-underline";
+    "flex items-center justify-center rounded-full px-4 py-2 text-(--muted) no-underline";
 
   return (
     <Link
@@ -238,7 +225,7 @@ function NavLink(props: {
     >
       <span className="flex items-center gap-2">
         <Icon className="h-4 w-4" />
-        <span>{props.label}</span>
+        <span className="app-shell__nav-label">{props.label}</span>
       </span>
     </Link>
   );

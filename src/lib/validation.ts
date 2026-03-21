@@ -107,11 +107,12 @@ export const moderationActionSchema = z.discriminatedUnion("action", [
   }),
   z.object({
     action: z.literal("addSetlistArtist"),
+    artistId: z.number().int().positive(),
     artistName: z.string().trim().min(1).max(200),
   }),
   z.object({
     action: z.literal("removeSetlistArtist"),
-    artistName: z.string().trim().min(1).max(200),
+    artistId: z.number().int().positive(),
   }),
   z.object({
     action: z.literal("addVipToken"),
@@ -138,7 +139,7 @@ export const settingsInputSchema = z
     onlyOfficialDlc: z.boolean(),
     allowedTunings: z.array(z.enum(tuningOptions)).max(tuningOptions.length),
     requiredPaths: z.array(z.enum(pathOptions)).max(pathOptions.length),
-    publicPlaylistEnabled: z.boolean(),
+    requiredPathsMatchMode: z.enum(["any", "all"]),
     maxQueueSize: z.number().int().min(1).max(1000),
     maxViewerRequestsAtOnce: z.number().int().min(1).max(20),
     maxSubscriberRequestsAtOnce: z.number().int().min(1).max(20),
@@ -233,7 +234,6 @@ export const songListItemSchema = z.object({
 export const playlistMutationSchema = z.discriminatedUnion("action", [
   z.object({ action: z.literal("markPlayed"), itemId: z.string() }),
   z.object({ action: z.literal("restorePlayed"), playedSongId: z.string() }),
-  z.object({ action: z.literal("skipItem"), itemId: z.string() }),
   z.object({ action: z.literal("setCurrent"), itemId: z.string() }),
   z.object({ action: z.literal("deleteItem"), itemId: z.string() }),
   z.object({

@@ -34,9 +34,8 @@ import type {
   SetCurrentInput,
   ShuffleNextInput,
   ShufflePlaylistInput,
-  SkipItemInput,
 } from "~/lib/playlist/types";
-import { formatPathLabel, getMissingRequiredPaths } from "~/lib/request-policy";
+import { getRequiredPathsWarning } from "~/lib/request-policy";
 import { getSentryD1Database, getSentryOptions } from "~/lib/sentry";
 import {
   getAppAccessToken,
@@ -404,12 +403,7 @@ class D1PlaylistCoordinator implements PlaylistCoordinator {
   }
 
   async markPlayed(input: MarkPlayedInput) {
-    return this.advanceItem(
-      input.channelId,
-      input.itemId,
-      input.actorUserId,
-      "played"
-    );
+    return this.advanceItem(input.channelId, input.itemId, input.actorUserId);
   }
 
   async restorePlayed(
@@ -489,20 +483,10 @@ class D1PlaylistCoordinator implements PlaylistCoordinator {
     };
   }
 
-  async skipItem(input: SkipItemInput) {
-    return this.advanceItem(
-      input.channelId,
-      input.itemId,
-      input.actorUserId,
-      "skipped"
-    );
-  }
-
   private async advanceItem(
     channelId: string,
     itemId: string,
-    actorUserId: string,
-    nextStatus: "played" | "skipped"
+    actorUserId: string
   ) {
     const db = getDb(this.env);
     const { playlist, items } = await this.getPlaylist(channelId);
@@ -515,29 +499,27 @@ class D1PlaylistCoordinator implements PlaylistCoordinator {
 
     await db.delete(playlistItems).where(eq(playlistItems.id, itemId));
 
-    if (nextStatus === "played") {
-      await createPlayedSong(this.env as unknown as never, {
-        channelId,
-        playlistItemId: current.id,
-        songId: current.songId,
-        songTitle: current.songTitle,
-        songArtist: current.songArtist,
-        songAlbum: current.songAlbum,
-        songCreator: current.songCreator,
-        songTuning: current.songTuning,
-        songPartsJson: current.songPartsJson,
-        songDurationText: current.songDurationText,
-        songSource: current.songSource,
-        songCatalogSourceId: current.songCatalogSourceId,
-        songUrl: current.songUrl,
-        requestedByTwitchUserId: current.requestedByTwitchUserId,
-        requestedByLogin: current.requestedByLogin,
-        requestedByDisplayName: current.requestedByDisplayName,
-        requestKind: current.requestKind,
-        requestedAt: current.createdAt,
-        playedAt: Date.now(),
-      });
-    }
+    await createPlayedSong(this.env as unknown as never, {
+      channelId,
+      playlistItemId: current.id,
+      songId: current.songId,
+      songTitle: current.songTitle,
+      songArtist: current.songArtist,
+      songAlbum: current.songAlbum,
+      songCreator: current.songCreator,
+      songTuning: current.songTuning,
+      songPartsJson: current.songPartsJson,
+      songDurationText: current.songDurationText,
+      songSource: current.songSource,
+      songCatalogSourceId: current.songCatalogSourceId,
+      songUrl: current.songUrl,
+      requestedByTwitchUserId: current.requestedByTwitchUserId,
+      requestedByLogin: current.requestedByLogin,
+      requestedByDisplayName: current.requestedByDisplayName,
+      requestKind: current.requestKind,
+      requestedAt: current.createdAt,
+      playedAt: Date.now(),
+    });
 
     const remaining = sorted.filter((item) => item.id !== itemId);
     await this.reindexPlaylistItems(remaining);
@@ -551,15 +533,9 @@ class D1PlaylistCoordinator implements PlaylistCoordinator {
       })
       .where(eq(playlists.id, playlist.id));
 
-    await this.audit(
-      channelId,
-      actorUserId,
-      nextStatus === "played" ? "item_played" : "item_skipped",
-      itemId,
-      {
-        nextItemId: null,
-      }
-    );
+    await this.audit(channelId, actorUserId, "item_played", itemId, {
+      nextItemId: null,
+    });
     await this.notify(channelId);
 
     return {
@@ -568,7 +544,7 @@ class D1PlaylistCoordinator implements PlaylistCoordinator {
       currentItemId:
         playlist.currentItemId === itemId ? null : playlist.currentItemId,
       changedItemId: itemId,
-      message: `Item ${nextStatus}`,
+      message: "Item played",
     };
   }
 
@@ -576,6 +552,7 @@ class D1PlaylistCoordinator implements PlaylistCoordinator {
     const db = getDb(this.env);
     const { playlist, items } = await this.getPlaylist(input.channelId);
     const target = items.find((item) => item.id === input.itemId);
+    const sortedItems = [...items].sort((a, b) => a.position - b.position);
 
     if (!target) {
       throw new Error("Playlist item not found");
@@ -606,6 +583,15 @@ class D1PlaylistCoordinator implements PlaylistCoordinator {
         updatedAt: Date.now(),
       })
       .where(eq(playlists.id, playlist.id));
+
+    const reorderedItems = [
+      target,
+      ...sortedItems.filter((item) => item.id !== input.itemId),
+    ].map((item, index) => ({
+      id: item.id,
+      position: index + 1,
+    }));
+    await this.reindexPlaylistItems(reorderedItems);
 
     await this.audit(
       input.channelId,
@@ -739,6 +725,9 @@ class D1PlaylistCoordinator implements PlaylistCoordinator {
   ): Promise<PlaylistMutationResult> {
     const db = getDb(this.env);
     const { playlist, items } = await this.getPlaylist(input.channelId);
+    const currentItem = playlist.currentItemId
+      ? (items.find((item) => item.id === playlist.currentItemId) ?? null)
+      : null;
 
     for (const item of items) {
       await db
@@ -750,7 +739,14 @@ class D1PlaylistCoordinator implements PlaylistCoordinator {
         .where(eq(playlistItems.id, item.id));
     }
 
-    for (const [index, itemId] of input.orderedItemIds.entries()) {
+    const orderedItemIds = currentItem
+      ? [
+          currentItem.id,
+          ...input.orderedItemIds.filter((itemId) => itemId !== currentItem.id),
+        ]
+      : input.orderedItemIds;
+
+    for (const [index, itemId] of orderedItemIds.entries()) {
       await db
         .update(playlistItems)
         .set({
@@ -853,17 +849,10 @@ class D1PlaylistCoordinator implements PlaylistCoordinator {
       throw new Error("Candidate version not found");
     }
 
-    const missingRequiredPaths = getMissingRequiredPaths({
+    const warningMessage = getRequiredPathsWarning({
       song: { parts: candidate.parts ?? [] },
       settings,
     });
-
-    const warningMessage =
-      missingRequiredPaths.length > 0
-        ? `Missing required path${missingRequiredPaths.length === 1 ? "" : "s"}: ${missingRequiredPaths
-            .map((path) => formatPathLabel(path))
-            .join(", ")}.`
-        : null;
 
     await db
       .update(playlistItems)
@@ -883,8 +872,7 @@ class D1PlaylistCoordinator implements PlaylistCoordinator {
             sourceUrl: candidate.sourceUrl ?? null,
             sourceId: candidate.sourceId ?? null,
           }) ?? null,
-        warningCode:
-          missingRequiredPaths.length > 0 ? "missing_required_paths" : null,
+        warningCode: warningMessage ? "missing_required_paths" : null,
         warningMessage,
         updatedAt: Date.now(),
       })
@@ -898,8 +886,7 @@ class D1PlaylistCoordinator implements PlaylistCoordinator {
       {
         candidateId: candidate.id,
         sourceId: candidate.sourceId ?? null,
-        warningCode:
-          missingRequiredPaths.length > 0 ? "missing_required_paths" : null,
+        warningCode: warningMessage ? "missing_required_paths" : null,
       }
     );
     await this.notify(input.channelId);
@@ -1140,8 +1127,6 @@ async function handleMutation(
       return coordinator.restorePlayed(
         payload as unknown as RestorePlayedInput
       );
-    case "skipItem":
-      return coordinator.skipItem(payload as unknown as SkipItemInput);
     case "setCurrent":
       return coordinator.setCurrent(payload as unknown as SetCurrentInput);
     case "shuffleNext":

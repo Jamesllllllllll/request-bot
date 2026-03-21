@@ -1,16 +1,28 @@
 // Route: Renders playlist management, manual add, and queue controls for a channel.
+import {
+  draggable,
+  dropTargetForElements,
+} from "@atlaskit/pragmatic-drag-and-drop/element/adapter";
+import { reorder } from "@atlaskit/pragmatic-drag-and-drop/reorder";
+import {
+  attachClosestEdge,
+  type Edge,
+  extractClosestEdge,
+} from "@atlaskit/pragmatic-drag-and-drop-hitbox/closest-edge";
+import { getReorderDestinationIndex } from "@atlaskit/pragmatic-drag-and-drop-hitbox/util/get-reorder-destination-index";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
 import {
   AlertTriangle,
+  Clock3,
   GripVertical,
-  History,
-  ListMusic,
+  type LucideIcon,
   Plus,
 } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
-import { useEffect, useMemo, useState } from "react";
+import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import { BlacklistPanel } from "~/components/blacklist-panel";
+import { DashboardPageHeader } from "~/components/dashboard-page-header";
 import { Badge } from "~/components/ui/badge";
 import { Button } from "~/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "~/components/ui/card";
@@ -107,6 +119,19 @@ const playlistItemTransition = {
   ease: [0.2, 0, 0, 1] as const,
 };
 
+type PlaylistQueryData = {
+  channel: { id: string; slug: string; displayName: string };
+  items: PlaylistItem[];
+  playedSongs: PlayedSong[];
+  blacklistArtists: Array<{ artistId: number; artistName: string }>;
+  blacklistSongs: Array<{
+    songId: number;
+    songTitle: string;
+    artistName?: string | null;
+  }>;
+  accessRole?: "owner" | "moderator";
+};
+
 function DashboardPlaylistPage() {
   const { channel: selectedChannelSlug } = Route.useSearch();
   const queryClient = useQueryClient();
@@ -121,6 +146,11 @@ function DashboardPlaylistPage() {
     action: string;
     itemId?: string;
     songId?: string;
+  } | null>(null);
+  const [draggingItemId, setDraggingItemId] = useState<string | null>(null);
+  const [dropTargetState, setDropTargetState] = useState<{
+    itemId: string;
+    edge: Edge;
   } | null>(null);
   const playlistQuery = useQuery({
     queryKey: ["dashboard-playlist", selectedChannelSlug ?? null],
@@ -143,7 +173,6 @@ function DashboardPlaylistPage() {
           artistName?: string | null;
         }>;
         accessRole?: "owner" | "moderator";
-        requiredPaths?: string[];
       }>;
     },
     refetchInterval: 2_000,
@@ -242,18 +271,10 @@ function DashboardPlaylistPage() {
       setPendingRowAction({ action, itemId, songId });
 
       await queryClient.cancelQueries({ queryKey: ["dashboard-playlist"] });
-      const previous = queryClient.getQueryData<{
-        channel: { id: string; slug: string; displayName: string };
-        items: PlaylistItem[];
-        playedSongs: PlayedSong[];
-        blacklistArtists: Array<{ artistId: number; artistName: string }>;
-        blacklistSongs: Array<{
-          songId: number;
-          songTitle: string;
-          artistName?: string | null;
-        }>;
-        accessRole?: "owner" | "moderator";
-      }>(["dashboard-playlist", selectedChannelSlug ?? null]);
+      const previous = queryClient.getQueryData<PlaylistQueryData>([
+        "dashboard-playlist",
+        selectedChannelSlug ?? null,
+      ]);
 
       if (!previous) {
         return undefined;
@@ -271,11 +292,25 @@ function DashboardPlaylistPage() {
       }
 
       if (
-        itemId &&
-        (action === "deleteItem" ||
-          action === "markPlayed" ||
-          action === "skipItem")
+        action === "reorderItems" &&
+        Array.isArray(body.orderedItemIds) &&
+        body.orderedItemIds.every((itemId) => typeof itemId === "string")
       ) {
+        const reorderedItems = orderPlaylistItems(
+          previous.items,
+          body.orderedItemIds as string[]
+        );
+
+        queryClient.setQueryData(
+          ["dashboard-playlist", selectedChannelSlug ?? null],
+          {
+            ...previous,
+            items: reorderedItems,
+          }
+        );
+      }
+
+      if (itemId && (action === "deleteItem" || action === "markPlayed")) {
         const removedItem =
           previous.items.find((item) => item.id === itemId) ?? null;
         const remainingItems = previous.items.filter(
@@ -313,14 +348,34 @@ function DashboardPlaylistPage() {
       }
 
       if (itemId && action === "setCurrent") {
+        const targetItem =
+          previous.items.find((item) => item.id === itemId) ?? null;
+        const reorderedItems = targetItem
+          ? [
+              {
+                ...targetItem,
+                status: "current",
+              },
+              ...previous.items
+                .filter((item) => item.id !== itemId)
+                .map((item) => ({
+                  ...item,
+                  status: "queued",
+                })),
+            ].map((item, index) => ({
+              ...item,
+              position: index + 1,
+            }))
+          : previous.items.map((item) => ({
+              ...item,
+              status: item.id === itemId ? "current" : "queued",
+            }));
+
         queryClient.setQueryData(
           ["dashboard-playlist", selectedChannelSlug ?? null],
           {
             ...previous,
-            items: previous.items.map((item) => ({
-              ...item,
-              status: item.id === itemId ? "current" : "queued",
-            })),
+            items: reorderedItems,
           }
         );
       }
@@ -344,9 +399,14 @@ function DashboardPlaylistPage() {
         setPlaylistActionError(message);
       }
     },
-    onSuccess: async () => {
+    onSuccess: async (_data, body) => {
       setManualAddError(null);
       setPlaylistActionError(null);
+      if (body.action === "manualAdd") {
+        setManualQuery("");
+        setDebouncedManualQuery("");
+        setManualRequesterLogin("");
+      }
       await queryClient.invalidateQueries({
         queryKey: ["dashboard-playlist", selectedChannelSlug ?? null],
       });
@@ -369,7 +429,6 @@ function DashboardPlaylistPage() {
   const blacklistSongs = playlistQuery.data?.blacklistSongs ?? [];
   const managedChannel = playlistQuery.data?.channel ?? null;
   const accessRole = playlistQuery.data?.accessRole ?? "owner";
-  const requiredPaths = playlistQuery.data?.requiredPaths ?? [];
   const isDeletingItem = (itemId: string) =>
     mutation.isPending &&
     pendingRowAction?.action === "deleteItem" &&
@@ -386,90 +445,41 @@ function DashboardPlaylistPage() {
     mutation.isPending &&
     pendingRowAction?.action === "restorePlayed" &&
     pendingRowAction.songId === playedSongId;
-  return (
-    <div className="grid gap-6">
-      <section className="surface-grid surface-noise rounded-[34px] border border-(--border-strong) bg-(--panel) p-6 shadow-(--shadow) md:p-8">
-        <div className="flex flex-wrap items-start justify-between gap-4">
-          <div>
-            <p className="text-xs font-semibold uppercase tracking-[0.28em] text-(--brand-deep)">
-              Playlist control
-            </p>
-            <h1 className="mt-3 text-4xl font-semibold tracking-[-0.04em] text-(--text)">
-              Playlist
-            </h1>
-            {managedChannel ? (
-              <p className="mt-3 text-sm text-(--muted)">
-                {accessRole === "moderator" ? "Managing" : "Channel"}{" "}
-                <span className="font-medium text-(--text)">
-                  {managedChannel.displayName}
-                </span>
-              </p>
-            ) : null}
-          </div>
-          <div className="flex flex-wrap gap-3">
-            <Button
-              variant="outline"
-              onClick={() => mutation.mutate({ action: "shufflePlaylist" })}
-              disabled={mutation.isPending || items.length < 2}
-            >
-              Shuffle
-            </Button>
-            <Button
-              variant="outline"
-              onClick={() => {
-                if (
-                  window.confirm(
-                    "Empty the entire playlist? This cannot be undone."
-                  )
-                ) {
-                  mutation.mutate({ action: "clearPlaylist" });
-                }
-              }}
-              disabled={mutation.isPending || items.length === 0}
-            >
-              Clear playlist
-            </Button>
-            <Button
-              variant="outline"
-              onClick={() => {
-                if (
-                  window.confirm(
-                    "Reset the session? This will clear the current playlist."
-                  )
-                ) {
-                  mutation.mutate({ action: "resetSession" });
-                }
-              }}
-              disabled={
-                mutation.isPending &&
-                pendingRowAction?.action === "resetSession"
-                  ? true
-                  : items.length === 0
-              }
-            >
-              Reset session
-            </Button>
-          </div>
-        </div>
+  const reorderPlaylist = (
+    sourceItemId: string,
+    targetItemId: string,
+    edge: Edge
+  ) => {
+    const orderedItemIds = getReorderedItemIds(
+      items,
+      sourceItemId,
+      targetItemId,
+      edge
+    );
 
-        <div className="mt-6 grid gap-4 md:grid-cols-3">
-          <PlaylistStat label="Queued" value={items.length} icon={ListMusic} />
-          <PlaylistStat
-            label="Current"
-            value={currentItemId ? 1 : 0}
-            icon={GripVertical}
-          />
-          <PlaylistStat
-            label="Played"
-            value={playedSongs.length}
-            icon={History}
-          />
-        </div>
-      </section>
+    if (!orderedItemIds) {
+      return;
+    }
+
+    mutation.mutate({
+      action: "reorderItems",
+      orderedItemIds,
+    });
+  };
+  return (
+    <div className="dashboard-playlist grid gap-6">
+      <DashboardPageHeader
+        title="Manage playlist"
+        description={
+          managedChannel
+            ? `${accessRole === "moderator" ? "Managing" : "Channel:"} ${managedChannel.displayName}`
+            : undefined
+        }
+      />
 
       <Card>
         <CardHeader>
-          <CardTitle>Manual add</CardTitle>
+          <CardTitle>Add a song</CardTitle>
         </CardHeader>
         <CardContent className="grid gap-4">
           <Input
@@ -498,8 +508,8 @@ function DashboardPlaylistPage() {
             </div>
           ) : null}
           {manualQuery.trim().length >= 3 ? (
-            <div className="overflow-hidden rounded-[24px] border border-(--border)">
-              <div className="grid grid-cols-[minmax(0,2.1fr)_minmax(0,1.3fr)_minmax(0,1fr)_96px] gap-4 bg-(--panel-muted) px-5 py-3 text-xs font-semibold uppercase tracking-[0.2em] text-(--muted)">
+            <div className="dashboard-playlist__manual-results overflow-hidden rounded-[24px] border border-(--border)">
+              <div className="dashboard-playlist__manual-head grid grid-cols-[minmax(0,2.1fr)_minmax(0,1.3fr)_minmax(0,1fr)_96px] gap-4 bg-(--panel-muted) px-5 py-3 text-xs font-semibold uppercase tracking-[0.2em] text-(--muted)">
                 <div>Track</div>
                 <div>Album / Creator</div>
                 <div>Tuning / Path</div>
@@ -508,13 +518,13 @@ function DashboardPlaylistPage() {
               {manualSearchQuery.data?.results?.map((song, index) => (
                 <div
                   key={song.id}
-                  className={`grid grid-cols-[minmax(0,2.1fr)_minmax(0,1.3fr)_minmax(0,1fr)_96px] gap-4 border-t border-(--border) px-5 py-4 ${
+                  className={`dashboard-playlist__manual-row grid grid-cols-[minmax(0,2.1fr)_minmax(0,1.3fr)_minmax(0,1fr)_96px] gap-4 border-t border-(--border) px-5 py-4 ${
                     index % 2 === 0
                       ? "bg-(--panel-strong)"
                       : "bg-(--panel-soft)"
                   }`}
                 >
-                  <div className="min-w-0">
+                  <div className="dashboard-playlist__manual-track min-w-0">
                     <p className="truncate font-semibold text-(--text)">
                       {song.title}
                     </p>
@@ -522,7 +532,7 @@ function DashboardPlaylistPage() {
                       {song.artist ?? "Unknown artist"}
                     </p>
                   </div>
-                  <div className="min-w-0">
+                  <div className="dashboard-playlist__manual-meta min-w-0">
                     <p className="truncate text-sm text-(--text)">
                       {song.album ?? "Unknown album"}
                     </p>
@@ -532,7 +542,7 @@ function DashboardPlaylistPage() {
                         : "Unknown creator"}
                     </p>
                   </div>
-                  <div className="min-w-0">
+                  <div className="dashboard-playlist__manual-extra min-w-0">
                     <p className="truncate text-sm text-(--text)">
                       {song.tuning ?? "No tuning info"}
                     </p>
@@ -542,7 +552,7 @@ function DashboardPlaylistPage() {
                         : "No path info"}
                     </p>
                   </div>
-                  <div className="flex items-center justify-end">
+                  <div className="dashboard-playlist__manual-add flex items-center justify-end">
                     <Button
                       size="sm"
                       onClick={() =>
@@ -576,15 +586,55 @@ function DashboardPlaylistPage() {
         </CardContent>
       </Card>
 
-      <BlacklistPanel
-        artists={blacklistArtists}
-        songs={blacklistSongs}
-        description="These exact artist IDs and track IDs are currently blocked for this channel."
-      />
-
       <Card>
         <CardHeader>
-          <CardTitle>Current playlist</CardTitle>
+          <div className="flex flex-wrap items-start justify-between gap-4">
+            <CardTitle>Current playlist</CardTitle>
+            <div className="dashboard-playlist__actions flex flex-wrap gap-3">
+              <Button
+                variant="outline"
+                onClick={() => mutation.mutate({ action: "shufflePlaylist" })}
+                disabled={mutation.isPending || items.length < 2}
+              >
+                Shuffle
+              </Button>
+              <Button
+                variant="outline"
+                onClick={() => {
+                  if (
+                    window.confirm(
+                      "Empty the entire playlist? This cannot be undone."
+                    )
+                  ) {
+                    mutation.mutate({ action: "clearPlaylist" });
+                  }
+                }}
+                disabled={mutation.isPending || items.length === 0}
+              >
+                Clear playlist
+              </Button>
+              <Button
+                variant="outline"
+                onClick={() => {
+                  if (
+                    window.confirm(
+                      "Reset the session? This will clear the current playlist."
+                    )
+                  ) {
+                    mutation.mutate({ action: "resetSession" });
+                  }
+                }}
+                disabled={
+                  mutation.isPending &&
+                  pendingRowAction?.action === "resetSession"
+                    ? true
+                    : items.length === 0
+                }
+              >
+                Reset session
+              </Button>
+            </div>
+          </div>
         </CardHeader>
         <CardContent className="grid gap-3">
           {playlistActionError ? (
@@ -594,270 +644,55 @@ function DashboardPlaylistPage() {
           ) : null}
           <AnimatePresence initial={false} mode="popLayout">
             {items.map((item, index) => (
-              <motion.div
+              <PlaylistQueueItem
                 key={item.id}
-                layout
-                initial={{ opacity: 0, y: 10, scale: 0.99 }}
-                animate={{ opacity: 1, y: 0, scale: 1 }}
-                exit={{ opacity: 0, y: -10, scale: 0.985 }}
-                transition={playlistItemTransition}
-                className={`rounded-[24px] border px-5 py-4 ${
-                  index % 2 === 0
-                    ? "border-(--border) bg-(--panel-soft)"
-                    : "border-(--border) bg-(--panel-muted)"
-                }`}
-              >
-                <div className="flex flex-wrap items-start justify-between gap-4">
-                  <div className="min-w-0">
-                    <div className="flex flex-wrap items-center gap-3">
-                      <span className="rounded-full border border-(--border) bg-(--panel) px-3 py-1 text-xs font-semibold uppercase tracking-[0.18em] text-(--muted)">
-                        #{item.position}
-                      </span>
-                      <Badge
-                        variant="outline"
-                        className="uppercase tracking-[0.18em]"
-                      >
-                        {item.status}
-                      </Badge>
-                      {item.warningMessage ? (
-                        <span className="inline-flex items-center gap-2 rounded-full border border-amber-400/40 bg-amber-500/15 px-3 py-1 text-xs font-semibold uppercase tracking-[0.18em] text-amber-200">
-                          <AlertTriangle className="h-3.5 w-3.5" />
-                          Warning
-                        </span>
-                      ) : null}
-                    </div>
-                    <p className="mt-3 text-xl font-semibold text-(--text)">
-                      {item.songTitle}
-                    </p>
-                    <p className="mt-1 text-sm text-(--brand-deep)">
-                      {item.songArtist ?? "Unknown artist"}
-                    </p>
-                    {item.requestedQuery ? (
-                      <p className="mt-2 text-xs text-amber-200">
-                        Requested text: {item.requestedQuery}
-                      </p>
-                    ) : null}
-                    {item.warningMessage ? (
-                      <p className="mt-2 text-sm text-amber-100">
-                        {item.warningMessage}
-                      </p>
-                    ) : null}
-                    <div className="mt-3 flex flex-wrap gap-x-4 gap-y-2 text-xs text-(--muted)">
-                      <span>Requested {formatTimeAgo(item.createdAt)}</span>
-                      {item.songAlbum ? (
-                        <span>Album: {item.songAlbum}</span>
-                      ) : null}
-                      {item.songCreator ? (
-                        <span>Creator: {item.songCreator}</span>
-                      ) : null}
-                      {item.songTuning ? (
-                        <span>Tuning: {item.songTuning}</span>
-                      ) : null}
-                      {item.requestedByDisplayName || item.requestedByLogin ? (
-                        <span>
-                          Requested by{" "}
-                          {item.requestedByDisplayName ?? item.requestedByLogin}
-                        </span>
-                      ) : null}
-                      {item.songDurationText ? (
-                        <span>Duration: {item.songDurationText}</span>
-                      ) : null}
-                    </div>
-                    <div className="mt-4 grid gap-2">
-                      {requiredPaths.length > 0 ? (
-                        <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-(--muted)">
-                          Stream rule paths
-                        </p>
-                      ) : null}
-                      <div className="flex flex-wrap gap-2">
-                        {["lead", "rhythm", "bass", "voice"].map((path) => (
-                          <PathStatusChip
-                            key={`${item.id}-${path}`}
-                            path={path}
-                            required={requiredPaths.includes(path)}
-                            available={getSongParts(item.songPartsJson).some(
-                              (part) =>
-                                normalizePathToken(part) ===
-                                normalizePathToken(path)
-                            )}
-                          />
-                        ))}
-                      </div>
-                    </div>
-                    <details className="mt-4 rounded-[20px] border border-(--border) bg-(--panel) p-4">
-                      <summary className="cursor-pointer list-none text-sm font-medium text-(--brand-deep)">
-                        View {getResolvedCandidates(item).length} version
-                        {getResolvedCandidates(item).length === 1 ? "" : "s"}
-                      </summary>
-                      <div className="mt-4 overflow-x-auto rounded-[16px] border border-(--border)">
-                        <table className="min-w-full table-fixed border-collapse">
-                          <thead className="bg-(--panel-muted)">
-                            <tr className="text-left text-[11px] font-semibold uppercase tracking-[0.16em] text-(--muted)">
-                              <th className="w-[30%] px-4 py-3">Song</th>
-                              <th className="w-[12%] px-4 py-3">Tuning</th>
-                              <th className="w-[14%] px-4 py-3">Paths</th>
-                              <th className="w-[14%] px-4 py-3">Creator</th>
-                              <th className="w-[8%] px-4 py-3">Length</th>
-                              <th className="w-[10%] px-4 py-3">Updated</th>
-                              <th className="w-[6%] px-4 py-3">DLs</th>
-                              <th className="w-[6%] px-4 py-3 text-right">
-                                Action
-                              </th>
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {getResolvedCandidates(item).map(
-                              (candidate, candidateIndex) => (
-                                <tr
-                                  key={`${item.id}-${candidate.id}-${candidateIndex}`}
-                                  className={`border-t border-(--border) text-sm ${
-                                    candidateIndex % 2 === 0
-                                      ? "bg-(--panel-strong)"
-                                      : "bg-(--panel-soft)"
-                                  }`}
-                                >
-                                  <td className="px-4 py-3 align-top">
-                                    <div className="min-w-0">
-                                      <p className="truncate font-medium text-(--text)">
-                                        {candidate.artist
-                                          ? `${candidate.artist} - ${candidate.title}`
-                                          : candidate.title}
-                                      </p>
-                                      {candidate.album ? (
-                                        <p className="mt-1 truncate text-xs text-(--muted)">
-                                          {candidate.album}
-                                        </p>
-                                      ) : null}
-                                    </div>
-                                  </td>
-                                  <td className="px-4 py-3 align-top text-(--text)">
-                                    <span className="block truncate">
-                                      {candidate.tuning ?? "Unknown"}
-                                    </span>
-                                  </td>
-                                  <td className="px-4 py-3 align-top text-(--text)">
-                                    <span className="block truncate">
-                                      {candidate.parts?.length
-                                        ? candidate.parts
-                                            .map((part) =>
-                                              formatPathLabel(part)
-                                            )
-                                            .join(", ")
-                                        : "Unknown"}
-                                    </span>
-                                  </td>
-                                  <td className="px-4 py-3 align-top text-(--text)">
-                                    <span className="block truncate">
-                                      {candidate.creator ?? "Unknown"}
-                                    </span>
-                                  </td>
-                                  <td className="px-4 py-3 align-top text-(--text)">
-                                    {candidate.durationText ?? "??:??"}
-                                  </td>
-                                  <td className="px-4 py-3 align-top text-(--text)">
-                                    {candidate.sourceUpdatedAt
-                                      ? formatDate(candidate.sourceUpdatedAt)
-                                      : "Unknown"}
-                                  </td>
-                                  <td className="px-4 py-3 align-top text-(--text)">
-                                    {candidate.downloads != null
-                                      ? candidate.downloads.toLocaleString()
-                                      : "Unknown"}
-                                  </td>
-                                  <td className="px-4 py-3 align-top text-right">
-                                    {candidate.sourceUrl ? (
-                                      <Button
-                                        size="sm"
-                                        variant="outline"
-                                        asChild
-                                      >
-                                        <a
-                                          href={candidate.sourceUrl}
-                                          target="_blank"
-                                          rel="noreferrer"
-                                          className="no-underline"
-                                        >
-                                          Download
-                                        </a>
-                                      </Button>
-                                    ) : null}
-                                  </td>
-                                </tr>
-                              )
-                            )}
-                          </tbody>
-                        </table>
-                      </div>
-                    </details>
-                  </div>
-
-                  <div className="flex max-w-full flex-col items-end gap-3">
-                    <div className="flex flex-wrap justify-end gap-2">
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        onClick={() =>
-                          mutation.mutate({
-                            action: "setCurrent",
-                            itemId: item.id,
-                          })
-                        }
-                        disabled={
-                          currentItemId === item.id ||
-                          isRowPending("setCurrent", item.id)
-                        }
-                      >
-                        Play now
-                      </Button>
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        onClick={() =>
-                          mutation.mutate({
-                            action: "markPlayed",
-                            itemId: item.id,
-                          })
-                        }
-                        disabled={
-                          currentItemId !== item.id ||
-                          isRowPending("markPlayed", item.id)
-                        }
-                      >
-                        Mark played
-                      </Button>
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        onClick={() =>
-                          mutation.mutate({
-                            action: "skipItem",
-                            itemId: item.id,
-                          })
-                        }
-                        disabled={
-                          item.status === "current" ||
-                          isRowPending("skipItem", item.id)
-                        }
-                      >
-                        Skip
-                      </Button>
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        onClick={() =>
-                          mutation.mutate({
-                            action: "deleteItem",
-                            itemId: item.id,
-                          })
-                        }
-                        disabled={isDeletingItem(item.id)}
-                      >
-                        Delete
-                      </Button>
-                    </div>
-                  </div>
-                </div>
-              </motion.div>
+                item={item}
+                index={index}
+                draggingItemId={draggingItemId}
+                dropTargetState={dropTargetState}
+                currentItemId={currentItemId}
+                isDeletingItem={isDeletingItem(item.id)}
+                isSetCurrentPending={isRowPending("setCurrent", item.id)}
+                isMarkPlayedPending={isRowPending("markPlayed", item.id)}
+                onDragStart={setDraggingItemId}
+                onDragEnd={() => {
+                  setDraggingItemId(null);
+                  setDropTargetState(null);
+                }}
+                onDragHover={(targetItemId, edge) =>
+                  setDropTargetState({ itemId: targetItemId, edge })
+                }
+                onDragLeave={() => {
+                  setDropTargetState((current) =>
+                    current?.itemId === item.id ? null : current
+                  );
+                }}
+                onReorder={reorderPlaylist}
+                onSetCurrent={() =>
+                  mutation.mutate({
+                    action: "setCurrent",
+                    itemId: item.id,
+                  })
+                }
+                onMarkPlayed={() =>
+                  mutation.mutate({
+                    action: "markPlayed",
+                    itemId: item.id,
+                  })
+                }
+                onDelete={() => {
+                  const confirmed = window.confirm(
+                    "Delete this song from the playlist? This cannot be undone."
+                  );
+                  if (!confirmed) {
+                    return;
+                  }
+                  mutation.mutate({
+                    action: "deleteItem",
+                    itemId: item.id,
+                  });
+                }}
+              />
             ))}
           </AnimatePresence>
           {items.length === 0 ? (
@@ -867,6 +702,14 @@ function DashboardPlaylistPage() {
           ) : null}
         </CardContent>
       </Card>
+
+      <BlacklistPanel
+        artists={blacklistArtists}
+        songs={blacklistSongs}
+        description="These exact artist IDs and track IDs are currently blocked for this channel."
+        collapsible
+        defaultOpen={false}
+      />
 
       <Card>
         <CardHeader>
@@ -884,16 +727,23 @@ function DashboardPlaylistPage() {
             >
               <div className="flex flex-wrap items-start justify-between gap-3">
                 <div className="min-w-0">
-                  <p className="font-medium text-(--text)">
-                    {song.songTitle}
-                    {song.songArtist ? ` by ${song.songArtist}` : ""}
-                  </p>
-                  <p className="mt-1 text-sm text-(--muted)">
-                    {(song.requestedByDisplayName ?? song.requestedByLogin)
-                      ? `Requested by ${song.requestedByDisplayName ?? song.requestedByLogin} · `
-                      : ""}
-                    {new Date(song.playedAt).toLocaleString()}
-                  </p>
+                  <p className="font-medium text-(--text)">{song.songTitle}</p>
+                  {song.songArtist ? (
+                    <p className="mt-1 text-sm text-(--brand-deep)">
+                      {song.songArtist}
+                    </p>
+                  ) : null}
+                  <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-2 text-sm">
+                    {(song.requestedByDisplayName ?? song.requestedByLogin) ? (
+                      <p className="text-(--brand-deep)">
+                        Requested by{" "}
+                        {song.requestedByDisplayName ?? song.requestedByLogin}
+                      </p>
+                    ) : null}
+                    <p className="text-(--muted)">
+                      Played {formatTimeAgo(song.playedAt)}
+                    </p>
+                  </div>
                 </div>
                 <div className="flex shrink-0 items-center gap-2">
                   {song.requestKind === "vip" ? (
@@ -929,28 +779,6 @@ function DashboardPlaylistPage() {
   );
 }
 
-function PlaylistStat(props: {
-  label: string;
-  value: number;
-  icon: React.ComponentType<{ className?: string }>;
-}) {
-  const Icon = props.icon;
-
-  return (
-    <div className="rounded-[26px] border border-(--border) bg-(--panel-soft) p-4">
-      <div className="flex items-center justify-between gap-3">
-        <p className="text-sm uppercase tracking-[0.16em] text-(--muted)">
-          {props.label}
-        </p>
-        <Icon className="h-4 w-4 text-(--brand-deep)" />
-      </div>
-      <p className="mt-3 text-4xl font-semibold tracking-[-0.03em] text-(--text)">
-        {props.value}
-      </p>
-    </div>
-  );
-}
-
 function getSongParts(partsJson?: string) {
   if (!partsJson) {
     return [];
@@ -962,15 +790,6 @@ function getSongParts(partsJson?: string) {
   } catch {
     return [];
   }
-}
-
-function normalizePathToken(value: string) {
-  const normalized = value.trim().toLowerCase();
-  if (normalized === "vocals") {
-    return "voice";
-  }
-
-  return normalized;
 }
 
 function getPlaylistCandidates(candidateMatchesJson?: string) {
@@ -991,6 +810,7 @@ function getResolvedCandidates(item: PlaylistItem) {
   if (candidates.length > 0) {
     return candidates.map((candidate) => ({
       ...candidate,
+      album: candidate.album ?? item.songAlbum,
       sourceUrl: normalizeSongSourceUrl({
         source: "library",
         sourceUrl: candidate.sourceUrl,
@@ -1004,6 +824,7 @@ function getResolvedCandidates(item: PlaylistItem) {
       id: item.id,
       title: item.songTitle,
       artist: item.songArtist,
+      album: item.songAlbum,
       creator: item.songCreator,
       tuning: item.songTuning,
       parts: getSongParts(item.songPartsJson),
@@ -1045,26 +866,429 @@ function formatDate(timestamp: number) {
   return new Date(timestamp).toLocaleDateString();
 }
 
-function PathStatusChip(props: {
-  path: string;
-  required: boolean;
-  available: boolean;
+function getRequesterLabel(item: PlaylistItem) {
+  return item.requestedByDisplayName ?? item.requestedByLogin ?? null;
+}
+
+function orderPlaylistItems(items: PlaylistItem[], orderedItemIds: string[]) {
+  const itemLookup = new Map(items.map((item) => [item.id, item]));
+  const orderedItems = orderedItemIds
+    .map((itemId) => itemLookup.get(itemId))
+    .filter((item): item is PlaylistItem => Boolean(item));
+  const missingItems = items.filter(
+    (item) => !orderedItemIds.includes(item.id)
+  );
+
+  return [...orderedItems, ...missingItems].map((item, index) => ({
+    ...item,
+    position: index + 1,
+  }));
+}
+
+function getReorderedItemIds(
+  items: PlaylistItem[],
+  sourceItemId: string,
+  targetItemId: string,
+  edge: Edge
+) {
+  const startIndex = items.findIndex((item) => item.id === sourceItemId);
+  const indexOfTarget = items.findIndex((item) => item.id === targetItemId);
+
+  if (startIndex === -1 || indexOfTarget === -1) {
+    return null;
+  }
+
+  const finishIndex = getReorderDestinationIndex({
+    startIndex,
+    indexOfTarget,
+    closestEdgeOfTarget: edge,
+    axis: "vertical",
+  });
+
+  if (finishIndex === startIndex) {
+    return null;
+  }
+
+  return reorder({
+    list: items.map((item) => item.id),
+    startIndex,
+    finishIndex,
+  });
+}
+
+function getPlaylistDragData(args: {
+  itemId: string;
+  element: HTMLElement;
+  input: Parameters<typeof attachClosestEdge>[1]["input"];
 }) {
-  const label = formatPathLabel(props.path);
-  const className = props.required
-    ? props.available
-      ? "border-emerald-400/40 bg-emerald-500/15 text-emerald-200"
-      : "border-rose-400/40 bg-rose-500/15 text-rose-200"
-    : props.available
-      ? "border-(--border-strong) bg-(--panel) text-(--text)"
-      : "border-(--border) bg-(--panel-soft) text-(--muted)";
+  return attachClosestEdge(
+    {
+      type: "playlist-item",
+      itemId: args.itemId,
+    },
+    {
+      element: args.element,
+      input: args.input,
+      allowedEdges: ["top", "bottom"],
+    }
+  );
+}
+
+function PlaylistQueueItem(props: {
+  item: PlaylistItem;
+  index: number;
+  draggingItemId: string | null;
+  dropTargetState: { itemId: string; edge: Edge } | null;
+  currentItemId: string | null;
+  isDeletingItem: boolean;
+  isSetCurrentPending: boolean;
+  isMarkPlayedPending: boolean;
+  onDragStart: (itemId: string) => void;
+  onDragEnd: () => void;
+  onDragHover: (targetItemId: string, edge: Edge) => void;
+  onDragLeave: () => void;
+  onReorder: (sourceItemId: string, targetItemId: string, edge: Edge) => void;
+  onSetCurrent: () => void;
+  onMarkPlayed: () => void;
+  onDelete: () => void;
+}) {
+  const itemRef = useRef<HTMLDivElement | null>(null);
+  const dragHandleRef = useRef<HTMLButtonElement | null>(null);
+  const isDragging = props.draggingItemId === props.item.id;
+  const isCurrentItem = props.item.status === "current";
+  const dropEdge =
+    props.dropTargetState?.itemId === props.item.id
+      ? props.dropTargetState.edge
+      : null;
+  const resolvedCandidates = getResolvedCandidates(props.item);
+
+  useEffect(() => {
+    const element = itemRef.current;
+    const dragHandle = dragHandleRef.current;
+
+    if (!element || !dragHandle) {
+      return;
+    }
+
+    return draggable({
+      element,
+      dragHandle,
+      canDrag: () => !isCurrentItem,
+      getInitialData: () => ({
+        type: "playlist-item",
+        itemId: props.item.id,
+      }),
+      onDragStart: () => {
+        props.onDragStart(props.item.id);
+      },
+      onDrop: () => {
+        props.onDragEnd();
+      },
+    });
+  }, [isCurrentItem, props.item.id, props.onDragEnd, props.onDragStart]);
+
+  useEffect(() => {
+    const element = itemRef.current;
+
+    if (!element) {
+      return;
+    }
+
+    return dropTargetForElements({
+      element,
+      canDrop: ({ source }) =>
+        !isCurrentItem &&
+        source.data.type === "playlist-item" &&
+        source.data.itemId !== props.item.id,
+      getData: ({ input, element }) =>
+        getPlaylistDragData({
+          itemId: props.item.id,
+          element: element as HTMLElement,
+          input,
+        }),
+      onDragEnter: ({ self }) => {
+        const edge = extractClosestEdge(self.data);
+        if (edge) {
+          props.onDragHover(props.item.id, edge);
+        }
+      },
+      onDrag: ({ self }) => {
+        const edge = extractClosestEdge(self.data);
+        if (edge) {
+          props.onDragHover(props.item.id, edge);
+        }
+      },
+      onDragLeave: () => {
+        props.onDragLeave();
+      },
+      onDrop: ({ source, self }) => {
+        const edge = extractClosestEdge(self.data);
+        const sourceItemId =
+          typeof source.data.itemId === "string" ? source.data.itemId : null;
+
+        if (!edge || !sourceItemId) {
+          props.onDragEnd();
+          return;
+        }
+
+        props.onReorder(sourceItemId, props.item.id, edge);
+        props.onDragEnd();
+      },
+    });
+  }, [
+    props.item.id,
+    isCurrentItem,
+    props.onDragEnd,
+    props.onDragHover,
+    props.onDragLeave,
+    props.onReorder,
+  ]);
+
+  return (
+    <motion.div
+      ref={itemRef}
+      layout
+      initial={{ opacity: 0, y: 10, scale: 0.99 }}
+      animate={{ opacity: isDragging ? 0.72 : 1, y: 0, scale: 1 }}
+      exit={{ opacity: 0, y: -10, scale: 0.985 }}
+      transition={playlistItemTransition}
+      className={`dashboard-playlist__item group relative rounded-[24px] border ${
+        props.index % 2 === 0
+          ? "border-(--border) bg-(--panel-soft)"
+          : "border-(--border) bg-(--panel-muted)"
+      }`}
+    >
+      {dropEdge === "top" ? (
+        <div className="pointer-events-none absolute inset-x-4 top-0 h-0.5 rounded-full bg-(--brand)" />
+      ) : null}
+      {dropEdge === "bottom" ? (
+        <div className="pointer-events-none absolute inset-x-4 bottom-0 h-0.5 rounded-full bg-(--brand)" />
+      ) : null}
+
+      <div className="flex items-stretch">
+        <button
+          ref={dragHandleRef}
+          type="button"
+          aria-label={`Reorder ${props.item.songTitle}`}
+          className={`dashboard-playlist__drag-handle inline-flex w-11 shrink-0 items-center justify-center self-stretch rounded-l-[24px] border-r border-(--border) px-2 text-(--muted) opacity-45 transition ${
+            isCurrentItem
+              ? "cursor-not-allowed opacity-30"
+              : "cursor-grab group-hover:opacity-100 hover:bg-(--panel) hover:text-(--text) active:cursor-grabbing"
+          }`}
+          disabled={isCurrentItem}
+        >
+          <span className="flex h-full min-h-[8.5rem] items-center justify-center">
+            <GripVertical className="h-4.5 w-4.5" />
+          </span>
+        </button>
+
+        <div className="min-w-0 flex-1 px-5 py-4">
+          <div className="flex flex-wrap items-start justify-between gap-4">
+            <div className="flex flex-wrap items-center gap-3">
+              <span className="rounded-full border border-(--border) bg-(--panel) px-3 py-1 text-xs font-semibold uppercase tracking-[0.18em] text-(--muted)">
+                #{props.item.position}
+              </span>
+              {isCurrentItem ? (
+                <Badge className="border-emerald-400/35 bg-emerald-500/15 text-emerald-200 hover:bg-emerald-500/15">
+                  Playing
+                </Badge>
+              ) : null}
+              {props.item.warningMessage ? (
+                <StatusPill
+                  icon={AlertTriangle}
+                  className="border-amber-400/40 bg-amber-500/15 text-amber-200"
+                >
+                  Warning
+                </StatusPill>
+              ) : null}
+            </div>
+
+            <div className="dashboard-playlist__item-actions flex max-w-full flex-wrap justify-end gap-2">
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={props.onSetCurrent}
+                disabled={
+                  props.currentItemId === props.item.id ||
+                  props.isSetCurrentPending
+                }
+              >
+                Play now
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={props.onMarkPlayed}
+                disabled={
+                  props.currentItemId !== props.item.id ||
+                  props.isMarkPlayedPending
+                }
+              >
+                Mark played
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={props.onDelete}
+                disabled={props.isDeletingItem}
+              >
+                Delete
+              </Button>
+            </div>
+          </div>
+
+          <div className="mt-3 min-w-0">
+            <p className="text-xl font-semibold text-(--text)">
+              {props.item.songTitle}
+            </p>
+            <p className="mt-1 text-sm text-(--brand-deep)">
+              {props.item.songArtist ?? "Unknown artist"}
+              {props.item.songAlbum ? ` - ${props.item.songAlbum}` : ""}
+            </p>
+            <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-2">
+              {getRequesterLabel(props.item) ? (
+                <p className="text-sm font-medium text-(--brand-deep)">
+                  Requested by {getRequesterLabel(props.item)}
+                </p>
+              ) : null}
+              <p className="inline-flex items-center gap-1.5 text-sm text-(--muted)">
+                <Clock3 className="h-3.5 w-3.5" />
+                <span>Requested {formatTimeAgo(props.item.createdAt)}</span>
+              </p>
+            </div>
+            {props.item.requestedQuery ? (
+              <p className="mt-2 text-xs text-amber-200">
+                Requested text: {props.item.requestedQuery}
+              </p>
+            ) : null}
+            {props.item.warningMessage ? (
+              <p className="mt-2 text-sm text-amber-100">
+                {props.item.warningMessage}
+              </p>
+            ) : null}
+          </div>
+
+          <details className="mt-4 border-t border-(--border) pt-4">
+            <summary className="cursor-pointer list-none text-sm font-medium text-(--brand-deep)">
+              View {resolvedCandidates.length} version
+              {resolvedCandidates.length === 1 ? "" : "s"}
+            </summary>
+            <div className="mt-3 overflow-hidden rounded-[16px] border border-(--border)">
+              <div className="grid">
+                {resolvedCandidates.map((candidate, candidateIndex) => (
+                  <div
+                    key={`${props.item.id}-${candidate.id}-${candidateIndex}`}
+                    className={`grid gap-3 border-t border-(--border) px-4 py-4 first:border-t-0 ${
+                      candidateIndex % 2 === 0
+                        ? "bg-(--panel-strong)"
+                        : "bg-(--panel-soft)"
+                    }`}
+                  >
+                    <div className="flex flex-wrap items-start justify-between gap-3">
+                      <div className="min-w-0 flex-1">
+                        <p className="truncate font-medium text-(--text)">
+                          {candidate.title}
+                        </p>
+                        {candidate.album ? (
+                          <p className="mt-1 truncate text-xs text-(--muted)">
+                            {candidate.album}
+                          </p>
+                        ) : null}
+                      </div>
+                      {candidate.sourceUrl ? (
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          asChild
+                          className="shrink-0"
+                        >
+                          <a
+                            href={candidate.sourceUrl}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="no-underline"
+                          >
+                            Download
+                          </a>
+                        </Button>
+                      ) : null}
+                    </div>
+
+                    <div className="grid gap-x-6 gap-y-2 text-sm sm:grid-cols-2 xl:grid-cols-3">
+                      <VersionMeta
+                        label="Tuning"
+                        value={candidate.tuning ?? "Unknown"}
+                      />
+                      <VersionMeta
+                        label="Paths"
+                        value={
+                          candidate.parts?.length
+                            ? candidate.parts
+                                .map((part) => formatPathLabel(part))
+                                .join(", ")
+                            : "Unknown"
+                        }
+                      />
+                      <VersionMeta
+                        label="Creator"
+                        value={candidate.creator ?? "Unknown"}
+                      />
+                      <VersionMeta
+                        label="Length"
+                        value={candidate.durationText ?? "??:??"}
+                      />
+                      <VersionMeta
+                        label="Updated"
+                        value={
+                          candidate.sourceUpdatedAt
+                            ? formatDate(candidate.sourceUpdatedAt)
+                            : "Unknown"
+                        }
+                      />
+                      <VersionMeta
+                        label="DLs"
+                        value={
+                          candidate.downloads != null
+                            ? candidate.downloads.toLocaleString()
+                            : "Unknown"
+                        }
+                      />
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </details>
+        </div>
+      </div>
+    </motion.div>
+  );
+}
+
+function StatusPill(props: {
+  icon: LucideIcon;
+  className?: string;
+  children: ReactNode;
+}) {
+  const Icon = props.icon;
 
   return (
     <span
-      className={`rounded-full border px-3 py-1 text-xs font-medium ${className}`}
+      className={`inline-flex items-center gap-2 rounded-full px-3 py-1 text-xs font-semibold uppercase tracking-[0.18em] ${props.className ?? ""}`}
     >
-      {label}
-      {props.required ? (props.available ? " required" : " missing") : ""}
+      <Icon className="h-3.5 w-3.5" />
+      {props.children}
     </span>
+  );
+}
+
+function VersionMeta(props: { label: string; value: string }) {
+  return (
+    <div className="min-w-0">
+      <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-(--muted)">
+        {props.label}
+      </p>
+      <p className="mt-1 truncate text-(--text)">{props.value}</p>
+    </div>
   );
 }

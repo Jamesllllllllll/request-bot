@@ -8,6 +8,7 @@ import {
   type StreamOverlayTheme,
 } from "~/components/stream-overlay";
 import { formatSlugTitle, pageTitle } from "~/lib/page-title";
+import { getPickNumbersForQueuedItems } from "~/lib/pick-order";
 import { hexToRgba } from "~/lib/utils";
 
 type OverlayPageData = {
@@ -82,34 +83,19 @@ function StreamPlaylistOverlayPage() {
         playedSongs?: Array<{
           requestedByTwitchUserId?: string | null;
           requestedByLogin?: string | null;
+          requestedAt?: number | null;
+          playedAt?: number | null;
+          createdAt?: number | null;
         }>;
       };
-
-      const playedCounts = new Map<string, number>();
-      for (const row of payload.playedSongs ?? []) {
-        const key = row.requestedByTwitchUserId || row.requestedByLogin || "";
-        if (!key) {
-          continue;
-        }
-        playedCounts.set(key, (playedCounts.get(key) ?? 0) + 1);
-      }
-
-      const queuedCounts = new Map<string, number>();
-      const items = payload.items.map((item) => {
-        const key = item.requestedByTwitchUserId || item.requestedByLogin || "";
-        const priorPlayed = key ? (playedCounts.get(key) ?? 0) : 0;
-        const earlierQueued = key ? (queuedCounts.get(key) ?? 0) : 0;
-        const pickNumber = key ? priorPlayed + earlierQueued + 1 : null;
-
-        if (key) {
-          queuedCounts.set(key, earlierQueued + 1);
-        }
-
-        return {
-          ...item,
-          pickNumber,
-        };
-      });
+      const pickNumbers = getPickNumbersForQueuedItems(
+        payload.items,
+        payload.playedSongs ?? []
+      );
+      const items = payload.items.map((item, index) => ({
+        ...item,
+        pickNumber: pickNumbers[index] ?? null,
+      }));
 
       queryClient.setQueryData(
         ["stream-overlay", slug, token],

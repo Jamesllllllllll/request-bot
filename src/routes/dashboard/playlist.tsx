@@ -124,6 +124,7 @@ type PlaylistQueryData = {
   items: PlaylistItem[];
   playedSongs: PlayedSong[];
   blacklistArtists: Array<{ artistId: number; artistName: string }>;
+  blacklistCharters: Array<{ charterId: number; charterName: string }>;
   blacklistSongs: Array<{
     songId: number;
     songTitle: string;
@@ -167,6 +168,10 @@ function DashboardPlaylistPage() {
         items: PlaylistItem[];
         playedSongs: PlayedSong[];
         blacklistArtists: Array<{ artistId: number; artistName: string }>;
+        blacklistCharters: Array<{
+          charterId: number;
+          charterName: string;
+        }>;
         blacklistSongs: Array<{
           songId: number;
           songTitle: string;
@@ -424,6 +429,7 @@ function DashboardPlaylistPage() {
   const items = playlistQuery.data?.items ?? [];
   const playedSongs = playlistQuery.data?.playedSongs ?? [];
   const blacklistArtists = playlistQuery.data?.blacklistArtists ?? [];
+  const blacklistCharters = playlistQuery.data?.blacklistCharters ?? [];
   const blacklistSongs = playlistQuery.data?.blacklistSongs ?? [];
   const managedChannel = playlistQuery.data?.channel ?? null;
   const accessRole = playlistQuery.data?.accessRole ?? "owner";
@@ -703,8 +709,9 @@ function DashboardPlaylistPage() {
 
       <BlacklistPanel
         artists={blacklistArtists}
+        charters={blacklistCharters}
         songs={blacklistSongs}
-        description="These exact artist IDs and track IDs are currently blocked for this channel."
+        description="These exact artist IDs, charter IDs, and track IDs are currently blocked for this channel."
         collapsible
         defaultOpen={false}
       />

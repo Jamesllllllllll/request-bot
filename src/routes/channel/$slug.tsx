@@ -43,6 +43,7 @@ type ChannelPageData = {
     items?: EnrichedChannelPlaylistItem[];
     playedSongs?: PlayedSongRow[];
     blacklistArtists?: Array<{ artistId: number; artistName: string }>;
+    blacklistCharters?: Array<{ charterId: number; charterName: string }>;
     blacklistSongs?: Array<{
       songId: number;
       songTitle: string;
@@ -93,6 +94,7 @@ function ChannelPage() {
         items?: ChannelPlaylistItem[];
         playedSongs?: PlayedSongRow[];
         blacklistArtists?: ChannelPageData["playlist"]["blacklistArtists"];
+        blacklistCharters?: ChannelPageData["playlist"]["blacklistCharters"];
         blacklistSongs?: ChannelPageData["playlist"]["blacklistSongs"];
       };
 
@@ -163,8 +165,9 @@ function ChannelPage() {
 
       <BlacklistPanel
         artists={data?.playlist.blacklistArtists ?? []}
+        charters={data?.playlist.blacklistCharters ?? []}
         songs={data?.playlist.blacklistSongs ?? []}
-        description="These exact artist IDs and track IDs are blocked for requests in this channel."
+        description="These exact artist IDs, charter IDs, and track IDs are blocked for requests in this channel."
       />
 
       <PublicPlayedHistoryCard slug={slug} />

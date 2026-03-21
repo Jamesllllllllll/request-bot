@@ -84,6 +84,7 @@ async function requireDashboardState(
     items: playlistState.items,
     playedSongs: playedRows,
     blacklistArtists: blacklist.blacklistArtists,
+    blacklistCharters: blacklist.blacklistCharters,
     blacklistSongs: blacklist.blacklistSongs,
     accessRole: access.accessRole,
     actorUserId: access.actorUserId,
@@ -139,6 +140,7 @@ export const Route = createFileRoute("/api/dashboard/playlist")({
             items: await enrichPlaylistItems(runtimeEnv, state.items),
             playedSongs: state.playedSongs,
             blacklistArtists: state.blacklistArtists,
+            blacklistCharters: state.blacklistCharters,
             blacklistSongs: state.blacklistSongs,
             accessRole: state.accessRole,
             requiredPaths: state.settings

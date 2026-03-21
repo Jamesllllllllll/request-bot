@@ -101,6 +101,7 @@ describe("request policy", () => {
       commandPrefix: "!sr",
       appUrl: "https://example.com",
       blacklistArtists: [],
+      blacklistCharters: [],
       blacklistSongs: [],
       setlistArtists: [],
     });
@@ -179,6 +180,7 @@ describe("request policy", () => {
           blacklistEnabled: true,
         },
         blacklistArtists: [{ artistId: 777, artistName: "David Bowie" }],
+        blacklistCharters: [],
         blacklistSongs: [],
         setlistArtists: [],
         requester: {
@@ -208,6 +210,7 @@ describe("request policy", () => {
           blacklistEnabled: true,
         },
         blacklistArtists: [],
+        blacklistCharters: [],
         blacklistSongs: [
           { songId: 67890, songTitle: "Heroes", artistName: "Other Artist" },
         ],
@@ -222,6 +225,40 @@ describe("request policy", () => {
     ).toEqual({
       allowed: false,
       reason: "That song is blocked in this channel.",
+    });
+  });
+
+  it("blocks charter matches by exact charter ID", () => {
+    expect(
+      isSongAllowed({
+        song: {
+          id: "song-3",
+          sourceId: 24680,
+          artistId: 999,
+          authorId: 555,
+          title: "Song",
+          artist: "Artist",
+          creator: "Charter Name",
+          source: "library",
+        },
+        settings: {
+          ...baseSettings,
+          blacklistEnabled: true,
+        },
+        blacklistArtists: [],
+        blacklistCharters: [{ charterId: 555, charterName: "Charter Name" }],
+        blacklistSongs: [],
+        setlistArtists: [],
+        requester: {
+          isBroadcaster: false,
+          isModerator: false,
+          isVip: false,
+          isSubscriber: false,
+        },
+      })
+    ).toEqual({
+      allowed: false,
+      reason: "Charter Name is blacklisted in this channel.",
     });
   });
 });

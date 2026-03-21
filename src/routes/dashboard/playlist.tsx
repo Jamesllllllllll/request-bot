@@ -200,8 +200,6 @@ function DashboardPlaylistPage() {
         page: "1",
         pageSize: "6",
         field: "any",
-        sortBy: "relevance",
-        sortDirection: "desc",
       });
       const response = await fetch(`/api/search?${params.toString()}`);
       const body = (await response.json().catch(() => null)) as
@@ -808,15 +806,21 @@ function getPlaylistCandidates(candidateMatchesJson?: string) {
 function getResolvedCandidates(item: PlaylistItem) {
   const candidates = getPlaylistCandidates(item.candidateMatchesJson);
   if (candidates.length > 0) {
-    return candidates.map((candidate) => ({
-      ...candidate,
-      album: candidate.album ?? item.songAlbum,
-      sourceUrl: normalizeSongSourceUrl({
-        source: "library",
-        sourceUrl: candidate.sourceUrl,
-        sourceId: candidate.sourceId,
-      }),
-    }));
+    return [...candidates]
+      .map((candidate) => ({
+        ...candidate,
+        album: candidate.album ?? item.songAlbum,
+        sourceUrl: normalizeSongSourceUrl({
+          source: "library",
+          sourceUrl: candidate.sourceUrl,
+          sourceId: candidate.sourceId,
+        }),
+      }))
+      .sort((left, right) => {
+        const leftUpdatedAt = left.sourceUpdatedAt ?? -1;
+        const rightUpdatedAt = right.sourceUpdatedAt ?? -1;
+        return rightUpdatedAt - leftUpdatedAt;
+      });
   }
 
   return [

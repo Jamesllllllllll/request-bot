@@ -54,16 +54,6 @@ import { formatPathLabel } from "~/lib/request-policy";
 import { cn, getErrorMessage } from "~/lib/utils";
 
 type SearchField = "any" | "title" | "artist" | "album" | "creator";
-type SearchSort =
-  | "relevance"
-  | "artist"
-  | "title"
-  | "album"
-  | "creator"
-  | "tuning"
-  | "duration"
-  | "downloads"
-  | "updated";
 
 export interface SearchSong {
   id: string;
@@ -129,8 +119,6 @@ export function SongSearchPanel(props: {
   const [debouncedQuery, setDebouncedQuery] = useState("");
   const [page, setPage] = useState(1);
   const [field, setField] = useState<SearchField>("any");
-  const [sortBy, setSortBy] = useState<SearchSort>("relevance");
-  const [sortDirection, setSortDirection] = useState<"asc" | "desc">("desc");
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [copiedCommand, setCopiedCommand] = useState<{
     songId: string;
@@ -161,15 +149,13 @@ export function SongSearchPanel(props: {
 
   useEffect(() => {
     setPage(1);
-  }, [debouncedAdvancedFilters, debouncedQuery, field, sortBy, sortDirection]);
+  }, [debouncedAdvancedFilters, debouncedQuery, field]);
 
   const searchParams = useMemo(() => {
     const params = new URLSearchParams({
       page: String(page),
       pageSize: "25",
       field,
-      sortBy,
-      sortDirection,
     });
 
     if (debouncedQuery.trim()) {
@@ -190,14 +176,7 @@ export function SongSearchPanel(props: {
     }
 
     return params;
-  }, [
-    debouncedAdvancedFilters,
-    debouncedQuery,
-    field,
-    page,
-    sortBy,
-    sortDirection,
-  ]);
+  }, [debouncedAdvancedFilters, debouncedQuery, field, page]);
 
   const hasSearchInput = useMemo(
     () =>
@@ -266,9 +245,7 @@ export function SongSearchPanel(props: {
   const catalogTotalQuery = useQuery<Pick<SearchResponse, "total">>({
     queryKey: ["song-search-total-count"],
     queryFn: async () => {
-      const response = await fetch(
-        "/api/search?page=1&pageSize=1&field=any&sortBy=relevance&sortDirection=desc"
-      );
+      const response = await fetch("/api/search?page=1&pageSize=1&field=any");
       const body = (await response.json().catch(() => null)) as
         | SearchResponse
         | { message?: string }
@@ -540,39 +517,6 @@ export function SongSearchPanel(props: {
                   <SelectItem value="artist">Artist only</SelectItem>
                   <SelectItem value="album">Album only</SelectItem>
                   <SelectItem value="creator">Creator only</SelectItem>
-                </SelectContent>
-              </Select>
-              <Select
-                value={sortBy}
-                onValueChange={(value) => setSortBy(value as SearchSort)}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Sort by" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="relevance">Best match</SelectItem>
-                  <SelectItem value="artist">Artist</SelectItem>
-                  <SelectItem value="title">Title</SelectItem>
-                  <SelectItem value="album">Album</SelectItem>
-                  <SelectItem value="creator">Creator</SelectItem>
-                  <SelectItem value="tuning">Tuning</SelectItem>
-                  <SelectItem value="duration">Duration</SelectItem>
-                  <SelectItem value="downloads">Downloads</SelectItem>
-                  <SelectItem value="updated">Recently updated</SelectItem>
-                </SelectContent>
-              </Select>
-              <Select
-                value={sortDirection}
-                onValueChange={(value) =>
-                  setSortDirection(value as "asc" | "desc")
-                }
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Direction" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="desc">Descending</SelectItem>
-                  <SelectItem value="asc">Ascending</SelectItem>
                 </SelectContent>
               </Select>
             </div>

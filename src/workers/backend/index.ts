@@ -291,6 +291,7 @@ class D1PlaylistCoordinator implements PlaylistCoordinator {
   }
 
   async manualAdd(input: ManualAddInput): Promise<PlaylistMutationResult> {
+    const db = getDb(this.env);
     const channel = await getDb(this.env).query.channels.findFirst({
       where: eq(channels.id, input.channelId),
     });
@@ -302,6 +303,51 @@ class D1PlaylistCoordinator implements PlaylistCoordinator {
     const requester = input.requesterLogin
       ? await resolveTwitchUserForRequester(this.env, input.requesterLogin)
       : null;
+
+    const settings = await db.query.channelSettings.findFirst({
+      where: eq(channelSettings.channelId, input.channelId),
+    });
+    const blacklist = await getChannelBlacklistByChannelId(
+      this.env as unknown as never,
+      input.channelId
+    );
+
+    if (!settings) {
+      throw new Error("Channel settings not found");
+    }
+
+    const songAllowed = isSongAllowed({
+      song: {
+        id: input.song.id,
+        artistId: undefined,
+        authorId: input.song.authorId,
+        title: input.song.title,
+        artist: input.song.artist,
+        album: input.song.album,
+        creator: input.song.creator,
+        tuning: input.song.tuning,
+        parts: input.song.parts,
+        durationText: input.song.durationText,
+        sourceId: input.song.cdlcId,
+        source: input.song.source,
+        sourceUrl: input.song.sourceUrl,
+      },
+      settings,
+      blacklistArtists: blacklist.blacklistArtists,
+      blacklistCharters: blacklist.blacklistCharters,
+      blacklistSongs: blacklist.blacklistSongs,
+      setlistArtists: [],
+      requester: {
+        isBroadcaster: true,
+        isModerator: false,
+        isVip: false,
+        isSubscriber: false,
+      },
+    });
+
+    if (!songAllowed.allowed) {
+      throw new Error(songAllowed.reason ?? "That song is not allowed.");
+    }
 
     return this.addRequest({
       channelId: input.channelId,

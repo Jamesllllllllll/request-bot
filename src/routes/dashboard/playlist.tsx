@@ -89,6 +89,7 @@ type ManualSearchData = Pick<SearchResponse, "results">;
 type SearchResponse = {
   results: Array<{
     id: string;
+    authorId?: number;
     title: string;
     artist?: string;
     album?: string;
@@ -523,72 +524,106 @@ function DashboardPlaylistPage() {
                 <div>Tuning / Path</div>
                 <div>Add</div>
               </div>
-              {manualSearchQuery.data?.results?.map((song, index) => (
-                <div
-                  key={song.id}
-                  className={`dashboard-playlist__manual-row grid grid-cols-[minmax(0,2.1fr)_minmax(0,1.3fr)_minmax(0,1fr)_96px] gap-4 border-t border-(--border) px-5 py-4 ${
-                    index % 2 === 0
-                      ? "bg-(--panel-strong)"
-                      : "bg-(--panel-soft)"
-                  }`}
-                >
-                  <div className="dashboard-playlist__manual-track min-w-0">
-                    <p className="truncate font-semibold text-(--text)">
-                      {song.title}
-                    </p>
-                    <p className="mt-1 truncate text-sm text-(--brand-deep)">
-                      {song.artist ?? "Unknown artist"}
-                    </p>
+              {manualSearchQuery.data?.results?.map((song, index) => {
+                const isBlacklistedCharter =
+                  song.authorId != null &&
+                  blacklistedCharterIds.has(song.authorId);
+
+                return (
+                  <div
+                    key={song.id}
+                    className={`dashboard-playlist__manual-row grid grid-cols-[minmax(0,2.1fr)_minmax(0,1.3fr)_minmax(0,1fr)_96px] gap-4 border-t border-(--border) px-5 py-4 ${
+                      index % 2 === 0
+                        ? "bg-(--panel-strong)"
+                        : "bg-(--panel-soft)"
+                    } ${isBlacklistedCharter ? "opacity-55" : ""}`}
+                  >
+                    <div className="dashboard-playlist__manual-track min-w-0">
+                      <p className="truncate font-semibold text-(--text)">
+                        {song.title}
+                      </p>
+                      <p className="mt-1 truncate text-sm text-(--brand-deep)">
+                        {song.artist ?? "Unknown artist"}
+                      </p>
+                    </div>
+                    <div className="dashboard-playlist__manual-meta min-w-0">
+                      <p className="truncate text-sm text-(--text)">
+                        {song.album ?? "Unknown album"}
+                      </p>
+                      <div className="mt-1 flex flex-wrap items-center gap-2 text-sm text-(--muted)">
+                        <span>
+                          {song.creator
+                            ? `Charted by ${song.creator}`
+                            : "Unknown creator"}
+                        </span>
+                        {isBlacklistedCharter ? (
+                          <Badge
+                            variant="outline"
+                            className="border-rose-400/40 bg-rose-500/10 text-rose-200"
+                          >
+                            Blacklisted
+                          </Badge>
+                        ) : null}
+                      </div>
+                    </div>
+                    <div className="dashboard-playlist__manual-extra min-w-0">
+                      <p className="truncate text-sm text-(--text)">
+                        {song.tuning ?? "No tuning info"}
+                      </p>
+                      <p className="mt-1 truncate text-sm text-(--muted)">
+                        {song.parts?.length
+                          ? song.parts.join(", ")
+                          : "No path info"}
+                      </p>
+                    </div>
+                    <div className="dashboard-playlist__manual-add flex items-center justify-end">
+                      <Button
+                        size="sm"
+                        onClick={() =>
+                          mutation.mutate({
+                            action: "manualAdd",
+                            songId: song.id,
+                            requesterLogin:
+                              manualRequesterLogin.trim() || undefined,
+                            title: song.title,
+                            authorId: song.authorId,
+                            artist: song.artist,
+                            album: song.album,
+                            creator: song.creator,
+                            tuning: song.tuning,
+                            parts: song.parts,
+                            durationText: song.durationText,
+                            source: song.source,
+                            sourceUrl: song.sourceUrl,
+                            sourceId: song.sourceId,
+                            candidateMatchesJson: JSON.stringify([
+                              {
+                                id: song.id,
+                                authorId: song.authorId,
+                                title: song.title,
+                                artist: song.artist,
+                                album: song.album,
+                                creator: song.creator,
+                                tuning: song.tuning,
+                                parts: song.parts ?? [],
+                                durationText: song.durationText,
+                                sourceUrl: song.sourceUrl,
+                                sourceId: song.sourceId,
+                              },
+                            ]),
+                          })
+                        }
+                        disabled={
+                          isBlacklistedCharter || isManualAddPending(song.id)
+                        }
+                      >
+                        <Plus className="h-4 w-4" />
+                        Add
+                      </Button>
+                    </div>
                   </div>
-                  <div className="dashboard-playlist__manual-meta min-w-0">
-                    <p className="truncate text-sm text-(--text)">
-                      {song.album ?? "Unknown album"}
-                    </p>
-                    <p className="mt-1 truncate text-sm text-(--muted)">
-                      {song.creator
-                        ? `Charted by ${song.creator}`
-                        : "Unknown creator"}
-                    </p>
-                  </div>
-                  <div className="dashboard-playlist__manual-extra min-w-0">
-                    <p className="truncate text-sm text-(--text)">
-                      {song.tuning ?? "No tuning info"}
-                    </p>
-                    <p className="mt-1 truncate text-sm text-(--muted)">
-                      {song.parts?.length
-                        ? song.parts.join(", ")
-                        : "No path info"}
-                    </p>
-                  </div>
-                  <div className="dashboard-playlist__manual-add flex items-center justify-end">
-                    <Button
-                      size="sm"
-                      onClick={() =>
-                        mutation.mutate({
-                          action: "manualAdd",
-                          songId: song.id,
-                          requesterLogin:
-                            manualRequesterLogin.trim() || undefined,
-                          title: song.title,
-                          artist: song.artist,
-                          album: song.album,
-                          creator: song.creator,
-                          tuning: song.tuning,
-                          parts: song.parts,
-                          durationText: song.durationText,
-                          source: song.source,
-                          sourceUrl: song.sourceUrl,
-                          sourceId: song.sourceId,
-                        })
-                      }
-                      disabled={isManualAddPending(song.id)}
-                    >
-                      <Plus className="h-4 w-4" />
-                      Add
-                    </Button>
-                  </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           ) : null}
         </CardContent>

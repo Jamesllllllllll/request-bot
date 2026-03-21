@@ -54,8 +54,8 @@ function normalizeSearchCacheInput(
     year: input.year ?? [],
     page: input.page,
     pageSize: input.pageSize,
-    sortBy: input.sortBy,
-    sortDirection: input.sortDirection,
+    sortBy: "updated",
+    sortDirection: "desc",
   };
 }
 
@@ -98,6 +98,11 @@ export const searchCatalogSongs = createServerFn({ method: "GET" })
   .inputValidator(searchInputSchema)
   .handler(async ({ data }) => {
     const runtimeEnv = env as AppEnv;
+    const normalizedInput = {
+      ...data,
+      sortBy: "updated" as const,
+      sortDirection: "desc" as const,
+    };
     const identity = await getSearchIdentity(runtimeEnv);
     const rateLimit = await consumeSearchRateLimit(runtimeEnv, {
       rateLimitKey: identity,
@@ -109,7 +114,7 @@ export const searchCatalogSongs = createServerFn({ method: "GET" })
       );
     }
 
-    const cacheInput = normalizeSearchCacheInput(data);
+    const cacheInput = normalizeSearchCacheInput(normalizedInput);
     const cacheKey = await sha256(JSON.stringify(cacheInput));
     const cached = await getCachedSearchResult<SearchResponse>(
       runtimeEnv,
@@ -121,7 +126,7 @@ export const searchCatalogSongs = createServerFn({ method: "GET" })
     }
 
     const results = normalizeSearchResponse(
-      await searchCatalogSongsInDb(runtimeEnv, data)
+      await searchCatalogSongsInDb(runtimeEnv, normalizedInput)
     );
     await upsertCachedSearchResult(runtimeEnv, {
       cacheKey,

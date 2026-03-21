@@ -1,15 +1,27 @@
 // Route: Defines the shared dashboard shell and authenticated channel context.
 import { useQuery } from "@tanstack/react-query";
-import { createFileRoute, Link, Outlet } from "@tanstack/react-router";
+import {
+  createFileRoute,
+  Link,
+  Outlet,
+  useRouter,
+  useRouterState,
+} from "@tanstack/react-router";
 import {
   Activity,
   ListMusic,
   MonitorPlay,
-  ScrollText,
   Settings2,
   Shield,
   Wrench,
 } from "lucide-react";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "~/components/ui/select";
 import { cn } from "~/lib/utils";
 
 export const Route = createFileRoute("/dashboard")({
@@ -29,8 +41,7 @@ type DashboardRoutePath =
   | "/dashboard/moderation"
   | "/dashboard/overlay"
   | "/dashboard/settings"
-  | "/dashboard/admin"
-  | "/dashboard/admin/logs";
+  | "/dashboard/admin";
 
 const primaryNav: DashboardNavItem[] = [
   {
@@ -41,7 +52,7 @@ const primaryNav: DashboardNavItem[] = [
   },
   {
     to: "/dashboard/playlist" as const,
-    label: "Playlist",
+    label: "Manage Playlist",
     icon: ListMusic,
   },
   {
@@ -64,18 +75,17 @@ const primaryNav: DashboardNavItem[] = [
 const adminNav: DashboardNavItem[] = [
   {
     to: "/dashboard/admin" as const,
-    label: "Operations",
+    label: "Admin",
     icon: Wrench,
     exact: true,
-  },
-  {
-    to: "/dashboard/admin/logs" as const,
-    label: "Logs",
-    icon: ScrollText,
   },
 ];
 
 function DashboardLayout() {
+  const router = useRouter();
+  const pathname = useRouterState({
+    select: (state) => state.location.pathname,
+  });
   const { data } = useQuery({
     queryKey: ["viewer-session"],
     queryFn: async () => {
@@ -99,23 +109,43 @@ function DashboardLayout() {
   });
 
   const isAdmin = !!data?.viewer?.user?.isAdmin;
+  const navItems = isAdmin ? [...primaryNav, ...adminNav] : primaryNav;
+  const activeDashboardPath =
+    navItems.find((item) =>
+      item.exact ? pathname === item.to : pathname.startsWith(item.to)
+    )?.to ?? "/dashboard";
 
   return (
-    <section className="grid gap-6 xl:grid-cols-[340px_1fr]">
-      <aside className="surface-grid surface-noise rounded-[34px] border border-(--border-strong) bg-(--panel) p-6 shadow-(--shadow)">
-        <div className="rounded-[28px] border border-(--border) bg-(--panel-soft) p-5">
-          <p className="text-xs font-semibold uppercase tracking-[0.26em] text-(--brand-deep)">
-            Dashboard
-          </p>
-          <h1 className="mt-4 text-3xl font-semibold tracking-[-0.03em] text-(--text)">
-            Manage your channel
-          </h1>
+    <section className="dashboard-layout grid gap-6">
+      <aside className="dashboard-layout__sidebar surface-grid surface-noise rounded-[34px] border border-(--border-strong) bg-(--panel) p-6 shadow-(--shadow)">
+        <div className="dashboard-layout__mobile-nav mt-4">
+          <Select
+            value={activeDashboardPath}
+            onValueChange={(value) =>
+              router.navigate({ to: value as DashboardRoutePath })
+            }
+          >
+            <SelectTrigger>
+              <SelectValue placeholder="Choose a section" />
+            </SelectTrigger>
+            <SelectContent>
+              {primaryNav.map((item) => (
+                <SelectItem key={item.to} value={item.to}>
+                  {item.label}
+                </SelectItem>
+              ))}
+              {isAdmin
+                ? adminNav.map((item) => (
+                    <SelectItem key={item.to} value={item.to}>
+                      {item.label}
+                    </SelectItem>
+                  ))
+                : null}
+            </SelectContent>
+          </Select>
         </div>
 
-        <div className="mt-6 grid gap-3">
-          <p className="px-1 text-xs font-semibold uppercase tracking-[0.18em] text-(--muted)">
-            Channel
-          </p>
+        <div className="dashboard-layout__desktop-nav mt-6 grid gap-3">
           {primaryNav.map((item) => (
             <DashboardNavLink
               key={item.to}
@@ -128,7 +158,7 @@ function DashboardLayout() {
         </div>
 
         {isAdmin ? (
-          <div className="mt-6 grid gap-3">
+          <div className="dashboard-layout__desktop-nav mt-6 grid gap-3">
             <p className="px-1 text-xs font-semibold uppercase tracking-[0.18em] text-(--muted)">
               Admin
             </p>
@@ -144,7 +174,7 @@ function DashboardLayout() {
         ) : null}
       </aside>
 
-      <div className="rounded-[34px] border border-(--border-strong) bg-(--bg-elevated) p-6 shadow-(--shadow) md:p-8">
+      <div className="dashboard-layout__content rounded-[34px] border border-(--border-strong) bg-(--bg-elevated) p-6 shadow-(--shadow) md:p-8">
         <Outlet />
       </div>
     </section>

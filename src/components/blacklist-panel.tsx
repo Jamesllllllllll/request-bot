@@ -1,3 +1,4 @@
+import { ChevronDown } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "~/components/ui/card";
 
 export type BlacklistedArtistItem = {
@@ -16,7 +17,83 @@ export function BlacklistPanel(props: {
   description?: string;
   artists: BlacklistedArtistItem[];
   songs: BlacklistedSongItem[];
+  collapsible?: boolean;
+  defaultOpen?: boolean;
 }) {
+  const content = (
+    <CardContent className="grid items-start gap-6 md:grid-cols-2">
+      <div className="grid content-start gap-3 self-start">
+        {props.artists.length > 0 ? (
+          <div className="overflow-hidden rounded-[20px] border border-(--border)">
+            {props.artists.map((artist, index) => (
+              <div
+                key={artist.artistId}
+                className={`px-4 py-2.5 text-sm ${
+                  index % 2 === 0 ? "bg-(--panel-soft)" : "bg-(--panel-muted)"
+                }`}
+              >
+                <p className="truncate text-(--text)">
+                  {artist.artistName} ({artist.artistId})
+                </p>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <p className="text-sm text-(--muted)">No blacklisted artists.</p>
+        )}
+      </div>
+
+      <div className="grid content-start gap-3 self-start">
+        {props.songs.length > 0 ? (
+          <div className="overflow-hidden rounded-[20px] border border-(--border)">
+            {props.songs.map((song, index) => (
+              <div
+                key={song.songId}
+                className={`px-4 py-2.5 text-sm ${
+                  index % 2 === 0 ? "bg-(--panel-soft)" : "bg-(--panel-muted)"
+                }`}
+              >
+                <p className="truncate text-(--text)">
+                  {song.songTitle} ({song.songId})
+                </p>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <p className="text-sm text-(--muted)">No blacklisted songs.</p>
+        )}
+      </div>
+    </CardContent>
+  );
+
+  if (props.collapsible) {
+    return (
+      <Card>
+        <details
+          {...(props.defaultOpen ? { open: true } : {})}
+          className="group"
+        >
+          <summary className="cursor-pointer list-none rounded-[28px] p-6 [&::-webkit-details-marker]:hidden">
+            <div className="flex items-start justify-between gap-4">
+              <div className="min-w-0">
+                <CardTitle>
+                  {props.title ?? "Blacklisted songs and artists"}
+                </CardTitle>
+                {props.description ? (
+                  <p className="mt-2 text-sm text-(--muted)">
+                    {props.description}
+                  </p>
+                ) : null}
+              </div>
+              <ChevronDown className="mt-1 h-5 w-5 shrink-0 text-(--muted) transition-transform group-open:rotate-180" />
+            </div>
+          </summary>
+          {content}
+        </details>
+      </Card>
+    );
+  }
+
   return (
     <Card>
       <CardHeader>
@@ -25,52 +102,7 @@ export function BlacklistPanel(props: {
           <p className="text-sm text-(--muted)">{props.description}</p>
         ) : null}
       </CardHeader>
-      <CardContent className="grid gap-6 md:grid-cols-2">
-        <div className="grid gap-3">
-          <p className="text-xs font-semibold uppercase tracking-[0.18em] text-(--muted)">
-            Artists
-          </p>
-          {props.artists.length > 0 ? (
-            props.artists.map((artist) => (
-              <div
-                key={artist.artistId}
-                className="rounded-[20px] border border-(--border) bg-(--panel-soft) px-4 py-3"
-              >
-                <p className="font-medium text-(--text)">{artist.artistName}</p>
-                <p className="mt-1 text-xs text-(--muted)">
-                  Artist ID {artist.artistId}
-                </p>
-              </div>
-            ))
-          ) : (
-            <p className="text-sm text-(--muted)">No blacklisted artists.</p>
-          )}
-        </div>
-
-        <div className="grid gap-3">
-          <p className="text-xs font-semibold uppercase tracking-[0.18em] text-(--muted)">
-            Songs
-          </p>
-          {props.songs.length > 0 ? (
-            props.songs.map((song) => (
-              <div
-                key={song.songId}
-                className="rounded-[20px] border border-(--border) bg-(--panel-soft) px-4 py-3"
-              >
-                <p className="font-medium text-(--text)">
-                  {song.songTitle}
-                  {song.artistName ? ` - ${song.artistName}` : ""}
-                </p>
-                <p className="mt-1 text-xs text-(--muted)">
-                  Song ID {song.songId}
-                </p>
-              </div>
-            ))
-          ) : (
-            <p className="text-sm text-(--muted)">No blacklisted songs.</p>
-          )}
-        </div>
-      </CardContent>
+      {content}
     </Card>
   );
 }

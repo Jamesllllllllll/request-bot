@@ -10,7 +10,10 @@ import {
   updateSettings,
 } from "~/lib/db/repositories";
 import type { AppEnv } from "~/lib/env";
-import { getArraySetting } from "~/lib/request-policy";
+import {
+  getArraySetting,
+  getRequiredPathsMatchMode,
+} from "~/lib/request-policy";
 import { getErrorMessage, json } from "~/lib/utils";
 import { settingsInputSchema } from "~/lib/validation";
 
@@ -49,6 +52,9 @@ export const Route = createFileRoute("/api/dashboard/settings")({
                 ),
                 requiredPaths: getArraySetting(
                   state.settings.requiredPathsJson
+                ),
+                requiredPathsMatchMode: getRequiredPathsMatchMode(
+                  state.settings.requiredPathsMatchMode
                 ),
               }
             : null,

@@ -12,6 +12,7 @@ export interface ChannelRequestSettings {
   onlyOfficialDlc: boolean;
   allowedTuningsJson: string;
   requiredPathsJson: string;
+  requiredPathsMatchMode?: string | null;
   maxQueueSize: number;
   maxViewerRequestsAtOnce: number;
   maxSubscriberRequestsAtOnce: number;
@@ -45,6 +46,10 @@ export function getArraySetting(value: string | null | undefined) {
   } catch {
     return [];
   }
+}
+
+export function getRequiredPathsMatchMode(value: string | null | undefined) {
+  return value === "all" ? "all" : "any";
 }
 
 export function isRequesterAllowed(
@@ -159,16 +164,17 @@ export function isSongAllowed(input: {
     songTitle: string;
     artistName?: string | null;
   }>;
-  setlistArtists: Array<{ artistName: string }>;
+  setlistArtists: Array<{ artistId?: number | null; artistName: string }>;
   requester: RequesterContext;
 }) {
   const allowedTunings = getArraySetting(input.settings.allowedTuningsJson);
-  const songArtist = normalize(input.song.artist);
-  const setlistValues = input.setlistArtists
-    .map((entry) => normalize(entry.artistName))
-    .filter(Boolean);
+  const setlistArtistIds = input.setlistArtists
+    .map((entry) => entry.artistId)
+    .filter((entry): entry is number => entry != null);
   const inSetlist =
-    setlistValues.length > 0 && setlistValues.includes(songArtist);
+    setlistArtistIds.length > 0 &&
+    input.song.artistId != null &&
+    setlistArtistIds.includes(input.song.artistId);
 
   if (input.settings.onlyOfficialDlc && input.song.source !== "official") {
     return {
@@ -194,7 +200,7 @@ export function isSongAllowed(input: {
     const shouldApplySetlist =
       !input.requester.isSubscriber ||
       input.settings.subscribersMustFollowSetlist;
-    if (shouldApplySetlist && setlistValues.length > 0 && !inSetlist) {
+    if (shouldApplySetlist && setlistArtistIds.length > 0 && !inSetlist) {
       return {
         allowed: false,
         reason: "That artist is not in the current setlist.",
@@ -226,7 +232,10 @@ export function isSongAllowed(input: {
 
 export function getMissingRequiredPaths(input: {
   song: SongSearchResult | { parts?: string[] | null };
-  settings: Pick<ChannelRequestSettings, "requiredPathsJson">;
+  settings: Pick<
+    ChannelRequestSettings,
+    "requiredPathsJson" | "requiredPathsMatchMode"
+  >;
 }) {
   const requiredPaths = getArraySetting(input.settings.requiredPathsJson);
   if (requiredPaths.length === 0) {
@@ -234,9 +243,49 @@ export function getMissingRequiredPaths(input: {
   }
 
   const parts = (input.song.parts ?? []).map((part) => normalize(part));
+  const matchMode = getRequiredPathsMatchMode(
+    input.settings.requiredPathsMatchMode
+  );
+
+  if (matchMode === "any") {
+    return requiredPaths.some((requiredPath) =>
+      parts.includes(normalize(requiredPath))
+    )
+      ? []
+      : requiredPaths;
+  }
+
   return requiredPaths.filter(
     (requiredPath) => !parts.includes(normalize(requiredPath))
   );
+}
+
+export function getRequiredPathsWarning(input: {
+  song: SongSearchResult | { parts?: string[] | null };
+  settings: Pick<
+    ChannelRequestSettings,
+    "requiredPathsJson" | "requiredPathsMatchMode"
+  >;
+}) {
+  const requiredPaths = getArraySetting(input.settings.requiredPathsJson);
+  if (requiredPaths.length === 0) {
+    return null;
+  }
+
+  const missingRequiredPaths = getMissingRequiredPaths(input);
+  if (missingRequiredPaths.length === 0) {
+    return null;
+  }
+
+  const matchMode = getRequiredPathsMatchMode(
+    input.settings.requiredPathsMatchMode
+  );
+
+  if (matchMode === "any") {
+    return `Requires one of: ${formatPathList(requiredPaths)}.`;
+  }
+
+  return `Missing required paths: ${formatPathList(missingRequiredPaths)}.`;
 }
 
 export function formatPathLabel(path: string) {
@@ -255,6 +304,10 @@ export function formatPathLabel(path: string) {
   }
 }
 
+export function formatPathList(paths: string[]) {
+  return paths.map((path) => formatPathLabel(path)).join(", ");
+}
+
 export function buildHowMessage(input: {
   commandPrefix: string;
   appUrl: string;
@@ -264,7 +317,7 @@ export function buildHowMessage(input: {
     songTitle: string;
     artistName?: string | null;
   }>;
-  setlistArtists: Array<{ artistName: string }>;
+  setlistArtists: Array<{ artistId?: number | null; artistName: string }>;
 }) {
   const normalized = normalizeCommandPrefix(input.commandPrefix);
   const parts = [
@@ -328,7 +381,9 @@ export function buildBlacklistMessage(
   return `Artists: ${artistText}. Songs: ${songText}.`;
 }
 
-export function buildSetlistMessage(artists: Array<{ artistName: string }>) {
+export function buildSetlistMessage(
+  artists: Array<{ artistId?: number | null; artistName: string }>
+) {
   if (artists.length === 0) {
     return "No setlist artists.";
   }

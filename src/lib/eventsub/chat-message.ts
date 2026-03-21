@@ -21,10 +21,9 @@ import {
   buildHowMessage,
   buildSearchMessage,
   buildSetlistMessage,
-  formatPathLabel,
   getActiveRequestLimit,
-  getMissingRequiredPaths,
   getRateLimitWindow,
+  getRequiredPathsWarning,
   isRequesterAllowed,
   isSongAllowed,
 } from "~/lib/request-policy";
@@ -197,10 +196,6 @@ function mention(login: string) {
 
 function formatSongForReply(song: { artist?: string; title: string }) {
   return song.artist ? `${song.artist} - ${song.title}` : song.title;
-}
-
-function formatPathList(paths: string[]) {
-  return paths.map((path) => formatPathLabel(path)).join(", ");
 }
 
 function buildCandidateMatchesJson(results: SongSearchResult[]) {
@@ -615,11 +610,10 @@ export async function processEventSubChatMessage(input: {
         login: requesterIdentity.login,
       })
     : null;
-  const canAutoGrantVipToken =
-    isVipCommand &&
-    state.settings.autoGrantVipTokenToSubscribers &&
-    requesterContext.isSubscriber &&
-    !vipTokenBalance?.autoSubscriberGranted;
+  // Intentionally disabled for now. The original one-time auto-grant behavior
+  // does not match the intended product behavior, which should track recurring
+  // subscriber renewal periods before granting monthly VIP tokens.
+  const canAutoGrantVipToken = false;
 
   if (
     isVipCommand &&
@@ -732,16 +726,14 @@ export async function processEventSubChatMessage(input: {
       return { body: "Rejected", status: 202 };
     }
 
-    const missingRequiredPaths = getMissingRequiredPaths({
+    const warningForRequiredPaths = getRequiredPathsWarning({
       song: firstMatch,
       settings: state.settings,
     });
 
-    if (missingRequiredPaths.length > 0) {
+    if (warningForRequiredPaths) {
       warningCode = "missing_required_paths";
-      warningMessage = `Missing required paths: ${formatPathList(
-        missingRequiredPaths
-      )}.`;
+      warningMessage = warningForRequiredPaths;
     }
   }
 

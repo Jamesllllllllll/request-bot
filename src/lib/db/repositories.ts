@@ -1688,7 +1688,7 @@ export async function updateSettings(
     onlyOfficialDlc: boolean;
     allowedTunings: string[];
     requiredPaths: string[];
-    publicPlaylistEnabled: boolean;
+    requiredPathsMatchMode: "any" | "all";
     maxQueueSize: number;
     maxViewerRequestsAtOnce: number;
     maxSubscriberRequestsAtOnce: number;
@@ -1725,7 +1725,7 @@ export async function updateSettings(
       onlyOfficialDlc: input.onlyOfficialDlc,
       allowedTuningsJson: JSON.stringify(input.allowedTunings),
       requiredPathsJson: JSON.stringify(input.requiredPaths),
-      publicPlaylistEnabled: input.publicPlaylistEnabled,
+      requiredPathsMatchMode: input.requiredPathsMatchMode,
       maxQueueSize: input.maxQueueSize,
       maxViewerRequestsAtOnce: input.maxViewerRequestsAtOnce,
       maxSubscriberRequestsAtOnce: input.maxSubscriberRequestsAtOnce,
@@ -1835,10 +1835,6 @@ export async function addBlockedUser(
     .onConflictDoNothing();
 }
 
-function normalizeListValue(input: string) {
-  return input.trim().toLowerCase();
-}
-
 export async function addBlacklistedArtist(
   env: AppEnv,
   input: Omit<BlacklistedArtistInsert, "createdAt">
@@ -1888,28 +1884,22 @@ export async function removeBlacklistedSong(
 
 export async function addSetlistArtist(
   env: AppEnv,
-  input: Omit<SetlistArtistInsert, "normalizedArtistName" | "createdAt">
+  input: Omit<SetlistArtistInsert, "createdAt">
 ) {
-  await getDb(env)
-    .insert(setlistArtists)
-    .values({
-      ...input,
-      normalizedArtistName: normalizeListValue(input.artistName),
-    })
-    .onConflictDoNothing();
+  await getDb(env).insert(setlistArtists).values(input).onConflictDoNothing();
 }
 
 export async function removeSetlistArtist(
   env: AppEnv,
   channelId: string,
-  artistName: string
+  artistId: number
 ) {
   await getDb(env)
     .delete(setlistArtists)
     .where(
       and(
         eq(setlistArtists.channelId, channelId),
-        eq(setlistArtists.normalizedArtistName, normalizeListValue(artistName))
+        eq(setlistArtists.artistId, artistId)
       )
     );
 }

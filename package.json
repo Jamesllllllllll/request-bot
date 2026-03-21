@@ -41,6 +41,8 @@
     "test:e2e": "playwright test"
   },
   "dependencies": {
+    "@atlaskit/pragmatic-drag-and-drop": "^1.7.9",
+    "@atlaskit/pragmatic-drag-and-drop-hitbox": "^1.1.0",
     "@cloudflare/vite-plugin": "latest",
     "@radix-ui/react-label": "^2.1.8",
     "@radix-ui/react-select": "^2.2.6",

@@ -2,6 +2,8 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
+import { DashboardPageHeader } from "~/components/dashboard-page-header";
+import { Badge } from "~/components/ui/badge";
 import { Button } from "~/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "~/components/ui/card";
 import { Input } from "~/components/ui/input";
@@ -45,6 +47,9 @@ type SongMatch = {
 };
 
 type ModerationData = {
+  settings: {
+    blacklistEnabled: boolean;
+  };
   blocks: Array<{
     twitchUserId: string;
     displayName?: string;
@@ -57,7 +62,7 @@ type ModerationData = {
     artistId?: number | null;
     artistName?: string | null;
   }>;
-  setlistArtists: Array<{ artistName: string }>;
+  setlistArtists: Array<{ artistId: number; artistName: string }>;
   vipTokens: Array<{
     login: string;
     displayName?: string;
@@ -80,19 +85,22 @@ function DashboardModerationPage() {
   const [debouncedArtistQuery, setDebouncedArtistQuery] = useState("");
   const [songQuery, setSongQuery] = useState("");
   const [debouncedSongQuery, setDebouncedSongQuery] = useState("");
-  const [setlistArtistName, setSetlistArtistName] = useState("");
+  const [setlistArtistQuery, setSetlistArtistQuery] = useState("");
+  const [debouncedSetlistArtistQuery, setDebouncedSetlistArtistQuery] =
+    useState("");
   const [vipLogin, setVipLogin] = useState("");
 
   useEffect(() => {
     const timeout = window.setTimeout(() => {
       setDebouncedArtistQuery(artistQuery.trim());
       setDebouncedSongQuery(songQuery.trim());
+      setDebouncedSetlistArtistQuery(setlistArtistQuery.trim());
     }, 400);
 
     return () => {
       window.clearTimeout(timeout);
     };
-  }, [artistQuery, songQuery]);
+  }, [artistQuery, setlistArtistQuery, songQuery]);
 
   const { data } = useQuery({
     queryKey: ["dashboard-moderation"],
@@ -128,6 +136,22 @@ function DashboardModerationPage() {
     enabled: debouncedSongQuery.length >= 2,
   });
 
+  const setlistArtistSearchQuery = useQuery({
+    queryKey: [
+      "dashboard-moderation-setlist-artist-search",
+      debouncedSetlistArtistQuery,
+    ],
+    queryFn: async () => {
+      const response = await fetch(
+        `/api/dashboard/moderation/search?type=artist&query=${encodeURIComponent(
+          debouncedSetlistArtistQuery
+        )}`
+      );
+      return response.json() as Promise<{ artists: ArtistMatch[] }>;
+    },
+    enabled: debouncedSetlistArtistQuery.length >= 2,
+  });
+
   const mutation = useMutation({
     mutationFn: async (body: Record<string, unknown>) => {
       const response = await fetch("/api/dashboard/moderation", {
@@ -157,15 +181,32 @@ function DashboardModerationPage() {
   const blacklistedSongIds = new Set(
     (data?.blacklistSongs ?? []).map((item) => item.songId)
   );
+  const visibleArtistMatches = (artistSearchQuery.data?.artists ?? []).filter(
+    (artist) => !blacklistedArtistIds.has(artist.artistId)
+  );
+  const visibleSongMatches = (songSearchQuery.data?.songs ?? []).filter(
+    (song) => !blacklistedSongIds.has(song.songId)
+  );
+  const setlistArtistIds = new Set(
+    (data?.setlistArtists ?? []).map((item) => item.artistId)
+  );
+  const visibleSetlistArtistMatches = (
+    setlistArtistSearchQuery.data?.artists ?? []
+  ).filter((artist) => !setlistArtistIds.has(artist.artistId));
+  const blacklistEnabled = data?.settings.blacklistEnabled ?? false;
 
   return (
-    <div className="grid gap-6">
-      <div>
-        <h1 className="text-3xl font-semibold">Moderation</h1>
-      </div>
+    <div className="dashboard-moderation grid gap-6">
+      <DashboardPageHeader
+        title="Moderation"
+        description="Manage command help, blacklist entries, setlist artists, blocked users, and VIP tokens."
+      />
 
       <div className="grid gap-6 lg:grid-cols-2">
-        <Card id="commands" className="lg:col-span-2">
+        <Card
+          id="commands"
+          className="dashboard-moderation__section lg:col-span-2"
+        >
           <CardHeader>
             <CardTitle>Commands</CardTitle>
           </CardHeader>
@@ -200,33 +241,38 @@ function DashboardModerationPage() {
           </CardContent>
         </Card>
 
-        <Card>
+        <Card className="dashboard-moderation__section">
           <CardHeader>
-            <CardTitle>Blacklisted artists</CardTitle>
+            <div className="flex items-center justify-between gap-3">
+              <CardTitle>Blacklisted artists</CardTitle>
+              {!blacklistEnabled ? (
+                <Badge variant="outline">Disabled</Badge>
+              ) : null}
+            </div>
           </CardHeader>
-          <CardContent className="grid gap-4">
+          <CardContent
+            className={`grid gap-4 ${!blacklistEnabled ? "opacity-60" : ""}`}
+          >
             <Input
               value={artistQuery}
               onChange={(event) => setArtistQuery(event.target.value)}
-              placeholder='Search artists by name, like "smashing"'
+              placeholder="Search artists by name"
+              disabled={!blacklistEnabled}
             />
-            {debouncedArtistQuery.length > 0 &&
+            {blacklistEnabled &&
+            debouncedArtistQuery.length > 0 &&
             debouncedArtistQuery.length < 2 ? (
               <p className="text-sm text-(--muted)">
                 Type at least 2 characters to search.
               </p>
             ) : null}
-            {debouncedArtistQuery.length >= 2 ? (
+            {blacklistEnabled && debouncedArtistQuery.length >= 2 ? (
               <div className="grid gap-3">
-                {(artistSearchQuery.data?.artists ?? []).map((artist) => {
-                  const alreadyBlacklisted = blacklistedArtistIds.has(
-                    artist.artistId
-                  );
-
+                {visibleArtistMatches.map((artist) => {
                   return (
                     <div
                       key={artist.artistId}
-                      className="flex items-center justify-between gap-4 rounded-2xl border border-(--border) bg-(--panel-soft) px-4 py-3"
+                      className="dashboard-moderation__entry flex items-center justify-between gap-4 rounded-2xl border border-(--border) bg-(--panel-soft) px-4 py-3"
                     >
                       <div>
                         <p className="font-medium text-(--text)">
@@ -246,48 +292,56 @@ function DashboardModerationPage() {
                             artistName: artist.artistName,
                           })
                         }
-                        disabled={mutation.isPending || alreadyBlacklisted}
+                        disabled={mutation.isPending || !blacklistEnabled}
                       >
-                        {alreadyBlacklisted ? "Added" : "Add"}
+                        Add
                       </Button>
                     </div>
                   );
                 })}
-                {artistSearchQuery.data &&
-                artistSearchQuery.data.artists.length === 0 ? (
-                  <p className="text-sm text-(--muted)">No matching artists.</p>
+                {artistSearchQuery.data && visibleArtistMatches.length === 0 ? (
+                  <p className="text-sm text-(--muted)">
+                    {artistSearchQuery.data.artists.length === 0
+                      ? "No matching artists."
+                      : "All matching artists are already blacklisted."}
+                  </p>
                 ) : null}
               </div>
             ) : null}
-            <div className="grid gap-3">
+            <div className="max-h-[400px] overflow-y-auto rounded-2xl border border-(--border) bg-(--panel-soft)">
               {data?.blacklistArtists?.length ? (
-                data.blacklistArtists.map((item) => (
-                  <div
-                    key={item.artistId}
-                    className="flex items-center justify-between gap-4 rounded-2xl border border-(--border) bg-(--panel-soft) px-4 py-3"
-                  >
-                    <div>
-                      <span>{item.artistName}</span>
-                      <p className="text-xs text-(--muted)">
-                        Artist ID {item.artistId}
-                      </p>
-                    </div>
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      onClick={() =>
-                        mutation.mutate({
-                          action: "removeBlacklistedArtist",
-                          artistId: item.artistId,
-                        })
-                      }
+                <div className="divide-y divide-(--border)">
+                  {data.blacklistArtists.map((item) => (
+                    <div
+                      key={item.artistId}
+                      className="flex items-start justify-between gap-4 px-4 py-3"
                     >
-                      Remove
-                    </Button>
-                  </div>
-                ))
+                      <div className="min-w-0">
+                        <p className="truncate text-sm font-medium text-(--text)">
+                          {item.artistName}
+                        </p>
+                        <p className="text-xs text-(--muted)">
+                          Artist ID {item.artistId}
+                        </p>
+                      </div>
+                      <button
+                        type="button"
+                        className="shrink-0 text-sm text-(--brand-deep) underline-offset-4 hover:underline disabled:cursor-not-allowed disabled:no-underline"
+                        onClick={() =>
+                          mutation.mutate({
+                            action: "removeBlacklistedArtist",
+                            artistId: item.artistId,
+                          })
+                        }
+                        disabled={!blacklistEnabled || mutation.isPending}
+                      >
+                        Remove
+                      </button>
+                    </div>
+                  ))}
+                </div>
               ) : (
-                <p className="text-sm text-(--muted)">
+                <p className="px-4 py-3 text-sm text-(--muted)">
                   No blacklisted artists.
                 </p>
               )}
@@ -295,32 +349,38 @@ function DashboardModerationPage() {
           </CardContent>
         </Card>
 
-        <Card>
+        <Card className="dashboard-moderation__section">
           <CardHeader>
-            <CardTitle>Blacklisted songs</CardTitle>
+            <div className="flex items-center justify-between gap-3">
+              <CardTitle>Blacklisted songs</CardTitle>
+              {!blacklistEnabled ? (
+                <Badge variant="outline">Disabled</Badge>
+              ) : null}
+            </div>
           </CardHeader>
-          <CardContent className="grid gap-4">
+          <CardContent
+            className={`grid gap-4 ${!blacklistEnabled ? "opacity-60" : ""}`}
+          >
             <Input
               value={songQuery}
               onChange={(event) => setSongQuery(event.target.value)}
-              placeholder='Search songs by title, like "heroes"'
+              placeholder="Search songs by title"
+              disabled={!blacklistEnabled}
             />
-            {debouncedSongQuery.length > 0 && debouncedSongQuery.length < 2 ? (
+            {blacklistEnabled &&
+            debouncedSongQuery.length > 0 &&
+            debouncedSongQuery.length < 2 ? (
               <p className="text-sm text-(--muted)">
                 Type at least 2 characters to search.
               </p>
             ) : null}
-            {debouncedSongQuery.length >= 2 ? (
+            {blacklistEnabled && debouncedSongQuery.length >= 2 ? (
               <div className="grid gap-3">
-                {(songSearchQuery.data?.songs ?? []).map((song) => {
-                  const alreadyBlacklisted = blacklistedSongIds.has(
-                    song.songId
-                  );
-
+                {visibleSongMatches.map((song) => {
                   return (
                     <div
                       key={song.songId}
-                      className="flex items-center justify-between gap-4 rounded-2xl border border-(--border) bg-(--panel-soft) px-4 py-3"
+                      className="dashboard-moderation__entry flex items-center justify-between gap-4 rounded-2xl border border-(--border) bg-(--panel-soft) px-4 py-3"
                     >
                       <div>
                         <p className="font-medium text-(--text)">
@@ -343,88 +403,127 @@ function DashboardModerationPage() {
                             artistName: song.artistName ?? undefined,
                           })
                         }
-                        disabled={mutation.isPending || alreadyBlacklisted}
+                        disabled={mutation.isPending || !blacklistEnabled}
                       >
-                        {alreadyBlacklisted ? "Added" : "Add"}
+                        Add
                       </Button>
                     </div>
                   );
                 })}
-                {songSearchQuery.data &&
-                songSearchQuery.data.songs.length === 0 ? (
-                  <p className="text-sm text-(--muted)">No matching songs.</p>
+                {songSearchQuery.data && visibleSongMatches.length === 0 ? (
+                  <p className="text-sm text-(--muted)">
+                    {songSearchQuery.data.songs.length === 0
+                      ? "No matching songs."
+                      : "All matching songs are already blacklisted."}
+                  </p>
                 ) : null}
               </div>
             ) : null}
-            <div className="grid gap-3">
+            <div className="max-h-[400px] overflow-y-auto rounded-2xl border border-(--border) bg-(--panel-soft)">
               {data?.blacklistSongs?.length ? (
-                data.blacklistSongs.map((item) => (
-                  <div
-                    key={item.songId}
-                    className="flex items-center justify-between gap-4 rounded-2xl border border-(--border) bg-(--panel-soft) px-4 py-3"
-                  >
-                    <div>
-                      <span>
-                        {item.songTitle}
-                        {item.artistName ? ` - ${item.artistName}` : ""}
-                      </span>
-                      <p className="text-xs text-(--muted)">
-                        Song ID {item.songId}
-                        {item.artistId ? ` · Artist ID ${item.artistId}` : ""}
-                      </p>
-                    </div>
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      onClick={() =>
-                        mutation.mutate({
-                          action: "removeBlacklistedSong",
-                          songId: item.songId,
-                        })
-                      }
+                <div className="divide-y divide-(--border)">
+                  {data.blacklistSongs.map((item) => (
+                    <div
+                      key={item.songId}
+                      className="flex items-start justify-between gap-4 px-4 py-3"
                     >
-                      Remove
-                    </Button>
-                  </div>
-                ))
+                      <div className="min-w-0">
+                        <p className="truncate text-sm font-medium text-(--text)">
+                          {item.songTitle}
+                          {item.artistName ? ` - ${item.artistName}` : ""}
+                        </p>
+                        <p className="text-xs text-(--muted)">
+                          Song ID {item.songId}
+                        </p>
+                      </div>
+                      <button
+                        type="button"
+                        className="shrink-0 text-sm text-(--brand-deep) underline-offset-4 hover:underline disabled:cursor-not-allowed disabled:no-underline"
+                        onClick={() =>
+                          mutation.mutate({
+                            action: "removeBlacklistedSong",
+                            songId: item.songId,
+                          })
+                        }
+                        disabled={!blacklistEnabled || mutation.isPending}
+                      >
+                        Remove
+                      </button>
+                    </div>
+                  ))}
+                </div>
               ) : (
-                <p className="text-sm text-(--muted)">No blacklisted songs.</p>
+                <p className="px-4 py-3 text-sm text-(--muted)">
+                  No blacklisted songs.
+                </p>
               )}
             </div>
           </CardContent>
         </Card>
       </div>
 
-      <Card>
+      <Card className="dashboard-moderation__section">
         <CardHeader>
           <CardTitle>Setlist artists</CardTitle>
         </CardHeader>
         <CardContent className="grid gap-4">
-          <div className="flex gap-3">
-            <Input
-              value={setlistArtistName}
-              onChange={(event) => setSetlistArtistName(event.target.value)}
-              placeholder="Add artist"
-            />
-            <Button
-              onClick={() => {
-                mutation.mutate({
-                  action: "addSetlistArtist",
-                  artistName: setlistArtistName,
-                });
-                setSetlistArtistName("");
-              }}
-              disabled={mutation.isPending || !setlistArtistName.trim()}
-            >
-              Add
-            </Button>
-          </div>
+          <Input
+            value={setlistArtistQuery}
+            onChange={(event) => setSetlistArtistQuery(event.target.value)}
+            placeholder="Search artists by name"
+          />
+          {debouncedSetlistArtistQuery.length > 0 &&
+          debouncedSetlistArtistQuery.length < 2 ? (
+            <p className="text-sm text-(--muted)">
+              Type at least 2 characters to search.
+            </p>
+          ) : null}
+          {debouncedSetlistArtistQuery.length >= 2 ? (
+            <div className="grid gap-3">
+              {visibleSetlistArtistMatches.map((artist) => (
+                <div
+                  key={artist.artistId}
+                  className="dashboard-moderation__entry flex items-center justify-between gap-4 rounded-2xl border border-(--border) bg-(--panel-soft) px-4 py-3"
+                >
+                  <div>
+                    <p className="font-medium text-(--text)">
+                      {artist.artistName}
+                    </p>
+                    <p className="text-xs text-(--muted)">
+                      Artist ID {artist.artistId} · {artist.trackCount} tracks
+                    </p>
+                  </div>
+                  <Button
+                    size="sm"
+                    onClick={() =>
+                      mutation.mutate({
+                        action: "addSetlistArtist",
+                        artistId: artist.artistId,
+                        artistName: artist.artistName,
+                      })
+                    }
+                    disabled={mutation.isPending}
+                  >
+                    Add
+                  </Button>
+                </div>
+              ))}
+              {setlistArtistSearchQuery.data &&
+              visibleSetlistArtistMatches.length === 0 ? (
+                <p className="text-sm text-(--muted)">
+                  {setlistArtistSearchQuery.data.artists.length === 0
+                    ? "No matching artists."
+                    : "All matching artists are already on the setlist."}
+                </p>
+              ) : null}
+            </div>
+          ) : null}
           <div className="grid gap-3 md:grid-cols-2">
             {data?.setlistArtists?.length ? (
               data.setlistArtists.map((item) => (
                 <div
                   key={item.artistName}
-                  className="flex items-center justify-between gap-4 rounded-2xl border border-(--border) bg-(--panel-soft) px-4 py-3"
+                  className="dashboard-moderation__entry flex items-center justify-between gap-4 rounded-2xl border border-(--border) bg-(--panel-soft) px-4 py-3"
                 >
                   <span>{item.artistName}</span>
                   <Button
@@ -433,7 +532,7 @@ function DashboardModerationPage() {
                     onClick={() =>
                       mutation.mutate({
                         action: "removeSetlistArtist",
-                        artistName: item.artistName,
+                        artistId: item.artistId,
                       })
                     }
                   >
@@ -448,7 +547,7 @@ function DashboardModerationPage() {
         </CardContent>
       </Card>
 
-      <Card>
+      <Card className="dashboard-moderation__section">
         <CardHeader>
           <CardTitle>Blocked users</CardTitle>
         </CardHeader>
@@ -472,12 +571,12 @@ function DashboardModerationPage() {
         </CardContent>
       </Card>
 
-      <Card>
+      <Card className="dashboard-moderation__section">
         <CardHeader>
           <CardTitle>VIP tokens</CardTitle>
         </CardHeader>
         <CardContent className="grid gap-4">
-          <div className="flex gap-3">
+          <div className="dashboard-moderation__form-row flex gap-3">
             <Input
               value={vipLogin}
               onChange={(event) => setVipLogin(event.target.value)}
@@ -498,7 +597,7 @@ function DashboardModerationPage() {
               data.vipTokens.map((token) => (
                 <div
                   key={token.login}
-                  className="flex items-center justify-between gap-4 rounded-2xl border border-(--border) bg-(--panel-soft) px-4 py-3"
+                  className="dashboard-moderation__entry flex items-center justify-between gap-4 rounded-2xl border border-(--border) bg-(--panel-soft) px-4 py-3"
                 >
                   <div>
                     <p className="font-medium">

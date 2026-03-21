@@ -10,7 +10,10 @@ import {
   updateSettings,
 } from "~/lib/db/repositories";
 import type { AppEnv } from "~/lib/env";
-import { getArraySetting } from "~/lib/request-policy";
+import {
+  getArraySetting,
+  getRequiredPathsMatchMode,
+} from "~/lib/request-policy";
 import { getErrorMessage } from "~/lib/utils";
 import { type SettingsInputData, settingsInputSchema } from "~/lib/validation";
 
@@ -63,6 +66,9 @@ export const getDashboardSettings = createServerFn({ method: "GET" }).handler(
             ...state.settings,
             allowedTunings: getArraySetting(state.settings.allowedTuningsJson),
             requiredPaths: getArraySetting(state.settings.requiredPathsJson),
+            requiredPathsMatchMode: getRequiredPathsMatchMode(
+              state.settings.requiredPathsMatchMode
+            ),
           }
         : null,
       playedSongs: state.playedSongs,

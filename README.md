@@ -24,6 +24,7 @@ Repository workflow docs:
 - EventSub webhook intake for `channel.chat.message`, `stream.online`, and `stream.offline`
 - Separate shared bot-account OAuth flow with bot replies sent from the bot identity
 - Per-channel opt-in bot presence with live-aware activation/deactivation
+- Always-on public playlist pages for each channel
 - Backend search caching plus D1-backed search rate limiting/cooldowns
 - Per-channel playlist mutation serialization through a Durable Object
 - Queue-based Twitch reply pipeline

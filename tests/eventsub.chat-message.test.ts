@@ -566,6 +566,7 @@ describe("processEventSubChatMessage", () => {
       getDashboardState: vi.fn().mockResolvedValue(
         createState({
           requiredPathsJson: '["lead","bass"]',
+          requiredPathsMatchMode: "all",
         })
       ),
       searchSongs: vi.fn().mockResolvedValue({

@@ -57,8 +57,8 @@ function HomePage() {
   const viewer = sessionData?.viewer ?? null;
 
   return (
-    <section className="grid gap-6 xl:grid-cols-[1.15fr_0.85fr]">
-      <div className="surface-grid surface-noise rounded-[36px] border border-(--border-strong) bg-(--panel) p-8 shadow-(--shadow) md:p-10">
+    <section className="home-page grid gap-6 xl:grid-cols-[1.15fr_0.85fr]">
+      <div className="home-page__hero surface-grid surface-noise rounded-[36px] border border-(--border-strong) bg-(--panel) p-8 shadow-(--shadow) md:p-10">
         <p className="text-xs font-semibold uppercase tracking-[0.34em] text-(--brand-deep)">
           Twitch Song Requests
         </p>

@@ -39,6 +39,9 @@ export const Route = createFileRoute("/api/dashboard/moderation")({
         }
 
         return json({
+          settings: {
+            blacklistEnabled: state.settings?.blacklistEnabled ?? false,
+          },
           blocks: state.blocks,
           blacklistArtists: state.blacklistArtists,
           blacklistSongs: state.blacklistSongs,
@@ -108,6 +111,7 @@ export const Route = createFileRoute("/api/dashboard/moderation")({
           case "addSetlistArtist":
             await addSetlistArtist(runtimeEnv, {
               channelId: state.channel.id,
+              artistId: body.artistId,
               artistName: body.artistName,
             });
             break;
@@ -115,7 +119,7 @@ export const Route = createFileRoute("/api/dashboard/moderation")({
             await removeSetlistArtist(
               runtimeEnv,
               state.channel.id,
-              body.artistName
+              body.artistId
             );
             break;
           case "addVipToken":

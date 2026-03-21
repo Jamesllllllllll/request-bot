@@ -35,7 +35,6 @@ export const Route = createFileRoute("/api/dashboard/admin")({
         }
 
         const botAuthorization = await getBotAuthorization(runtimeEnv);
-
         return json({
           channel: state.channel,
           settings: state.settings

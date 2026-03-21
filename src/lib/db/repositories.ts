@@ -601,6 +601,106 @@ export async function getOverlayStateBySlugAndToken(
   };
 }
 
+export async function searchPlayedSongRequesters(
+  env: AppEnv,
+  input: {
+    channelId: string;
+    query: string;
+    limit?: number;
+  }
+) {
+  const normalizedQuery = escapeLikeValue(input.query.trim().toLowerCase());
+  if (normalizedQuery.length < 2) {
+    return [];
+  }
+
+  const rows = await getDb(env).all<{
+    requesterId: string;
+    requesterLogin: string | null;
+    requesterDisplayName: string | null;
+    requestCount: number;
+  }>(sql`
+    SELECT
+      requested_by_twitch_user_id AS requesterId,
+      requested_by_login AS requesterLogin,
+      requested_by_display_name AS requesterDisplayName,
+      COUNT(*) AS requestCount
+    FROM played_songs
+    WHERE channel_id = ${input.channelId}
+      AND requested_by_twitch_user_id IS NOT NULL
+      AND (
+        lower(COALESCE(requested_by_display_name, '')) LIKE ${`%${normalizedQuery}%`}
+        OR lower(COALESCE(requested_by_login, '')) LIKE ${`%${normalizedQuery}%`}
+      )
+    GROUP BY
+      requested_by_twitch_user_id,
+      requested_by_login,
+      requested_by_display_name
+    ORDER BY
+      CASE
+        WHEN lower(COALESCE(requested_by_display_name, '')) LIKE ${`${normalizedQuery}%`} THEN 0
+        WHEN lower(COALESCE(requested_by_login, '')) LIKE ${`${normalizedQuery}%`} THEN 1
+        ELSE 2
+      END,
+      lower(COALESCE(requested_by_display_name, requested_by_login, '')) ASC
+    LIMIT ${Math.min(Math.max(input.limit ?? 8, 1), 25)}
+  `);
+
+  return unwrapD1Rows(rows).map((row) => ({
+    requesterId: row.requesterId,
+    requesterLogin: row.requesterLogin,
+    requesterDisplayName: row.requesterDisplayName,
+    requestCount: row.requestCount,
+  }));
+}
+
+export async function getPlayedHistoryPage(
+  env: AppEnv,
+  input: {
+    channelId: string;
+    page: number;
+    pageSize: number;
+    query?: string;
+    requesterId?: string;
+  }
+) {
+  const page = Math.max(1, input.page);
+  const pageSize = Math.min(20, Math.max(1, input.pageSize));
+  const offset = (page - 1) * pageSize;
+  const conditions = [eq(playedSongs.channelId, input.channelId)];
+
+  if (input.requesterId?.trim()) {
+    conditions.push(eq(playedSongs.requestedByTwitchUserId, input.requesterId));
+  }
+
+  const normalizedQuery = input.query?.trim().toLowerCase();
+  if (normalizedQuery) {
+    const escapedQuery = `%${escapeLikeValue(normalizedQuery)}%`;
+    conditions.push(sql`
+      (
+        lower(COALESCE(${playedSongs.songTitle}, '')) LIKE ${escapedQuery}
+        OR lower(COALESCE(${playedSongs.songArtist}, '')) LIKE ${escapedQuery}
+        OR lower(COALESCE(${playedSongs.songAlbum}, '')) LIKE ${escapedQuery}
+        OR lower(COALESCE(${playedSongs.songCreator}, '')) LIKE ${escapedQuery}
+      )
+    `);
+  }
+
+  const rows = await getDb(env).query.playedSongs.findMany({
+    where: and(...conditions),
+    orderBy: [desc(playedSongs.playedAt)],
+    limit: pageSize + 1,
+    offset,
+  });
+
+  return {
+    results: rows.slice(0, pageSize),
+    page,
+    pageSize,
+    hasNextPage: rows.length > pageSize,
+  };
+}
+
 export interface CatalogSearchInput {
   query?: string;
   field?: "any" | "title" | "artist" | "album" | "creator" | "tuning" | "parts";

@@ -2,18 +2,26 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
 import { AnimatePresence, motion } from "motion/react";
-import { useEffect } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { BlacklistPanel } from "~/components/blacklist-panel";
 import { PublicPlayedHistoryCard } from "~/components/public-played-history-card";
+import type {
+  SearchSong,
+  SearchSongResultState,
+} from "~/components/song-search-panel";
 import { SongSearchPanel } from "~/components/song-search-panel";
+import { Checkbox } from "~/components/ui/checkbox";
+import { Label } from "~/components/ui/label";
 import { formatSlugTitle, pageTitle } from "~/lib/page-title";
 import { getPickNumbersForQueuedItems } from "~/lib/pick-order";
-import { decodeHtmlEntities } from "~/lib/utils";
+import { cn, decodeHtmlEntities } from "~/lib/utils";
 
 type PublicPlaylistItem = {
   id: string;
   songTitle: string;
   songArtist?: string | null;
+  songCreator?: string | null;
+  songCatalogSourceId?: number | null;
   requestedByTwitchUserId?: string | null;
   requestedByLogin?: string | null;
   requestedByDisplayName?: string | null;
@@ -87,6 +95,7 @@ function toPlaylistItems(
 function PublicChannelPage() {
   const { slug } = Route.useParams();
   const queryClient = useQueryClient();
+  const [showBlacklisted, setShowBlacklisted] = useState(false);
   const { data, isLoading } = useQuery({
     queryKey: ["public-channel-page", slug],
     queryFn: async (): Promise<PublicChannelPageData> => {
@@ -145,6 +154,75 @@ function PublicChannelPage() {
   }, [queryClient, slug]);
 
   const channelDisplayName = data?.playlist?.channel?.displayName ?? slug;
+  const publicSearchResultFilter = useMemo(
+    () => (song: SearchSong) =>
+      showBlacklisted ||
+      getBlacklistReasons(
+        {
+          songCatalogSourceId: song.sourceId ?? null,
+          songArtist: song.artist ?? null,
+          songCreator: song.creator ?? null,
+        },
+        {
+          artists: data?.playlist.blacklistArtists ?? [],
+          charters: data?.playlist.blacklistCharters ?? [],
+          songs: data?.playlist.blacklistSongs ?? [],
+        }
+      ).length === 0,
+    [
+      data?.playlist.blacklistArtists,
+      data?.playlist.blacklistCharters,
+      data?.playlist.blacklistSongs,
+      showBlacklisted,
+    ]
+  );
+  const publicSearchResultState = useMemo(
+    () =>
+      (song: SearchSong): SearchSongResultState => {
+        const reasons = getBlacklistReasons(
+          {
+            songCatalogSourceId: song.sourceId ?? null,
+            songArtist: song.artist ?? null,
+            songCreator: song.creator ?? null,
+          },
+          {
+            artists: data?.playlist.blacklistArtists ?? [],
+            charters: data?.playlist.blacklistCharters ?? [],
+            songs: data?.playlist.blacklistSongs ?? [],
+          }
+        );
+
+        return {
+          disabled: reasons.length > 0,
+          reasons,
+        };
+      },
+    [
+      data?.playlist.blacklistArtists,
+      data?.playlist.blacklistCharters,
+      data?.playlist.blacklistSongs,
+    ]
+  );
+  const playlistItems = data?.playlist?.items ?? [];
+  const filteredItems = useMemo(
+    () =>
+      playlistItems.filter((item) => {
+        const blacklistReasons = getBlacklistReasons(item, {
+          artists: data?.playlist.blacklistArtists ?? [],
+          charters: data?.playlist.blacklistCharters ?? [],
+          songs: data?.playlist.blacklistSongs ?? [],
+        });
+        return showBlacklisted || blacklistReasons.length === 0;
+      }),
+    [
+      data?.playlist.blacklistArtists,
+      data?.playlist.blacklistCharters,
+      data?.playlist.blacklistSongs,
+      playlistItems,
+      showBlacklisted,
+    ]
+  );
+  const hiddenBlacklistedCount = playlistItems.length - filteredItems.length;
 
   return (
     <section className="grid gap-6">
@@ -161,13 +239,23 @@ function PublicChannelPage() {
         {isLoading ? <p className="mt-4 px-8">Loading playlist...</p> : null}
         <div className="mt-6 grid gap-3 px-8">
           <AnimatePresence initial={false} mode="popLayout">
-            {data?.playlist?.items?.map((item) => (
-              <PublicPlaylistRow key={item.id} item={item} />
+            {filteredItems.map((item) => (
+              <PublicPlaylistRow
+                key={item.id}
+                item={item}
+                blacklistReasons={getBlacklistReasons(item, {
+                  artists: data?.playlist.blacklistArtists ?? [],
+                  charters: data?.playlist.blacklistCharters ?? [],
+                  songs: data?.playlist.blacklistSongs ?? [],
+                })}
+              />
             ))}
           </AnimatePresence>
-          {!isLoading && !data?.playlist?.items?.length ? (
+          {!isLoading && !filteredItems.length ? (
             <p className="text-sm text-(--muted)">
-              This playlist is empty right now.
+              {playlistItems.length > 0 && !showBlacklisted
+                ? "Only blacklisted songs are in the queue right now."
+                : "This playlist is empty right now."}
             </p>
           ) : null}
         </div>
@@ -177,13 +265,37 @@ function PublicChannelPage() {
         title="Search to add a song"
         description="Copy the request command and use it in Twitch chat."
         placeholder={`Search songs for ${channelDisplayName}`}
+        resultFilter={publicSearchResultFilter}
+        resultState={publicSearchResultState}
+        advancedFiltersContent={
+          <div className="inline-flex flex-wrap items-center gap-3 rounded-full border border-(--border) bg-(--panel) px-4 py-2.5">
+            <Checkbox
+              id="show-blacklisted-public-playlist"
+              checked={showBlacklisted}
+              onCheckedChange={(checked) =>
+                setShowBlacklisted(checked === true)
+              }
+            />
+            <Label
+              htmlFor="show-blacklisted-public-playlist"
+              className="cursor-pointer text-sm font-medium text-(--text)"
+            >
+              Show blacklisted songs
+            </Label>
+            {!showBlacklisted && hiddenBlacklistedCount > 0 ? (
+              <span className="text-xs text-(--muted)">
+                Hiding {hiddenBlacklistedCount}
+              </span>
+            ) : null}
+          </div>
+        }
       />
 
       <BlacklistPanel
         artists={data?.playlist.blacklistArtists ?? []}
         charters={data?.playlist.blacklistCharters ?? []}
         songs={data?.playlist.blacklistSongs ?? []}
-        description="These exact artist IDs, charter IDs, and track IDs are blocked for requests in this channel."
+        description="These exact artist IDs and track IDs are blocked for requests in this channel."
       />
 
       <PublicPlayedHistoryCard slug={slug} />
@@ -191,7 +303,10 @@ function PublicChannelPage() {
   );
 }
 
-function PublicPlaylistRow(props: { item: EnrichedPublicPlaylistItem }) {
+function PublicPlaylistRow(props: {
+  item: EnrichedPublicPlaylistItem;
+  blacklistReasons: string[];
+}) {
   const requesterName =
     props.item.requestedByDisplayName ??
     props.item.requestedByLogin ??
@@ -210,7 +325,12 @@ function PublicPlaylistRow(props: { item: EnrichedPublicPlaylistItem }) {
       animate={{ opacity: 1, y: 0, scale: 1 }}
       exit={{ opacity: 0, y: -12, scale: 0.985 }}
       transition={publicPlaylistItemTransition}
-      className="rounded-[24px] border border-(--border) bg-(--panel-soft) px-5 py-4"
+      className={cn(
+        "rounded-[24px] border bg-(--panel-soft) px-5 py-4",
+        props.blacklistReasons.length > 0
+          ? "border-amber-400/35 bg-amber-500/8"
+          : "border-(--border)"
+      )}
     >
       <div className="flex items-start gap-4">
         <StatusColumn
@@ -228,6 +348,9 @@ function PublicPlaylistRow(props: { item: EnrichedPublicPlaylistItem }) {
             {props.item.pickNumber && props.item.pickNumber <= 3 ? (
               <PickBadge pickNumber={props.item.pickNumber} />
             ) : null}
+            {props.blacklistReasons.map((reason) => (
+              <BlacklistReasonBadge key={reason} reason={reason} />
+            ))}
           </div>
         </div>
       </div>
@@ -307,4 +430,64 @@ function PickBadge(props: { pickNumber: number }) {
       <span>{tone.label}</span>
     </span>
   );
+}
+
+function BlacklistReasonBadge(props: { reason: string }) {
+  return (
+    <span className="inline-flex items-center rounded-full border border-amber-400/35 bg-amber-500/12 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.16em] text-amber-100">
+      {props.reason}
+    </span>
+  );
+}
+
+function normalizeBlacklistValue(value?: string | null) {
+  return value?.trim().toLowerCase() ?? "";
+}
+
+function getBlacklistReasons(
+  item: {
+    songCatalogSourceId?: number | null;
+    songArtist?: string | null;
+    songCreator?: string | null;
+  },
+  blacklist: {
+    artists: Array<{ artistId: number; artistName: string }>;
+    charters: Array<{ charterId: number; charterName: string }>;
+    songs: Array<{
+      songId: number;
+      songTitle: string;
+      artistName?: string | null;
+    }>;
+  }
+) {
+  const reasons: string[] = [];
+  const artistName = normalizeBlacklistValue(item.songArtist);
+  const creatorName = normalizeBlacklistValue(item.songCreator);
+
+  if (
+    item.songCatalogSourceId != null &&
+    blacklist.songs.some((song) => song.songId === item.songCatalogSourceId)
+  ) {
+    reasons.push("Song blacklisted");
+  }
+
+  if (
+    artistName &&
+    blacklist.artists.some(
+      (artist) => normalizeBlacklistValue(artist.artistName) === artistName
+    )
+  ) {
+    reasons.push("Artist blacklisted");
+  }
+
+  if (
+    creatorName &&
+    blacklist.charters.some(
+      (charter) => normalizeBlacklistValue(charter.charterName) === creatorName
+    )
+  ) {
+    reasons.push("Creator blacklisted");
+  }
+
+  return reasons;
 }

@@ -517,7 +517,7 @@ describe("processEventSubChatMessage", () => {
     expect(deps.sendChatReply).toHaveBeenCalledWith(
       env,
       expect.objectContaining({
-        message: "@viewer_one this song cannot be played in this channel.",
+        message: "@viewer_one I cannot add that song to the playlist.",
       })
     );
   });
@@ -640,7 +640,7 @@ describe("processEventSubChatMessage", () => {
     expect(deps.sendChatReply).toHaveBeenCalledWith(
       env,
       expect.objectContaining({
-        message: "@viewer_one this song cannot be played in this channel.",
+        message: "@viewer_one I cannot add that song to the playlist.",
       })
     );
   });

@@ -57,7 +57,7 @@ function HomePage() {
   const viewer = sessionData?.viewer ?? null;
 
   return (
-    <section className="home-page grid gap-6 xl:grid-cols-[1.15fr_0.85fr]">
+    <section className="home-page grid gap-6 px-4 pt-4 pb-6 sm:px-5 sm:pt-5 md:px-6 md:pt-6 xl:grid-cols-[1.15fr_0.85fr]">
       <div className="home-page__hero surface-grid surface-noise rounded-[36px] border border-(--border-strong) bg-(--panel) p-8 shadow-(--shadow) md:p-10">
         <p className="text-xs font-semibold uppercase tracking-[0.34em] text-(--brand-deep)">
           Twitch Song Requests
@@ -66,35 +66,36 @@ function HomePage() {
           Search songs or manage your channel.
         </h1>
 
-        <div className="mt-8 flex flex-wrap gap-3">
-          <Button asChild size="lg">
-            {viewer ? (
-              <Link to="/dashboard" className="no-underline">
-                Go to Dashboard
-              </Link>
-            ) : (
-              <a href="/auth/twitch/start" className="no-underline">
-                Sign in with Twitch
-              </a>
-            )}
-          </Button>
-          <Button asChild variant="outline" size="lg">
-            <Link to="/search" className="no-underline">
-              Search songs
-            </Link>
-          </Button>
-        </div>
-
         <div className="mt-10 grid gap-4 md:grid-cols-2">
           <FeatureBlock
             icon={Search}
             title="Find a song"
             body="Search songs and copy the request command."
+            action={
+              <Button asChild size="sm">
+                <Link to="/search" className="no-underline">
+                  Search songs
+                </Link>
+              </Button>
+            }
           />
           <FeatureBlock
             icon={Settings2}
             title="Manage your channel"
             body="Playlist, bot settings, and overlay."
+            action={
+              <Button asChild size="sm">
+                {viewer ? (
+                  <Link to="/dashboard" className="no-underline">
+                    Go to Dashboard
+                  </Link>
+                ) : (
+                  <a href="/auth/twitch/start" className="no-underline">
+                    Sign in with Twitch
+                  </a>
+                )}
+              </Button>
+            }
           />
         </div>
       </div>
@@ -173,13 +174,17 @@ function FeatureBlock(props: {
   icon: React.ComponentType<{ className?: string }>;
   title: string;
   body: string;
+  action: React.ReactNode;
 }) {
   const Icon = props.icon;
 
   return (
     <div className="rounded-[28px] border border-(--border) bg-(--panel-soft) p-5">
-      <div className="flex h-12 w-12 items-center justify-center rounded-[18px] border border-(--border) bg-(--panel-muted) text-(--brand)">
-        <Icon className="h-5 w-5" />
+      <div className="flex items-start justify-between gap-3">
+        <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-[18px] border border-(--border) bg-(--panel-muted) text-(--brand)">
+          <Icon className="h-5 w-5" />
+        </div>
+        {props.action}
       </div>
       <p className="mt-5 text-lg font-semibold text-(--text)">{props.title}</p>
       <p className="mt-2 text-sm leading-6 text-(--muted)">{props.body}</p>

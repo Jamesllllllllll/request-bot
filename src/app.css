@@ -644,7 +644,8 @@ h6 {
   .search-panel__row {
     grid-template-columns: minmax(0, 1fr) auto;
     grid-template-areas:
-      "main copy";
+      "main copy"
+      "main stats";
     gap: 0.75rem 1rem;
     padding-inline: 1rem;
     padding-block: 0.9rem;
@@ -655,8 +656,7 @@ h6 {
     grid-template-columns: minmax(0, 1fr);
     grid-template-areas:
       "song"
-      "paths"
-      "stats";
+      "paths";
     gap: 0.75rem;
   }
 
@@ -666,10 +666,12 @@ h6 {
 
   .search-panel__copy {
     grid-area: copy;
+    align-items: start;
   }
 
   .search-panel__copy > div {
     justify-content: flex-end;
+    min-width: max-content;
   }
 
   .search-panel__paths {
@@ -679,6 +681,7 @@ h6 {
   .search-panel__stats {
     grid-area: stats;
     text-align: right;
+    align-self: start;
   }
 
   .search-panel__command,

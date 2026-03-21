@@ -27,7 +27,7 @@ export function BlacklistPanel(props: {
   defaultOpen?: boolean;
 }) {
   const content = (
-    <CardContent className="grid items-start gap-6 lg:grid-cols-3">
+    <CardContent className="grid items-start gap-6 lg:grid-cols-2">
       <div className="grid content-start gap-3 self-start">
         {props.artists.length > 0 ? (
           <div className="overflow-hidden rounded-[20px] border border-(--border)">
@@ -46,27 +46,6 @@ export function BlacklistPanel(props: {
           </div>
         ) : (
           <p className="text-sm text-(--muted)">No blacklisted artists.</p>
-        )}
-      </div>
-
-      <div className="grid content-start gap-3 self-start">
-        {(props.charters ?? []).length > 0 ? (
-          <div className="overflow-hidden rounded-[20px] border border-(--border)">
-            {(props.charters ?? []).map((charter, index) => (
-              <div
-                key={charter.charterId}
-                className={`px-4 py-2.5 text-sm ${
-                  index % 2 === 0 ? "bg-(--panel-soft)" : "bg-(--panel-muted)"
-                }`}
-              >
-                <p className="truncate text-(--text)">
-                  {charter.charterName} ({charter.charterId})
-                </p>
-              </div>
-            ))}
-          </div>
-        ) : (
-          <p className="text-sm text-(--muted)">No blacklisted charters.</p>
         )}
       </div>
 

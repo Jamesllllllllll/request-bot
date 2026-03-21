@@ -222,64 +222,6 @@ function DashboardOverviewPage() {
         </Card>
       ) : null}
 
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-2xl">Status preview</CardTitle>
-        </CardHeader>
-        <CardContent className="grid gap-6">
-          <div className="grid gap-3">
-            <p className="text-xs font-semibold uppercase tracking-[0.2em] text-(--muted)">
-              Bot
-            </p>
-            <div className="flex flex-wrap gap-3">
-              <StatusPill label="Bot" value="Active" tone="good" />
-              <StatusPill
-                label="Bot"
-                value="Offline testing enabled"
-                tone="good"
-              />
-              <StatusPill
-                label="Bot"
-                value="Waiting to go live"
-                tone="neutral"
-              />
-              <StatusPill
-                label="Bot"
-                value="Bot auth required"
-                tone="neutral"
-              />
-              <StatusPill
-                label="Bot"
-                value="Broadcaster auth required"
-                tone="neutral"
-              />
-              <StatusPill label="Bot" value="Subscription error" tone="warn" />
-              <StatusPill label="Bot" value="Disabled" tone="neutral" />
-            </div>
-          </div>
-
-          <div className="grid gap-3">
-            <p className="text-xs font-semibold uppercase tracking-[0.2em] text-(--muted)">
-              Stream
-            </p>
-            <div className="flex flex-wrap gap-3">
-              <StatusPill label="Stream" value="Live" tone="good" />
-              <StatusPill label="Stream" value="Offline" tone="neutral" />
-            </div>
-          </div>
-
-          <div className="grid gap-3">
-            <p className="text-xs font-semibold uppercase tracking-[0.2em] text-(--muted)">
-              Requests
-            </p>
-            <div className="flex flex-wrap gap-3">
-              <StatusPill label="Requests" value="Enabled" tone="good" />
-              <StatusPill label="Requests" value="Paused" tone="warn" />
-            </div>
-          </div>
-        </CardContent>
-      </Card>
-
       <section className="grid gap-6">
         <div className="grid gap-4">
           <Card>

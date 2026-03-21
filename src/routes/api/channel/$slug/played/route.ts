@@ -1,10 +1,7 @@
 // Route: Returns paginated played-song history for a public channel playlist.
 import { env } from "cloudflare:workers";
 import { createFileRoute } from "@tanstack/react-router";
-import { desc, eq } from "drizzle-orm";
-import { getDb } from "~/lib/db/client";
-import { getChannelBySlug } from "~/lib/db/repositories";
-import { playedSongs } from "~/lib/db/schema";
+import { getChannelBySlug, getPlayedHistoryPage } from "~/lib/db/repositories";
 import type { AppEnv } from "~/lib/env";
 import { json } from "~/lib/utils";
 
@@ -25,21 +22,18 @@ export const Route = createFileRoute("/api/channel/$slug/played")({
           20,
           Math.max(1, Number(url.searchParams.get("pageSize") ?? "20"))
         );
-        const offset = (page - 1) * pageSize;
+        const query = url.searchParams.get("query") ?? undefined;
+        const requesterId = url.searchParams.get("requesterId") ?? undefined;
 
-        const rows = await getDb(runtimeEnv).query.playedSongs.findMany({
-          where: eq(playedSongs.channelId, channel.id),
-          orderBy: [desc(playedSongs.playedAt)],
-          limit: pageSize + 1,
-          offset,
-        });
-
-        return json({
-          results: rows.slice(0, pageSize),
-          page,
-          pageSize,
-          hasNextPage: rows.length > pageSize,
-        });
+        return json(
+          await getPlayedHistoryPage(runtimeEnv, {
+            channelId: channel.id,
+            page,
+            pageSize,
+            query,
+            requesterId,
+          })
+        );
       },
     },
   },

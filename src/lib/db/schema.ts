@@ -101,6 +101,9 @@ export const channelSettings = sqliteTable("channel_settings", {
     .default(false),
   allowedTuningsJson: text("allowed_tunings_json").notNull().default("[]"),
   requiredPathsJson: text("required_paths_json").notNull().default("[]"),
+  requiredPathsMatchMode: text("required_paths_match_mode")
+    .notNull()
+    .default("any"),
   maxQueueSize: integer("max_queue_size").notNull().default(250),
   maxViewerRequestsAtOnce: integer("max_viewer_requests_at_once")
     .notNull()
@@ -159,9 +162,6 @@ export const channelSettings = sqliteTable("channel_settings", {
   duplicateWindowSeconds: integer("duplicate_window_seconds")
     .notNull()
     .default(900),
-  publicPlaylistEnabled: integer("public_playlist_enabled", { mode: "boolean" })
-    .notNull()
-    .default(true),
   overlayAccessToken: text("overlay_access_token").notNull().default(""),
   overlayShowCreator: integer("overlay_show_creator", { mode: "boolean" })
     .notNull()
@@ -324,15 +324,13 @@ export const setlistArtists = sqliteTable(
     channelId: text("channel_id")
       .notNull()
       .references(() => channels.id),
+    artistId: integer("artist_id").notNull(),
     artistName: text("artist_name").notNull(),
-    normalizedArtistName: text("normalized_artist_name").notNull(),
     createdAt: integer("created_at")
       .notNull()
       .default(sql`(unixepoch() * 1000)`),
   },
-  (table) => [
-    primaryKey({ columns: [table.channelId, table.normalizedArtistName] }),
-  ]
+  (table) => [primaryKey({ columns: [table.channelId, table.artistId] })]
 );
 
 export const vipTokens = sqliteTable(

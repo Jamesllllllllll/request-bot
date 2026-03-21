@@ -2,6 +2,7 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
 import { ChevronDown, ChevronUp, History } from "lucide-react";
+import { AnimatePresence, motion } from "motion/react";
 import { useEffect, useState } from "react";
 import { BlacklistPanel } from "~/components/blacklist-panel";
 import { SongSearchPanel } from "~/components/song-search-panel";
@@ -15,6 +16,7 @@ import {
   PaginationPrevious,
 } from "~/components/ui/pagination";
 import { formatSlugTitle, pageTitle } from "~/lib/page-title";
+import { getPickNumbersForQueuedItems } from "~/lib/pick-order";
 import { decodeHtmlEntities } from "~/lib/utils";
 
 type PublicPlaylistItem = {
@@ -26,6 +28,7 @@ type PublicPlaylistItem = {
   requestedByDisplayName?: string | null;
   requestKind?: "regular" | "vip" | null;
   status: string;
+  createdAt?: number | null;
   pickNumber?: number | null;
 };
 
@@ -37,6 +40,9 @@ type EnrichedPublicPlaylistItem = PublicPlaylistItem & {
 type PlayedSongRow = {
   requestedByTwitchUserId?: string | null;
   requestedByLogin?: string | null;
+  requestedAt?: number | null;
+  playedAt?: number | null;
+  createdAt?: number | null;
 };
 
 type PublicChannelPageData = {
@@ -72,6 +78,11 @@ type PublicPlayedHistoryResponse = {
   hasNextPage: boolean;
 };
 
+const publicPlaylistItemTransition = {
+  duration: 0.28,
+  ease: [0.2, 0, 0, 1] as const,
+};
+
 export const Route = createFileRoute("/$slug/")({
   head: ({ params }) => ({
     meta: [{ title: pageTitle(`${formatSlugTitle(params.slug)} Playlist`) }],
@@ -83,35 +94,16 @@ function toPlaylistItems(
   items: PublicPlaylistItem[],
   playedSongs: PlayedSongRow[]
 ): EnrichedPublicPlaylistItem[] {
-  const playedCounts = new Map<string, number>();
+  const pickNumbers = getPickNumbersForQueuedItems(items, playedSongs);
 
-  for (const row of playedSongs) {
-    const key = row.requestedByTwitchUserId || row.requestedByLogin || "";
-    if (!key) {
-      continue;
-    }
-
-    playedCounts.set(key, (playedCounts.get(key) ?? 0) + 1);
-  }
-
-  const queuedCounts = new Map<string, number>();
-
-  return items.map((item) => {
-    const key = item.requestedByTwitchUserId || item.requestedByLogin || "";
-    const priorPlayed = key ? (playedCounts.get(key) ?? 0) : 0;
-    const earlierQueued = key ? (queuedCounts.get(key) ?? 0) : 0;
-    const pickNumber = key ? priorPlayed + earlierQueued + 1 : null;
+  return items.map((item, index) => {
     const requestKind: "regular" | "vip" =
       item.requestKind === "vip" || item.status === "vip" ? "vip" : "regular";
-
-    if (key) {
-      queuedCounts.set(key, earlierQueued + 1);
-    }
 
     return {
       ...item,
       requestKind,
-      pickNumber,
+      pickNumber: pickNumbers[index] ?? null,
     };
   });
 }
@@ -204,9 +196,11 @@ function PublicChannelPage() {
         </div>
         {isLoading ? <p className="mt-4 px-8">Loading playlist...</p> : null}
         <div className="mt-6 grid gap-3 px-8">
-          {data?.playlist?.items?.map((item) => (
-            <PublicPlaylistRow key={item.id} item={item} />
-          ))}
+          <AnimatePresence initial={false} mode="popLayout">
+            {data?.playlist?.items?.map((item) => (
+              <PublicPlaylistRow key={item.id} item={item} />
+            ))}
+          </AnimatePresence>
           {!isLoading && !data?.playlist?.items?.length ? (
             <p className="text-sm text-(--muted)">
               This playlist is empty right now.
@@ -340,7 +334,14 @@ function PublicPlaylistRow(props: { item: EnrichedPublicPlaylistItem }) {
     .join(" - ");
 
   return (
-    <div className="rounded-[24px] border border-(--border) bg-(--panel-soft) px-5 py-4">
+    <motion.div
+      layout
+      initial={{ opacity: 0, y: 12, scale: 0.99 }}
+      animate={{ opacity: 1, y: 0, scale: 1 }}
+      exit={{ opacity: 0, y: -12, scale: 0.985 }}
+      transition={publicPlaylistItemTransition}
+      className="rounded-[24px] border border-(--border) bg-(--panel-soft) px-5 py-4"
+    >
       <div className="flex items-start gap-4">
         <StatusColumn
           isCurrent={props.item.status === "current"}
@@ -360,7 +361,7 @@ function PublicPlaylistRow(props: { item: EnrichedPublicPlaylistItem }) {
           </div>
         </div>
       </div>
-    </div>
+    </motion.div>
   );
 }
 

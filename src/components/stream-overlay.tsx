@@ -1,3 +1,4 @@
+import { AnimatePresence, motion } from "motion/react";
 import type { CSSProperties } from "react";
 import { decodeHtmlEntities, hexToRgba } from "~/lib/utils";
 
@@ -15,6 +16,7 @@ export type StreamOverlayItem = {
   requestKind?: "regular" | "vip";
   pickNumber?: number | null;
   status: string;
+  createdAt?: number | null;
 };
 
 export type StreamOverlayTheme = {
@@ -42,18 +44,8 @@ export function StreamOverlay(props: {
   theme: StreamOverlayTheme;
   preview?: boolean;
 }) {
-  const currentItem = props.items.find((item) => item.status === "current");
-  const queueItems = props.items.filter((item) => item.id !== currentItem?.id);
-  const showSeparateCurrent = Boolean(currentItem);
   const maxVisibleItems = 5;
-  const visibleQueueItems = queueItems.slice(
-    0,
-    Math.max(0, maxVisibleItems - (showSeparateCurrent ? 1 : 0))
-  );
-  const visibleItems =
-    showSeparateCurrent && currentItem
-      ? [currentItem, ...visibleQueueItems]
-      : props.items.slice(0, maxVisibleItems);
+  const visibleItems = props.items.slice(0, maxVisibleItems);
   const hasOverflow = props.items.length > visibleItems.length;
   const backgroundColor = hexToRgba(
     props.theme.overlayBackgroundColor,
@@ -95,22 +87,24 @@ export function StreamOverlay(props: {
             gap: "var(--overlay-gap)",
           }}
         >
-          {visibleItems.length
-            ? visibleItems.map((item, index) => (
-                <OverlayCard
-                  key={item.id}
-                  item={item}
-                  transparentBackground={
-                    props.theme.overlayBackgroundOpacity === 0
-                  }
-                  animateRecord={
-                    props.theme.overlayAnimateNowPlaying &&
-                    item.status === "current"
-                  }
-                  fadeOut={hasOverflow && index === visibleItems.length - 1}
-                />
-              ))
-            : null}
+          <AnimatePresence initial={false} mode="popLayout">
+            {visibleItems.length
+              ? visibleItems.map((item, index) => (
+                  <OverlayCard
+                    key={item.id}
+                    item={item}
+                    transparentBackground={
+                      props.theme.overlayBackgroundOpacity === 0
+                    }
+                    animateRecord={
+                      props.theme.overlayAnimateNowPlaying &&
+                      item.status === "current"
+                    }
+                    fadeOut={hasOverflow && index === visibleItems.length - 1}
+                  />
+                ))
+              : null}
+          </AnimatePresence>
         </div>
       </div>
     </div>
@@ -137,8 +131,16 @@ function OverlayCard(props: {
     .join(" - ");
 
   return (
-    <div
+    <motion.div
+      layout
       className="relative overflow-hidden rounded-(--overlay-radius) border"
+      initial={{ opacity: 0, y: 10, scale: 0.99 }}
+      animate={{ opacity: 1, y: 0, scale: 1 }}
+      exit={{ opacity: 0, y: -10, scale: 0.985 }}
+      transition={{
+        duration: 0.28,
+        ease: [0.2, 0, 0, 1],
+      }}
       style={{
         borderColor: "var(--overlay-border)",
         background: "var(--overlay-panel)",
@@ -186,7 +188,7 @@ function OverlayCard(props: {
           </div>
         </div>
       </div>
-    </div>
+    </motion.div>
   );
 }
 

@@ -51,12 +51,6 @@ export interface RestorePlayedInput {
   actorUserId: string;
 }
 
-export interface SkipItemInput {
-  channelId: string;
-  itemId: string;
-  actorUserId: string;
-}
-
 export interface ShuffleNextInput {
   channelId: string;
   actorUserId: string;
@@ -134,7 +128,6 @@ export interface PlaylistCoordinator {
   markPlayed(input: MarkPlayedInput): Promise<PlaylistMutationResult>;
   restorePlayed(input: RestorePlayedInput): Promise<PlaylistMutationResult>;
   setCurrent(input: SetCurrentInput): Promise<PlaylistMutationResult>;
-  skipItem(input: SkipItemInput): Promise<PlaylistMutationResult>;
   shuffleNext(input: ShuffleNextInput): Promise<PlaylistMutationResult>;
   shufflePlaylist(input: ShufflePlaylistInput): Promise<PlaylistMutationResult>;
   reorderItems(input: ReorderItemsInput): Promise<PlaylistMutationResult>;

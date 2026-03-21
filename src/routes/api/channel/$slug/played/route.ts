@@ -3,10 +3,7 @@ import { env } from "cloudflare:workers";
 import { createFileRoute } from "@tanstack/react-router";
 import { desc, eq } from "drizzle-orm";
 import { getDb } from "~/lib/db/client";
-import {
-  getChannelBySlug,
-  getChannelSettingsByChannelId,
-} from "~/lib/db/repositories";
+import { getChannelBySlug } from "~/lib/db/repositories";
 import { playedSongs } from "~/lib/db/schema";
 import type { AppEnv } from "~/lib/env";
 import { json } from "~/lib/utils";
@@ -20,14 +17,6 @@ export const Route = createFileRoute("/api/channel/$slug/played")({
 
         if (!channel) {
           return json({ error: "Channel not found" }, { status: 404 });
-        }
-
-        const settings = await getChannelSettingsByChannelId(
-          runtimeEnv,
-          channel.id
-        );
-        if (settings && !settings.publicPlaylistEnabled) {
-          return json({ error: "Playlist is private" }, { status: 403 });
         }
 
         const url = new URL(request.url);

@@ -1,8 +1,9 @@
 // Route: Renders overlay settings and preview controls for the active channel.
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
-import { Copy, RefreshCcw } from "lucide-react";
+import { Copy } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
+import { DashboardPageHeader } from "~/components/dashboard-page-header";
 import {
   StreamOverlay,
   type StreamOverlayTheme,
@@ -150,40 +151,6 @@ function DashboardOverlayPage() {
     },
   });
 
-  const regenerateMutation = useMutation({
-    mutationFn: async () => {
-      const response = await fetch("/api/dashboard/overlay", {
-        method: "POST",
-        headers: {
-          "content-type": "application/json",
-        },
-        body: JSON.stringify({ action: "regenerateToken" }),
-      });
-      const body = (await response.json().catch(() => null)) as {
-        message?: string;
-      } | null;
-
-      if (!response.ok) {
-        throw new Error(
-          body?.message ?? "Overlay URL could not be regenerated."
-        );
-      }
-
-      return body;
-    },
-    onMutate: () => {
-      setMessage(null);
-      setErrorMessage(null);
-    },
-    onSuccess: async (payload) => {
-      setMessage(payload?.message ?? "Overlay URL regenerated.");
-      await queryClient.invalidateQueries({ queryKey: ["dashboard-overlay"] });
-    },
-    onError: (error) => {
-      setErrorMessage(getErrorMessage(error));
-    },
-  });
-
   const previewTheme = useMemo<StreamOverlayTheme>(() => form, [form]);
   const savedForm = overlayQuery.data?.settings ?? defaultOverlayForm;
   const hasUnsavedChanges = JSON.stringify(form) !== JSON.stringify(savedForm);
@@ -289,29 +256,11 @@ function DashboardOverlayPage() {
   }
 
   return (
-    <div className="grid gap-6">
-      <section className="surface-grid surface-noise rounded-[34px] border border-(--border-strong) bg-(--panel) p-6 shadow-(--shadow) md:p-8">
-        <div className="flex flex-wrap items-start justify-between gap-5">
-          <div className="max-w-2xl">
-            <p className="text-xs font-semibold uppercase tracking-[0.28em] text-(--brand-deep)">
-              Stream overlay
-            </p>
-            <h1 className="mt-3 text-4xl font-semibold tracking-[-0.04em] text-(--text)">
-              Overlay
-            </h1>
-          </div>
-          <div className="flex flex-wrap gap-3">
-            <Button
-              variant="outline"
-              onClick={() => regenerateMutation.mutate()}
-              disabled={regenerateMutation.isPending}
-            >
-              <RefreshCcw className="h-4 w-4" />
-              Regenerate URL
-            </Button>
-          </div>
-        </div>
-      </section>
+    <div className="dashboard-overlay grid gap-6">
+      <DashboardPageHeader
+        title="Overlay"
+        description="Configure the browser source URL, theme, and preview behavior for your on-stream playlist."
+      />
 
       {message ? <Banner tone="success">{message}</Banner> : null}
       {errorMessage ? <Banner tone="danger">{errorMessage}</Banner> : null}
@@ -321,7 +270,7 @@ function DashboardOverlayPage() {
 
       <div className="grid gap-6 xl:grid-cols-[420px_minmax(0,1fr)]">
         <div className="grid gap-6">
-          <Card>
+          <Card className="dashboard-overlay__section">
             <CardHeader>
               <CardTitle>Overlay access</CardTitle>
             </CardHeader>
@@ -350,7 +299,7 @@ function DashboardOverlayPage() {
             </CardContent>
           </Card>
 
-          <Card>
+          <Card className="dashboard-overlay__section">
             <CardHeader>
               <CardTitle>Layout and behavior</CardTitle>
             </CardHeader>
@@ -378,7 +327,7 @@ function DashboardOverlayPage() {
             </CardContent>
           </Card>
 
-          <Card>
+          <Card className="dashboard-overlay__section">
             <CardHeader>
               <CardTitle>Theme</CardTitle>
             </CardHeader>
@@ -421,7 +370,7 @@ function DashboardOverlayPage() {
             </CardContent>
           </Card>
 
-          <Card>
+          <Card className="dashboard-overlay__section">
             <CardHeader>
               <CardTitle>Density and sizing</CardTitle>
             </CardHeader>
@@ -484,7 +433,7 @@ function DashboardOverlayPage() {
         </div>
 
         <div className="self-start xl:sticky xl:top-6">
-          <Card className="overflow-hidden">
+          <Card className="dashboard-overlay__section overflow-hidden">
             <CardHeader className="gap-4">
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <CardTitle>Preview</CardTitle>

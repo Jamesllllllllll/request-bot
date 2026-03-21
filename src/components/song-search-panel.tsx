@@ -2,7 +2,7 @@ import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import {
   Check,
   ChevronDown,
-  Copy,
+  Clock3,
   Search as SearchIcon,
   SlidersHorizontal,
   X,
@@ -76,6 +76,7 @@ export interface SearchSong {
   durationText?: string;
   year?: number;
   downloads?: number;
+  sourceUpdatedAt?: number;
   sourceId?: number;
   source: string;
 }
@@ -97,6 +98,12 @@ type SearchFilterOptionsResponse = {
   years: number[];
 };
 
+const updatedDateFormatter = new Intl.DateTimeFormat("en-US", {
+  month: "short",
+  day: "numeric",
+  year: "numeric",
+});
+
 export function buildRequestCommand(song: SearchSong) {
   if (song.sourceId != null) {
     return `!sr song:${song.sourceId}`;
@@ -104,6 +111,10 @@ export function buildRequestCommand(song: SearchSong) {
 
   const fragments = [song.artist, song.title].filter(Boolean);
   return `!sr ${fragments.join(" - ")}`.trim();
+}
+
+export function buildVipRequestCommand(song: SearchSong) {
+  return buildRequestCommand(song).replace(/^!sr\b/, "!vip");
 }
 
 export function SongSearchPanel(props: {
@@ -121,7 +132,10 @@ export function SongSearchPanel(props: {
   const [sortBy, setSortBy] = useState<SearchSort>("relevance");
   const [sortDirection, setSortDirection] = useState<"asc" | "desc">("desc");
   const [showAdvanced, setShowAdvanced] = useState(false);
-  const [copiedSongId, setCopiedSongId] = useState<string | null>(null);
+  const [copiedCommand, setCopiedCommand] = useState<{
+    songId: string;
+    type: "sr" | "vip";
+  } | null>(null);
   const [advancedFilters, setAdvancedFilters] = useState({
     title: "",
     artist: "",
@@ -314,11 +328,15 @@ export function SongSearchPanel(props: {
       .sort((a, b) => a - b);
   }, [page, totalPages]);
 
-  async function copyRequest(song: SearchSong) {
-    await navigator.clipboard.writeText(buildRequestCommand(song));
-    setCopiedSongId(song.id);
+  async function copyRequest(song: SearchSong, type: "sr" | "vip" = "sr") {
+    await navigator.clipboard.writeText(
+      type === "vip" ? buildVipRequestCommand(song) : buildRequestCommand(song)
+    );
+    setCopiedCommand({ songId: song.id, type });
     window.setTimeout(() => {
-      setCopiedSongId((current) => (current === song.id ? null : current));
+      setCopiedCommand((current) =>
+        current?.songId === song.id && current.type === type ? null : current
+      );
     }, 1600);
   }
 
@@ -447,7 +465,7 @@ export function SongSearchPanel(props: {
 
   return (
     <TooltipProvider>
-      <section className={cn("grid gap-6", props.className)}>
+      <section className={cn("search-panel grid gap-6", props.className)}>
         <Card className="surface-grid bg-(--panel-strong)">
           <CardHeader className="gap-3">
             <div className="flex flex-wrap items-start justify-between gap-4">
@@ -480,7 +498,7 @@ export function SongSearchPanel(props: {
                 ) : null}
               </div>
               {!queryTooShort && !error ? (
-                <div className="rounded-[24px] border border-(--border) bg-(--panel-soft) px-4 py-3 text-right">
+                <div className="search-panel__summary rounded-[24px] border border-(--border) bg-(--panel-soft) px-4 py-3 text-right">
                   <p className="text-lg font-semibold text-(--text)">
                     {data?.total ?? 0} songs
                   </p>
@@ -494,7 +512,7 @@ export function SongSearchPanel(props: {
             </div>
           </CardHeader>
           <CardContent className="grid gap-5">
-            <div className="grid gap-3 lg:grid-cols-[1.8fr_190px_190px_170px]">
+            <div className="search-panel__controls grid gap-3 lg:grid-cols-[1.8fr_190px_190px_170px]">
               <div className="relative">
                 <SearchIcon className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-(--muted)" />
                 <Input
@@ -684,16 +702,15 @@ export function SongSearchPanel(props: {
           </CardContent>
         </Card>
 
-        <Card className="overflow-hidden bg-(--panel-strong)">
+        <Card className="search-panel__results overflow-hidden bg-(--panel-strong)">
           <CardContent className="p-0">
             {renderPagination("top")}
 
-            <div className="grid grid-cols-[minmax(0,2.1fr)_minmax(0,1.4fr)_minmax(0,1.2fr)_minmax(0,1fr)_72px] gap-4 border-b border-(--border) px-5 py-4 text-[11px] font-semibold uppercase tracking-[0.22em] text-(--muted)">
+            <div className="search-panel__table-head grid grid-cols-[minmax(0,2.2fr)_minmax(0,1.05fr)_minmax(0,1.15fr)_136px] gap-4 border-b border-(--border) px-5 py-4 text-[11px] font-semibold uppercase tracking-[0.22em] text-(--muted)">
               <span>Song</span>
-              <span>Details</span>
-              <span>Paths / Tuning</span>
+              <span>Paths</span>
               <span>Stats</span>
-              <span className="text-right">Copy</span>
+              <span className="text-right">Actions</span>
             </div>
 
             {isLoading && results.length === 0 ? (
@@ -703,7 +720,7 @@ export function SongSearchPanel(props: {
             ) : null}
 
             {!isLoading && queryTooShort && !hasAdvancedFilter ? (
-              <div className="grid grid-cols-[minmax(0,2.1fr)_minmax(0,1.4fr)_minmax(0,1.2fr)_minmax(0,1fr)_72px] gap-4 border-b border-(--border) px-5 py-4 text-[11px] font-semibold uppercase tracking-[0.22em] text-(--muted)">
+              <div className="grid grid-cols-[minmax(0,2.2fr)_minmax(0,1.05fr)_minmax(0,1.15fr)_136px] gap-4 border-b border-(--border) px-5 py-4 text-[11px] font-semibold uppercase tracking-[0.22em] text-(--muted)">
                 <span className="col-span-full normal-case tracking-normal text-sm font-normal text-(--muted)">
                   Search terms must be at least 3 characters.
                 </span>
@@ -734,113 +751,159 @@ export function SongSearchPanel(props: {
             ) : null}
 
             {results.map((song, index) => {
-              const requestCommand = buildRequestCommand(song);
-              const copied = copiedSongId === song.id;
+              const copiedType =
+                copiedCommand?.songId === song.id ? copiedCommand.type : null;
 
               return (
-                <button
+                <div
                   key={song.id}
-                  type="button"
-                  onClick={() => copyRequest(song)}
                   className={cn(
-                    "grid w-full cursor-pointer grid-cols-[minmax(0,2.1fr)_minmax(0,1.4fr)_minmax(0,1.2fr)_minmax(0,1fr)_72px] gap-4 border-b border-(--border) px-5 py-4 text-left transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-(--brand) focus-visible:ring-inset",
+                    "search-panel__row grid w-full cursor-pointer grid-cols-[minmax(0,2.2fr)_minmax(0,1.05fr)_minmax(0,1.15fr)_136px] gap-4 border-b border-(--border) px-5 py-4 text-left transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-(--brand) focus-visible:ring-inset",
                     index % 2 === 0
                       ? "bg-(--panel-strong)"
                       : "bg-(--panel-soft)",
                     "hover:border-(--brand) hover:bg-(--bg-elevated)"
                   )}
                 >
-                  <div className="min-w-0">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <p className="truncate text-[15px] font-semibold text-(--text)">
-                        {song.title}
+                  <button
+                    type="button"
+                    onClick={() => copyRequest(song, "sr")}
+                    className="search-panel__row-main col-span-3 grid min-w-0 grid-cols-[minmax(0,2.2fr)_minmax(0,1.05fr)_minmax(0,1.15fr)] gap-4 text-left"
+                  >
+                    <div className="search-panel__song min-w-0">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <p className="truncate text-[15px] font-semibold text-(--text)">
+                          {song.title}
+                        </p>
+                      </div>
+                      <p className="mt-1 truncate text-sm text-(--brand-deep)">
+                        {song.artist ?? "Unknown artist"}
                       </p>
-                    </div>
-                    <p className="mt-1 truncate text-sm text-(--brand-deep)">
-                      {song.artist ?? "Unknown artist"}
-                    </p>
-                    {song.album ? (
-                      <p className="mt-1 truncate text-sm text-(--muted)">
-                        {song.album}
-                      </p>
-                    ) : null}
-                  </div>
-
-                  <div className="min-w-0">
-                    {song.creator ? (
-                      <p className="truncate text-sm text-(--muted)">
-                        Charted by {song.creator}
-                      </p>
-                    ) : null}
-                    <p className="mt-2 truncate font-mono text-[11px] text-(--muted)">
-                      {requestCommand}
-                    </p>
-                  </div>
-
-                  <div className="min-w-0">
-                    <div className="flex flex-wrap gap-2">
-                      {song.parts?.includes("lead") ? (
-                        <Badge className="border-emerald-400/30 bg-emerald-500/10 text-emerald-300 hover:bg-emerald-500/10">
-                          Lead
-                        </Badge>
-                      ) : null}
-                      {song.parts?.includes("rhythm") ? (
-                        <Badge className="border-sky-400/30 bg-sky-500/10 text-sky-300 hover:bg-sky-500/10">
-                          Rhythm
-                        </Badge>
-                      ) : null}
-                      {song.parts?.includes("bass") ? (
-                        <Badge className="border-orange-400/30 bg-orange-500/10 text-orange-300 hover:bg-orange-500/10">
-                          Bass
-                        </Badge>
-                      ) : null}
-                      {song.parts?.includes("voice") ||
-                      song.parts?.includes("vocals") ? (
-                        <Badge className="border-violet-400/30 bg-violet-500/10 text-violet-300 hover:bg-violet-500/10">
-                          Lyrics
-                        </Badge>
+                      {song.album ? (
+                        <p className="mt-1 truncate text-sm text-(--muted)">
+                          {song.album}
+                          {song.year ? ` - ${song.year}` : ""}
+                        </p>
                       ) : null}
                     </div>
-                    {song.tuning ? (
-                      <p className="mt-2 truncate text-sm text-(--muted)">
-                        {song.tuning}
-                      </p>
-                    ) : null}
-                  </div>
 
-                  <div className="min-w-0 text-sm">
-                    {song.durationText ? (
-                      <p className="text-(--text)">{song.durationText}</p>
-                    ) : null}
-                    {song.year ? (
-                      <p className="mt-1 text-(--muted)">{String(song.year)}</p>
-                    ) : null}
-                  </div>
+                    <div className="search-panel__paths min-w-0">
+                      <div className="flex flex-wrap gap-2">
+                        {song.parts?.includes("lead") ? (
+                          <PathBadge
+                            label="Lead"
+                            shortLabel="L"
+                            className="border-emerald-400/30 bg-emerald-500/10 text-emerald-300 hover:bg-emerald-500/10"
+                          />
+                        ) : null}
+                        {song.parts?.includes("rhythm") ? (
+                          <PathBadge
+                            label="Rhythm"
+                            shortLabel="R"
+                            className="border-sky-400/30 bg-sky-500/10 text-sky-300 hover:bg-sky-500/10"
+                          />
+                        ) : null}
+                        {song.parts?.includes("bass") ? (
+                          <PathBadge
+                            label="Bass"
+                            shortLabel="B"
+                            className="border-orange-400/30 bg-orange-500/10 text-orange-300 hover:bg-orange-500/10"
+                          />
+                        ) : null}
+                        {song.parts?.includes("voice") ||
+                        song.parts?.includes("vocals") ? (
+                          <PathBadge
+                            label="Lyrics"
+                            shortLabel="V"
+                            className="border-violet-400/30 bg-violet-500/10 text-violet-300 hover:bg-violet-500/10"
+                          />
+                        ) : null}
+                      </div>
+                    </div>
 
-                  <div className="flex items-center justify-end">
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <div
-                          className={cn(
-                            "flex h-11 w-11 items-center justify-center rounded-full border border-(--border) bg-(--panel) transition-colors",
-                            copied
-                              ? "border-emerald-400 text-emerald-400"
-                              : "text-(--brand)"
+                    <div className="search-panel__stats min-w-0 text-sm">
+                      {song.creator ? (
+                        <p className="truncate text-sm text-(--muted)">
+                          Charted by {song.creator}
+                        </p>
+                      ) : null}
+                      {song.tuning ? (
+                        <p className="search-panel__desktop-stat mt-1 truncate text-sm text-(--muted)">
+                          {song.tuning}
+                        </p>
+                      ) : null}
+                      {song.durationText ? (
+                        <p className="search-panel__desktop-stat mt-1 inline-flex items-center gap-1 text-(--text)">
+                          <Clock3 className="h-3.5 w-3.5 text-(--muted)" />
+                          <span>{song.durationText}</span>
+                        </p>
+                      ) : null}
+                      {song.sourceUpdatedAt ? (
+                        <p className="mt-1 text-(--muted)">
+                          Updated{" "}
+                          {updatedDateFormatter.format(
+                            new Date(song.sourceUpdatedAt)
                           )}
-                        >
-                          {copied ? (
-                            <Check className="h-4 w-4" />
-                          ) : (
-                            <Copy className="h-4 w-4" />
-                          )}
-                        </div>
-                      </TooltipTrigger>
-                      <TooltipContent>
-                        {copied ? "Copied" : "Copy request command"}
-                      </TooltipContent>
-                    </Tooltip>
+                        </p>
+                      ) : null}
+                    </div>
+                  </button>
+
+                  <div className="search-panel__copy flex items-center justify-end">
+                    <div className="flex flex-wrap justify-end gap-2">
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <button
+                            type="button"
+                            onClick={() => void copyRequest(song, "sr")}
+                            className={cn(
+                              "flex h-11 min-w-[3.25rem] items-center justify-center rounded-full border border-(--border) bg-(--panel) px-3 text-[11px] font-semibold uppercase tracking-[0.16em] transition-colors",
+                              copiedType === "sr"
+                                ? "border-emerald-400 text-emerald-400"
+                                : "text-(--brand)"
+                            )}
+                          >
+                            {copiedType === "sr" ? (
+                              <Check className="h-4 w-4" />
+                            ) : (
+                              "!sr"
+                            )}
+                          </button>
+                        </TooltipTrigger>
+                        <TooltipContent>
+                          {copiedType === "sr"
+                            ? "Copied !sr command"
+                            : "Copy !sr command"}
+                        </TooltipContent>
+                      </Tooltip>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <button
+                            type="button"
+                            onClick={() => void copyRequest(song, "vip")}
+                            className={cn(
+                              "flex h-11 min-w-[3.5rem] items-center justify-center rounded-full border border-(--border) bg-(--panel) px-3 text-[11px] font-semibold uppercase tracking-[0.16em] transition-colors",
+                              copiedType === "vip"
+                                ? "border-emerald-400 text-emerald-400"
+                                : "text-(--brand-deep)"
+                            )}
+                          >
+                            {copiedType === "vip" ? (
+                              <Check className="h-4 w-4" />
+                            ) : (
+                              "!vip"
+                            )}
+                          </button>
+                        </TooltipTrigger>
+                        <TooltipContent>
+                          {copiedType === "vip"
+                            ? "Copied !vip command"
+                            : "Copy !vip command"}
+                        </TooltipContent>
+                      </Tooltip>
+                    </div>
                   </div>
-                </button>
+                </div>
               );
             })}
 
@@ -849,6 +912,19 @@ export function SongSearchPanel(props: {
         </Card>
       </section>
     </TooltipProvider>
+  );
+}
+
+function PathBadge(props: {
+  label: string;
+  shortLabel: string;
+  className: string;
+}) {
+  return (
+    <Badge className={cn("search-panel__path-badge", props.className)}>
+      <span className="search-panel__path-full">{props.label}</span>
+      <span className="search-panel__path-short">{props.shortLabel}</span>
+    </Badge>
   );
 }
 

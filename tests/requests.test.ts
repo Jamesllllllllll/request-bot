@@ -193,6 +193,7 @@ describe("request policy", () => {
     ).toEqual({
       allowed: false,
       reason: "That song is blocked in this channel.",
+      reasonCode: "song_blacklist",
     });
 
     expect(
@@ -225,6 +226,7 @@ describe("request policy", () => {
     ).toEqual({
       allowed: false,
       reason: "That song is blocked in this channel.",
+      reasonCode: "song_blacklist",
     });
   });
 
@@ -259,6 +261,7 @@ describe("request policy", () => {
     ).toEqual({
       allowed: false,
       reason: "Charter Name is blacklisted in this channel.",
+      reasonCode: "charter_blacklist",
     });
   });
 });

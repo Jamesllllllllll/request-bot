@@ -9,6 +9,7 @@ export interface AddRequestInput {
   song: {
     id: string;
     title: string;
+    authorId?: number;
     artist?: string;
     album?: string;
     creator?: string;
@@ -97,6 +98,7 @@ export interface ManualAddInput {
   song: {
     id: string;
     title: string;
+    authorId?: number;
     artist?: string;
     album?: string;
     creator?: string;

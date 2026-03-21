@@ -59,6 +59,7 @@ type PlaylistItem = {
 
 type PlaylistCandidate = {
   id: string;
+  authorId?: number;
   title: string;
   artist?: string;
   album?: string;
@@ -88,6 +89,7 @@ type ManualSearchData = Pick<SearchResponse, "results">;
 type SearchResponse = {
   results: Array<{
     id: string;
+    authorId?: number;
     title: string;
     artist?: string;
     album?: string;
@@ -431,6 +433,9 @@ function DashboardPlaylistPage() {
   const blacklistArtists = playlistQuery.data?.blacklistArtists ?? [];
   const blacklistCharters = playlistQuery.data?.blacklistCharters ?? [];
   const blacklistSongs = playlistQuery.data?.blacklistSongs ?? [];
+  const blacklistedCharterIds = new Set(
+    blacklistCharters.map((item) => item.charterId)
+  );
   const managedChannel = playlistQuery.data?.channel ?? null;
   const accessRole = playlistQuery.data?.accessRole ?? "owner";
   const isDeletingItem = (itemId: string) =>
@@ -519,72 +524,106 @@ function DashboardPlaylistPage() {
                 <div>Tuning / Path</div>
                 <div>Add</div>
               </div>
-              {manualSearchQuery.data?.results?.map((song, index) => (
-                <div
-                  key={song.id}
-                  className={`dashboard-playlist__manual-row grid grid-cols-[minmax(0,2.1fr)_minmax(0,1.3fr)_minmax(0,1fr)_96px] gap-4 border-t border-(--border) px-5 py-4 ${
-                    index % 2 === 0
-                      ? "bg-(--panel-strong)"
-                      : "bg-(--panel-soft)"
-                  }`}
-                >
-                  <div className="dashboard-playlist__manual-track min-w-0">
-                    <p className="truncate font-semibold text-(--text)">
-                      {song.title}
-                    </p>
-                    <p className="mt-1 truncate text-sm text-(--brand-deep)">
-                      {song.artist ?? "Unknown artist"}
-                    </p>
+              {manualSearchQuery.data?.results?.map((song, index) => {
+                const isBlacklistedCharter =
+                  song.authorId != null &&
+                  blacklistedCharterIds.has(song.authorId);
+
+                return (
+                  <div
+                    key={song.id}
+                    className={`dashboard-playlist__manual-row grid grid-cols-[minmax(0,2.1fr)_minmax(0,1.3fr)_minmax(0,1fr)_96px] gap-4 border-t border-(--border) px-5 py-4 ${
+                      index % 2 === 0
+                        ? "bg-(--panel-strong)"
+                        : "bg-(--panel-soft)"
+                    } ${isBlacklistedCharter ? "opacity-55" : ""}`}
+                  >
+                    <div className="dashboard-playlist__manual-track min-w-0">
+                      <p className="truncate font-semibold text-(--text)">
+                        {song.title}
+                      </p>
+                      <p className="mt-1 truncate text-sm text-(--brand-deep)">
+                        {song.artist ?? "Unknown artist"}
+                      </p>
+                    </div>
+                    <div className="dashboard-playlist__manual-meta min-w-0">
+                      <p className="truncate text-sm text-(--text)">
+                        {song.album ?? "Unknown album"}
+                      </p>
+                      <div className="mt-1 flex flex-wrap items-center gap-2 text-sm text-(--muted)">
+                        <span>
+                          {song.creator
+                            ? `Charted by ${song.creator}`
+                            : "Unknown creator"}
+                        </span>
+                        {isBlacklistedCharter ? (
+                          <Badge
+                            variant="outline"
+                            className="border-rose-400/40 bg-rose-500/10 text-rose-200"
+                          >
+                            Blacklisted
+                          </Badge>
+                        ) : null}
+                      </div>
+                    </div>
+                    <div className="dashboard-playlist__manual-extra min-w-0">
+                      <p className="truncate text-sm text-(--text)">
+                        {song.tuning ?? "No tuning info"}
+                      </p>
+                      <p className="mt-1 truncate text-sm text-(--muted)">
+                        {song.parts?.length
+                          ? song.parts.join(", ")
+                          : "No path info"}
+                      </p>
+                    </div>
+                    <div className="dashboard-playlist__manual-add flex items-center justify-end">
+                      <Button
+                        size="sm"
+                        onClick={() =>
+                          mutation.mutate({
+                            action: "manualAdd",
+                            songId: song.id,
+                            requesterLogin:
+                              manualRequesterLogin.trim() || undefined,
+                            title: song.title,
+                            authorId: song.authorId,
+                            artist: song.artist,
+                            album: song.album,
+                            creator: song.creator,
+                            tuning: song.tuning,
+                            parts: song.parts,
+                            durationText: song.durationText,
+                            source: song.source,
+                            sourceUrl: song.sourceUrl,
+                            sourceId: song.sourceId,
+                            candidateMatchesJson: JSON.stringify([
+                              {
+                                id: song.id,
+                                authorId: song.authorId,
+                                title: song.title,
+                                artist: song.artist,
+                                album: song.album,
+                                creator: song.creator,
+                                tuning: song.tuning,
+                                parts: song.parts ?? [],
+                                durationText: song.durationText,
+                                sourceUrl: song.sourceUrl,
+                                sourceId: song.sourceId,
+                              },
+                            ]),
+                          })
+                        }
+                        disabled={
+                          isBlacklistedCharter || isManualAddPending(song.id)
+                        }
+                      >
+                        <Plus className="h-4 w-4" />
+                        Add
+                      </Button>
+                    </div>
                   </div>
-                  <div className="dashboard-playlist__manual-meta min-w-0">
-                    <p className="truncate text-sm text-(--text)">
-                      {song.album ?? "Unknown album"}
-                    </p>
-                    <p className="mt-1 truncate text-sm text-(--muted)">
-                      {song.creator
-                        ? `Charted by ${song.creator}`
-                        : "Unknown creator"}
-                    </p>
-                  </div>
-                  <div className="dashboard-playlist__manual-extra min-w-0">
-                    <p className="truncate text-sm text-(--text)">
-                      {song.tuning ?? "No tuning info"}
-                    </p>
-                    <p className="mt-1 truncate text-sm text-(--muted)">
-                      {song.parts?.length
-                        ? song.parts.join(", ")
-                        : "No path info"}
-                    </p>
-                  </div>
-                  <div className="dashboard-playlist__manual-add flex items-center justify-end">
-                    <Button
-                      size="sm"
-                      onClick={() =>
-                        mutation.mutate({
-                          action: "manualAdd",
-                          songId: song.id,
-                          requesterLogin:
-                            manualRequesterLogin.trim() || undefined,
-                          title: song.title,
-                          artist: song.artist,
-                          album: song.album,
-                          creator: song.creator,
-                          tuning: song.tuning,
-                          parts: song.parts,
-                          durationText: song.durationText,
-                          source: song.source,
-                          sourceUrl: song.sourceUrl,
-                          sourceId: song.sourceId,
-                        })
-                      }
-                      disabled={isManualAddPending(song.id)}
-                    >
-                      <Plus className="h-4 w-4" />
-                      Add
-                    </Button>
-                  </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           ) : null}
         </CardContent>
@@ -658,6 +697,7 @@ function DashboardPlaylistPage() {
                 isDeletingItem={isDeletingItem(item.id)}
                 isSetCurrentPending={isRowPending("setCurrent", item.id)}
                 isMarkPlayedPending={isRowPending("markPlayed", item.id)}
+                blacklistedCharterIds={blacklistedCharterIds}
                 onDragStart={setDraggingItemId}
                 onDragEnd={() => {
                   setDraggingItemId(null);
@@ -954,6 +994,7 @@ function PlaylistQueueItem(props: {
   isDeletingItem: boolean;
   isSetCurrentPending: boolean;
   isMarkPlayedPending: boolean;
+  blacklistedCharterIds: Set<number>;
   onDragStart: (itemId: string) => void;
   onDragEnd: () => void;
   onDragHover: (targetItemId: string, edge: Edge) => void;
@@ -1186,87 +1227,102 @@ function PlaylistQueueItem(props: {
             </summary>
             <div className="mt-3 overflow-hidden rounded-[16px] border border-(--border)">
               <div className="grid">
-                {resolvedCandidates.map((candidate, candidateIndex) => (
-                  <div
-                    key={`${props.item.id}-${candidate.id}-${candidateIndex}`}
-                    className={`grid gap-3 border-t border-(--border) px-4 py-4 first:border-t-0 ${
-                      candidateIndex % 2 === 0
-                        ? "bg-(--panel-strong)"
-                        : "bg-(--panel-soft)"
-                    }`}
-                  >
-                    <div className="flex flex-wrap items-start justify-between gap-3">
-                      <div className="min-w-0 flex-1">
-                        <p className="truncate font-medium text-(--text)">
-                          {candidate.title}
-                        </p>
-                        {candidate.album ? (
-                          <p className="mt-1 truncate text-xs text-(--muted)">
-                            {candidate.album}
+                {resolvedCandidates.map((candidate, candidateIndex) => {
+                  const isBlacklistedCharter =
+                    candidate.authorId != null &&
+                    props.blacklistedCharterIds.has(candidate.authorId);
+
+                  return (
+                    <div
+                      key={`${props.item.id}-${candidate.id}-${candidateIndex}`}
+                      className={`grid gap-3 border-t border-(--border) px-4 py-4 first:border-t-0 ${
+                        candidateIndex % 2 === 0
+                          ? "bg-(--panel-strong)"
+                          : "bg-(--panel-soft)"
+                      } ${isBlacklistedCharter ? "opacity-55" : ""}`}
+                    >
+                      <div className="flex flex-wrap items-start justify-between gap-3">
+                        <div className="min-w-0 flex-1">
+                          <p className="truncate font-medium text-(--text)">
+                            {candidate.title}
                           </p>
+                          {candidate.album ? (
+                            <p className="mt-1 truncate text-xs text-(--muted)">
+                              {candidate.album}
+                            </p>
+                          ) : null}
+                          <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-(--muted)">
+                            <span>
+                              Charted by {candidate.creator ?? "Unknown"}
+                            </span>
+                            {isBlacklistedCharter ? (
+                              <Badge
+                                variant="outline"
+                                className="border-rose-400/40 bg-rose-500/10 text-rose-200"
+                              >
+                                Blacklisted
+                              </Badge>
+                            ) : null}
+                          </div>
+                        </div>
+                        {candidate.sourceUrl ? (
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            asChild
+                            className="shrink-0"
+                          >
+                            <a
+                              href={candidate.sourceUrl}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="no-underline"
+                            >
+                              Download
+                            </a>
+                          </Button>
                         ) : null}
                       </div>
-                      {candidate.sourceUrl ? (
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          asChild
-                          className="shrink-0"
-                        >
-                          <a
-                            href={candidate.sourceUrl}
-                            target="_blank"
-                            rel="noreferrer"
-                            className="no-underline"
-                          >
-                            Download
-                          </a>
-                        </Button>
-                      ) : null}
-                    </div>
 
-                    <div className="grid gap-x-6 gap-y-2 text-sm sm:grid-cols-2 xl:grid-cols-3">
-                      <VersionMeta
-                        label="Tuning"
-                        value={candidate.tuning ?? "Unknown"}
-                      />
-                      <VersionMeta
-                        label="Paths"
-                        value={
-                          candidate.parts?.length
-                            ? candidate.parts
-                                .map((part) => formatPathLabel(part))
-                                .join(", ")
-                            : "Unknown"
-                        }
-                      />
-                      <VersionMeta
-                        label="Creator"
-                        value={candidate.creator ?? "Unknown"}
-                      />
-                      <VersionMeta
-                        label="Length"
-                        value={candidate.durationText ?? "??:??"}
-                      />
-                      <VersionMeta
-                        label="Updated"
-                        value={
-                          candidate.sourceUpdatedAt
-                            ? formatDate(candidate.sourceUpdatedAt)
-                            : "Unknown"
-                        }
-                      />
-                      <VersionMeta
-                        label="DLs"
-                        value={
-                          candidate.downloads != null
-                            ? candidate.downloads.toLocaleString()
-                            : "Unknown"
-                        }
-                      />
+                      <div className="grid gap-x-6 gap-y-2 text-sm sm:grid-cols-2 xl:grid-cols-3">
+                        <VersionMeta
+                          label="Tuning"
+                          value={candidate.tuning ?? "Unknown"}
+                        />
+                        <VersionMeta
+                          label="Paths"
+                          value={
+                            candidate.parts?.length
+                              ? candidate.parts
+                                  .map((part) => formatPathLabel(part))
+                                  .join(", ")
+                              : "Unknown"
+                          }
+                        />
+                        <VersionMeta
+                          label="Length"
+                          value={candidate.durationText ?? "??:??"}
+                        />
+                        <VersionMeta
+                          label="Updated"
+                          value={
+                            candidate.sourceUpdatedAt
+                              ? formatDate(candidate.sourceUpdatedAt)
+                              : "Unknown"
+                          }
+                        />
+                        <VersionMeta
+                          label="DLs"
+                          value={
+                            candidate.downloads != null
+                              ? candidate.downloads.toLocaleString()
+                              : "Unknown"
+                          }
+                        />
+                      </div>
                     </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             </div>
           </details>

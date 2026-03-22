@@ -15,6 +15,7 @@ import {
   removeBlacklistedArtist,
   removeBlacklistedCharter,
   removeBlacklistedSong,
+  removeBlockedUser,
   removeSetlistArtist,
   revokeVipToken,
   setVipTokenAvailableCount,
@@ -98,6 +99,21 @@ export const Route = createFileRoute("/api/dashboard/moderation")({
               actorUserId: state.channel.ownerUserId,
               actorType: "owner",
               action: "block_user",
+              entityType: "blocked_user",
+              entityId: body.twitchUserId,
+              payloadJson: JSON.stringify(body),
+            });
+            break;
+          case "removeBlockedUser":
+            await removeBlockedUser(runtimeEnv, {
+              channelId: state.channel.id,
+              twitchUserId: body.twitchUserId,
+            });
+            await createAuditLog(runtimeEnv, {
+              channelId: state.channel.id,
+              actorUserId: state.channel.ownerUserId,
+              actorType: "owner",
+              action: "unblock_user",
               entityType: "blocked_user",
               entityId: body.twitchUserId,
               payloadJson: JSON.stringify(body),

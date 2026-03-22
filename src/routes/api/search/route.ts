@@ -5,6 +5,8 @@ import { getSessionUserId } from "~/lib/auth/session.server";
 import {
   consumeSearchRateLimit,
   getCachedSearchResult,
+  getChannelBlacklistByChannelId,
+  getChannelBySlug,
   searchCatalogSongs as searchCatalogSongsInDb,
   upsertCachedSearchResult,
 } from "~/lib/db/repositories";
@@ -20,6 +22,8 @@ function normalizeSearchCacheInput(
 ) {
   return {
     query: input.query ?? "",
+    channelSlug: input.channelSlug ?? "",
+    showBlacklisted: input.showBlacklisted ?? false,
     field: input.field,
     title: input.title ?? "",
     artist: input.artist ?? "",
@@ -62,6 +66,8 @@ export const Route = createFileRoute("/api/search")({
 
         const payload = {
           query: url.searchParams.get("query") ?? undefined,
+          channelSlug: url.searchParams.get("channelSlug") ?? undefined,
+          showBlacklisted: url.searchParams.get("showBlacklisted") ?? undefined,
           field: url.searchParams.get("field") ?? undefined,
           title: url.searchParams.get("title") ?? undefined,
           artist: url.searchParams.get("artist") ?? undefined,
@@ -137,10 +143,37 @@ export const Route = createFileRoute("/api/search")({
         }
 
         try {
-          const results = await searchCatalogSongsInDb(
-            runtimeEnv,
-            normalizedInput
-          );
+          let blacklistFilterInput = {};
+          if (normalizedInput.channelSlug && !normalizedInput.showBlacklisted) {
+            const channel = await getChannelBySlug(
+              runtimeEnv,
+              normalizedInput.channelSlug
+            );
+
+            if (channel) {
+              const blacklist = await getChannelBlacklistByChannelId(
+                runtimeEnv,
+                channel.id
+              );
+
+              blacklistFilterInput = {
+                excludeSongIds: blacklist.blacklistSongs.map(
+                  (song) => song.songId
+                ),
+                excludeArtistNames: blacklist.blacklistArtists.map(
+                  (artist) => artist.artistName
+                ),
+                excludeCreatorNames: blacklist.blacklistCharters.map(
+                  (charter) => charter.charterName
+                ),
+              };
+            }
+          }
+
+          const results = await searchCatalogSongsInDb(runtimeEnv, {
+            ...normalizedInput,
+            ...blacklistFilterInput,
+          });
 
           await upsertCachedSearchResult(runtimeEnv, {
             cacheKey,

@@ -130,9 +130,11 @@ export function SongSearchPanel(props: {
   infoNote?: string;
   placeholder?: string;
   className?: string;
+  extraSearchParams?: Record<string, string | number | boolean | undefined>;
   resultFilter?: (song: SearchSong) => boolean;
   resultState?: (song: SearchSong) => SearchSongResultState;
   advancedFiltersContent?: ReactNode;
+  useTotalForSummary?: boolean;
 }) {
   const [query, setQuery] = useState("");
   const [debouncedQuery, setDebouncedQuery] = useState("");
@@ -194,8 +196,24 @@ export function SongSearchPanel(props: {
       }
     }
 
+    if (props.extraSearchParams) {
+      for (const [key, value] of Object.entries(props.extraSearchParams)) {
+        if (value === undefined) {
+          continue;
+        }
+
+        params.set(key, String(value));
+      }
+    }
+
     return params;
-  }, [debouncedAdvancedFilters, debouncedQuery, field, page]);
+  }, [
+    debouncedAdvancedFilters,
+    debouncedQuery,
+    field,
+    page,
+    props.extraSearchParams,
+  ]);
 
   const hasSearchInput = useMemo(
     () =>
@@ -320,6 +338,9 @@ export function SongSearchPanel(props: {
     "{count}",
     String(catalogTotalQuery.data?.total ?? 0)
   );
+  const summaryCount = props.useTotalForSummary
+    ? (data?.total ?? 0)
+    : visibleResults.length;
   const totalPages = Math.max(
     1,
     Math.ceil((data?.total ?? 0) / (data?.pageSize ?? 25))
@@ -510,7 +531,7 @@ export function SongSearchPanel(props: {
               {!queryTooShort && !error ? (
                 <div className="search-panel__summary rounded-[24px] border border-(--border) bg-(--panel-soft) px-4 py-3 text-right">
                   <p className="text-lg font-semibold text-(--text)">
-                    Found {visibleResults.length} songs
+                    Found {summaryCount} songs
                   </p>
                 </div>
               ) : null}

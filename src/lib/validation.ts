@@ -23,6 +23,20 @@ const searchFieldSchema = z.enum([
 export const searchInputSchema = z
   .object({
     query: z.string().trim().max(200).optional(),
+    channelSlug: z.string().trim().max(100).optional(),
+    showBlacklisted: z
+      .preprocess(
+        (value) =>
+          value === undefined
+            ? undefined
+            : value === true || value === "true"
+              ? true
+              : value === false || value === "false"
+                ? false
+                : value,
+        z.boolean().optional()
+      )
+      .default(false),
     field: searchFieldSchema.default("any"),
     title: z.string().trim().max(200).optional(),
     artist: z.string().trim().max(200).optional(),
@@ -84,6 +98,10 @@ export const moderationActionSchema = z.discriminatedUnion("action", [
     login: z.string().min(1).optional(),
     displayName: z.string().min(1).optional(),
     reason: z.string().trim().max(300).optional(),
+  }),
+  z.object({
+    action: z.literal("removeBlockedUser"),
+    twitchUserId: z.string().min(1),
   }),
   z.object({
     action: z.literal("addBlacklistedArtist"),

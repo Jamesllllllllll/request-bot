@@ -179,7 +179,7 @@ describe("processEventSubChatMessage", () => {
     );
   });
 
-  it("rejects blocked users before attempting playlist mutation", async () => {
+  it("ignores blocked users before attempting playlist mutation", async () => {
     const deps = createDeps({
       isBlockedUser: vi.fn().mockResolvedValue(true),
     });
@@ -199,6 +199,31 @@ describe("processEventSubChatMessage", () => {
         outcomeReason: "user_blocked",
       })
     );
+    expect(deps.sendChatReply).not.toHaveBeenCalled();
+  });
+
+  it("ignores informational bot commands from blocked users", async () => {
+    const deps = createDeps({
+      isBlockedUser: vi.fn().mockResolvedValue(true),
+    });
+
+    const result = await processEventSubChatMessage({
+      env,
+      event: createEvent({
+        rawMessage: "!how",
+      }),
+      parsed: createParsed({
+        command: "how",
+        query: undefined,
+      }),
+      deps,
+    });
+
+    expect(result).toEqual({
+      body: "Blocked",
+      status: 202,
+    });
+    expect(deps.sendChatReply).not.toHaveBeenCalled();
   });
 
   it("consumes a VIP token and inserts the request as next up", async () => {

@@ -749,6 +749,9 @@ export interface CatalogSearchInput {
   tuning?: string[];
   parts?: string[];
   year?: number[];
+  excludeSongIds?: number[];
+  excludeArtistNames?: string[];
+  excludeCreatorNames?: string[];
   page: number;
   pageSize: number;
   sortBy?:
@@ -1040,12 +1043,47 @@ export async function searchCatalogSongs(
   const advancedCondition = hasAdvancedFilters
     ? sql.join(advancedConditions, sql` AND `)
     : null;
-  const whereCondition =
+  const baseWhereCondition =
     query && advancedCondition
       ? sql`(${basicCondition}) AND (${advancedCondition})`
       : query
         ? basicCondition
         : (advancedCondition ?? sql`1 = 1`);
+  const normalizedExcludedArtists = uniqueCompact(
+    (input.excludeArtistNames ?? []).map((name) => normalizeSearchPhrase(name))
+  );
+  const normalizedExcludedCreators = uniqueCompact(
+    (input.excludeCreatorNames ?? []).map((name) => normalizeSearchPhrase(name))
+  );
+  const excludedSongIds = [...new Set(input.excludeSongIds ?? [])].filter(
+    (songId): songId is number => Number.isInteger(songId) && songId > 0
+  );
+  const blacklistConditions = [
+    excludedSongIds.length
+      ? sql`${catalogSongs.sourceSongId} NOT IN ${sql`(${sql.join(
+          excludedSongIds.map((songId) => sql`${songId}`),
+          sql`, `
+        )})`}`
+      : null,
+    normalizedExcludedArtists.length
+      ? sql`lower(coalesce(${catalogSongs.artistName}, '')) NOT IN ${sql`(${sql.join(
+          normalizedExcludedArtists.map((name) => sql`${name}`),
+          sql`, `
+        )})`}`
+      : null,
+    normalizedExcludedCreators.length
+      ? sql`lower(coalesce(${catalogSongs.creatorName}, '')) NOT IN ${sql`(${sql.join(
+          normalizedExcludedCreators.map((name) => sql`${name}`),
+          sql`, `
+        )})`}`
+      : null,
+  ].filter(
+    (condition): condition is ReturnType<typeof sql> => condition !== null
+  );
+  const whereCondition =
+    blacklistConditions.length > 0
+      ? sql`(${baseWhereCondition}) AND (${sql.join(blacklistConditions, sql` AND `)})`
+      : baseWhereCondition;
 
   const titleTokenScore = buildTokenMatchScore(
     catalogSongs.title,
@@ -2028,6 +2066,23 @@ export async function addBlockedUser(
       createdByUserId: input.createdByUserId,
     })
     .onConflictDoNothing();
+}
+
+export async function removeBlockedUser(
+  env: AppEnv,
+  input: {
+    channelId: string;
+    twitchUserId: string;
+  }
+) {
+  await getDb(env)
+    .delete(blockedUsers)
+    .where(
+      and(
+        eq(blockedUsers.channelId, input.channelId),
+        eq(blockedUsers.twitchUserId, input.twitchUserId)
+      )
+    );
 }
 
 export async function addBlacklistedArtist(

@@ -30,6 +30,12 @@ import { Input } from "~/components/ui/input";
 import { pageTitle } from "~/lib/page-title";
 import { formatPathLabel } from "~/lib/request-policy";
 import { getErrorMessage, normalizeSongSourceUrl } from "~/lib/utils";
+import {
+  formatVipTokenCount,
+  hasRedeemableVipToken,
+  normalizeVipTokenCount,
+  subtractVipTokenRedemption,
+} from "~/lib/vip-tokens";
 
 type PlaylistItem = {
   id: string;
@@ -85,6 +91,12 @@ type PlayedSong = {
   playedAt: number;
 };
 
+type VipTokenBalance = {
+  twitchUserId?: string | null;
+  login: string;
+  availableCount: number;
+};
+
 type ManualSearchData = Pick<SearchResponse, "results">;
 
 type SearchResponse = {
@@ -133,6 +145,7 @@ type PlaylistQueryData = {
     songTitle: string;
     artistName?: string | null;
   }>;
+  vipTokens: VipTokenBalance[];
   accessRole?: "owner" | "moderator";
 };
 
@@ -170,6 +183,7 @@ function DashboardPlaylistPage() {
         channel: { id: string; slug: string; displayName: string };
         items: PlaylistItem[];
         playedSongs: PlayedSong[];
+        vipTokens: VipTokenBalance[];
         blacklistArtists: Array<{ artistId: number; artistName: string }>;
         blacklistCharters: Array<{
           charterId: number;
@@ -386,6 +400,41 @@ function DashboardPlaylistPage() {
         );
       }
 
+      if (
+        itemId &&
+        action === "changeRequestKind" &&
+        (body.requestKind === "vip" || body.requestKind === "regular")
+      ) {
+        const targetItem =
+          previous.items.find((item) => item.id === itemId) ?? null;
+
+        if (targetItem) {
+          queryClient.setQueryData(
+            ["dashboard-playlist", selectedChannelSlug ?? null],
+            {
+              ...previous,
+              items: getReorderedItemsAfterRequestKindChange(
+                previous.items,
+                itemId,
+                body.requestKind
+              ).map((item) =>
+                item.id === itemId
+                  ? {
+                      ...item,
+                      requestKind: body.requestKind,
+                    }
+                  : item
+              ),
+              vipTokens: updateVipTokenBalancesAfterRequestKindChange({
+                vipTokens: previous.vipTokens,
+                requesterLogin: targetItem.requestedByLogin,
+                requestKind: body.requestKind,
+              }),
+            }
+          );
+        }
+      }
+
       return { previous };
     },
     onError: (error, body, context) => {
@@ -405,7 +454,7 @@ function DashboardPlaylistPage() {
         setPlaylistActionError(message);
       }
     },
-    onSuccess: async (_data, body) => {
+    onSuccess: (_data, body) => {
       setManualAddError(null);
       setPlaylistActionError(null);
       if (body.action === "manualAdd") {
@@ -413,7 +462,7 @@ function DashboardPlaylistPage() {
         setDebouncedManualQuery("");
         setManualRequesterLogin("");
       }
-      await queryClient.invalidateQueries({
+      void queryClient.invalidateQueries({
         queryKey: ["dashboard-playlist", selectedChannelSlug ?? null],
       });
     },
@@ -431,11 +480,15 @@ function DashboardPlaylistPage() {
 
   const items = playlistQuery.data?.items ?? [];
   const playedSongs = playlistQuery.data?.playedSongs ?? [];
+  const vipTokens = playlistQuery.data?.vipTokens ?? [];
   const blacklistArtists = playlistQuery.data?.blacklistArtists ?? [];
   const blacklistCharters = playlistQuery.data?.blacklistCharters ?? [];
   const blacklistSongs = playlistQuery.data?.blacklistSongs ?? [];
   const blacklistedCharterIds = new Set(
     blacklistCharters.map((item) => item.charterId)
+  );
+  const vipTokenBalancesByLogin = new Map(
+    vipTokens.map((token) => [token.login.toLowerCase(), token.availableCount])
   );
   const managedChannel = playlistQuery.data?.channel ?? null;
   const accessRole = playlistQuery.data?.accessRole ?? "owner";
@@ -698,6 +751,17 @@ function DashboardPlaylistPage() {
                 isDeletingItem={isDeletingItem(item.id)}
                 isSetCurrentPending={isRowPending("setCurrent", item.id)}
                 isMarkPlayedPending={isRowPending("markPlayed", item.id)}
+                isChangeRequestKindPending={isRowPending(
+                  "changeRequestKind",
+                  item.id
+                )}
+                availableVipTokenCount={
+                  item.requestedByLogin
+                    ? (vipTokenBalancesByLogin.get(
+                        item.requestedByLogin.toLowerCase()
+                      ) ?? 0)
+                    : 0
+                }
                 blacklistedCharterIds={blacklistedCharterIds}
                 onDragStart={setDraggingItemId}
                 onDragEnd={() => {
@@ -737,6 +801,13 @@ function DashboardPlaylistPage() {
                     itemId: item.id,
                   });
                 }}
+                onChangeRequestKind={(requestKind) =>
+                  mutation.mutate({
+                    action: "changeRequestKind",
+                    itemId: item.id,
+                    requestKind,
+                  })
+                }
               />
             ))}
           </AnimatePresence>
@@ -922,6 +993,65 @@ function getRequesterLabel(item: PlaylistItem) {
   return item.requestedByDisplayName ?? item.requestedByLogin ?? null;
 }
 
+function getReorderedItemsAfterRequestKindChange(
+  items: PlaylistItem[],
+  itemId: string,
+  requestKind: "regular" | "vip"
+) {
+  const targetItem = items.find((item) => item.id === itemId);
+
+  if (!targetItem || targetItem.status === "current") {
+    return items.map((item, index) => ({
+      ...item,
+      position: index + 1,
+    }));
+  }
+
+  const remainingItems = items.filter((item) => item.id !== itemId);
+  const currentItem = remainingItems.find((item) => item.status === "current");
+  const queuedItems = remainingItems.filter(
+    (item) => item.status !== "current"
+  );
+  const reorderedQueuedItems =
+    requestKind === "vip"
+      ? [targetItem, ...queuedItems]
+      : [...queuedItems, targetItem];
+  const reorderedItems = currentItem
+    ? [currentItem, ...reorderedQueuedItems]
+    : reorderedQueuedItems;
+
+  return reorderedItems.map((item, index) => ({
+    ...item,
+    position: index + 1,
+  }));
+}
+
+function updateVipTokenBalancesAfterRequestKindChange(input: {
+  vipTokens: VipTokenBalance[];
+  requesterLogin?: string;
+  requestKind: "regular" | "vip";
+}) {
+  if (!input.requesterLogin) {
+    return input.vipTokens;
+  }
+
+  const normalizedLogin = input.requesterLogin.toLowerCase();
+
+  return input.vipTokens.map((token) => {
+    if (token.login.toLowerCase() !== normalizedLogin) {
+      return token;
+    }
+
+    return {
+      ...token,
+      availableCount:
+        input.requestKind === "vip"
+          ? subtractVipTokenRedemption(token.availableCount)
+          : normalizeVipTokenCount(token.availableCount + 1),
+    };
+  });
+}
+
 function orderPlaylistItems(items: PlaylistItem[], orderedItemIds: string[]) {
   const itemLookup = new Map(items.map((item) => [item.id, item]));
   const orderedItems = orderedItemIds
@@ -995,6 +1125,8 @@ function PlaylistQueueItem(props: {
   isDeletingItem: boolean;
   isSetCurrentPending: boolean;
   isMarkPlayedPending: boolean;
+  isChangeRequestKindPending: boolean;
+  availableVipTokenCount: number;
   blacklistedCharterIds: Set<number>;
   onDragStart: (itemId: string) => void;
   onDragEnd: () => void;
@@ -1004,12 +1136,21 @@ function PlaylistQueueItem(props: {
   onSetCurrent: () => void;
   onMarkPlayed: () => void;
   onDelete: () => void;
+  onChangeRequestKind: (requestKind: "regular" | "vip") => void;
 }) {
   const itemRef = useRef<HTMLDivElement | null>(null);
   const dragHandleRef = useRef<HTMLButtonElement | null>(null);
   const isDragging = props.draggingItemId === props.item.id;
   const isCurrentItem = props.item.status === "current";
   const isVipRequest = props.item.requestKind === "vip";
+  const requesterLogin = props.item.requestedByLogin?.trim() ?? "";
+  const hasRequester = requesterLogin.length > 0;
+  const showVipTokenBalance =
+    hasRequester && (isVipRequest || props.availableVipTokenCount > 0);
+  const canUpgradeToVip =
+    !isVipRequest &&
+    hasRequester &&
+    hasRedeemableVipToken(props.availableVipTokenCount);
   const dropEdge =
     props.dropTargetState?.itemId === props.item.id
       ? props.dropTargetState.edge
@@ -1175,6 +1316,28 @@ function PlaylistQueueItem(props: {
             </div>
 
             <div className="dashboard-playlist__item-actions flex max-w-full flex-wrap justify-end gap-2">
+              {isVipRequest && hasRequester ? (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => props.onChangeRequestKind("regular")}
+                  disabled={props.isChangeRequestKindPending}
+                >
+                  {props.isChangeRequestKindPending
+                    ? "Saving..."
+                    : "Make regular"}
+                </Button>
+              ) : null}
+              {canUpgradeToVip ? (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => props.onChangeRequestKind("vip")}
+                  disabled={props.isChangeRequestKindPending}
+                >
+                  {props.isChangeRequestKindPending ? "Saving..." : "Make VIP"}
+                </Button>
+              ) : null}
               <Button
                 size="sm"
                 variant="outline"
@@ -1220,6 +1383,12 @@ function PlaylistQueueItem(props: {
               {getRequesterLabel(props.item) ? (
                 <p className="text-sm font-medium text-(--brand-deep)">
                   Requested by {getRequesterLabel(props.item)}
+                </p>
+              ) : null}
+              {showVipTokenBalance ? (
+                <p className="text-sm text-(--muted)">
+                  VIP tokens:{" "}
+                  {formatVipTokenCount(props.availableVipTokenCount)}
                 </p>
               ) : null}
               <p className="inline-flex items-center gap-1.5 text-sm text-(--muted)">

@@ -292,6 +292,11 @@ export const playlistMutationSchema = z.discriminatedUnion("action", [
   z.object({ action: z.literal("setCurrent"), itemId: z.string() }),
   z.object({ action: z.literal("deleteItem"), itemId: z.string() }),
   z.object({
+    action: z.literal("changeRequestKind"),
+    itemId: z.string(),
+    requestKind: z.enum(["regular", "vip"]),
+  }),
+  z.object({
     action: z.literal("chooseVersion"),
     itemId: z.string(),
     candidateId: z.string(),

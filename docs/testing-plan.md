@@ -36,6 +36,7 @@ These are the first automated checks worth investing in:
 - dashboard settings save flow shows success or warning messages
 - moderation page can grant or remove VIP tokens
 - playlist page reflects live updates and management actions
+- playlist page can convert a request between regular and VIP and keep token usage in sync
 
 #### Manual smoke tests
 
@@ -46,6 +47,7 @@ Keep these as manual checks, not core CI blockers:
 - real EventSub subscription creation
 - real chat reply delivery
 - real tunnel or public callback behavior
+- real `!vip` upgrade / downgrade behavior and dashboard playlist VIP toggles against a live channel
 
 ### What not to over-invest in
 

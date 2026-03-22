@@ -23,6 +23,7 @@ All notable changes to this project will be documented in this file.
 - Broadcaster login now also requests the Twitch permissions needed for gifted-sub and cheer-based VIP token automation.
 - The app header and settings pages now surface Twitch reauthorization more clearly when a reconnect is required.
 - VIP token balances now support fractional values, including partial token grants and clearer balance handling when a viewer has less than one full VIP token remaining.
+- Existing requests can now be converted between regular and VIP from chat and from the playlist manager without creating duplicate playlist entries.
 - Local-development guidance now strongly separates production bot/broadcaster usage from local testing and explains the risks of cross-environment chat handling.
 - The moderation dashboard now supports faster Twitch username search with debouncing, in-chat prioritization, and clearer saved-state feedback for VIP tokens.
 - Search results now show newer song versions first, and public search includes a dedicated `!edit` copy command.
@@ -39,6 +40,7 @@ All notable changes to this project will be documented in this file.
 - Duplicate EventSub deliveries for cheers and gifted-sub automation no longer double-grant VIP tokens.
 - Twitch reply handling now distinguishes between accepted API requests and messages that Twitch actually sent to chat.
 - Bot/account status screens now show the real connected bot identity instead of only the configured bot name.
+- VIP request upgrade and downgrade replies now clearly state when a token was used or refunded, and dashboard-triggered request kind changes follow the same token logic and bot reply flow as chat commands.
 - Production deployment config regeneration now stays in sync after remote migrations.
 
 ## [0.1.0] - 2026-03-18

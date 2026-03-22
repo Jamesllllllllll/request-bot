@@ -1,19 +1,23 @@
 // Route: Reads and mutates playlist state for the active dashboard channel.
 import { env } from "cloudflare:workers";
 import { createFileRoute } from "@tanstack/react-router";
-import { desc, eq } from "drizzle-orm";
+import { and, asc, desc, eq } from "drizzle-orm";
 import { getSessionUserId } from "~/lib/auth/session.server";
 import { callBackend } from "~/lib/backend";
 import { getDb } from "~/lib/db/client";
 import {
+  consumeVipToken,
+  createAuditLog,
   getCatalogSongsByIds,
   getChannelBlacklistByChannelId,
   getChannelSettingsByChannelId,
   getDashboardChannelAccess,
   getDashboardState,
   getPlaylistByChannelId,
+  getVipTokenBalance,
+  grantVipToken,
 } from "~/lib/db/repositories";
-import { playedSongs } from "~/lib/db/schema";
+import { playedSongs, playlistItems, vipTokens } from "~/lib/db/schema";
 import {
   assertDatabaseSchemaCurrent,
   DatabaseSchemaOutOfDateError,
@@ -22,6 +26,7 @@ import type { AppEnv } from "~/lib/env";
 import { getArraySetting } from "~/lib/request-policy";
 import { json } from "~/lib/utils";
 import { playlistMutationSchema } from "~/lib/validation";
+import { formatVipTokenCount, hasRedeemableVipToken } from "~/lib/vip-tokens";
 
 async function requireDashboardState(
   request: Request,
@@ -69,6 +74,10 @@ async function requireDashboardState(
     orderBy: [desc(playedSongs.playedAt)],
     limit: 100,
   });
+  const vipTokenRows = await getDb(runtimeEnv).query.vipTokens.findMany({
+    where: eq(vipTokens.channelId, access.channel.id),
+    orderBy: [asc(vipTokens.login)],
+  });
   const blacklist = await getChannelBlacklistByChannelId(
     runtimeEnv,
     access.channel.id
@@ -83,6 +92,7 @@ async function requireDashboardState(
     playlist: playlistState.playlist,
     items: playlistState.items,
     playedSongs: playedRows,
+    vipTokens: vipTokenRows,
     blacklistArtists: blacklist.blacklistArtists,
     blacklistCharters: blacklist.blacklistCharters,
     blacklistSongs: blacklist.blacklistSongs,
@@ -117,6 +127,86 @@ async function enrichPlaylistItems(
   });
 }
 
+async function queuePlaylistReply(
+  runtimeEnv: AppEnv,
+  input: {
+    channelId: string;
+    broadcasterUserId: string;
+    message: string;
+  }
+) {
+  try {
+    await runtimeEnv.TWITCH_REPLY_QUEUE.send(input);
+  } catch (error) {
+    console.error("Failed to queue playlist Twitch reply", {
+      channelId: input.channelId,
+      broadcasterUserId: input.broadcasterUserId,
+      error: error instanceof Error ? error.message : String(error),
+    });
+  }
+}
+
+async function logPlaylistRequestKindChange(
+  runtimeEnv: AppEnv,
+  input: {
+    channelId: string;
+    actorUserId: string;
+    actorType: "owner" | "moderator";
+    action: "upgrade_request_to_vip" | "downgrade_request_to_regular";
+    itemId: string;
+    requestKind: "regular" | "vip";
+    requestedByLogin: string;
+    songTitle: string;
+  }
+) {
+  try {
+    await createAuditLog(runtimeEnv, {
+      channelId: input.channelId,
+      actorUserId: input.actorUserId,
+      actorType: input.actorType,
+      action: input.action,
+      entityType: "playlist_item",
+      entityId: input.itemId,
+      payloadJson: JSON.stringify({
+        requestKind: input.requestKind,
+        requestedByLogin: input.requestedByLogin,
+        songTitle: input.songTitle,
+      }),
+    });
+  } catch (error) {
+    console.error("Failed to write playlist request-kind audit log", {
+      channelId: input.channelId,
+      itemId: input.itemId,
+      action: input.action,
+      error: error instanceof Error ? error.message : String(error),
+    });
+  }
+}
+
+function formatPlaylistItemReplyTitle(item: {
+  songArtist?: string | null;
+  songTitle: string;
+}) {
+  return item.songArtist
+    ? `${item.songArtist} - ${item.songTitle}`
+    : item.songTitle;
+}
+
+function getRequestKindChangeReplyMessage(input: {
+  login: string;
+  songTitle: string;
+  nextRequestKind: "regular" | "vip";
+  status: string;
+}) {
+  if (input.nextRequestKind === "vip") {
+    const nextPositionSuffix =
+      input.status === "current" ? "." : " and will play next.";
+    return `@${input.login} your request "${input.songTitle}" was upgraded to VIP${nextPositionSuffix}`;
+  }
+
+  return `@${input.login} your VIP request "${input.songTitle}" was changed back to a regular request. 1 VIP token was refunded.`;
+}
+
 export const Route = createFileRoute("/api/dashboard/playlist")({
   server: {
     handlers: {
@@ -139,6 +229,7 @@ export const Route = createFileRoute("/api/dashboard/playlist")({
             playlist: state.playlist,
             items: await enrichPlaylistItems(runtimeEnv, state.items),
             playedSongs: state.playedSongs,
+            vipTokens: state.vipTokens,
             blacklistArtists: state.blacklistArtists,
             blacklistCharters: state.blacklistCharters,
             blacklistSongs: state.blacklistSongs,
@@ -173,6 +264,193 @@ export const Route = createFileRoute("/api/dashboard/playlist")({
 
         try {
           const body = playlistMutationSchema.parse(await request.json());
+
+          if (body.action === "changeRequestKind") {
+            const item = await getDb(runtimeEnv).query.playlistItems.findFirst({
+              where: and(
+                eq(playlistItems.channelId, state.channel.id),
+                eq(playlistItems.id, body.itemId)
+              ),
+            });
+
+            if (!item) {
+              return json(
+                { error: "Playlist item not found." },
+                { status: 404 }
+              );
+            }
+
+            if (item.requestKind === body.requestKind) {
+              return json({ ok: true });
+            }
+
+            if (!item.requestedByLogin) {
+              return json(
+                {
+                  error:
+                    "This request has no requester username, so it cannot be switched between regular and VIP.",
+                },
+                { status: 400 }
+              );
+            }
+
+            const actorType =
+              state.accessRole === "moderator" ? "moderator" : "owner";
+            const songTitle = formatPlaylistItemReplyTitle(item);
+
+            if (body.requestKind === "vip") {
+              const balance = await getVipTokenBalance(runtimeEnv, {
+                channelId: state.channel.id,
+                login: item.requestedByLogin,
+              });
+
+              if (!balance || !hasRedeemableVipToken(balance.availableCount)) {
+                const availableCount = balance?.availableCount ?? 0;
+                const formattedCount = formatVipTokenCount(availableCount);
+                return json(
+                  {
+                    error: `@${item.requestedByLogin} does not have enough VIP tokens. Current balance: ${formattedCount}.`,
+                  },
+                  { status: 400 }
+                );
+              }
+
+              await consumeVipToken(runtimeEnv, {
+                channelId: state.channel.id,
+                login: item.requestedByLogin,
+                displayName: item.requestedByDisplayName,
+                twitchUserId: item.requestedByTwitchUserId,
+              });
+
+              try {
+                const response = await callBackend(
+                  runtimeEnv,
+                  "/internal/playlist/mutate",
+                  {
+                    method: "POST",
+                    headers: {
+                      "content-type": "application/json",
+                    },
+                    body: JSON.stringify({
+                      channelId: state.channel.id,
+                      actorUserId: state.actorUserId,
+                      ...body,
+                    }),
+                  }
+                );
+
+                if (!response.ok) {
+                  throw new Error(await response.text());
+                }
+              } catch (error) {
+                await grantVipToken(runtimeEnv, {
+                  channelId: state.channel.id,
+                  login: item.requestedByLogin,
+                  displayName: item.requestedByDisplayName,
+                  twitchUserId: item.requestedByTwitchUserId,
+                });
+                throw error;
+              }
+
+              void queuePlaylistReply(runtimeEnv, {
+                channelId: state.channel.id,
+                broadcasterUserId: state.channel.twitchChannelId,
+                message: getRequestKindChangeReplyMessage({
+                  login: item.requestedByLogin,
+                  songTitle,
+                  nextRequestKind: "vip",
+                  status: item.status,
+                }),
+              });
+
+              void logPlaylistRequestKindChange(runtimeEnv, {
+                channelId: state.channel.id,
+                actorUserId: state.actorUserId,
+                actorType,
+                action: "upgrade_request_to_vip",
+                itemId: item.id,
+                requestKind: body.requestKind,
+                requestedByLogin: item.requestedByLogin,
+                songTitle,
+              });
+
+              return json({ ok: true });
+            }
+
+            const response = await callBackend(
+              runtimeEnv,
+              "/internal/playlist/mutate",
+              {
+                method: "POST",
+                headers: {
+                  "content-type": "application/json",
+                },
+                body: JSON.stringify({
+                  channelId: state.channel.id,
+                  actorUserId: state.actorUserId,
+                  ...body,
+                }),
+              }
+            );
+
+            if (!response.ok) {
+              return new Response(await response.text(), {
+                status: response.status,
+                headers: {
+                  "content-type": "application/json; charset=utf-8",
+                },
+              });
+            }
+
+            try {
+              await grantVipToken(runtimeEnv, {
+                channelId: state.channel.id,
+                login: item.requestedByLogin,
+                displayName: item.requestedByDisplayName,
+                twitchUserId: item.requestedByTwitchUserId,
+              });
+            } catch (error) {
+              await callBackend(runtimeEnv, "/internal/playlist/mutate", {
+                method: "POST",
+                headers: {
+                  "content-type": "application/json",
+                },
+                body: JSON.stringify({
+                  channelId: state.channel.id,
+                  actorUserId: state.actorUserId,
+                  action: "changeRequestKind",
+                  itemId: item.id,
+                  requestKind: item.requestKind ?? "vip",
+                }),
+              });
+              throw error;
+            }
+
+            void queuePlaylistReply(runtimeEnv, {
+              channelId: state.channel.id,
+              broadcasterUserId: state.channel.twitchChannelId,
+              message: getRequestKindChangeReplyMessage({
+                login: item.requestedByLogin,
+                songTitle,
+                nextRequestKind: "regular",
+                status: item.status,
+              }),
+            });
+
+            void logPlaylistRequestKindChange(runtimeEnv, {
+              channelId: state.channel.id,
+              actorUserId: state.actorUserId,
+              actorType,
+              action: "downgrade_request_to_regular",
+              itemId: item.id,
+              requestKind: body.requestKind,
+              requestedByLogin: item.requestedByLogin,
+              songTitle,
+            });
+
+            return json({ ok: true });
+          }
+
           const response = await callBackend(
             runtimeEnv,
             "/internal/playlist/mutate",

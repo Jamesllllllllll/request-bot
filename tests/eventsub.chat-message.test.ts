@@ -1042,6 +1042,12 @@ describe("processEventSubChatMessage", () => {
         ),
       })
     );
+    expect(deps.sendChatReply).toHaveBeenCalledWith(
+      env,
+      expect.objectContaining({
+        message: expect.stringContaining("1 VIP token was used."),
+      })
+    );
   });
 
   it("downgrades an existing VIP request to regular and refunds the token", async () => {
@@ -1096,7 +1102,7 @@ describe("processEventSubChatMessage", () => {
       env,
       expect.objectContaining({
         message: expect.stringContaining(
-          'your existing VIP request "The Smashing Pumpkins - Cherub Rock" is now a regular request again.'
+          'your existing VIP request "The Smashing Pumpkins - Cherub Rock" is now a regular request again. 1 VIP token was refunded.'
         ),
       })
     );

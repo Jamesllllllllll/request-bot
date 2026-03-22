@@ -1026,8 +1026,8 @@ export async function processEventSubChatMessage(input: {
         channelId: channel.id,
         broadcasterUserId: channel.twitchChannelId,
         message: isVipCommand
-          ? `${mention(requesterIdentity.login)} your existing request "${firstMatch ? formatSongForReply(firstMatch) : unmatchedQuery}" is now a VIP request and will play next.`
-          : `${mention(requesterIdentity.login)} your existing VIP request "${firstMatch ? formatSongForReply(firstMatch) : unmatchedQuery}" is now a regular request again.`,
+          ? `${mention(requesterIdentity.login)} your existing request "${firstMatch ? formatSongForReply(firstMatch) : unmatchedQuery}" is now a VIP request${existingMatchingRequest.status === "current" ? "." : " and will play next."} 1 VIP token was used.`
+          : `${mention(requesterIdentity.login)} your existing VIP request "${firstMatch ? formatSongForReply(firstMatch) : unmatchedQuery}" is now a regular request again. 1 VIP token was refunded.`,
       });
       return { body: "Accepted", status: 202 };
     }

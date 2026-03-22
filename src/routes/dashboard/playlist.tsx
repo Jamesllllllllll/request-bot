@@ -55,6 +55,7 @@ type PlaylistItem = {
   createdAt: number;
   position: number;
   status: string;
+  requestKind?: "regular" | "vip";
 };
 
 type PlaylistCandidate = {
@@ -1008,6 +1009,7 @@ function PlaylistQueueItem(props: {
   const dragHandleRef = useRef<HTMLButtonElement | null>(null);
   const isDragging = props.draggingItemId === props.item.id;
   const isCurrentItem = props.item.status === "current";
+  const isVipRequest = props.item.requestKind === "vip";
   const dropEdge =
     props.dropTargetState?.itemId === props.item.id
       ? props.dropTargetState.edge
@@ -1105,9 +1107,11 @@ function PlaylistQueueItem(props: {
       exit={{ opacity: 0, y: -10, scale: 0.985 }}
       transition={playlistItemTransition}
       className={`dashboard-playlist__item group relative rounded-[24px] border ${
-        props.index % 2 === 0
-          ? "border-(--border) bg-(--panel-soft)"
-          : "border-(--border) bg-(--panel-muted)"
+        isVipRequest
+          ? "border-violet-400/45 bg-(--panel-soft) shadow-[0_0_0_1px_rgba(168,85,247,0.08),0_0_28px_rgba(168,85,247,0.12)]"
+          : props.index % 2 === 0
+            ? "border-(--border) bg-(--panel-soft)"
+            : "border-(--border) bg-(--panel-muted)"
       }`}
     >
       {dropEdge === "top" ? (
@@ -1129,7 +1133,11 @@ function PlaylistQueueItem(props: {
           }`}
           disabled={isCurrentItem}
         >
-          <span className="flex h-full min-h-[8.5rem] items-center justify-center">
+          <span
+            className={`flex h-full min-h-[8.5rem] items-center justify-center ${
+              isVipRequest ? "text-violet-200" : ""
+            }`}
+          >
             <GripVertical className="h-4.5 w-4.5" />
           </span>
         </button>
@@ -1137,9 +1145,20 @@ function PlaylistQueueItem(props: {
         <div className="min-w-0 flex-1 px-5 py-4">
           <div className="flex flex-wrap items-start justify-between gap-4">
             <div className="flex flex-wrap items-center gap-3">
-              <span className="rounded-full border border-(--border) bg-(--panel) px-3 py-1 text-xs font-semibold uppercase tracking-[0.18em] text-(--muted)">
+              <span
+                className={`rounded-full border px-3 py-1 text-xs font-semibold uppercase tracking-[0.18em] ${
+                  isVipRequest
+                    ? "border-violet-400/30 bg-violet-500/15 text-violet-100"
+                    : "border-(--border) bg-(--panel) text-(--muted)"
+                }`}
+              >
                 #{props.item.position}
               </span>
+              {isVipRequest ? (
+                <Badge className="border-violet-400/35 bg-violet-500/15 text-violet-100 hover:bg-violet-500/15">
+                  VIP
+                </Badge>
+              ) : null}
               {isCurrentItem ? (
                 <Badge className="border-emerald-400/35 bg-emerald-500/15 text-emerald-200 hover:bg-emerald-500/15">
                   Playing

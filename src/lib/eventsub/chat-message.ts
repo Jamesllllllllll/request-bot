@@ -318,6 +318,17 @@ export async function processEventSubChatMessage(input: {
       event.isBroadcaster ||
       (event.isModerator && state.settings.moderatorCanManageVipTokens);
     if (!canManageVipTokens) {
+      await deps.createRequestLog(env, {
+        channelId: channel.id,
+        twitchMessageId: event.messageId,
+        twitchUserId: event.chatterTwitchUserId,
+        requesterLogin: event.chatterLogin,
+        requesterDisplayName: event.chatterDisplayName,
+        rawMessage: event.rawMessage,
+        normalizedQuery: parsed.query,
+        outcome: "rejected",
+        outcomeReason: "vip_token_permission_denied",
+      });
       await deps.sendChatReply(env, {
         channelId: channel.id,
         broadcasterUserId: channel.twitchChannelId,
@@ -328,6 +339,17 @@ export async function processEventSubChatMessage(input: {
     }
 
     if (!targetLogin) {
+      await deps.createRequestLog(env, {
+        channelId: channel.id,
+        twitchMessageId: event.messageId,
+        twitchUserId: event.chatterTwitchUserId,
+        requesterLogin: event.chatterLogin,
+        requesterDisplayName: event.chatterDisplayName,
+        rawMessage: event.rawMessage,
+        normalizedQuery: parsed.query,
+        outcome: "rejected",
+        outcomeReason: "vip_token_missing_target",
+      });
       await deps.sendChatReply(env, {
         channelId: channel.id,
         broadcasterUserId: channel.twitchChannelId,
@@ -336,10 +358,14 @@ export async function processEventSubChatMessage(input: {
       return { body: "Rejected", status: 202 };
     }
 
+    const resolvedTarget =
+      (await deps.resolveTwitchUserByLogin(env, targetLogin)) ?? null;
+
     await deps.grantVipToken(env, {
       channelId: channel.id,
-      login: targetLogin,
-      displayName: targetLogin,
+      login: resolvedTarget?.login ?? targetLogin,
+      displayName: resolvedTarget?.displayName ?? targetLogin,
+      twitchUserId: resolvedTarget?.twitchUserId ?? null,
     });
     await deps.createAuditLog(env, {
       channelId: channel.id,
@@ -347,16 +373,28 @@ export async function processEventSubChatMessage(input: {
       actorType: event.isBroadcaster ? "owner" : "moderator",
       action: "grant_vip_token_chat",
       entityType: "vip_token",
-      entityId: targetLogin,
+      entityId: resolvedTarget?.login ?? targetLogin,
       payloadJson: JSON.stringify({
         grantedBy: event.chatterLogin,
-        login: targetLogin,
+        login: resolvedTarget?.login ?? targetLogin,
+        twitchUserId: resolvedTarget?.twitchUserId ?? null,
       }),
+    });
+    await deps.createRequestLog(env, {
+      channelId: channel.id,
+      twitchMessageId: event.messageId,
+      twitchUserId: event.chatterTwitchUserId,
+      requesterLogin: event.chatterLogin,
+      requesterDisplayName: event.chatterDisplayName,
+      rawMessage: event.rawMessage,
+      normalizedQuery: resolvedTarget?.login ?? targetLogin,
+      outcome: "accepted",
+      outcomeReason: "vip_token_granted",
     });
     await deps.sendChatReply(env, {
       channelId: channel.id,
       broadcasterUserId: channel.twitchChannelId,
-      message: `Granted a VIP token to ${targetLogin}.`,
+      message: `Granted a VIP token to ${resolvedTarget?.login ?? targetLogin}.`,
     });
     return { body: "Accepted", status: 202 };
   }

@@ -10,12 +10,14 @@ import {
   addSetlistArtist,
   createAuditLog,
   getDashboardState,
+  getVipTokenBalance,
   grantVipToken,
   removeBlacklistedArtist,
   removeBlacklistedCharter,
   removeBlacklistedSong,
   removeSetlistArtist,
   revokeVipToken,
+  setVipTokenAvailableCount,
 } from "~/lib/db/repositories";
 import type { AppEnv } from "~/lib/env";
 import { json } from "~/lib/utils";
@@ -28,6 +30,25 @@ async function requireDashboardState(request: Request, runtimeEnv: AppEnv) {
   }
 
   return getDashboardState(runtimeEnv, userId);
+}
+
+async function queueModerationReply(
+  runtimeEnv: AppEnv,
+  input: {
+    channelId: string;
+    broadcasterUserId: string;
+    message: string;
+  }
+) {
+  try {
+    await runtimeEnv.TWITCH_REPLY_QUEUE.send(input);
+  } catch (error) {
+    console.error("Failed to queue moderation Twitch reply", {
+      channelId: input.channelId,
+      broadcasterUserId: input.broadcasterUserId,
+      error: error instanceof Error ? error.message : String(error),
+    });
+  }
 }
 
 export const Route = createFileRoute("/api/dashboard/moderation")({
@@ -143,6 +164,13 @@ export const Route = createFileRoute("/api/dashboard/moderation")({
             await grantVipToken(runtimeEnv, {
               channelId: state.channel.id,
               login: body.login,
+              displayName: body.displayName,
+              twitchUserId: body.twitchUserId,
+            });
+            await queueModerationReply(runtimeEnv, {
+              channelId: state.channel.id,
+              broadcasterUserId: state.channel.twitchChannelId,
+              message: `Added 1 VIP token to @${body.login}.`,
             });
             await createAuditLog(runtimeEnv, {
               channelId: state.channel.id,
@@ -159,6 +187,11 @@ export const Route = createFileRoute("/api/dashboard/moderation")({
               channelId: state.channel.id,
               login: body.login,
             });
+            await queueModerationReply(runtimeEnv, {
+              channelId: state.channel.id,
+              broadcasterUserId: state.channel.twitchChannelId,
+              message: `Removed 1 VIP token from @${body.login}.`,
+            });
             await createAuditLog(runtimeEnv, {
               channelId: state.channel.id,
               actorUserId: state.channel.ownerUserId,
@@ -169,6 +202,40 @@ export const Route = createFileRoute("/api/dashboard/moderation")({
               payloadJson: JSON.stringify(body),
             });
             break;
+          case "setVipTokenCount": {
+            const updatedToken = await setVipTokenAvailableCount(runtimeEnv, {
+              channelId: state.channel.id,
+              login: body.login,
+              count: body.count,
+            });
+            const nextCount =
+              updatedToken?.availableCount ??
+              (
+                await getVipTokenBalance(runtimeEnv, {
+                  channelId: state.channel.id,
+                  login: body.login,
+                })
+              )?.availableCount ??
+              0;
+            await queueModerationReply(runtimeEnv, {
+              channelId: state.channel.id,
+              broadcasterUserId: state.channel.twitchChannelId,
+              message: `Set @${body.login} to ${nextCount} VIP token${nextCount === 1 ? "" : "s"}.`,
+            });
+            await createAuditLog(runtimeEnv, {
+              channelId: state.channel.id,
+              actorUserId: state.channel.ownerUserId,
+              actorType: "owner",
+              action: "set_vip_token_count",
+              entityType: "vip_token",
+              entityId: body.login,
+              payloadJson: JSON.stringify({
+                ...body,
+                savedCount: nextCount,
+              }),
+            });
+            break;
+          }
         }
 
         return json({ ok: true });

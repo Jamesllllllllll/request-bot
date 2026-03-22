@@ -817,4 +817,133 @@ describe("processEventSubChatMessage", () => {
       101, 101,
     ]);
   });
+
+  it("lets the broadcaster grant a VIP token from chat", async () => {
+    const deps = createDeps({
+      resolveTwitchUserByLogin: vi.fn().mockResolvedValue({
+        twitchUserId: "viewer-2",
+        login: "viewer_two",
+        displayName: "Viewer Two",
+      }),
+    });
+
+    const result = await processEventSubChatMessage({
+      env,
+      event: createEvent({
+        rawMessage: '!addvip "@viewer_two"',
+        isBroadcaster: true,
+        chatterTwitchUserId: "broadcaster-1",
+        chatterLogin: "streamer",
+        chatterDisplayName: "Streamer",
+      }),
+      parsed: createParsed({
+        command: "addvip",
+        query: "viewer_two",
+      }),
+      deps,
+    });
+
+    expect(result).toEqual({
+      body: "Accepted",
+      status: 202,
+    });
+    expect(deps.grantVipToken).toHaveBeenCalledWith(env, {
+      channelId: "channel-1",
+      login: "viewer_two",
+      displayName: "Viewer Two",
+      twitchUserId: "viewer-2",
+    });
+  });
+
+  it("lets allowed moderators grant a VIP token from chat", async () => {
+    const deps = createDeps({
+      getDashboardState: vi.fn().mockResolvedValue(
+        createState({
+          moderatorCanManageVipTokens: true,
+        })
+      ),
+    });
+
+    const result = await processEventSubChatMessage({
+      env,
+      event: createEvent({
+        rawMessage: "!addvip viewer_two",
+        isModerator: true,
+      }),
+      parsed: createParsed({
+        command: "addvip",
+        query: "viewer_two",
+      }),
+      deps,
+    });
+
+    expect(result).toEqual({
+      body: "Accepted",
+      status: 202,
+    });
+    expect(deps.grantVipToken).toHaveBeenCalledWith(
+      env,
+      expect.objectContaining({
+        channelId: "channel-1",
+        login: "viewer_two",
+      })
+    );
+  });
+
+  it("rejects moderators without VIP token management permission", async () => {
+    const deps = createDeps();
+
+    const result = await processEventSubChatMessage({
+      env,
+      event: createEvent({
+        rawMessage: "!addvip viewer_two",
+        isModerator: true,
+      }),
+      parsed: createParsed({
+        command: "addvip",
+        query: "viewer_two",
+      }),
+      deps,
+    });
+
+    expect(result).toEqual({
+      body: "Rejected",
+      status: 202,
+    });
+    expect(deps.grantVipToken).not.toHaveBeenCalled();
+    expect(deps.sendChatReply).toHaveBeenCalledWith(
+      env,
+      expect.objectContaining({
+        message:
+          "Only the broadcaster or an allowed moderator can grant VIP tokens.",
+      })
+    );
+  });
+
+  it("ignores duplicate addvip messages by Twitch message id", async () => {
+    const deps = createDeps({
+      getRequestLogByMessageId: vi.fn().mockResolvedValue({
+        id: "rlog-1",
+      }),
+    });
+
+    const result = await processEventSubChatMessage({
+      env,
+      event: createEvent({
+        rawMessage: "!addvip viewer_two",
+      }),
+      parsed: createParsed({
+        command: "addvip",
+        query: "viewer_two",
+      }),
+      deps,
+    });
+
+    expect(result).toEqual({
+      body: "Duplicate",
+      status: 202,
+    });
+    expect(deps.grantVipToken).not.toHaveBeenCalled();
+    expect(deps.sendChatReply).not.toHaveBeenCalled();
+  });
 });

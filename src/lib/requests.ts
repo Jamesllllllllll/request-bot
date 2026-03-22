@@ -77,6 +77,18 @@ export function parseChatCommand(
       return null;
     }
 
+    if (command === "addvip") {
+      const normalizedLogin = normalizeLoginArgument(query);
+      if (!normalizedLogin) {
+        return null;
+      }
+
+      return {
+        command,
+        query: normalizedLogin,
+      };
+    }
+
     const requestTarget = extractTrailingTargetLogin(query);
     if (!requestTarget.query) {
       return null;
@@ -130,6 +142,14 @@ function extractTrailingTargetLogin(query: string) {
     query: match[1]?.trim() ?? "",
     targetLogin: match[2]?.trim().toLowerCase(),
   };
+}
+
+function normalizeLoginArgument(value: string) {
+  return value
+    .trim()
+    .replace(/^['"]+|['"]+$/g, "")
+    .replace(/^@+/, "")
+    .toLowerCase();
 }
 
 export function normalizeChatEvent(

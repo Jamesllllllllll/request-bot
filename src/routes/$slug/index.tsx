@@ -164,28 +164,6 @@ function PublicChannelPage() {
   const vipAutomationSummary = getVipAutomationSummary(
     data?.playlist.settings ?? {}
   );
-  const publicSearchResultFilter = useMemo(
-    () => (song: SearchSong) =>
-      showBlacklisted ||
-      getBlacklistReasons(
-        {
-          songCatalogSourceId: song.sourceId ?? null,
-          songArtist: song.artist ?? null,
-          songCreator: song.creator ?? null,
-        },
-        {
-          artists: data?.playlist.blacklistArtists ?? [],
-          charters: data?.playlist.blacklistCharters ?? [],
-          songs: data?.playlist.blacklistSongs ?? [],
-        }
-      ).length === 0,
-    [
-      data?.playlist.blacklistArtists,
-      data?.playlist.blacklistCharters,
-      data?.playlist.blacklistSongs,
-      showBlacklisted,
-    ]
-  );
   const publicSearchResultState = useMemo(
     () =>
       (song: SearchSong): SearchSongResultState => {
@@ -285,8 +263,12 @@ function PublicChannelPage() {
         title="Search to add a song"
         description="Copy the request command and use it in Twitch chat."
         placeholder={`Search songs for ${channelDisplayName}`}
-        resultFilter={publicSearchResultFilter}
+        extraSearchParams={{
+          channelSlug: slug,
+          showBlacklisted,
+        }}
         resultState={publicSearchResultState}
+        useTotalForSummary
         advancedFiltersContent={
           <div className="inline-flex flex-wrap items-center gap-3 rounded-full border border-(--border) bg-(--panel) px-4 py-2.5">
             <Checkbox

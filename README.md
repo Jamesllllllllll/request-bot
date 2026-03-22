@@ -21,7 +21,7 @@ Repository workflow docs:
 - Cloudflare worker configuration with D1, KV, queue producer, and an auxiliary backend worker
 - Drizzle schema and initial SQL migration for the required MVP entities
 - Server-side Twitch OAuth callback flow with session cookie + KV session storage
-- EventSub webhook intake for `channel.chat.message`, `stream.online`, and `stream.offline`
+- EventSub webhook intake for `channel.chat.message`, `channel.subscribe`, `channel.subscription.gift`, `channel.cheer`, `stream.online`, and `stream.offline`
 - Separate shared bot-account OAuth flow with bot replies sent from the bot identity
 - Per-channel opt-in bot presence with live-aware activation/deactivation
 - Always-on public playlist pages for each channel
@@ -82,7 +82,7 @@ TWITCH_CLIENT_SECRET=
 TWITCH_EVENTSUB_SECRET=local-dev-eventsub-secret
 SESSION_SECRET=local-dev-session-secret
 TWITCH_BOT_USERNAME=requestbot
-TWITCH_SCOPES=openid user:read:moderated_channels moderator:read:chatters channel:bot
+TWITCH_SCOPES=openid user:read:moderated_channels moderator:read:chatters channel:bot channel:read:subscriptions bits:read
 ADMIN_TWITCH_USER_IDS=
 VITE_ALLOWED_HOSTS=
 ```
@@ -95,7 +95,7 @@ For basic local development, set:
 - `TWITCH_EVENTSUB_SECRET`
 - `SESSION_SECRET`
 - `TWITCH_BOT_USERNAME`
-- `TWITCH_SCOPES=openid user:read:moderated_channels moderator:read:chatters channel:bot`
+- `TWITCH_SCOPES=openid user:read:moderated_channels moderator:read:chatters channel:bot channel:read:subscriptions bits:read`
 - `VITE_ALLOWED_HOSTS=` if you need extra Vite hostnames
 
 To test Twitch sign-in, bot behavior, and EventSub locally, also set:
@@ -106,7 +106,7 @@ To test Twitch sign-in, bot behavior, and EventSub locally, also set:
 
 `ADMIN_TWITCH_USER_IDS` should contain the Twitch user ID for the admin account that is allowed to connect the shared bot account and access admin pages.
 
-If a broadcaster connected before `channel:bot` was added to your configured scopes, they need to reconnect Twitch from the app before bot replies can use Twitch's bot badge path.
+If a broadcaster connected before `channel:bot`, `channel:read:subscriptions`, or `bits:read` were added to your configured scopes, they need to reconnect Twitch from the app before bot replies and VIP token automation can use the updated Twitch permissions.
 
 Sentry stays off locally unless you explicitly set a DSN:
 
@@ -497,7 +497,7 @@ gh secret set CLOUDFLARE_D1_DATABASE_ID
 gh secret set CLOUDFLARE_SESSION_KV_ID
 gh secret set APP_URL --body "https://your-production-url.example"
 gh variable set TWITCH_BOT_USERNAME --body "your_bot_username"
-gh variable set TWITCH_SCOPES --body "openid user:read:moderated_channels moderator:read:chatters channel:bot"
+gh variable set TWITCH_SCOPES --body "openid user:read:moderated_channels moderator:read:chatters channel:bot channel:read:subscriptions bits:read"
 ```
 
 For the full deploy and GitHub workflow details, use [docs/deployment-workflow.md](/docs/deployment-workflow.md).

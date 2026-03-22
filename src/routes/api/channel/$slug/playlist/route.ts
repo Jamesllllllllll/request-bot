@@ -6,6 +6,7 @@ import { getDb } from "~/lib/db/client";
 import {
   getChannelBlacklistByChannelId,
   getChannelBySlug,
+  getChannelSettingsByChannelId,
   getPlaylistByChannelId,
 } from "~/lib/db/repositories";
 import { playedSongs } from "~/lib/db/schema";
@@ -23,7 +24,7 @@ export const Route = createFileRoute("/api/channel/$slug/playlist")({
           return json({ error: "Channel not found" }, { status: 404 });
         }
 
-        const [playlist, playedRows, blacklist] = await Promise.all([
+        const [playlist, playedRows, blacklist, settings] = await Promise.all([
           getPlaylistByChannelId(runtimeEnv, channel.id),
           getDb(runtimeEnv).query.playedSongs.findMany({
             where: eq(playedSongs.channelId, channel.id),
@@ -31,9 +32,19 @@ export const Route = createFileRoute("/api/channel/$slug/playlist")({
             limit: 500,
           }),
           getChannelBlacklistByChannelId(runtimeEnv, channel.id),
+          getChannelSettingsByChannelId(runtimeEnv, channel.id),
         ]);
         return json({
           channel,
+          settings: {
+            autoGrantVipTokensToSubGifters:
+              settings?.autoGrantVipTokensToSubGifters ?? false,
+            autoGrantVipTokensToGiftRecipients:
+              settings?.autoGrantVipTokensToGiftRecipients ?? false,
+            autoGrantVipTokensForCheers:
+              settings?.autoGrantVipTokensForCheers ?? false,
+            cheerBitsPerVipToken: settings?.cheerBitsPerVipToken ?? 200,
+          },
           items: playlist?.items ?? [],
           playedSongs: playedRows,
           blacklistArtists: blacklist.blacklistArtists,

@@ -40,6 +40,16 @@ async function requireDashboardState(runtimeEnv: AppEnv) {
   return state;
 }
 
+function normalizeCheerMinimumTokenPercent(
+  value: number
+): DashboardSettingsFormData["cheerMinimumTokenPercent"] {
+  if (value === 50 || value === 75 || value === 100) {
+    return value;
+  }
+
+  return 25;
+}
+
 export type DashboardSettingsData = {
   channel: {
     isLive: boolean;
@@ -68,6 +78,9 @@ export const getDashboardSettings = createServerFn({ method: "GET" }).handler(
             requiredPaths: getArraySetting(state.settings.requiredPathsJson),
             requiredPathsMatchMode: getRequiredPathsMatchMode(
               state.settings.requiredPathsMatchMode
+            ),
+            cheerMinimumTokenPercent: normalizeCheerMinimumTokenPercent(
+              state.settings.cheerMinimumTokenPercent
             ),
           }
         : null,

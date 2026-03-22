@@ -91,6 +91,42 @@ export interface EventSubStreamOfflineEvent {
   broadcaster_user_name: string;
 }
 
+export interface EventSubSubscriptionGiftEvent {
+  user_id?: string | null;
+  user_login?: string | null;
+  user_name?: string | null;
+  broadcaster_user_id: string;
+  broadcaster_user_login: string;
+  broadcaster_user_name: string;
+  total: number;
+  tier: string;
+  cumulative_total?: number | null;
+  is_anonymous: boolean;
+}
+
+export interface EventSubSubscribeEvent {
+  user_id: string;
+  user_login: string;
+  user_name: string;
+  broadcaster_user_id: string;
+  broadcaster_user_login: string;
+  broadcaster_user_name: string;
+  tier: string;
+  is_gift: boolean;
+}
+
+export interface EventSubCheerEvent {
+  is_anonymous: boolean;
+  user_id?: string | null;
+  user_login?: string | null;
+  user_name?: string | null;
+  broadcaster_user_id: string;
+  broadcaster_user_login: string;
+  broadcaster_user_name: string;
+  message: string;
+  bits: number;
+}
+
 export interface TwitchEventSubCreateResponse {
   data: Array<{
     id: string;

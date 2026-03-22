@@ -7,12 +7,21 @@ import {
   createEventSubChatDependencies,
   processEventSubChatMessage,
 } from "~/lib/eventsub/chat-message";
+import {
+  createEventSubSupportDependencies,
+  processEventSubChannelCheer,
+  processEventSubChannelSubscribe,
+  processEventSubSubscriptionGift,
+} from "~/lib/eventsub/support-events";
 import { normalizeCommandPrefix } from "~/lib/request-policy";
 import { normalizeChatEvent, parseChatCommand } from "~/lib/requests";
 import {
+  isChannelCheerEvent,
+  isChannelSubscribeEvent,
   isChatMessageEvent,
   isStreamOfflineEvent,
   isStreamOnlineEvent,
+  isSubscriptionGiftEvent,
 } from "~/lib/twitch/api";
 import {
   markChannelLiveAndReconcile,
@@ -21,6 +30,7 @@ import {
 import { verifyEventSubSignature } from "~/lib/twitch/eventsub";
 
 const chatDeps = createEventSubChatDependencies();
+const supportDeps = createEventSubSupportDependencies();
 
 export const Route = createFileRoute("/api/eventsub")({
   server: {
@@ -29,6 +39,7 @@ export const Route = createFileRoute("/api/eventsub")({
         const runtimeEnv = env as AppEnv;
         const bodyText = await request.text();
         const messageType = request.headers.get("Twitch-Eventsub-Message-Type");
+        const messageId = request.headers.get("Twitch-Eventsub-Message-Id");
 
         console.info("EventSub webhook received", {
           messageType,
@@ -69,6 +80,53 @@ export const Route = createFileRoute("/api/eventsub")({
             payload.event.broadcaster_user_id
           );
           return new Response("Accepted", { status: 202 });
+        }
+
+        if (isSubscriptionGiftEvent(payload)) {
+          console.info("EventSub subscription gift received", {
+            broadcasterLogin: payload.event.broadcaster_user_login,
+            gifterLogin: payload.event.user_login ?? null,
+            total: payload.event.total,
+            isAnonymous: payload.event.is_anonymous,
+          });
+          const result = await processEventSubSubscriptionGift({
+            env: runtimeEnv,
+            deps: supportDeps,
+            messageId,
+            event: payload.event,
+          });
+          return new Response(result.body, { status: result.status });
+        }
+
+        if (isChannelSubscribeEvent(payload)) {
+          console.info("EventSub channel subscribe received", {
+            broadcasterLogin: payload.event.broadcaster_user_login,
+            subscriberLogin: payload.event.user_login,
+            isGift: payload.event.is_gift,
+          });
+          const result = await processEventSubChannelSubscribe({
+            env: runtimeEnv,
+            deps: supportDeps,
+            messageId,
+            event: payload.event,
+          });
+          return new Response(result.body, { status: result.status });
+        }
+
+        if (isChannelCheerEvent(payload)) {
+          console.info("EventSub channel cheer received", {
+            broadcasterLogin: payload.event.broadcaster_user_login,
+            cheererLogin: payload.event.user_login ?? null,
+            bits: payload.event.bits,
+            isAnonymous: payload.event.is_anonymous,
+          });
+          const result = await processEventSubChannelCheer({
+            env: runtimeEnv,
+            deps: supportDeps,
+            messageId,
+            event: payload.event,
+          });
+          return new Response(result.body, { status: result.status });
         }
 
         if (!isChatMessageEvent(payload)) {

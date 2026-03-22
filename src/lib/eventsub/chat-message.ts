@@ -30,6 +30,7 @@ import {
 import type { NormalizedChatEvent, ParsedChatCommand } from "~/lib/requests";
 import type { SongSearchResult } from "~/lib/song-search/types";
 import { createId } from "~/lib/utils";
+import { formatVipTokenCount, hasRedeemableVipToken } from "~/lib/vip-tokens";
 
 export interface EventSubChatChannel {
   id: string;
@@ -676,9 +677,12 @@ export async function processEventSubChatMessage(input: {
 
   if (
     isVipCommand &&
-    !vipTokenBalance?.availableCount &&
+    !hasRedeemableVipToken(vipTokenBalance?.availableCount ?? 0) &&
     !canAutoGrantVipToken
   ) {
+    const balanceText = vipTokenBalance
+      ? ` You have ${formatVipTokenCount(vipTokenBalance.availableCount)}.`
+      : "";
     await deps.createRequestLog(env, {
       channelId: channel.id,
       twitchMessageId: event.messageId,
@@ -693,7 +697,7 @@ export async function processEventSubChatMessage(input: {
     await deps.sendChatReply(env, {
       channelId: channel.id,
       broadcasterUserId: channel.twitchChannelId,
-      message: "You do not have a VIP token available for this channel.",
+      message: `You do not have enough VIP tokens for this channel.${balanceText}`,
     });
     return { body: "Rejected", status: 202 };
   }

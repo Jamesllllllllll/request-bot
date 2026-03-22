@@ -3,6 +3,7 @@ import {
   index,
   integer,
   primaryKey,
+  real,
   sqliteTable,
   text,
   uniqueIndex,
@@ -159,6 +160,29 @@ export const channelSettings = sqliteTable("channel_settings", {
   )
     .notNull()
     .default(false),
+  autoGrantVipTokensToSubGifters: integer(
+    "auto_grant_vip_tokens_to_sub_gifters",
+    { mode: "boolean" }
+  )
+    .notNull()
+    .default(false),
+  autoGrantVipTokensToGiftRecipients: integer(
+    "auto_grant_vip_tokens_to_gift_recipients",
+    { mode: "boolean" }
+  )
+    .notNull()
+    .default(false),
+  autoGrantVipTokensForCheers: integer("auto_grant_vip_tokens_for_cheers", {
+    mode: "boolean",
+  })
+    .notNull()
+    .default(false),
+  cheerBitsPerVipToken: integer("cheer_bits_per_vip_token")
+    .notNull()
+    .default(200),
+  cheerMinimumTokenPercent: integer("cheer_minimum_token_percent")
+    .notNull()
+    .default(25),
   duplicateWindowSeconds: integer("duplicate_window_seconds")
     .notNull()
     .default(900),
@@ -358,9 +382,9 @@ export const vipTokens = sqliteTable(
     twitchUserId: text("twitch_user_id"),
     login: text("login").notNull(),
     displayName: text("display_name"),
-    availableCount: integer("available_count").notNull().default(0),
-    grantedCount: integer("granted_count").notNull().default(0),
-    consumedCount: integer("consumed_count").notNull().default(0),
+    availableCount: real("available_count").notNull().default(0),
+    grantedCount: real("granted_count").notNull().default(0),
+    consumedCount: real("consumed_count").notNull().default(0),
     autoSubscriberGranted: integer("auto_subscriber_granted", {
       mode: "boolean",
     })
@@ -541,6 +565,21 @@ export const eventSubSubscriptions = sqliteTable(
   ]
 );
 
+export const eventSubDeliveries = sqliteTable(
+  "eventsub_deliveries",
+  {
+    channelId: text("channel_id")
+      .notNull()
+      .references(() => channels.id),
+    messageId: text("message_id").notNull(),
+    subscriptionType: text("subscription_type").notNull(),
+    createdAt: integer("created_at")
+      .notNull()
+      .default(sql`(unixepoch() * 1000)`),
+  },
+  (table) => [primaryKey({ columns: [table.channelId, table.messageId] })]
+);
+
 export const catalogSongs = sqliteTable(
   "catalog_songs",
   {
@@ -688,5 +727,6 @@ export type TwitchAuthorizationInsert =
   typeof twitchAuthorizations.$inferInsert;
 export type EventSubSubscriptionInsert =
   typeof eventSubSubscriptions.$inferInsert;
+export type EventSubDeliveryInsert = typeof eventSubDeliveries.$inferInsert;
 export type CatalogSongInsert = typeof catalogSongs.$inferInsert;
 export type SearchCacheInsert = typeof searchCache.$inferInsert;

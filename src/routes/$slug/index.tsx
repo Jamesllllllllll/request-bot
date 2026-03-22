@@ -50,6 +50,12 @@ type PublicChannelPageData = {
       displayName?: string;
       login?: string;
     };
+    settings?: {
+      autoGrantVipTokensToSubGifters?: boolean;
+      autoGrantVipTokensToGiftRecipients?: boolean;
+      autoGrantVipTokensForCheers?: boolean;
+      cheerBitsPerVipToken?: number;
+    };
     items?: EnrichedPublicPlaylistItem[];
     playedSongs?: PlayedSongRow[];
     blacklistArtists?: Array<{ artistId: number; artistName: string }>;
@@ -102,6 +108,7 @@ function PublicChannelPage() {
       const playlistResponse = await fetch(`/api/channel/${slug}/playlist`);
       const playlist = (await playlistResponse.json()) as {
         channel?: PublicChannelPageData["playlist"]["channel"];
+        settings?: PublicChannelPageData["playlist"]["settings"];
         items?: PublicPlaylistItem[];
         playedSongs?: PlayedSongRow[];
         blacklistArtists?: PublicChannelPageData["playlist"]["blacklistArtists"];
@@ -154,6 +161,9 @@ function PublicChannelPage() {
   }, [queryClient, slug]);
 
   const channelDisplayName = data?.playlist?.channel?.displayName ?? slug;
+  const vipAutomationSummary = getVipAutomationSummary(
+    data?.playlist.settings ?? {}
+  );
   const publicSearchResultFilter = useMemo(
     () => (song: SearchSong) =>
       showBlacklisted ||
@@ -236,6 +246,16 @@ function PublicChannelPage() {
             </div>
           </div>
         </div>
+        {vipAutomationSummary ? (
+          <div className="mt-5 px-8">
+            <div className="inline-flex max-w-full flex-wrap items-center gap-2 rounded-[22px] border border-violet-400/30 bg-violet-500/10 px-4 py-3 text-sm text-violet-100">
+              <span className="rounded-full border border-violet-300/30 bg-violet-500/20 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.18em] text-violet-100">
+                VIP tokens
+              </span>
+              <span>{vipAutomationSummary}</span>
+            </div>
+          </div>
+        ) : null}
         {isLoading ? <p className="mt-4 px-8">Loading playlist...</p> : null}
         <div className="mt-6 grid gap-3 px-8">
           <AnimatePresence initial={false} mode="popLayout">
@@ -301,6 +321,33 @@ function PublicChannelPage() {
       <PublicPlayedHistoryCard slug={slug} />
     </section>
   );
+}
+
+function getVipAutomationSummary(input: {
+  autoGrantVipTokensToSubGifters?: boolean;
+  autoGrantVipTokensToGiftRecipients?: boolean;
+  autoGrantVipTokensForCheers?: boolean;
+  cheerBitsPerVipToken?: number;
+}) {
+  const parts: string[] = [];
+
+  if (input.autoGrantVipTokensToSubGifters) {
+    parts.push("Gift 1 sub");
+  }
+
+  if (input.autoGrantVipTokensToGiftRecipients) {
+    parts.push("Receive a gifted sub");
+  }
+
+  if (input.autoGrantVipTokensForCheers && input.cheerBitsPerVipToken) {
+    parts.push(`Cheer ${input.cheerBitsPerVipToken} bits`);
+  }
+
+  if (!parts.length) {
+    return null;
+  }
+
+  return `1 VIP token = ${parts.join(" or ")}.`;
 }
 
 function PublicPlaylistRow(props: {

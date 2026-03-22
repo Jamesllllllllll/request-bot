@@ -9,6 +9,8 @@ const requiredBroadcasterScopes = [
   "user:read:moderated_channels",
   "moderator:read:chatters",
   "channel:bot",
+  "channel:read:subscriptions",
+  "bits:read",
 ] as const;
 
 function getBroadcasterScopes(env: AppEnv) {

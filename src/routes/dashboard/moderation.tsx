@@ -74,6 +74,7 @@ type ModerationData = {
   };
   blocks: Array<{
     twitchUserId: string;
+    login?: string;
     displayName?: string;
     reason?: string;
   }>;
@@ -111,6 +112,10 @@ function DashboardModerationPage() {
   const [setlistArtistQuery, setSetlistArtistQuery] = useState("");
   const [debouncedSetlistArtistQuery, setDebouncedSetlistArtistQuery] =
     useState("");
+  const [blockedLogin, setBlockedLogin] = useState("");
+  const [debouncedBlockedLogin, setDebouncedBlockedLogin] = useState("");
+  const [selectedBlockedUser, setSelectedBlockedUser] =
+    useState<TwitchUserMatch | null>(null);
   const [vipLogin, setVipLogin] = useState("");
   const [debouncedVipLogin, setDebouncedVipLogin] = useState("");
   const [selectedVipUser, setSelectedVipUser] =
@@ -122,13 +127,21 @@ function DashboardModerationPage() {
       setDebouncedCharterQuery(charterQuery.trim());
       setDebouncedSongQuery(songQuery.trim());
       setDebouncedSetlistArtistQuery(setlistArtistQuery.trim());
+      setDebouncedBlockedLogin(blockedLogin.trim());
       setDebouncedVipLogin(vipLogin.trim());
     }, 400);
 
     return () => {
       window.clearTimeout(timeout);
     };
-  }, [artistQuery, charterQuery, setlistArtistQuery, songQuery, vipLogin]);
+  }, [
+    artistQuery,
+    blockedLogin,
+    charterQuery,
+    setlistArtistQuery,
+    songQuery,
+    vipLogin,
+  ]);
 
   const { data } = useQuery({
     queryKey: ["dashboard-moderation"],
@@ -206,6 +219,22 @@ function DashboardModerationPage() {
     enabled: debouncedVipLogin.replace(/^@+/, "").length >= 4,
   });
 
+  const blockedUserLookupQuery = useQuery({
+    queryKey: [
+      "dashboard-moderation-blocked-user-search",
+      debouncedBlockedLogin,
+    ],
+    queryFn: async () => {
+      const response = await fetch(
+        `/api/dashboard/moderation/search?type=twitch-user&query=${encodeURIComponent(
+          debouncedBlockedLogin
+        )}`
+      );
+      return response.json() as Promise<TwitchUserSearchResponse>;
+    },
+    enabled: debouncedBlockedLogin.replace(/^@+/, "").length >= 4,
+  });
+
   const mutation = useMutation({
     mutationFn: async (body: Record<string, unknown>) => {
       const response = await fetch("/api/dashboard/moderation", {
@@ -276,6 +305,17 @@ function DashboardModerationPage() {
     setlistArtistSearchQuery.data?.artists ?? []
   ).filter((artist) => !setlistArtistIds.has(artist.artistId));
   const blacklistEnabled = data?.settings.blacklistEnabled ?? false;
+  const blockedLookupTooShort =
+    blockedLogin.trim().replace(/^@+/, "").length > 0 &&
+    blockedLogin.trim().replace(/^@+/, "").length < 4;
+  const blockedMatches = blockedUserLookupQuery.data?.users ?? [];
+  const normalizedBlockedLogin = blockedLogin
+    .trim()
+    .replace(/^@+/, "")
+    .toLowerCase();
+  const hasSelectedBlockedUser =
+    !!selectedBlockedUser &&
+    selectedBlockedUser.login === normalizedBlockedLogin;
   const vipLookupTooShort =
     vipLogin.trim().replace(/^@+/, "").length > 0 &&
     vipLogin.trim().replace(/^@+/, "").length < 4;
@@ -283,9 +323,13 @@ function DashboardModerationPage() {
   const normalizedVipLogin = vipLogin.trim().replace(/^@+/, "").toLowerCase();
   const hasSelectedVipUser =
     !!selectedVipUser && selectedVipUser.login === normalizedVipLogin;
-  const needsChatterScopeReconnect =
-    !!vipLookupQuery.data?.needsChatterScopeReconnect;
+  const needsChatterScopeReconnect = !!(
+    vipLookupQuery.data?.needsChatterScopeReconnect ||
+    blockedUserLookupQuery.data?.needsChatterScopeReconnect
+  );
   const vipPreferredSource = vipLookupQuery.data?.preferredSource ?? "global";
+  const blockedPreferredSource =
+    blockedUserLookupQuery.data?.preferredSource ?? "global";
 
   return (
     <div className="dashboard-moderation grid gap-6">
@@ -748,24 +792,152 @@ function DashboardModerationPage() {
 
       <Card className="dashboard-moderation__section">
         <CardHeader>
-          <CardTitle>Blocked users</CardTitle>
+          <CardTitle>Chatter blacklist</CardTitle>
         </CardHeader>
-        <CardContent className="grid gap-3">
-          {data?.blocks?.map((block) => (
-            <div
-              key={block.twitchUserId}
-              className="rounded-2xl border border-(--border) bg-(--panel-soft) px-5 py-4"
+        <CardContent className="grid gap-4">
+          <div className="dashboard-moderation__form-row flex gap-3">
+            <Input
+              value={blockedLogin}
+              onChange={(event) => {
+                setBlockedLogin(event.target.value);
+                setSelectedBlockedUser(null);
+              }}
+              placeholder="Ignore commands from username"
+            />
+            <Button
+              onClick={() => {
+                if (!selectedBlockedUser) {
+                  return;
+                }
+
+                mutation.mutate({
+                  action: "blockUser",
+                  twitchUserId: selectedBlockedUser.id,
+                  login: selectedBlockedUser.login,
+                  displayName: selectedBlockedUser.displayName,
+                  reason: "Ignored bot commands from this chatter.",
+                });
+                setBlockedLogin("");
+                setSelectedBlockedUser(null);
+              }}
+              disabled={mutation.isPending || !hasSelectedBlockedUser}
             >
-              <p className="font-medium">
-                {block.displayName ?? block.twitchUserId}
-              </p>
-              <p className="text-sm text-(--muted)">
-                {block.reason ?? "No reason provided"}
-              </p>
+              Block chatter
+            </Button>
+          </div>
+          {blockedLookupTooShort ? (
+            <p className="text-sm text-(--muted)">
+              Type at least 4 characters to search Twitch usernames.
+            </p>
+          ) : null}
+          {!blockedLookupTooShort &&
+          debouncedBlockedLogin.replace(/^@+/, "").length >= 4 ? (
+            <div className="rounded-2xl border border-(--border) bg-(--panel-soft) px-4 py-3">
+              {blockedUserLookupQuery.isFetching ? (
+                <p className="text-sm text-(--muted)">
+                  Searching Twitch usernames…
+                </p>
+              ) : blockedMatches.length ? (
+                <div className="grid gap-2">
+                  <div className="flex items-center justify-between gap-3">
+                    <p className="text-xs uppercase tracking-[0.16em] text-(--muted)">
+                      {blockedPreferredSource === "chatters"
+                        ? "Current chatters first"
+                        : "Twitch matches"}
+                    </p>
+                    <Badge variant="outline">
+                      {blockedMatches.length} result
+                      {blockedMatches.length === 1 ? "" : "s"}
+                    </Badge>
+                  </div>
+                  {blockedMatches.map((user) => {
+                    const isSelected = selectedBlockedUser?.id === user.id;
+
+                    return (
+                      <button
+                        key={user.id}
+                        type="button"
+                        className={`flex items-center justify-between gap-4 rounded-xl border px-3 py-2 text-left transition hover:border-(--brand) disabled:cursor-default ${
+                          user.isCurrentChatter
+                            ? "border-emerald-500/40 bg-emerald-500/10"
+                            : "border-(--border) bg-background"
+                        }`}
+                        onClick={() => {
+                          setBlockedLogin(user.login);
+                          setSelectedBlockedUser(user);
+                        }}
+                      >
+                        <div className="min-w-0">
+                          <p className="truncate font-medium text-(--text)">
+                            {user.displayName}
+                          </p>
+                          <p className="truncate text-sm text-(--muted)">
+                            @{user.login} · Twitch ID {user.id}
+                          </p>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          {user.isCurrentChatter ? (
+                            <Badge className="border-emerald-500/40 bg-emerald-500/15 text-emerald-200">
+                              In chat
+                            </Badge>
+                          ) : null}
+                          {isSelected ? (
+                            <Badge variant="outline">Selected</Badge>
+                          ) : null}
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+              ) : (
+                <p className="text-sm text-(--muted)">
+                  No matching Twitch usernames.
+                </p>
+              )}
             </div>
-          ))}
-          {data?.blocks?.length ? null : (
-            <p className="text-sm text-(--muted)">No blocked users.</p>
+          ) : null}
+          <p className="text-sm text-(--muted)">
+            Blocked chatters can still talk in Twitch chat, but the bot will
+            ignore all of their commands.
+          </p>
+          {data?.blocks?.length ? (
+            <div className="grid gap-3">
+              {data.blocks.map((block) => (
+                <div
+                  key={block.twitchUserId}
+                  className="flex items-start justify-between gap-4 rounded-2xl border border-(--border) bg-(--panel-soft) px-5 py-4"
+                >
+                  <div className="min-w-0">
+                    <p className="truncate font-medium text-(--text)">
+                      {block.displayName ??
+                        (block.login ? `@${block.login}` : block.twitchUserId)}
+                    </p>
+                    <p className="truncate text-sm text-(--muted)">
+                      {block.login ? `@${block.login}` : block.twitchUserId}
+                    </p>
+                    <p className="text-sm text-(--muted)">
+                      {block.reason ??
+                        "Ignored bot commands from this chatter."}
+                    </p>
+                  </div>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() =>
+                      mutation.mutate({
+                        action: "removeBlockedUser",
+                        twitchUserId: block.twitchUserId,
+                      })
+                    }
+                    disabled={mutation.isPending}
+                  >
+                    Unblock
+                  </Button>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p className="text-sm text-(--muted)">No blocked chatters.</p>
           )}
         </CardContent>
       </Card>

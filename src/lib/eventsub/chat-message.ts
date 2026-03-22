@@ -313,6 +313,21 @@ export async function processEventSubChatMessage(input: {
     return { body: "Ignored", status: 202 };
   }
 
+  if (await deps.isBlockedUser(env, channel.id, event.chatterTwitchUserId)) {
+    await deps.createRequestLog(env, {
+      channelId: channel.id,
+      twitchMessageId: event.messageId,
+      twitchUserId: event.chatterTwitchUserId,
+      requesterLogin: event.chatterLogin,
+      requesterDisplayName: event.chatterDisplayName,
+      rawMessage: event.rawMessage,
+      normalizedQuery: parsed.query,
+      outcome: "blocked",
+      outcomeReason: "user_blocked",
+    });
+    return { body: "Blocked", status: 202 };
+  }
+
   if (parsed.command === "addvip") {
     const targetLogin = parsed.query?.trim();
     const canManageVipTokens =
@@ -640,28 +655,6 @@ export async function processEventSubChatMessage(input: {
       });
       return { body: "Rejected", status: 202 };
     }
-  }
-
-  if (
-    await deps.isBlockedUser(env, channel.id, requesterIdentity.twitchUserId)
-  ) {
-    await deps.createRequestLog(env, {
-      channelId: channel.id,
-      twitchMessageId: event.messageId,
-      twitchUserId: requesterIdentity.twitchUserId,
-      requesterLogin: requesterIdentity.login,
-      requesterDisplayName: requesterIdentity.displayName,
-      rawMessage: event.rawMessage,
-      normalizedQuery: parsed.query,
-      outcome: "blocked",
-      outcomeReason: "user_blocked",
-    });
-    await deps.sendChatReply(env, {
-      channelId: channel.id,
-      broadcasterUserId: channel.twitchChannelId,
-      message: `${mention(event.chatterLogin)} you cannot request songs in this channel.`,
-    });
-    return { body: "Blocked", status: 202 };
   }
 
   const vipTokenBalance = isVipCommand

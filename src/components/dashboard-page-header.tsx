@@ -32,7 +32,7 @@ export function DashboardPageHeader(props: DashboardPageHeaderProps) {
         </div>
 
         {props.aside ? (
-          <div className="dashboard-page-header__aside grid shrink-0 gap-3 md:justify-items-end">
+          <div className="dashboard-page-header__aside grid w-full min-w-0 gap-3 md:w-auto md:max-w-sm md:justify-items-end">
             {props.aside}
           </div>
         ) : null}

@@ -7,6 +7,7 @@ import {
   getChannelById,
   getChannelSettingsByChannelId,
   getEventSubSubscription,
+  parseAuthorizationScopes,
   setBotEnabled,
   setChannelLiveState,
   upsertEventSubSubscription,
@@ -36,12 +37,19 @@ export const twitchBotScopes = [
   "user:bot",
 ] as const;
 
+const requiredBroadcasterBotScopes = ["channel:bot"] as const;
+
 function asAppEnv(env: RuntimeEnv) {
   return env as unknown as AppEnv;
 }
 
 function getDb(env: RuntimeEnv) {
   return drizzle(getSentryD1Database(env), { schema });
+}
+
+function hasRequiredBroadcasterBotScopes(scopesJson: string) {
+  const scopes = new Set(parseAuthorizationScopes(scopesJson));
+  return requiredBroadcasterBotScopes.every((scope) => scopes.has(scope));
 }
 
 async function ensureSubscription(input: {
@@ -263,6 +271,28 @@ export async function reconcileChannelBotState(
   }
 
   if (!broadcasterAuth) {
+    await removeSubscription({
+      env,
+      appAccessToken: appToken.access_token,
+      channelId,
+      subscriptionType: CHAT_MESSAGE,
+    });
+    await setBotEnabled(
+      runtimeEnv,
+      channelId,
+      false,
+      "broadcaster_auth_required"
+    );
+    return { ok: true, state: "broadcaster_auth_required" as const };
+  }
+
+  if (!hasRequiredBroadcasterBotScopes(broadcasterAuth.scopes)) {
+    await removeSubscription({
+      env,
+      appAccessToken: appToken.access_token,
+      channelId,
+      subscriptionType: CHAT_MESSAGE,
+    });
     await setBotEnabled(
       runtimeEnv,
       channelId,

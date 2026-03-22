@@ -35,6 +35,7 @@ export const Route = createFileRoute("/auth/twitch/bot/start")({
         );
         url.searchParams.set("response_type", "code");
         url.searchParams.set("scope", twitchBotScopes.join(" "));
+        url.searchParams.set("force_verify", "true");
         url.searchParams.set(
           "state",
           `${state}:${encodeURIComponent("/dashboard/admin")}`

@@ -82,7 +82,7 @@ TWITCH_CLIENT_SECRET=
 TWITCH_EVENTSUB_SECRET=local-dev-eventsub-secret
 SESSION_SECRET=local-dev-session-secret
 TWITCH_BOT_USERNAME=requestbot
-TWITCH_SCOPES=openid user:read:moderated_channels channel:bot
+TWITCH_SCOPES=openid user:read:moderated_channels moderator:read:chatters channel:bot
 ADMIN_TWITCH_USER_IDS=
 VITE_ALLOWED_HOSTS=
 ```
@@ -95,7 +95,7 @@ For basic local development, set:
 - `TWITCH_EVENTSUB_SECRET`
 - `SESSION_SECRET`
 - `TWITCH_BOT_USERNAME`
-- `TWITCH_SCOPES=openid user:read:moderated_channels channel:bot`
+- `TWITCH_SCOPES=openid user:read:moderated_channels moderator:read:chatters channel:bot`
 - `VITE_ALLOWED_HOSTS=` if you need extra Vite hostnames
 
 To test Twitch sign-in, bot behavior, and EventSub locally, also set:
@@ -105,6 +105,8 @@ To test Twitch sign-in, bot behavior, and EventSub locally, also set:
 - `ADMIN_TWITCH_USER_IDS`
 
 `ADMIN_TWITCH_USER_IDS` should contain the Twitch user ID for the admin account that is allowed to connect the shared bot account and access admin pages.
+
+If a broadcaster connected before `channel:bot` was added to your configured scopes, they need to reconnect Twitch from the app before bot replies can use Twitch's bot badge path.
 
 Sentry stays off locally unless you explicitly set a DSN:
 
@@ -164,6 +166,26 @@ http://localhost:9000
 ```
 
 The repo auto-runs local D1 migrations before `dev`, `test`, and `build`.
+
+### Verification before commit
+
+Run checks in this order:
+
+```bash
+npm run typecheck
+npm run test
+npm run format
+npm run lint
+npm run build
+```
+
+If you changed browser-driven flows, also run:
+
+```bash
+npm run test:e2e
+```
+
+Formatting before lint is intentional. Biome lint is much cleaner after `npm run format`, and this avoids a lot of AI-generated formatting churn before commit.
 
 ### 6. Twitch application setup for local auth
 
@@ -475,7 +497,7 @@ gh secret set CLOUDFLARE_D1_DATABASE_ID
 gh secret set CLOUDFLARE_SESSION_KV_ID
 gh secret set APP_URL --body "https://your-production-url.example"
 gh variable set TWITCH_BOT_USERNAME --body "your_bot_username"
-gh variable set TWITCH_SCOPES --body "openid user:read:moderated_channels channel:bot"
+gh variable set TWITCH_SCOPES --body "openid user:read:moderated_channels moderator:read:chatters channel:bot"
 ```
 
 For the full deploy and GitHub workflow details, use [docs/deployment-workflow.md](/docs/deployment-workflow.md).

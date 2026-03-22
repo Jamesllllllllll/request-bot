@@ -36,6 +36,8 @@ export const Route = createFileRoute("/api/session")({
                     isLive: channel.isLive,
                   })
                 ),
+                needsBroadcasterScopeReconnect:
+                  viewer.needsBroadcasterScopeReconnect,
                 needsModeratorScopeReconnect:
                   viewer.needsModeratorScopeReconnect,
               }

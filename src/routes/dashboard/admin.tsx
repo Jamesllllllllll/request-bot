@@ -13,6 +13,9 @@ type DashboardAdminData = {
   bot?: {
     connected: boolean;
     configuredUsername: string;
+    connectedLogin?: string | null;
+    connectedDisplayName?: string | null;
+    connectedUserId?: string | null;
   };
   channel?: {
     displayName?: string;
@@ -48,6 +51,7 @@ export const Route = createFileRoute("/dashboard/admin")({
 
 function DashboardAdminPage() {
   const [togglingOfflineTesting, setTogglingOfflineTesting] = useState(false);
+  const [updatingBotAuth, setUpdatingBotAuth] = useState(false);
   const [actionMessage, setActionMessage] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const { data, refetch } = useQuery<DashboardAdminData>({
@@ -99,6 +103,49 @@ function DashboardAdminPage() {
     }
   }
 
+  async function requestBotDisconnect() {
+    const response = await fetch("/api/dashboard/admin", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({
+        action: "disconnectBot",
+      }),
+    });
+    const payload = (await response.json().catch(() => null)) as {
+      message?: string;
+    } | null;
+
+    if (!response.ok) {
+      throw new Error(payload?.message ?? "Bot account could not be updated.");
+    }
+
+    return payload;
+  }
+
+  async function reconnectBot() {
+    if (!data?.bot?.connected) {
+      window.location.href = "/auth/twitch/bot/start";
+      return;
+    }
+
+    setUpdatingBotAuth(true);
+    setActionMessage(null);
+    setActionError(null);
+    try {
+      await requestBotDisconnect();
+      window.location.href = "/auth/twitch/bot/start";
+    } catch (error) {
+      setActionError(
+        error instanceof Error
+          ? error.message
+          : "Bot account could not be updated."
+      );
+      setUpdatingBotAuth(false);
+    }
+  }
+
   if (data?.error) {
     return (
       <div className="grid gap-6">
@@ -117,6 +164,16 @@ function DashboardAdminPage() {
     (a, b) => (b.createdAt ?? 0) - (a.createdAt ?? 0)
   );
   const configuredBotUsername = data?.bot?.configuredUsername ?? "bot account";
+  const connectedBotLabel =
+    data?.bot?.connectedDisplayName ??
+    data?.bot?.connectedLogin ??
+    data?.bot?.connectedUserId ??
+    configuredBotUsername;
+  const botUsernameMismatch =
+    !!data?.bot?.connected &&
+    !!data?.bot?.connectedLogin &&
+    data.bot.connectedLogin.toLowerCase() !==
+      configuredBotUsername.toLowerCase();
 
   return (
     <div className="dashboard-admin grid gap-6">
@@ -136,15 +193,36 @@ function DashboardAdminPage() {
                 </a>
               </Button>
             </>
-          ) : undefined
+          ) : (
+            <div className="flex flex-wrap gap-3">
+              <Button
+                type="button"
+                onClick={() => void reconnectBot()}
+                disabled={updatingBotAuth}
+              >
+                {updatingBotAuth ? "Reconnecting..." : "Reconnect bot"}
+              </Button>
+            </div>
+          )
         }
         aside={
-          <AdminStatusCard
-            label="Bot account"
-            value={data?.bot?.connected ? "Connected" : "Needs auth"}
-            detail={data?.bot?.configuredUsername ?? "Bot"}
-            tone={data?.bot?.connected ? "good" : "warn"}
-          />
+          <div className="grid w-full min-w-0 gap-3 md:max-w-sm">
+            <AdminStatusCard
+              label="Bot account"
+              value={data?.bot?.connected ? "Connected" : "Needs auth"}
+              detail={connectedBotLabel}
+              tone={data?.bot?.connected ? "good" : "warn"}
+            />
+            {botUsernameMismatch ? (
+              <div className="rounded-[20px] border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-100 break-words">
+                Connected as{" "}
+                <span className="font-semibold">{connectedBotLabel}</span>.
+                Expected{" "}
+                <span className="font-semibold">{configuredBotUsername}</span>.
+                Reconnect to switch accounts.
+              </div>
+            ) : null}
+          </div>
         }
       />
 
@@ -280,12 +358,12 @@ function AdminStatusCard(props: {
         : "border-(--border) bg-(--panel) text-(--text)";
 
   return (
-    <div className={`rounded-[22px] border px-4 py-3 ${toneClass}`}>
+    <div className={`min-w-0 rounded-[22px] border px-4 py-3 ${toneClass}`}>
       <p className="text-xs font-semibold uppercase tracking-[0.2em]">
         {props.label}
       </p>
       <p className="mt-1 text-base font-semibold capitalize">{props.value}</p>
-      <p className="mt-1 text-sm opacity-80">{props.detail}</p>
+      <p className="mt-1 break-words text-sm opacity-80">{props.detail}</p>
     </div>
   );
 }

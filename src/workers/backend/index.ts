@@ -5,7 +5,6 @@ import {
   createPlayedSong,
   getBotAuthorization,
   getChannelBlacklistByChannelId,
-  updateTwitchAuthorizationTokens,
 } from "~/lib/db/repositories";
 import * as schema from "~/lib/db/schema";
 import {
@@ -41,7 +40,6 @@ import { getSentryD1Database, getSentryOptions } from "~/lib/sentry";
 import {
   getAppAccessToken,
   getTwitchUserByLogin,
-  refreshAccessToken,
   sendChatReply,
 } from "~/lib/twitch/api";
 import { reconcileChannelBotState } from "~/lib/twitch/bot";
@@ -1288,45 +1286,15 @@ async function sendReply(
     return;
   }
 
-  try {
-    await sendChatReply({
-      env,
-      accessToken: botAuth.accessTokenEncrypted,
-      broadcasterUserId: messageBody.broadcasterUserId,
-      senderUserId: botAuth.twitchUserId,
-      message: messageBody.message,
-    });
-  } catch (error) {
-    if (
-      !(error instanceof Error) ||
-      !error.message.includes("401") ||
-      !botAuth.refreshTokenEncrypted
-    ) {
-      throw error;
-    }
-
-    const refreshed = await refreshAccessToken(
-      env as unknown as never,
-      botAuth.refreshTokenEncrypted
-    );
-    await updateTwitchAuthorizationTokens(env as unknown as never, botAuth.id, {
-      accessToken: refreshed.access_token,
-      refreshToken: refreshed.refresh_token ?? botAuth.refreshTokenEncrypted,
-      expiresAt: refreshed.expires_in
-        ? Date.now() + refreshed.expires_in * 1000
-        : null,
-      scopes: refreshed.scope,
-      tokenType: refreshed.token_type,
-    });
-
-    await sendChatReply({
-      env,
-      accessToken: refreshed.access_token,
-      broadcasterUserId: messageBody.broadcasterUserId,
-      senderUserId: botAuth.twitchUserId,
-      message: messageBody.message,
-    });
-  }
+  const appToken = await getAppAccessToken(env as unknown as never);
+  const result = await sendChatReply({
+    env,
+    accessToken: appToken.access_token,
+    broadcasterUserId: messageBody.broadcasterUserId,
+    senderUserId: botAuth.twitchUserId,
+    message: messageBody.message,
+  });
+  return result;
 }
 
 const backendHandler = {
@@ -1442,10 +1410,11 @@ const backendHandler = {
     await assertDatabaseSchemaCurrent(env);
     for (const message of batch.messages) {
       try {
-        await sendReply(env, message.body);
+        const result = await sendReply(env, message.body);
         console.info("Queue reply delivered", {
           channelId: message.body.channelId,
           broadcasterUserId: message.body.broadcasterUserId,
+          messageId: result?.messageId ?? null,
         });
         message.ack();
       } catch (error) {

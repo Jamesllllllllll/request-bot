@@ -40,8 +40,12 @@ TWITCH_EVENTSUB_SECRET=...
 SESSION_SECRET=...
 ADMIN_TWITCH_USER_IDS=your_main_twitch_user_id
 TWITCH_BOT_USERNAME=Pants_Bot_
-TWITCH_SCOPES=openid user:read:moderated_channels channel:bot
+TWITCH_SCOPES=openid user:read:moderated_channels moderator:read:chatters channel:bot
 ```
+
+For local development, `TWITCH_BOT_USERNAME` should usually be your dedicated test bot account. Production should keep its own bot username in deployed env or secrets. The app enforces that the connected bot login matches `TWITCH_BOT_USERNAME`, so changing bot accounts locally requires changing local `.env` first.
+
+`TWITCH_SCOPES` belongs to the broadcaster login flow, not the bot login flow. It should include `channel:bot` so chat replies can use Twitch's bot badge path. If a broadcaster connected before `channel:bot` was present, they need to reconnect Twitch.
 
 2. Make sure your Twitch developer application has both redirect URIs registered:
 
@@ -70,6 +74,26 @@ npm run db:migrate
 
 - Replies are sent with the bot account's user token, not the broadcaster token.
 - If Twitch returns `401` while sending chat, the backend refreshes the bot token once and retries automatically.
+- Testing against the same broadcaster in both production and local/tunnel environments can cause both environments to receive and process the same chat command.
+
+### Local vs production warning
+
+If a streamer or moderator tests bot commands on a channel that is connected in the live app while a local tunnel/dev environment is also connected for that same broadcaster, cross-environment behavior can become confusing.
+
+There are two different cases:
+
+- same broadcaster + same bot account:
+  local and production compete for the same `channel.chat.message` subscription, so one environment can effectively take over chat handling from the other
+- same broadcaster + different bot accounts:
+  Twitch can allow both subscriptions, so both environments can receive commands from that same channel and both may reply
+
+For safe bot testing:
+
+- use a dedicated test broadcaster/channel whenever possible
+- use a dedicated test bot account for local development
+- set local `.env` `TWITCH_BOT_USERNAME` to that test bot account before reconnecting the bot
+- do not sign a production broadcaster into the local environment
+- avoid keeping both production and local EventSub subscriptions active for the same broadcaster
 
 ### Current limits
 

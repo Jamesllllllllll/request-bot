@@ -16,6 +16,26 @@ export interface TwitchUserResponse {
   }>;
 }
 
+export interface TwitchChannelSearchResponse {
+  data: Array<{
+    id: string;
+    broadcaster_login: string;
+    display_name: string;
+    thumbnail_url: string;
+  }>;
+}
+
+export interface TwitchChattersResponse {
+  data: Array<{
+    user_id: string;
+    user_login: string;
+    user_name: string;
+  }>;
+  pagination?: {
+    cursor?: string;
+  };
+}
+
 export interface TwitchModeratedChannelsResponse {
   data: Array<{
     broadcaster_id: string;

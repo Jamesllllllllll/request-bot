@@ -2,21 +2,81 @@ import { env } from "cloudflare:workers";
 import { createFileRoute } from "@tanstack/react-router";
 import { getSessionUserId } from "~/lib/auth/session.server";
 import {
+  getActiveBroadcasterAuthorizationForUser,
   getDashboardState,
+  parseAuthorizationScopes,
   searchCatalogArtistsForBlacklist,
   searchCatalogChartersForBlacklist,
   searchCatalogSongsForBlacklist,
 } from "~/lib/db/repositories";
 import type { AppEnv } from "~/lib/env";
+import {
+  getAppAccessToken,
+  getChatters,
+  searchTwitchChannels,
+} from "~/lib/twitch/api";
 import { json } from "~/lib/utils";
 
-async function requireDashboardAccess(request: Request, runtimeEnv: AppEnv) {
-  const userId = await getSessionUserId(request, runtimeEnv);
-  if (!userId) {
-    return null;
+function normalizeTwitchLogin(query: string) {
+  return query.trim().replace(/^@+/, "").toLowerCase();
+}
+
+type TwitchSearchUser = {
+  id: string;
+  login: string;
+  displayName: string;
+  profileImageUrl?: string;
+  isCurrentChatter?: boolean;
+};
+
+async function searchCurrentChannelChatters(input: {
+  runtimeEnv: AppEnv;
+  accessToken: string;
+  broadcasterUserId: string;
+  moderatorUserId: string;
+  query: string;
+  limit: number;
+}) {
+  const matches: TwitchSearchUser[] = [];
+  let cursor: string | undefined;
+  let pageCount = 0;
+
+  while (matches.length < input.limit && pageCount < 10) {
+    const payload = await getChatters({
+      env: input.runtimeEnv,
+      accessToken: input.accessToken,
+      broadcasterUserId: input.broadcasterUserId,
+      moderatorUserId: input.moderatorUserId,
+      first: 100,
+      after: cursor,
+    });
+
+    for (const chatter of payload.data) {
+      if (!chatter.user_login.startsWith(input.query)) {
+        continue;
+      }
+
+      matches.push({
+        id: chatter.user_id,
+        login: chatter.user_login,
+        displayName: chatter.user_name,
+        isCurrentChatter: true,
+      });
+
+      if (matches.length >= input.limit) {
+        break;
+      }
+    }
+
+    cursor = payload.pagination?.cursor;
+    pageCount += 1;
+
+    if (!cursor) {
+      break;
+    }
   }
 
-  return getDashboardState(runtimeEnv, userId);
+  return matches;
 }
 
 export const Route = createFileRoute("/api/dashboard/moderation/search")({
@@ -24,20 +84,91 @@ export const Route = createFileRoute("/api/dashboard/moderation/search")({
     handlers: {
       GET: async ({ request }) => {
         const runtimeEnv = env as AppEnv;
-        const state = await requireDashboardAccess(request, runtimeEnv);
+        const userId = await getSessionUserId(request, runtimeEnv);
+        if (!userId) {
+          return json({ error: "Unauthorized" }, { status: 401 });
+        }
+
+        const state = await getDashboardState(runtimeEnv, userId);
         if (!state) {
           return json({ error: "Unauthorized" }, { status: 401 });
         }
 
         const url = new URL(request.url);
-        const query = url.searchParams.get("query")?.trim() ?? "";
+        const rawQuery = url.searchParams.get("query") ?? "";
         const type = url.searchParams.get("type");
+        const query =
+          type === "twitch-user"
+            ? normalizeTwitchLogin(rawQuery)
+            : rawQuery.trim();
 
-        if (query.length < 2) {
+        const minimumQueryLength = type === "twitch-user" ? 4 : 2;
+
+        if (query.length < minimumQueryLength) {
           return json({
             artists: [],
             charters: [],
             songs: [],
+            users: [],
+          });
+        }
+
+        if (type === "twitch-user") {
+          let chatterUsers: TwitchSearchUser[] = [];
+          let needsChatterScopeReconnect = false;
+          const broadcasterAuthorization =
+            await getActiveBroadcasterAuthorizationForUser(runtimeEnv, userId);
+          const authorizationScopes = broadcasterAuthorization
+            ? parseAuthorizationScopes(broadcasterAuthorization.scopes)
+            : [];
+
+          if (
+            broadcasterAuthorization &&
+            state.channel?.twitchChannelId &&
+            authorizationScopes.includes("moderator:read:chatters")
+          ) {
+            try {
+              chatterUsers = await searchCurrentChannelChatters({
+                runtimeEnv,
+                accessToken: broadcasterAuthorization.accessTokenEncrypted,
+                broadcasterUserId: state.channel.twitchChannelId,
+                moderatorUserId: broadcasterAuthorization.twitchUserId,
+                query,
+                limit: 8,
+              });
+            } catch (error) {
+              console.error("Failed to search current channel chatters", {
+                channelId: state.channel.id,
+                twitchChannelId: state.channel.twitchChannelId,
+                moderatorTwitchUserId: broadcasterAuthorization.twitchUserId,
+                error: error instanceof Error ? error.message : String(error),
+              });
+            }
+          } else if (broadcasterAuthorization) {
+            needsChatterScopeReconnect = true;
+          }
+
+          const token = await getAppAccessToken(runtimeEnv);
+          const globalUsers = await searchTwitchChannels({
+            env: runtimeEnv,
+            accessToken: token.access_token,
+            query,
+            first: 8,
+          });
+          const users =
+            chatterUsers.length > 0
+              ? chatterUsers
+              : globalUsers.map((user) => ({
+                  id: user.id,
+                  login: user.broadcaster_login,
+                  displayName: user.display_name,
+                  profileImageUrl: user.thumbnail_url,
+                }));
+
+          return json({
+            users,
+            needsChatterScopeReconnect,
+            preferredSource: chatterUsers.length ? "chatters" : "global",
           });
         }
 

@@ -122,13 +122,21 @@ function normalizeLogin(value: string) {
   return value.trim().toLowerCase();
 }
 
-function parseAuthorizationScopes(scopesJson: string) {
+export function parseAuthorizationScopes(scopesJson: string) {
   try {
     const parsed = JSON.parse(scopesJson) as string[];
     return Array.isArray(parsed) ? parsed : [];
   } catch {
     return [];
   }
+}
+
+function hasRequiredAuthorizationScopes(
+  scopesJson: string,
+  requiredScopes: string[]
+) {
+  const scopes = new Set(parseAuthorizationScopes(scopesJson));
+  return requiredScopes.every((scope) => scopes.has(scope));
 }
 
 function uniqueCompact(values: Array<string | null | undefined>) {
@@ -2238,6 +2246,53 @@ export async function revokeVipToken(
   return existing.availableCount - 1;
 }
 
+export async function setVipTokenAvailableCount(
+  env: AppEnv,
+  input: {
+    channelId: string;
+    login: string;
+    count: number;
+  }
+) {
+  const existing = await getVipTokenBalance(env, {
+    channelId: input.channelId,
+    login: input.login,
+  });
+
+  if (!existing) {
+    return null;
+  }
+
+  const nextCount = Math.max(0, input.count);
+  const delta = nextCount - existing.availableCount;
+  const now = Date.now();
+
+  await getDb(env)
+    .update(vipTokens)
+    .set({
+      availableCount: nextCount,
+      grantedCount:
+        delta > 0 ? existing.grantedCount + delta : existing.grantedCount,
+      lastGrantedAt: delta > 0 ? now : existing.lastGrantedAt,
+      updatedAt: now,
+    })
+    .where(
+      and(
+        eq(vipTokens.channelId, input.channelId),
+        eq(vipTokens.normalizedLogin, normalizeLogin(input.login))
+      )
+    );
+
+  return {
+    ...existing,
+    availableCount: nextCount,
+    grantedCount:
+      delta > 0 ? existing.grantedCount + delta : existing.grantedCount,
+    lastGrantedAt: delta > 0 ? now : existing.lastGrantedAt,
+    updatedAt: now,
+  };
+}
+
 export async function isBlockedUser(
   env: AppEnv,
   channelId: string,
@@ -2327,10 +2382,28 @@ export async function getBroadcasterAuthorizationForUser(
   });
 }
 
+export async function getActiveBroadcasterAuthorizationForUser(
+  env: AppEnv,
+  userId: string
+) {
+  const authorization = await getBroadcasterAuthorizationForUser(env, userId);
+  if (!authorization) {
+    return null;
+  }
+
+  return refreshBroadcasterAuthorizationIfNeeded(env, authorization);
+}
+
 export async function getBotAuthorization(env: AppEnv) {
   return getDb(env).query.twitchAuthorizations.findFirst({
     where: eq(twitchAuthorizations.authorizationType, "bot"),
   });
+}
+
+export async function deleteBotAuthorization(env: AppEnv) {
+  await getDb(env)
+    .delete(twitchAuthorizations)
+    .where(eq(twitchAuthorizations.authorizationType, "bot"));
 }
 
 export async function updateTwitchAuthorizationTokens(
@@ -2493,6 +2566,13 @@ export async function getViewerState(env: AppEnv, userId: string) {
     env,
     userId
   );
+  const needsBroadcasterScopeReconnect =
+    !broadcasterAuthorization ||
+    !hasRequiredAuthorizationScopes(broadcasterAuthorization.scopes, [
+      "user:read:moderated_channels",
+      "moderator:read:chatters",
+      "channel:bot",
+    ]);
   const moderatedChannelsState = broadcasterAuthorization
     ? await getModeratedChannelViewerState(env, broadcasterAuthorization)
     : {
@@ -2507,6 +2587,7 @@ export async function getViewerState(env: AppEnv, userId: string) {
     botConnected: !!botAuthorization,
     botLogin: botAuthorization?.twitchUserId ?? null,
     manageableChannels: moderatedChannelsState.manageableChannels,
+    needsBroadcasterScopeReconnect,
     needsModeratorScopeReconnect:
       moderatedChannelsState.needsModeratorScopeReconnect,
   };

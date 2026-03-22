@@ -3,6 +3,8 @@ import type {
   EventSubChatMessageEvent,
   EventSubStreamOfflineEvent,
   EventSubStreamOnlineEvent,
+  TwitchChannelSearchResponse,
+  TwitchChattersResponse,
   TwitchEventSubCreateResponse,
   TwitchEventSubListResponse,
   TwitchModeratedChannelsResponse,
@@ -13,6 +15,7 @@ import type {
 
 const twitchBaseUrl = "https://api.twitch.tv/helix";
 const oauthBaseUrl = "https://id.twitch.tv/oauth2";
+const retryableTwitchStatuses = new Set([429, 500, 502, 503, 504]);
 
 type TwitchClientEnv = Pick<AppEnv, "TWITCH_CLIENT_ID">;
 
@@ -33,6 +36,78 @@ function authHeaders(env: TwitchClientEnv, accessToken: string) {
     "Client-Id": env.TWITCH_CLIENT_ID,
     "Content-Type": "application/json",
   };
+}
+
+function sleep(ms: number) {
+  return new Promise((resolve) => {
+    setTimeout(resolve, ms);
+  });
+}
+
+function parseRetryAfterMs(value: string | null) {
+  if (!value) {
+    return null;
+  }
+
+  const seconds = Number.parseFloat(value);
+  if (Number.isFinite(seconds)) {
+    return Math.max(0, Math.round(seconds * 1000));
+  }
+
+  const timestamp = Date.parse(value);
+  if (Number.isNaN(timestamp)) {
+    return null;
+  }
+
+  return Math.max(0, timestamp - Date.now());
+}
+
+async function fetchWithRetry(input: {
+  url: string | URL;
+  init?: RequestInit;
+  maxRetries?: number;
+  baseDelayMs?: number;
+}) {
+  const maxRetries = input.maxRetries ?? 3;
+  const baseDelayMs = input.baseDelayMs ?? 500;
+  let lastResponse: Response | null = null;
+  let lastError: unknown = null;
+
+  for (let attempt = 0; attempt <= maxRetries; attempt += 1) {
+    try {
+      const response = await fetch(input.url, input.init);
+      lastResponse = response;
+
+      if (
+        response.ok ||
+        !retryableTwitchStatuses.has(response.status) ||
+        attempt === maxRetries
+      ) {
+        return response;
+      }
+
+      const retryAfterMs =
+        parseRetryAfterMs(response.headers.get("retry-after")) ??
+        baseDelayMs * 2 ** attempt;
+      await sleep(retryAfterMs);
+    } catch (error) {
+      lastError = error;
+
+      if (attempt === maxRetries) {
+        break;
+      }
+
+      await sleep(baseDelayMs * 2 ** attempt);
+    }
+  }
+
+  if (lastResponse) {
+    return lastResponse;
+  }
+
+  throw lastError instanceof Error
+    ? lastError
+    : new Error("Twitch request failed");
 }
 
 export async function exchangeCodeForToken(
@@ -91,8 +166,11 @@ export async function getTwitchUserByLogin(input: {
   const url = new URL(`${twitchBaseUrl}/users`);
   url.searchParams.set("login", input.login);
 
-  const response = await fetch(url, {
-    headers: authHeaders(input.env, input.accessToken),
+  const response = await fetchWithRetry({
+    url,
+    init: {
+      headers: authHeaders(input.env, input.accessToken),
+    },
   });
 
   if (!response.ok) {
@@ -108,17 +186,113 @@ export async function getTwitchUserByLogin(input: {
   return payload.data[0] ?? null;
 }
 
-export async function getAppAccessToken(env: AppEnv) {
-  const response = await fetch(`${oauthBaseUrl}/token`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/x-www-form-urlencoded",
+export async function getTwitchUserById(input: {
+  env: AppEnv;
+  accessToken: string;
+  id: string;
+}) {
+  const url = new URL(`${twitchBaseUrl}/users`);
+  url.searchParams.set("id", input.id);
+
+  const response = await fetchWithRetry({
+    url,
+    init: {
+      headers: authHeaders(input.env, input.accessToken),
     },
-    body: new URLSearchParams({
-      client_id: env.TWITCH_CLIENT_ID,
-      client_secret: env.TWITCH_CLIENT_SECRET,
-      grant_type: "client_credentials",
-    }),
+  });
+
+  if (!response.ok) {
+    const errorBody = await response.text().catch(() => "");
+    throw new TwitchApiError(
+      `Failed to fetch Twitch user by id: ${response.status}`,
+      response.status,
+      errorBody
+    );
+  }
+
+  const payload = (await response.json()) as TwitchUserResponse;
+  return payload.data[0] ?? null;
+}
+
+export async function searchTwitchChannels(input: {
+  env: AppEnv;
+  accessToken: string;
+  query: string;
+  first?: number;
+}) {
+  const url = new URL(`${twitchBaseUrl}/search/channels`);
+  url.searchParams.set("query", input.query);
+  url.searchParams.set("first", String(Math.min(input.first ?? 8, 100)));
+
+  const response = await fetchWithRetry({
+    url,
+    init: {
+      headers: authHeaders(input.env, input.accessToken),
+    },
+  });
+
+  if (!response.ok) {
+    const errorBody = await response.text().catch(() => "");
+    throw new TwitchApiError(
+      `Failed to search Twitch channels: ${response.status}`,
+      response.status,
+      errorBody
+    );
+  }
+
+  const payload = (await response.json()) as TwitchChannelSearchResponse;
+  return payload.data;
+}
+
+export async function getChatters(input: {
+  env: AppEnv;
+  accessToken: string;
+  broadcasterUserId: string;
+  moderatorUserId: string;
+  first?: number;
+  after?: string;
+}) {
+  const url = new URL(`${twitchBaseUrl}/chat/chatters`);
+  url.searchParams.set("broadcaster_id", input.broadcasterUserId);
+  url.searchParams.set("moderator_id", input.moderatorUserId);
+  url.searchParams.set("first", String(Math.min(input.first ?? 100, 1000)));
+  if (input.after) {
+    url.searchParams.set("after", input.after);
+  }
+
+  const response = await fetchWithRetry({
+    url,
+    init: {
+      headers: authHeaders(input.env, input.accessToken),
+    },
+  });
+
+  if (!response.ok) {
+    const errorBody = await response.text().catch(() => "");
+    throw new TwitchApiError(
+      `Failed to fetch Twitch chatters: ${response.status}`,
+      response.status,
+      errorBody
+    );
+  }
+
+  return (await response.json()) as TwitchChattersResponse;
+}
+
+export async function getAppAccessToken(env: AppEnv) {
+  const response = await fetchWithRetry({
+    url: `${oauthBaseUrl}/token`,
+    init: {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/x-www-form-urlencoded",
+      },
+      body: new URLSearchParams({
+        client_id: env.TWITCH_CLIENT_ID,
+        client_secret: env.TWITCH_CLIENT_SECRET,
+        grant_type: "client_credentials",
+      }),
+    },
   });
 
   if (!response.ok) {
@@ -132,17 +306,20 @@ export async function getAppAccessToken(env: AppEnv) {
 }
 
 export async function refreshAccessToken(env: AppEnv, refreshToken: string) {
-  const response = await fetch(`${oauthBaseUrl}/token`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/x-www-form-urlencoded",
+  const response = await fetchWithRetry({
+    url: `${oauthBaseUrl}/token`,
+    init: {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/x-www-form-urlencoded",
+      },
+      body: new URLSearchParams({
+        client_id: env.TWITCH_CLIENT_ID,
+        client_secret: env.TWITCH_CLIENT_SECRET,
+        grant_type: "refresh_token",
+        refresh_token: refreshToken,
+      }),
     },
-    body: new URLSearchParams({
-      client_id: env.TWITCH_CLIENT_ID,
-      client_secret: env.TWITCH_CLIENT_SECRET,
-      grant_type: "refresh_token",
-      refresh_token: refreshToken,
-    }),
   });
 
   if (!response.ok) {
@@ -353,14 +530,19 @@ export async function sendChatReply(input: {
   senderUserId: string;
   message: string;
 }) {
-  const response = await fetch(`${twitchBaseUrl}/chat/messages`, {
-    method: "POST",
-    headers: authHeaders(input.env, input.accessToken),
-    body: JSON.stringify({
-      broadcaster_id: input.broadcasterUserId,
-      sender_id: input.senderUserId,
-      message: input.message,
-    }),
+  const response = await fetchWithRetry({
+    url: `${twitchBaseUrl}/chat/messages`,
+    init: {
+      method: "POST",
+      headers: authHeaders(input.env, input.accessToken),
+      body: JSON.stringify({
+        broadcaster_id: input.broadcasterUserId,
+        sender_id: input.senderUserId,
+        message: input.message,
+      }),
+    },
+    maxRetries: 4,
+    baseDelayMs: 750,
   });
 
   if (!response.ok) {
@@ -370,7 +552,29 @@ export async function sendChatReply(input: {
     );
   }
 
-  return response.json();
+  const payload = (await response.json()) as {
+    data?: Array<{
+      message_id?: string;
+      is_sent?: boolean;
+      drop_reason?: {
+        code?: string;
+        message?: string;
+      } | null;
+    }>;
+  };
+  const result = payload.data?.[0];
+
+  if (!result?.is_sent) {
+    const dropCode = result?.drop_reason?.code;
+    const dropMessage = result?.drop_reason?.message;
+    throw new Error(
+      `Chat reply accepted by Twitch API but not sent${dropCode || dropMessage ? `: ${dropCode ?? "unknown"}${dropMessage ? ` ${dropMessage}` : ""}` : "."}`
+    );
+  }
+
+  return {
+    messageId: result.message_id ?? null,
+  };
 }
 
 export function isChatMessageEvent(

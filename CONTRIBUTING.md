@@ -9,10 +9,17 @@
 ```bash
 npm install
 npm run db:bootstrap:local
-npm run lint
 npm run typecheck
 npm run test
+npm run format
+npm run lint
 npm run build
+```
+
+If you changed user-facing flows or browser interactions, also run:
+
+```bash
+npm run test:e2e
 ```
 
 4. Open a pull request.
@@ -42,6 +49,7 @@ The app checks the latest applied migration at runtime and fails early if the lo
 
 - Keep changes focused.
 - Include tests when you change behavior.
+- Run `npm run format` before `npm run lint`. This repo has been seeing avoidable AI-generated formatting drift, and Biome lint is much cleaner after formatting first.
 - If a change affects Twitch auth, EventSub, playlist mutations, or migrations, call that out in the PR description.
 - If a change affects deployment or Cloudflare bindings, update the docs in the same PR.
 

@@ -40,6 +40,13 @@ describe("parseChatCommand", () => {
       query: "viewer_one",
     });
   });
+
+  it("parses addvip commands with quoted usernames", () => {
+    expect(parseChatCommand('!addvip "@Viewer_One"')).toEqual({
+      command: "addvip",
+      query: "viewer_one",
+    });
+  });
 });
 
 describe("normalizeChatEvent", () => {

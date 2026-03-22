@@ -126,10 +126,17 @@ export const moderationActionSchema = z.discriminatedUnion("action", [
   z.object({
     action: z.literal("addVipToken"),
     login: z.string().trim().min(1).max(50),
+    displayName: z.string().trim().min(1).max(100).optional(),
+    twitchUserId: z.string().trim().min(1).max(50).optional(),
   }),
   z.object({
     action: z.literal("removeVipToken"),
     login: z.string().trim().min(1).max(50),
+  }),
+  z.object({
+    action: z.literal("setVipTokenCount"),
+    login: z.string().trim().min(1).max(50),
+    count: z.number().int().min(0).max(999),
   }),
 ]);
 

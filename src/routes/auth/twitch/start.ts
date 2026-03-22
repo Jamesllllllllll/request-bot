@@ -4,6 +4,22 @@ import { createFileRoute } from "@tanstack/react-router";
 import { createOauthStateCookie } from "~/lib/auth/session.server";
 import type { AppEnv } from "~/lib/env";
 
+const requiredBroadcasterScopes = [
+  "openid",
+  "user:read:moderated_channels",
+  "moderator:read:chatters",
+  "channel:bot",
+] as const;
+
+function getBroadcasterScopes(env: AppEnv) {
+  return [
+    ...new Set([
+      ...env.TWITCH_SCOPES.split(/\s+/).filter(Boolean),
+      ...requiredBroadcasterScopes,
+    ]),
+  ].join(" ");
+}
+
 export const Route = createFileRoute("/auth/twitch/start")({
   server: {
     handlers: {
@@ -20,7 +36,7 @@ export const Route = createFileRoute("/auth/twitch/start")({
           `${runtimeEnv.APP_URL}/auth/twitch/callback`
         );
         url.searchParams.set("response_type", "code");
-        url.searchParams.set("scope", runtimeEnv.TWITCH_SCOPES);
+        url.searchParams.set("scope", getBroadcasterScopes(runtimeEnv));
         url.searchParams.set(
           "state",
           `${state}:${encodeURIComponent(redirectTo)}`

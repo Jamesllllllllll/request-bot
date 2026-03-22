@@ -5,11 +5,14 @@ import { getSessionUserId } from "~/lib/auth/session.server";
 import { callBackend } from "~/lib/backend";
 import {
   createAuditLog,
+  deleteBotAuthorization,
   getAdminDashboardState,
   getBotAuthorization,
   updateAdminBotOfflineTesting,
 } from "~/lib/db/repositories";
 import type { AppEnv } from "~/lib/env";
+import { getAppAccessToken, getTwitchUserById } from "~/lib/twitch/api";
+import { disconnectBotAuthFromReplies } from "~/lib/twitch/bot";
 import { json } from "~/lib/utils";
 
 async function requireAdminDashboardState(
@@ -35,6 +38,29 @@ export const Route = createFileRoute("/api/dashboard/admin")({
         }
 
         const botAuthorization = await getBotAuthorization(runtimeEnv);
+        let connectedLogin: string | null = null;
+        let connectedDisplayName: string | null = null;
+        const connectedUserId: string | null =
+          botAuthorization?.twitchUserId ?? null;
+
+        if (botAuthorization?.twitchUserId) {
+          try {
+            const appToken = await getAppAccessToken(runtimeEnv);
+            const connectedUser = await getTwitchUserById({
+              env: runtimeEnv,
+              accessToken: appToken.access_token,
+              id: botAuthorization.twitchUserId,
+            });
+            connectedLogin = connectedUser?.login ?? null;
+            connectedDisplayName = connectedUser?.display_name ?? null;
+          } catch (error) {
+            console.error("Failed to resolve connected bot identity", {
+              twitchUserId: botAuthorization.twitchUserId,
+              error: error instanceof Error ? error.message : "Unknown error",
+            });
+          }
+        }
+
         return json({
           channel: state.channel,
           settings: state.settings
@@ -48,6 +74,9 @@ export const Route = createFileRoute("/api/dashboard/admin")({
           bot: {
             connected: !!botAuthorization,
             configuredUsername: runtimeEnv.TWITCH_BOT_USERNAME,
+            connectedLogin,
+            connectedDisplayName,
+            connectedUserId,
           },
         });
       },
@@ -62,15 +91,47 @@ export const Route = createFileRoute("/api/dashboard/admin")({
         }
 
         const payload = (await request.json().catch(() => null)) as {
-          action?: "setOfflineTesting";
+          action?: "setOfflineTesting" | "disconnectBot";
           enabled?: boolean;
         } | null;
 
-        if (payload?.action !== "setOfflineTesting") {
+        if (
+          payload?.action !== "setOfflineTesting" &&
+          payload?.action !== "disconnectBot"
+        ) {
           return json(
             { error: "invalid_action", message: "Invalid admin action." },
             { status: 400 }
           );
+        }
+
+        if (payload.action === "disconnectBot") {
+          const botAuthorization = await getBotAuthorization(runtimeEnv);
+          if (!botAuthorization) {
+            return json({
+              ok: true,
+              message: "Bot account is already disconnected.",
+            });
+          }
+
+          await disconnectBotAuthFromReplies(runtimeEnv);
+          await deleteBotAuthorization(runtimeEnv);
+          await createAuditLog(runtimeEnv, {
+            channelId: state.channel.id,
+            actorUserId: state.channel.ownerUserId,
+            actorType: "admin",
+            action: "disconnect_bot_account",
+            entityType: "twitch_authorization",
+            entityId: botAuthorization.id,
+            payloadJson: JSON.stringify({
+              twitchUserId: botAuthorization.twitchUserId,
+            }),
+          });
+
+          return json({
+            ok: true,
+            message: "Bot account disconnected.",
+          });
         }
 
         const enabled = !!payload.enabled;

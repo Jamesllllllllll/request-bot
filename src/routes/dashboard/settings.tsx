@@ -220,6 +220,18 @@ function DashboardSettingsPage() {
       {saveMessage ? <Banner tone="success">{saveMessage}</Banner> : null}
       {saveWarning ? <Banner tone="warning">{saveWarning}</Banner> : null}
       {saveError ? <Banner tone="danger">{saveError}</Banner> : null}
+      {status === "broadcaster_auth_required" ? (
+        <div className="rounded-[24px] border border-amber-500/30 bg-amber-500/10 p-4 text-sm text-amber-200">
+          Twitch permissions need to be refreshed before the bot can run.{" "}
+          <a
+            href="/auth/twitch/start?redirectTo=%2Fdashboard%2Fsettings"
+            className="font-semibold underline"
+          >
+            Reconnect Twitch
+          </a>
+          .
+        </div>
+      ) : null}
 
       <Card className="dashboard-settings__section">
         <CardHeader>

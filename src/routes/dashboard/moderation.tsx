@@ -1,6 +1,7 @@
 // Route: Renders moderation controls and command reference for the active channel.
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
+import { Check, Minus, Plus } from "lucide-react";
 import { useEffect, useState } from "react";
 import { DashboardPageHeader } from "~/components/dashboard-page-header";
 import { Badge } from "~/components/ui/badge";
@@ -52,6 +53,20 @@ type SongMatch = {
   artistName?: string | null;
 };
 
+type TwitchUserMatch = {
+  id: string;
+  login: string;
+  displayName: string;
+  profileImageUrl?: string;
+  isCurrentChatter?: boolean;
+};
+
+type TwitchUserSearchResponse = {
+  users: TwitchUserMatch[];
+  needsChatterScopeReconnect?: boolean;
+  preferredSource?: "chatters" | "global";
+};
+
 type ModerationData = {
   settings: {
     blacklistEnabled: boolean;
@@ -74,8 +89,6 @@ type ModerationData = {
     login: string;
     displayName?: string;
     availableCount: number;
-    grantedCount: number;
-    consumedCount: number;
   }>;
 };
 
@@ -98,6 +111,9 @@ function DashboardModerationPage() {
   const [debouncedSetlistArtistQuery, setDebouncedSetlistArtistQuery] =
     useState("");
   const [vipLogin, setVipLogin] = useState("");
+  const [debouncedVipLogin, setDebouncedVipLogin] = useState("");
+  const [selectedVipUser, setSelectedVipUser] =
+    useState<TwitchUserMatch | null>(null);
 
   useEffect(() => {
     const timeout = window.setTimeout(() => {
@@ -105,12 +121,13 @@ function DashboardModerationPage() {
       setDebouncedCharterQuery(charterQuery.trim());
       setDebouncedSongQuery(songQuery.trim());
       setDebouncedSetlistArtistQuery(setlistArtistQuery.trim());
+      setDebouncedVipLogin(vipLogin.trim());
     }, 400);
 
     return () => {
       window.clearTimeout(timeout);
     };
-  }, [artistQuery, charterQuery, setlistArtistQuery, songQuery]);
+  }, [artistQuery, charterQuery, setlistArtistQuery, songQuery, vipLogin]);
 
   const { data } = useQuery({
     queryKey: ["dashboard-moderation"],
@@ -175,6 +192,19 @@ function DashboardModerationPage() {
     enabled: debouncedSetlistArtistQuery.length >= 2,
   });
 
+  const vipLookupQuery = useQuery({
+    queryKey: ["dashboard-moderation-vip-user-search", debouncedVipLogin],
+    queryFn: async () => {
+      const response = await fetch(
+        `/api/dashboard/moderation/search?type=twitch-user&query=${encodeURIComponent(
+          debouncedVipLogin
+        )}`
+      );
+      return response.json() as Promise<TwitchUserSearchResponse>;
+    },
+    enabled: debouncedVipLogin.replace(/^@+/, "").length >= 4,
+  });
+
   const mutation = useMutation({
     mutationFn: async (body: Record<string, unknown>) => {
       const response = await fetch("/api/dashboard/moderation", {
@@ -197,6 +227,28 @@ function DashboardModerationPage() {
       });
     },
   });
+
+  async function saveVipTokenCount(input: { login: string; count: number }) {
+    const response = await fetch("/api/dashboard/moderation", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({
+        action: "setVipTokenCount",
+        login: input.login,
+        count: input.count,
+      }),
+    });
+
+    if (!response.ok) {
+      throw new Error(await response.text());
+    }
+
+    await queryClient.invalidateQueries({
+      queryKey: ["dashboard-moderation"],
+    });
+  }
 
   const blacklistedArtistIds = new Set(
     (data?.blacklistArtists ?? []).map((item) => item.artistId)
@@ -223,6 +275,16 @@ function DashboardModerationPage() {
     setlistArtistSearchQuery.data?.artists ?? []
   ).filter((artist) => !setlistArtistIds.has(artist.artistId));
   const blacklistEnabled = data?.settings.blacklistEnabled ?? false;
+  const vipLookupTooShort =
+    vipLogin.trim().replace(/^@+/, "").length > 0 &&
+    vipLogin.trim().replace(/^@+/, "").length < 4;
+  const vipMatches = vipLookupQuery.data?.users ?? [];
+  const normalizedVipLogin = vipLogin.trim().replace(/^@+/, "").toLowerCase();
+  const hasSelectedVipUser =
+    !!selectedVipUser && selectedVipUser.login === normalizedVipLogin;
+  const needsChatterScopeReconnect =
+    !!vipLookupQuery.data?.needsChatterScopeReconnect;
+  const vipPreferredSource = vipLookupQuery.data?.preferredSource ?? "global";
 
   return (
     <div className="dashboard-moderation grid gap-6">
@@ -715,55 +777,263 @@ function DashboardModerationPage() {
           <div className="dashboard-moderation__form-row flex gap-3">
             <Input
               value={vipLogin}
-              onChange={(event) => setVipLogin(event.target.value)}
+              onChange={(event) => {
+                setVipLogin(event.target.value);
+                setSelectedVipUser(null);
+              }}
               placeholder="Add VIP token to username"
             />
             <Button
               onClick={() => {
-                mutation.mutate({ action: "addVipToken", login: vipLogin });
+                if (!selectedVipUser) {
+                  return;
+                }
+
+                mutation.mutate({
+                  action: "addVipToken",
+                  login: selectedVipUser.login,
+                  displayName: selectedVipUser.displayName,
+                  twitchUserId: selectedVipUser.id,
+                });
                 setVipLogin("");
+                setSelectedVipUser(null);
               }}
-              disabled={mutation.isPending || !vipLogin.trim()}
+              disabled={mutation.isPending || !hasSelectedVipUser}
             >
               Grant token
             </Button>
           </div>
-          <div className="grid gap-3 md:grid-cols-2">
-            {data?.vipTokens?.length ? (
-              data.vipTokens.map((token) => (
-                <div
-                  key={token.login}
-                  className="dashboard-moderation__entry flex items-center justify-between gap-4 rounded-2xl border border-(--border) bg-(--panel-soft) px-4 py-3"
-                >
-                  <div>
-                    <p className="font-medium">
-                      {token.displayName ?? token.login}
+          {vipLookupTooShort ? (
+            <p className="text-sm text-(--muted)">
+              Type at least 4 characters to search Twitch usernames.
+            </p>
+          ) : null}
+          {needsChatterScopeReconnect ? (
+            <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-amber-500/30 bg-amber-500/10 px-4 py-3">
+              <p className="text-sm text-amber-100">
+                Reconnect Twitch to prioritize viewers currently in chat.
+              </p>
+              <Button asChild size="sm" variant="outline">
+                <a href="/auth/twitch/start?redirectTo=%2Fdashboard%2Fmoderation">
+                  Reconnect Twitch
+                </a>
+              </Button>
+            </div>
+          ) : null}
+          {!vipLookupTooShort &&
+          debouncedVipLogin.replace(/^@+/, "").length >= 4 ? (
+            <div className="rounded-2xl border border-(--border) bg-(--panel-soft) px-4 py-3">
+              {vipLookupQuery.isFetching ? (
+                <p className="text-sm text-(--muted)">
+                  Searching Twitch usernames…
+                </p>
+              ) : vipMatches.length ? (
+                <div className="grid gap-2">
+                  <div className="flex items-center justify-between gap-3">
+                    <p className="text-xs uppercase tracking-[0.16em] text-(--muted)">
+                      {vipPreferredSource === "chatters"
+                        ? "Current chatters first"
+                        : "Twitch matches"}
                     </p>
-                    <p className="text-sm text-(--muted)">
-                      Available: {token.availableCount} · Granted:{" "}
-                      {token.grantedCount} · Consumed: {token.consumedCount}
-                    </p>
+                    <Badge variant="outline">
+                      {vipMatches.length} result
+                      {vipMatches.length === 1 ? "" : "s"}
+                    </Badge>
                   </div>
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={() =>
-                      mutation.mutate({
-                        action: "removeVipToken",
-                        login: token.login,
-                      })
-                    }
-                  >
-                    Remove one
-                  </Button>
+                  {vipMatches.map((user) => {
+                    const isSelected = selectedVipUser?.id === user.id;
+
+                    return (
+                      <button
+                        key={user.id}
+                        type="button"
+                        className={`flex items-center justify-between gap-4 rounded-xl border px-3 py-2 text-left transition hover:border-(--brand) disabled:cursor-default ${
+                          user.isCurrentChatter
+                            ? "border-emerald-500/40 bg-emerald-500/10"
+                            : "border-(--border) bg-background"
+                        }`}
+                        onClick={() => {
+                          setVipLogin(user.login);
+                          setSelectedVipUser(user);
+                        }}
+                      >
+                        <div className="min-w-0">
+                          <p className="truncate font-medium text-(--text)">
+                            {user.displayName}
+                          </p>
+                          <p className="truncate text-sm text-(--muted)">
+                            @{user.login} · Twitch ID {user.id}
+                          </p>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          {user.isCurrentChatter ? (
+                            <Badge className="border-emerald-500/40 bg-emerald-500/15 text-emerald-200">
+                              In chat
+                            </Badge>
+                          ) : null}
+                          {isSelected ? (
+                            <Badge variant="outline">Selected</Badge>
+                          ) : null}
+                        </div>
+                      </button>
+                    );
+                  })}
                 </div>
-              ))
+              ) : (
+                <p className="text-sm text-(--muted)">
+                  No matching Twitch usernames.
+                </p>
+              )}
+            </div>
+          ) : null}
+          <div className="overflow-hidden rounded-2xl border border-(--border) bg-(--panel-soft)">
+            {data?.vipTokens?.length ? (
+              <table className="w-full border-collapse text-sm">
+                <thead>
+                  <tr className="border-b border-(--border) bg-(--panel)">
+                    <th className="px-4 py-3 text-left font-semibold text-(--muted)">
+                      Username
+                    </th>
+                    <th className="px-4 py-3 text-left font-semibold text-(--muted)">
+                      Tokens
+                    </th>
+                    <th className="w-12 px-4 py-3" />
+                  </tr>
+                </thead>
+                <tbody>
+                  {data.vipTokens.map((token) => (
+                    <VipTokenRow
+                      key={token.login}
+                      token={token}
+                      onSave={saveVipTokenCount}
+                    />
+                  ))}
+                </tbody>
+              </table>
             ) : (
-              <p className="text-sm text-(--muted)">No VIP tokens yet.</p>
+              <p className="px-4 py-3 text-sm text-(--muted)">
+                No VIP tokens yet.
+              </p>
             )}
           </div>
         </CardContent>
       </Card>
     </div>
+  );
+}
+
+type VipTokenRowProps = {
+  token: ModerationData["vipTokens"][number];
+  onSave(input: { login: string; count: number }): Promise<void>;
+};
+
+function VipTokenRow(props: VipTokenRowProps) {
+  const [draftCount, setDraftCount] = useState(
+    String(props.token.availableCount)
+  );
+  const [saveState, setSaveState] = useState<
+    "idle" | "queued" | "saving" | "saved" | "error"
+  >("idle");
+  const controlsLocked = saveState === "queued" || saveState === "saving";
+
+  useEffect(() => {
+    setDraftCount(String(props.token.availableCount));
+  }, [props.token.availableCount]);
+
+  useEffect(() => {
+    const parsed = Number.parseInt(draftCount, 10);
+    if (!Number.isFinite(parsed) || parsed < 0) {
+      return;
+    }
+
+    if (parsed === props.token.availableCount) {
+      setSaveState((current) =>
+        current === "queued" || current === "saving" ? current : "idle"
+      );
+      return;
+    }
+
+    setSaveState("queued");
+    const timeout = window.setTimeout(async () => {
+      try {
+        setSaveState("saving");
+        await props.onSave({
+          login: props.token.login,
+          count: parsed,
+        });
+        setSaveState("saved");
+        window.setTimeout(() => {
+          setSaveState((current) => (current === "saved" ? "idle" : current));
+        }, 1200);
+      } catch {
+        setSaveState("error");
+      }
+    }, 500);
+
+    return () => {
+      window.clearTimeout(timeout);
+    };
+  }, [draftCount, props.onSave, props.token.availableCount, props.token.login]);
+
+  return (
+    <tr className="border-b border-(--border) last:border-b-0">
+      <td className="px-4 py-3 font-medium text-(--text)">
+        @{props.token.login}
+      </td>
+      <td className="px-4 py-3">
+        <div className="flex max-w-[200px] items-center gap-2">
+          <button
+            type="button"
+            className="rounded-full border border-(--border) p-2 text-(--muted) transition hover:border-(--brand) hover:text-(--text) disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:border-(--border) disabled:hover:text-(--muted)"
+            onClick={() =>
+              setDraftCount((current) =>
+                String(Math.max(0, Number.parseInt(current || "0", 10) - 1))
+              )
+            }
+            disabled={controlsLocked}
+          >
+            <Minus className="h-4 w-4" />
+          </button>
+          <Input
+            value={draftCount}
+            inputMode="numeric"
+            pattern="[0-9]*"
+            className="h-10 rounded-xl bg-background px-3 py-2 text-center"
+            disabled={controlsLocked}
+            onChange={(event) => {
+              const next = event.target.value.replace(/\D+/g, "");
+              setDraftCount(
+                next === "" ? "" : String(Number.parseInt(next, 10))
+              );
+            }}
+            onBlur={() => {
+              if (draftCount.trim() === "") {
+                setDraftCount(String(props.token.availableCount));
+                setSaveState("idle");
+              }
+            }}
+          />
+          <button
+            type="button"
+            className="rounded-full border border-(--border) p-2 text-(--muted) transition hover:border-(--brand) hover:text-(--text) disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:border-(--border) disabled:hover:text-(--muted)"
+            onClick={() =>
+              setDraftCount((current) =>
+                String(Math.max(0, Number.parseInt(current || "0", 10) + 1))
+              )
+            }
+            disabled={controlsLocked}
+          >
+            <Plus className="h-4 w-4" />
+          </button>
+        </div>
+      </td>
+      <td className="px-4 py-3 text-right">
+        {saveState === "saved" ? (
+          <span className="inline-flex items-center text-emerald-300">
+            <Check className="h-4 w-4" />
+          </span>
+        ) : null}
+      </td>
+    </tr>
   );
 }

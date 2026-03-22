@@ -10,7 +10,13 @@ import {
   useRouterState,
 } from "@tanstack/react-router";
 import { TanStackRouterDevtools } from "@tanstack/react-router-devtools";
-import { Headphones, LogOut, Radio, SlidersHorizontal } from "lucide-react";
+import {
+  AlertTriangle,
+  Headphones,
+  LogOut,
+  Radio,
+  SlidersHorizontal,
+} from "lucide-react";
 import { Button } from "~/components/ui/button";
 import "~/app.css";
 import type { AppRouterContext } from "~/router";
@@ -68,6 +74,7 @@ function AppShell() {
             login: string;
             isLive: boolean;
           }>;
+          needsBroadcasterScopeReconnect?: boolean;
           needsModeratorScopeReconnect?: boolean;
         };
       }>;
@@ -76,6 +83,10 @@ function AppShell() {
 
   const viewer = data?.viewer ?? null;
   const isOverlayRoute = pathname.includes("/stream-playlist/");
+  const reconnectHref = `/auth/twitch/start?redirectTo=${encodeURIComponent(pathname)}`;
+  const needsTwitchReconnect =
+    !!viewer?.needsBroadcasterScopeReconnect ||
+    !!viewer?.needsModeratorScopeReconnect;
 
   if (isOverlayRoute) {
     return <Outlet />;
@@ -187,6 +198,23 @@ function AppShell() {
             )}
           </div>
         </div>
+        {viewer && needsTwitchReconnect ? (
+          <div className="border-t border-(--border) px-4 py-4 md:px-6">
+            <div className="flex flex-wrap items-center justify-between gap-3 rounded-[24px] border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-100">
+              <div className="flex min-w-0 items-start gap-3">
+                <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+                <p className="min-w-0">
+                  Twitch permissions need to be refreshed for this account.
+                </p>
+              </div>
+              <Button asChild size="sm" className="shrink-0">
+                <a href={reconnectHref} className="no-underline">
+                  Reconnect Twitch
+                </a>
+              </Button>
+            </div>
+          </div>
+        ) : null}
       </header>
       <main className="app-shell__main flex-1">
         <Outlet />

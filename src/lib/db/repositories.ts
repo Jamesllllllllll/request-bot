@@ -15,6 +15,12 @@ import {
   parseJsonStringArray,
   slugify,
 } from "~/lib/utils";
+import {
+  clampVipTokenCount,
+  hasRedeemableVipToken,
+  normalizeVipTokenCount,
+  subtractVipTokenRedemption,
+} from "~/lib/vip-tokens";
 import { getDb } from "./client";
 import {
   type AuditLogInsert,
@@ -30,7 +36,9 @@ import {
   catalogSongs,
   channelSettings,
   channels,
+  type EventSubDeliveryInsert,
   type EventSubSubscriptionInsert,
+  eventSubDeliveries,
   eventSubSubscriptions,
   type PlayedSongInsert,
   playedSongs,
@@ -449,6 +457,15 @@ export async function getChannelByLogin(env: AppEnv, login: string) {
 export async function getChannelById(env: AppEnv, channelId: string) {
   return getDb(env).query.channels.findFirst({
     where: eq(channels.id, channelId),
+  });
+}
+
+export async function getChannelByTwitchChannelId(
+  env: AppEnv,
+  twitchChannelId: string
+) {
+  return getDb(env).query.channels.findFirst({
+    where: eq(channels.twitchChannelId, twitchChannelId),
   });
 }
 
@@ -1872,6 +1889,11 @@ export async function updateSettings(
     setlistEnabled: boolean;
     subscribersMustFollowSetlist: boolean;
     autoGrantVipTokenToSubscribers: boolean;
+    autoGrantVipTokensToSubGifters: boolean;
+    autoGrantVipTokensToGiftRecipients: boolean;
+    autoGrantVipTokensForCheers: boolean;
+    cheerBitsPerVipToken: number;
+    cheerMinimumTokenPercent: 25 | 50 | 75 | 100;
     duplicateWindowSeconds: number;
     commandPrefix: string;
   }
@@ -1909,6 +1931,12 @@ export async function updateSettings(
       setlistEnabled: input.setlistEnabled,
       subscribersMustFollowSetlist: input.subscribersMustFollowSetlist,
       autoGrantVipTokenToSubscribers: input.autoGrantVipTokenToSubscribers,
+      autoGrantVipTokensToSubGifters: input.autoGrantVipTokensToSubGifters,
+      autoGrantVipTokensToGiftRecipients:
+        input.autoGrantVipTokensToGiftRecipients,
+      autoGrantVipTokensForCheers: input.autoGrantVipTokensForCheers,
+      cheerBitsPerVipToken: input.cheerBitsPerVipToken,
+      cheerMinimumTokenPercent: input.cheerMinimumTokenPercent,
       duplicateWindowSeconds: input.duplicateWindowSeconds,
       commandPrefix: input.commandPrefix,
       updatedAt: Date.now(),
@@ -2127,17 +2155,25 @@ export async function grantVipToken(
     channelId: input.channelId,
     login: input.login,
   });
-  const count = Math.max(1, input.count ?? 1);
+  const count = clampVipTokenCount(input.count ?? 1);
+
+  if (count <= 0) {
+    return existing ?? null;
+  }
 
   if (existing) {
+    const availableCount = normalizeVipTokenCount(
+      existing.availableCount + count
+    );
+    const grantedCount = normalizeVipTokenCount(existing.grantedCount + count);
     await getDb(env)
       .update(vipTokens)
       .set({
         twitchUserId: input.twitchUserId ?? existing.twitchUserId ?? null,
         login: input.login,
         displayName: input.displayName ?? existing.displayName ?? null,
-        availableCount: existing.availableCount + count,
-        grantedCount: existing.grantedCount + count,
+        availableCount,
+        grantedCount,
         autoSubscriberGranted: input.autoSubscriberGrant
           ? true
           : existing.autoSubscriberGranted,
@@ -2150,7 +2186,22 @@ export async function grantVipToken(
           eq(vipTokens.normalizedLogin, normalizeLogin(input.login))
         )
       );
+
+    return {
+      ...existing,
+      twitchUserId: input.twitchUserId ?? existing.twitchUserId ?? null,
+      login: input.login,
+      displayName: input.displayName ?? existing.displayName ?? null,
+      availableCount,
+      grantedCount,
+      autoSubscriberGranted: input.autoSubscriberGrant
+        ? true
+        : existing.autoSubscriberGranted,
+      lastGrantedAt: now,
+      updatedAt: now,
+    };
   } else {
+    const normalizedCount = normalizeVipTokenCount(count);
     await getDb(env)
       .insert(vipTokens)
       .values({
@@ -2159,13 +2210,18 @@ export async function grantVipToken(
         twitchUserId: input.twitchUserId ?? null,
         login: input.login,
         displayName: input.displayName ?? null,
-        availableCount: count,
-        grantedCount: count,
+        availableCount: normalizedCount,
+        grantedCount: normalizedCount,
         consumedCount: 0,
         autoSubscriberGranted: !!input.autoSubscriberGrant,
         lastGrantedAt: now,
         updatedAt: now,
       } satisfies VipTokenInsert);
+
+    return getVipTokenBalance(env, {
+      channelId: input.channelId,
+      login: input.login,
+    });
   }
 }
 
@@ -2183,19 +2239,21 @@ export async function consumeVipToken(
     login: input.login,
   });
 
-  if (!existing || existing.availableCount <= 0) {
+  if (!existing || !hasRedeemableVipToken(existing.availableCount)) {
     return null;
   }
 
   const now = Date.now();
+  const availableCount = subtractVipTokenRedemption(existing.availableCount);
+  const consumedCount = normalizeVipTokenCount(existing.consumedCount + 1);
   await getDb(env)
     .update(vipTokens)
     .set({
       twitchUserId: input.twitchUserId ?? existing.twitchUserId ?? null,
       login: input.login,
       displayName: input.displayName ?? existing.displayName ?? null,
-      availableCount: existing.availableCount - 1,
-      consumedCount: existing.consumedCount + 1,
+      availableCount,
+      consumedCount,
       lastConsumedAt: now,
       updatedAt: now,
     })
@@ -2208,9 +2266,10 @@ export async function consumeVipToken(
 
   return {
     ...existing,
-    availableCount: existing.availableCount - 1,
-    consumedCount: existing.consumedCount + 1,
+    availableCount,
+    consumedCount,
     lastConsumedAt: now,
+    updatedAt: now,
   };
 }
 
@@ -2226,14 +2285,16 @@ export async function revokeVipToken(
     login: input.login,
   });
 
-  if (!existing || existing.availableCount <= 0) {
+  if (!existing || !hasRedeemableVipToken(existing.availableCount)) {
     return null;
   }
+
+  const nextCount = subtractVipTokenRedemption(existing.availableCount);
 
   await getDb(env)
     .update(vipTokens)
     .set({
-      availableCount: existing.availableCount - 1,
+      availableCount: nextCount,
       updatedAt: Date.now(),
     })
     .where(
@@ -2243,7 +2304,7 @@ export async function revokeVipToken(
       )
     );
 
-  return existing.availableCount - 1;
+  return nextCount;
 }
 
 export async function setVipTokenAvailableCount(
@@ -2263,16 +2324,19 @@ export async function setVipTokenAvailableCount(
     return null;
   }
 
-  const nextCount = Math.max(0, input.count);
-  const delta = nextCount - existing.availableCount;
+  const nextCount = clampVipTokenCount(input.count);
+  const delta = normalizeVipTokenCount(nextCount - existing.availableCount);
   const now = Date.now();
+  const grantedCount =
+    delta > 0
+      ? normalizeVipTokenCount(existing.grantedCount + delta)
+      : existing.grantedCount;
 
   await getDb(env)
     .update(vipTokens)
     .set({
       availableCount: nextCount,
-      grantedCount:
-        delta > 0 ? existing.grantedCount + delta : existing.grantedCount,
+      grantedCount,
       lastGrantedAt: delta > 0 ? now : existing.lastGrantedAt,
       updatedAt: now,
     })
@@ -2286,8 +2350,7 @@ export async function setVipTokenAvailableCount(
   return {
     ...existing,
     availableCount: nextCount,
-    grantedCount:
-      delta > 0 ? existing.grantedCount + delta : existing.grantedCount,
+    grantedCount,
     lastGrantedAt: delta > 0 ? now : existing.lastGrantedAt,
     updatedAt: now,
   };
@@ -2481,6 +2544,31 @@ export async function upsertEventSubSubscription(
     });
 }
 
+export async function claimEventSubDelivery(
+  env: AppEnv,
+  input: Omit<EventSubDeliveryInsert, "createdAt">
+) {
+  try {
+    await getDb(env)
+      .insert(eventSubDeliveries)
+      .values({
+        ...input,
+        createdAt: Date.now(),
+      });
+    return true;
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    if (
+      message.includes("UNIQUE constraint failed") ||
+      message.includes("PRIMARY KEY constraint failed")
+    ) {
+      return false;
+    }
+
+    throw error;
+  }
+}
+
 export async function deleteEventSubSubscriptionRecord(
   env: AppEnv,
   channelId: string,
@@ -2572,6 +2660,8 @@ export async function getViewerState(env: AppEnv, userId: string) {
       "user:read:moderated_channels",
       "moderator:read:chatters",
       "channel:bot",
+      "channel:read:subscriptions",
+      "bits:read",
     ]);
   const moderatedChannelsState = broadcasterAuthorization
     ? await getModeratedChannelViewerState(env, broadcasterAuthorization)

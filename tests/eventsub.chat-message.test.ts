@@ -242,6 +242,72 @@ describe("processEventSubChatMessage", () => {
     );
   });
 
+  it("allows redeeming one VIP request from a fractional balance", async () => {
+    const deps = createDeps({
+      getVipTokenBalance: vi.fn().mockResolvedValue({
+        availableCount: 1.5,
+        autoSubscriberGranted: false,
+      }),
+      consumeVipToken: vi.fn().mockResolvedValue({
+        availableCount: 0.5,
+      }),
+    });
+
+    const result = await processEventSubChatMessage({
+      env,
+      event: createEvent({
+        rawMessage: "!vip song:12345",
+      }),
+      parsed: createParsed({
+        command: "vip",
+      }),
+      deps,
+    });
+
+    expect(result.body).toBe("Accepted");
+    expect(deps.consumeVipToken).toHaveBeenCalledWith(
+      env,
+      expect.objectContaining({
+        channelId: "channel-1",
+        login: "viewer_one",
+      })
+    );
+  });
+
+  it("rejects VIP redemption when the remaining balance is below one token", async () => {
+    const deps = createDeps({
+      getVipTokenBalance: vi.fn().mockResolvedValue({
+        availableCount: 0.5,
+        autoSubscriberGranted: false,
+      }),
+    });
+
+    const result = await processEventSubChatMessage({
+      env,
+      event: createEvent({
+        rawMessage: "!vip song:12345",
+      }),
+      parsed: createParsed({
+        command: "vip",
+      }),
+      deps,
+    });
+
+    expect(result).toEqual({
+      body: "Rejected",
+      status: 202,
+    });
+    expect(deps.addRequestToPlaylist).not.toHaveBeenCalled();
+    expect(deps.consumeVipToken).not.toHaveBeenCalled();
+    expect(deps.sendChatReply).toHaveBeenCalledWith(
+      env,
+      expect.objectContaining({
+        message:
+          "You do not have enough VIP tokens for this channel. You have 0.5.",
+      })
+    );
+  });
+
   it("removes only the caller's requested items from the current channel playlist", async () => {
     const deps = createDeps();
     const result = await processEventSubChatMessage({

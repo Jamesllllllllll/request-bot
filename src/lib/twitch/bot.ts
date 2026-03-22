@@ -30,6 +30,9 @@ type RuntimeEnv = AppEnv | BackendEnv;
 const STREAM_ONLINE = "stream.online";
 const STREAM_OFFLINE = "stream.offline";
 const CHAT_MESSAGE = "channel.chat.message";
+const CHANNEL_SUBSCRIPTION_GIFT = "channel.subscription.gift";
+const CHANNEL_SUBSCRIBE = "channel.subscribe";
+const CHANNEL_CHEER = "channel.cheer";
 
 export const twitchBotScopes = [
   "user:read:chat",
@@ -37,7 +40,11 @@ export const twitchBotScopes = [
   "user:bot",
 ] as const;
 
-const requiredBroadcasterBotScopes = ["channel:bot"] as const;
+const requiredBroadcasterBotScopes = [
+  "channel:bot",
+  "channel:read:subscriptions",
+  "bits:read",
+] as const;
 
 function asAppEnv(env: RuntimeEnv) {
   return env as unknown as AppEnv;
@@ -59,7 +66,10 @@ async function ensureSubscription(input: {
   subscriptionType:
     | typeof STREAM_ONLINE
     | typeof STREAM_OFFLINE
-    | typeof CHAT_MESSAGE;
+    | typeof CHAT_MESSAGE
+    | typeof CHANNEL_SUBSCRIPTION_GIFT
+    | typeof CHANNEL_SUBSCRIBE
+    | typeof CHANNEL_CHEER;
   condition: Record<string, string>;
 }) {
   const runtimeEnv = asAppEnv(input.env);
@@ -162,7 +172,10 @@ async function removeSubscription(input: {
   subscriptionType:
     | typeof STREAM_ONLINE
     | typeof STREAM_OFFLINE
-    | typeof CHAT_MESSAGE;
+    | typeof CHAT_MESSAGE
+    | typeof CHANNEL_SUBSCRIPTION_GIFT
+    | typeof CHANNEL_SUBSCRIBE
+    | typeof CHANNEL_CHEER;
 }) {
   const runtimeEnv = asAppEnv(input.env);
   const existing = await getEventSubSubscription(
@@ -238,7 +251,119 @@ async function removeAllSubscriptions(input: {
       channelId: input.channelId,
       subscriptionType: CHAT_MESSAGE,
     }),
+    removeSubscription({
+      env: input.env,
+      appAccessToken: input.appAccessToken,
+      channelId: input.channelId,
+      subscriptionType: CHANNEL_SUBSCRIPTION_GIFT,
+    }),
+    removeSubscription({
+      env: input.env,
+      appAccessToken: input.appAccessToken,
+      channelId: input.channelId,
+      subscriptionType: CHANNEL_SUBSCRIBE,
+    }),
+    removeSubscription({
+      env: input.env,
+      appAccessToken: input.appAccessToken,
+      channelId: input.channelId,
+      subscriptionType: CHANNEL_CHEER,
+    }),
   ]);
+}
+
+async function removeVipAutomationSubscriptions(input: {
+  env: RuntimeEnv;
+  appAccessToken: string;
+  channelId: string;
+}) {
+  await Promise.all([
+    removeSubscription({
+      env: input.env,
+      appAccessToken: input.appAccessToken,
+      channelId: input.channelId,
+      subscriptionType: CHANNEL_SUBSCRIPTION_GIFT,
+    }),
+    removeSubscription({
+      env: input.env,
+      appAccessToken: input.appAccessToken,
+      channelId: input.channelId,
+      subscriptionType: CHANNEL_SUBSCRIBE,
+    }),
+    removeSubscription({
+      env: input.env,
+      appAccessToken: input.appAccessToken,
+      channelId: input.channelId,
+      subscriptionType: CHANNEL_CHEER,
+    }),
+  ]);
+}
+
+async function reconcileVipAutomationSubscriptions(input: {
+  env: RuntimeEnv;
+  appAccessToken: string;
+  channelId: string;
+  broadcasterUserId: string;
+  enableGiftGifterTokens: boolean;
+  enableGiftRecipientTokens: boolean;
+  enableCheerTokens: boolean;
+}) {
+  if (input.enableGiftGifterTokens) {
+    await ensureSubscription({
+      env: input.env,
+      appAccessToken: input.appAccessToken,
+      channelId: input.channelId,
+      subscriptionType: CHANNEL_SUBSCRIPTION_GIFT,
+      condition: {
+        broadcaster_user_id: input.broadcasterUserId,
+      },
+    });
+  } else {
+    await removeSubscription({
+      env: input.env,
+      appAccessToken: input.appAccessToken,
+      channelId: input.channelId,
+      subscriptionType: CHANNEL_SUBSCRIPTION_GIFT,
+    });
+  }
+
+  if (input.enableGiftRecipientTokens) {
+    await ensureSubscription({
+      env: input.env,
+      appAccessToken: input.appAccessToken,
+      channelId: input.channelId,
+      subscriptionType: CHANNEL_SUBSCRIBE,
+      condition: {
+        broadcaster_user_id: input.broadcasterUserId,
+      },
+    });
+  } else {
+    await removeSubscription({
+      env: input.env,
+      appAccessToken: input.appAccessToken,
+      channelId: input.channelId,
+      subscriptionType: CHANNEL_SUBSCRIBE,
+    });
+  }
+
+  if (input.enableCheerTokens) {
+    await ensureSubscription({
+      env: input.env,
+      appAccessToken: input.appAccessToken,
+      channelId: input.channelId,
+      subscriptionType: CHANNEL_CHEER,
+      condition: {
+        broadcaster_user_id: input.broadcasterUserId,
+      },
+    });
+  } else {
+    await removeSubscription({
+      env: input.env,
+      appAccessToken: input.appAccessToken,
+      channelId: input.channelId,
+      subscriptionType: CHANNEL_CHEER,
+    });
+  }
 }
 
 export async function reconcileChannelBotState(
@@ -277,6 +402,11 @@ export async function reconcileChannelBotState(
       channelId,
       subscriptionType: CHAT_MESSAGE,
     });
+    await removeVipAutomationSubscriptions({
+      env,
+      appAccessToken: appToken.access_token,
+      channelId,
+    });
     await setBotEnabled(
       runtimeEnv,
       channelId,
@@ -293,6 +423,11 @@ export async function reconcileChannelBotState(
       channelId,
       subscriptionType: CHAT_MESSAGE,
     });
+    await removeVipAutomationSubscriptions({
+      env,
+      appAccessToken: appToken.access_token,
+      channelId,
+    });
     await setBotEnabled(
       runtimeEnv,
       channelId,
@@ -308,6 +443,21 @@ export async function reconcileChannelBotState(
       appAccessToken: appToken.access_token,
       channelId,
       broadcasterUserId: channel.twitchChannelId,
+    });
+  } catch (error) {
+    await setBotEnabled(runtimeEnv, channelId, false, "subscription_error");
+    throw error;
+  }
+
+  try {
+    await reconcileVipAutomationSubscriptions({
+      env,
+      appAccessToken: appToken.access_token,
+      channelId,
+      broadcasterUserId: channel.twitchChannelId,
+      enableGiftGifterTokens: settings.autoGrantVipTokensToSubGifters,
+      enableGiftRecipientTokens: settings.autoGrantVipTokensToGiftRecipients,
+      enableCheerTokens: settings.autoGrantVipTokensForCheers,
     });
   } catch (error) {
     await setBotEnabled(runtimeEnv, channelId, false, "subscription_error");
@@ -333,6 +483,11 @@ export async function reconcileChannelBotState(
       appAccessToken: appToken.access_token,
       channelId,
       subscriptionType: CHAT_MESSAGE,
+    });
+    await removeVipAutomationSubscriptions({
+      env,
+      appAccessToken: appToken.access_token,
+      channelId,
     });
     await setBotEnabled(runtimeEnv, channelId, false, "bot_auth_required");
     return { ok: true, state: "bot_auth_required" as const };
@@ -434,6 +589,11 @@ export async function disconnectBotAuthFromReplies(env: RuntimeEnv) {
       appAccessToken: appToken.access_token,
       channelId: channel.id,
       subscriptionType: CHAT_MESSAGE,
+    });
+    await removeVipAutomationSubscriptions({
+      env,
+      appAccessToken: appToken.access_token,
+      channelId: channel.id,
     });
     await setBotEnabled(runtimeEnv, channel.id, false, "bot_auth_required");
   }

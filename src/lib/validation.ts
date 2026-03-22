@@ -136,7 +136,7 @@ export const moderationActionSchema = z.discriminatedUnion("action", [
   z.object({
     action: z.literal("setVipTokenCount"),
     login: z.string().trim().min(1).max(50),
-    count: z.number().int().min(0).max(999),
+    count: z.number().min(0).max(999),
   }),
 ]);
 
@@ -172,6 +172,16 @@ export const settingsInputSchema = z
     setlistEnabled: z.boolean(),
     subscribersMustFollowSetlist: z.boolean(),
     autoGrantVipTokenToSubscribers: z.boolean(),
+    autoGrantVipTokensToSubGifters: z.boolean(),
+    autoGrantVipTokensToGiftRecipients: z.boolean(),
+    autoGrantVipTokensForCheers: z.boolean(),
+    cheerBitsPerVipToken: z.number().int().min(1).max(100_000),
+    cheerMinimumTokenPercent: z.union([
+      z.literal(25),
+      z.literal(50),
+      z.literal(75),
+      z.literal(100),
+    ]),
     duplicateWindowSeconds: z.number().int().min(0).max(86400),
     commandPrefix: z.string().trim().min(2).max(12),
   })
@@ -185,6 +195,17 @@ export const settingsInputSchema = z
         message:
           "Subscriber and VIP requests must stay enabled when anyone can request.",
         path: ["allowAnyoneToRequest"],
+      });
+    }
+
+    if (
+      input.autoGrantVipTokensForCheers &&
+      input.cheerBitsPerVipToken * (input.cheerMinimumTokenPercent / 100) < 1
+    ) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "Cheer minimum threshold must grant at least 0.25 tokens.",
+        path: ["cheerMinimumTokenPercent"],
       });
     }
   });

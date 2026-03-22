@@ -20,6 +20,7 @@ import { assertDatabaseSchemaCurrent } from "~/lib/db/schema-version";
 import type { BackendEnv } from "~/lib/env";
 import type {
   AddRequestInput,
+  ChangeRequestKindInput,
   ChooseVersionInput,
   ClearPlaylistInput,
   DeleteItemInput,
@@ -154,6 +155,52 @@ class D1PlaylistCoordinator implements PlaylistCoordinator {
     }
   }
 
+  private async getUpdatedQueuedPositionsAfterKindChange(input: {
+    items: Array<{
+      id: string;
+      position: number;
+      status: string;
+    }>;
+    playlistCurrentItemId?: string | null;
+    targetItemId: string;
+    requestKind: "regular" | "vip";
+  }) {
+    const sortedItems = [...input.items].sort(
+      (a, b) => a.position - b.position
+    );
+    const target = sortedItems.find((item) => item.id === input.targetItemId);
+    if (!target) {
+      throw new Error("Playlist item not found");
+    }
+
+    if (target.status === "current") {
+      return sortedItems.map((item) => ({
+        id: item.id,
+        position: item.position,
+      }));
+    }
+
+    const queued = sortedItems.filter((item) => item.status === "queued");
+    const remainingQueued = queued.filter(
+      (item) => item.id !== input.targetItemId
+    );
+    const currentItem = input.playlistCurrentItemId
+      ? (sortedItems.find((item) => item.id === input.playlistCurrentItemId) ??
+        null)
+      : null;
+
+    const reorderedQueued =
+      input.requestKind === "vip"
+        ? [target, ...remainingQueued]
+        : [...remainingQueued, target];
+    const queuedStartPosition = currentItem ? currentItem.position + 1 : 1;
+
+    return reorderedQueued.map((item, index) => ({
+      id: item.id,
+      position: queuedStartPosition + index,
+    }));
+  }
+
   async addRequest(input: AddRequestInput): Promise<PlaylistMutationResult> {
     const db = getDb(this.env);
     const { playlist, items } = await this.getPlaylist(input.channelId);
@@ -285,6 +332,70 @@ class D1PlaylistCoordinator implements PlaylistCoordinator {
       currentItemId: playlist.currentItemId,
       changedItemId: itemId,
       message: "Request added",
+    };
+  }
+
+  async changeRequestKind(
+    input: ChangeRequestKindInput
+  ): Promise<PlaylistMutationResult> {
+    const db = getDb(this.env);
+    const { playlist, items } = await this.getPlaylist(input.channelId);
+    const target = items.find((item) => item.id === input.itemId);
+
+    if (!target) {
+      throw new Error("Playlist item not found");
+    }
+
+    if (target.requestKind === input.requestKind) {
+      return {
+        ok: true,
+        playlistId: playlist.id,
+        currentItemId: playlist.currentItemId,
+        changedItemId: target.id,
+        message: "Request already has that priority",
+      };
+    }
+
+    const nextQueuedPositions =
+      await this.getUpdatedQueuedPositionsAfterKindChange({
+        items,
+        playlistCurrentItemId: playlist.currentItemId,
+        targetItemId: input.itemId,
+        requestKind: input.requestKind,
+      });
+
+    await db
+      .update(playlistItems)
+      .set({
+        requestKind: input.requestKind,
+        updatedAt: Date.now(),
+      })
+      .where(eq(playlistItems.id, input.itemId));
+
+    await this.reindexPlaylistItems(nextQueuedPositions);
+
+    await this.audit(
+      input.channelId,
+      input.actorUserId,
+      input.requestKind === "vip"
+        ? "request_upgraded_to_vip"
+        : "request_downgraded_to_regular",
+      input.itemId,
+      {
+        requestKind: input.requestKind,
+      }
+    );
+    await this.notify(input.channelId);
+
+    return {
+      ok: true,
+      playlistId: playlist.id,
+      currentItemId: playlist.currentItemId,
+      changedItemId: input.itemId,
+      message:
+        input.requestKind === "vip"
+          ? "Request upgraded to VIP"
+          : "Request changed to regular",
     };
   }
 
@@ -1223,6 +1334,10 @@ async function handleMutation(
     case "removeRequests":
       return coordinator.removeRequests(
         payload as unknown as RemoveRequestsInput
+      );
+    case "changeRequestKind":
+      return coordinator.changeRequestKind(
+        payload as unknown as ChangeRequestKindInput
       );
     case "deleteItem":
       return coordinator.deleteItem(payload as unknown as DeleteItemInput);

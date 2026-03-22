@@ -22,6 +22,7 @@ import {
 import type { AppEnv } from "~/lib/env";
 import { json } from "~/lib/utils";
 import { moderationActionSchema } from "~/lib/validation";
+import { formatVipTokenCount } from "~/lib/vip-tokens";
 
 async function requireDashboardState(request: Request, runtimeEnv: AppEnv) {
   const userId = await getSessionUserId(request, runtimeEnv);
@@ -217,10 +218,11 @@ export const Route = createFileRoute("/api/dashboard/moderation")({
                 })
               )?.availableCount ??
               0;
+            const formattedCount = formatVipTokenCount(nextCount);
             await queueModerationReply(runtimeEnv, {
               channelId: state.channel.id,
               broadcasterUserId: state.channel.twitchChannelId,
-              message: `Set @${body.login} to ${nextCount} VIP token${nextCount === 1 ? "" : "s"}.`,
+              message: `Set @${body.login} to ${formattedCount} VIP token${nextCount === 1 ? "" : "s"}.`,
             });
             await createAuditLog(runtimeEnv, {
               channelId: state.channel.id,

@@ -1,1 +1,1 @@
-export const LATEST_MIGRATION_NAME = "0008_blacklisted_charters.sql";
+export const LATEST_MIGRATION_NAME = "0010_vip_token_automation.sql";

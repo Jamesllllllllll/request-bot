@@ -9,6 +9,7 @@ import { Button } from "~/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "~/components/ui/card";
 import { Input } from "~/components/ui/input";
 import { pageTitle } from "~/lib/page-title";
+import { clampVipTokenCount, formatVipTokenCount } from "~/lib/vip-tokens";
 
 const viewerCommands = [
   { command: "!sr song name", description: "Add a request." },
@@ -929,24 +930,29 @@ type VipTokenRowProps = {
 
 function VipTokenRow(props: VipTokenRowProps) {
   const [draftCount, setDraftCount] = useState(
-    String(props.token.availableCount)
+    formatVipTokenCount(props.token.availableCount)
   );
   const [saveState, setSaveState] = useState<
     "idle" | "queued" | "saving" | "saved" | "error"
   >("idle");
-  const controlsLocked = saveState === "queued" || saveState === "saving";
+  const controlsLocked = saveState === "saving";
 
   useEffect(() => {
-    setDraftCount(String(props.token.availableCount));
-  }, [props.token.availableCount]);
+    if (saveState === "queued" || saveState === "saving") {
+      return;
+    }
+
+    setDraftCount(formatVipTokenCount(props.token.availableCount));
+  }, [props.token.availableCount, saveState]);
 
   useEffect(() => {
-    const parsed = Number.parseInt(draftCount, 10);
+    const parsed = Number.parseFloat(draftCount);
     if (!Number.isFinite(parsed) || parsed < 0) {
       return;
     }
 
-    if (parsed === props.token.availableCount) {
+    const normalizedCount = clampVipTokenCount(parsed);
+    if (normalizedCount === props.token.availableCount) {
       setSaveState((current) =>
         current === "queued" || current === "saving" ? current : "idle"
       );
@@ -959,8 +965,9 @@ function VipTokenRow(props: VipTokenRowProps) {
         setSaveState("saving");
         await props.onSave({
           login: props.token.login,
-          count: parsed,
+          count: normalizedCount,
         });
+        setDraftCount(formatVipTokenCount(normalizedCount));
         setSaveState("saved");
         window.setTimeout(() => {
           setSaveState((current) => (current === "saved" ? "idle" : current));
@@ -987,7 +994,12 @@ function VipTokenRow(props: VipTokenRowProps) {
             className="rounded-full border border-(--border) p-2 text-(--muted) transition hover:border-(--brand) hover:text-(--text) disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:border-(--border) disabled:hover:text-(--muted)"
             onClick={() =>
               setDraftCount((current) =>
-                String(Math.max(0, Number.parseInt(current || "0", 10) - 1))
+                formatVipTokenCount(
+                  Math.max(
+                    0,
+                    clampVipTokenCount(Number.parseFloat(current || "0")) - 1
+                  )
+                )
               )
             }
             disabled={controlsLocked}
@@ -996,21 +1008,35 @@ function VipTokenRow(props: VipTokenRowProps) {
           </button>
           <Input
             value={draftCount}
-            inputMode="numeric"
-            pattern="[0-9]*"
+            inputMode="decimal"
+            pattern="[0-9]+([.][0-9]{0,2})?"
             className="h-10 rounded-xl bg-background px-3 py-2 text-center"
             disabled={controlsLocked}
             onChange={(event) => {
-              const next = event.target.value.replace(/\D+/g, "");
-              setDraftCount(
-                next === "" ? "" : String(Number.parseInt(next, 10))
-              );
+              const rawValue = event.target.value.replace(/[^0-9.]/g, "");
+              const [wholePart, ...decimalParts] = rawValue.split(".");
+              const decimalPart = decimalParts.join("").slice(0, 2);
+              const next =
+                decimalParts.length > 0
+                  ? `${wholePart}.${decimalPart}`
+                  : wholePart;
+              setDraftCount(next);
             }}
             onBlur={() => {
               if (draftCount.trim() === "") {
-                setDraftCount(String(props.token.availableCount));
+                setDraftCount(formatVipTokenCount(props.token.availableCount));
                 setSaveState("idle");
+                return;
               }
+
+              const parsed = Number.parseFloat(draftCount);
+              if (!Number.isFinite(parsed)) {
+                setDraftCount(formatVipTokenCount(props.token.availableCount));
+                setSaveState("idle");
+                return;
+              }
+
+              setDraftCount(formatVipTokenCount(parsed));
             }}
           />
           <button
@@ -1018,7 +1044,9 @@ function VipTokenRow(props: VipTokenRowProps) {
             className="rounded-full border border-(--border) p-2 text-(--muted) transition hover:border-(--brand) hover:text-(--text) disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:border-(--border) disabled:hover:text-(--muted)"
             onClick={() =>
               setDraftCount((current) =>
-                String(Math.max(0, Number.parseInt(current || "0", 10) + 1))
+                formatVipTokenCount(
+                  clampVipTokenCount(Number.parseFloat(current || "0")) + 1
+                )
               )
             }
             disabled={controlsLocked}

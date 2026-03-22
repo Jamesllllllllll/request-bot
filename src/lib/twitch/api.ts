@@ -1,8 +1,11 @@
 import type { AppEnv } from "~/lib/env";
 import type {
   EventSubChatMessageEvent,
+  EventSubCheerEvent,
   EventSubStreamOfflineEvent,
   EventSubStreamOnlineEvent,
+  EventSubSubscribeEvent,
+  EventSubSubscriptionGiftEvent,
   TwitchChannelSearchResponse,
   TwitchChattersResponse,
   TwitchEventSubCreateResponse,
@@ -335,7 +338,13 @@ export async function refreshAccessToken(env: AppEnv, refreshToken: string) {
 export async function createEventSubSubscription(input: {
   env: AppEnv;
   appAccessToken: string;
-  type: "channel.chat.message" | "stream.online" | "stream.offline";
+  type:
+    | "channel.chat.message"
+    | "channel.cheer"
+    | "channel.subscribe"
+    | "channel.subscription.gift"
+    | "stream.online"
+    | "stream.offline";
   condition: Record<string, string>;
 }) {
   const response = await fetch(`${twitchBaseUrl}/eventsub/subscriptions`, {
@@ -368,7 +377,13 @@ export async function createEventSubSubscription(input: {
 export async function listEventSubSubscriptions(input: {
   env: AppEnv;
   appAccessToken: string;
-  type?: "channel.chat.message" | "stream.online" | "stream.offline";
+  type?:
+    | "channel.chat.message"
+    | "channel.cheer"
+    | "channel.subscribe"
+    | "channel.subscription.gift"
+    | "stream.online"
+    | "stream.offline";
 }) {
   const subscriptions: TwitchEventSubListResponse["data"] = [];
   let cursor: string | null = null;
@@ -593,6 +608,24 @@ export function isStreamOfflineEvent(
   payload: unknown
 ): payload is { event: EventSubStreamOfflineEvent } {
   return isEventType(payload, "stream.offline");
+}
+
+export function isSubscriptionGiftEvent(
+  payload: unknown
+): payload is { event: EventSubSubscriptionGiftEvent } {
+  return isEventType(payload, "channel.subscription.gift");
+}
+
+export function isChannelSubscribeEvent(
+  payload: unknown
+): payload is { event: EventSubSubscribeEvent } {
+  return isEventType(payload, "channel.subscribe");
+}
+
+export function isChannelCheerEvent(
+  payload: unknown
+): payload is { event: EventSubCheerEvent } {
+  return isEventType(payload, "channel.cheer");
 }
 
 function isEventType(payload: unknown, eventType: string) {

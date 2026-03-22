@@ -29,6 +29,14 @@ npm run test:e2e
 
 Merges to `main` are intended to trigger a production deploy.
 
+## Releases
+
+- Keep [CHANGELOG.md](/C:/Users/james/Documents/Projects/request-bot/CHANGELOG.md) and [package.json](/C:/Users/james/Documents/Projects/request-bot/package.json) in sync when preparing a release PR.
+- Use `0.x.x` for normal minor/patch releases while the project is still pre-`1.0`.
+- If the release is a major milestone or materially changes the product scope, bump the middle digit such as `0.2.0`.
+- Otherwise, use a patch release such as `0.1.1`.
+- Ask explicitly which release level is intended if it is not obvious from the scope of the work.
+
 ## Local development
 
 Start here:

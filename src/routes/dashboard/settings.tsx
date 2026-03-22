@@ -71,6 +71,11 @@ const defaultForm: DashboardSettingsFormData = {
   setlistEnabled: false,
   subscribersMustFollowSetlist: false,
   autoGrantVipTokenToSubscribers: false,
+  autoGrantVipTokensToSubGifters: false,
+  autoGrantVipTokensToGiftRecipients: false,
+  autoGrantVipTokensForCheers: false,
+  cheerBitsPerVipToken: 200,
+  cheerMinimumTokenPercent: 25,
   duplicateWindowSeconds: 900,
   commandPrefix: "!sr",
 };
@@ -294,6 +299,91 @@ function DashboardSettingsPage() {
                   )
                 }
               />
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card className="dashboard-settings__section">
+        <CardHeader>
+          <CardTitle>VIP token automation</CardTitle>
+          <CardDescription>
+            Automatically reward VIP tokens for gifted subs and cheers.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="grid gap-6">
+          <div className="grid gap-3 rounded-[24px] border border-(--border) bg-(--panel-soft) p-4">
+            <p className="text-sm font-semibold text-(--text)">Gifted subs</p>
+            <PermissionRow
+              label="Give 1 VIP token to the gifter for each gifted sub"
+              checked={form.autoGrantVipTokensToSubGifters}
+              onChange={(value) =>
+                setBoolean("autoGrantVipTokensToSubGifters", value)
+              }
+            />
+            <PermissionRow
+              label="Give 1 VIP token to each gifted sub recipient"
+              checked={form.autoGrantVipTokensToGiftRecipients}
+              onChange={(value) =>
+                setBoolean("autoGrantVipTokensToGiftRecipients", value)
+              }
+            />
+          </div>
+
+          <div
+            className={`grid gap-4 rounded-[24px] border p-4 ${
+              form.autoGrantVipTokensForCheers
+                ? "border-(--border-strong) bg-(--panel-soft)"
+                : "border-(--border) bg-(--panel-muted)/40"
+            }`}
+          >
+            <PermissionRow
+              label="Give VIP tokens for cheers"
+              checked={form.autoGrantVipTokensForCheers}
+              onChange={(value) =>
+                setBoolean("autoGrantVipTokensForCheers", value)
+              }
+            />
+            <div className="grid gap-4 md:grid-cols-2">
+              <CompactNumberRow
+                label="Bits per 1 VIP token"
+                value={form.cheerBitsPerVipToken}
+                onChange={(value) => setNumber("cheerBitsPerVipToken", value)}
+                disabled={!form.autoGrantVipTokensForCheers}
+              />
+              <div
+                className={`grid gap-2 ${!form.autoGrantVipTokensForCheers ? "opacity-60" : ""}`}
+              >
+                <p className="text-sm font-medium text-(--text)">
+                  Minimum cheer to earn a partial token
+                </p>
+                <div className="flex flex-wrap gap-2">
+                  {[25, 50, 75, 100].map((percent) => (
+                    <button
+                      key={percent}
+                      type="button"
+                      disabled={!form.autoGrantVipTokensForCheers}
+                      onClick={() =>
+                        setNumber(
+                          "cheerMinimumTokenPercent",
+                          percent as DashboardSettingsFormData["cheerMinimumTokenPercent"]
+                        )
+                      }
+                      className={`rounded-full border px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.18em] transition-colors disabled:cursor-not-allowed ${
+                        form.cheerMinimumTokenPercent === percent
+                          ? "border-(--brand) bg-(--brand) text-white"
+                          : "border-(--border) bg-(--panel-muted) text-(--muted)"
+                      }`}
+                    >
+                      {percent}%
+                    </button>
+                  ))}
+                </div>
+                <p className="text-xs leading-6 text-(--muted)">
+                  Example: if 200 bits = 1 token and the minimum is 25%, viewers
+                  need to cheer at least 50 bits to earn 0.25 tokens.
+                </p>
+              </div>
             </div>
           </div>
         </CardContent>

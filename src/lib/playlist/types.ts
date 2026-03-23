@@ -34,6 +34,13 @@ export interface RemoveRequestsInput {
   kind: "regular" | "vip" | "all";
 }
 
+export interface ChangeRequestKindInput {
+  channelId: string;
+  itemId: string;
+  actorUserId: string | null;
+  requestKind: "regular" | "vip";
+}
+
 export interface MarkPlayedInput {
   channelId: string;
   itemId: string;
@@ -126,6 +133,9 @@ export interface PlaylistMutationResult {
 
 export interface PlaylistCoordinator {
   addRequest(input: AddRequestInput): Promise<PlaylistMutationResult>;
+  changeRequestKind(
+    input: ChangeRequestKindInput
+  ): Promise<PlaylistMutationResult>;
   removeRequests(input: RemoveRequestsInput): Promise<PlaylistMutationResult>;
   markPlayed(input: MarkPlayedInput): Promise<PlaylistMutationResult>;
   restorePlayed(input: RestorePlayedInput): Promise<PlaylistMutationResult>;

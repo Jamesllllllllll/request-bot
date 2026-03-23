@@ -95,6 +95,7 @@ function createState(overrides: Record<string, unknown> = {}) {
     setlistArtists: [],
     logs: [],
     items: [],
+    ...overrides,
   };
 }
 
@@ -129,6 +130,12 @@ function createDeps(
       ok: true,
       playlistId: "playlist-1",
       message: "Removed 1 request",
+    }),
+    changeRequestKind: vi.fn().mockResolvedValue({
+      ok: true,
+      playlistId: "playlist-1",
+      changedItemId: "item-1",
+      message: "Request changed",
     }),
     createRequestLog: vi.fn().mockResolvedValue(undefined),
     createAuditLog: vi.fn().mockResolvedValue(undefined),
@@ -977,6 +984,126 @@ describe("processEventSubChatMessage", () => {
       expect.objectContaining({
         channelId: "channel-1",
         login: "viewer_two",
+      })
+    );
+  });
+
+  it("upgrades an existing regular request to VIP instead of adding a duplicate", async () => {
+    const deps = createDeps({
+      getDashboardState: vi.fn().mockResolvedValue(
+        createState({
+          items: [
+            {
+              id: "item-1",
+              songId: "song-1",
+              status: "queued",
+              requestKind: "regular",
+              requestedByTwitchUserId: "viewer-1",
+              requestedByLogin: "viewer_one",
+              requestedByDisplayName: "Viewer One",
+            },
+          ],
+        })
+      ),
+      getVipTokenBalance: vi.fn().mockResolvedValue({
+        availableCount: 1,
+        autoSubscriberGranted: false,
+      }),
+    });
+
+    const result = await processEventSubChatMessage({
+      env,
+      event: createEvent({
+        rawMessage: "!vip cherub rock",
+      }),
+      parsed: createParsed({
+        command: "vip",
+        query: "cherub rock",
+      }),
+      deps,
+    });
+
+    expect(result).toEqual({
+      body: "Accepted",
+      status: 202,
+    });
+    expect(deps.changeRequestKind).toHaveBeenCalledWith(env, {
+      channelId: "channel-1",
+      itemId: "item-1",
+      requestKind: "vip",
+    });
+    expect(deps.addRequestToPlaylist).not.toHaveBeenCalled();
+    expect(deps.consumeVipToken).toHaveBeenCalled();
+    expect(deps.sendChatReply).toHaveBeenCalledWith(
+      env,
+      expect.objectContaining({
+        message: expect.stringContaining(
+          'your existing request "The Smashing Pumpkins - Cherub Rock" is now a VIP request'
+        ),
+      })
+    );
+    expect(deps.sendChatReply).toHaveBeenCalledWith(
+      env,
+      expect.objectContaining({
+        message: expect.stringContaining("1 VIP token was used."),
+      })
+    );
+  });
+
+  it("downgrades an existing VIP request to regular and refunds the token", async () => {
+    const deps = createDeps({
+      getDashboardState: vi.fn().mockResolvedValue(
+        createState({
+          items: [
+            {
+              id: "item-1",
+              songId: "song-1",
+              status: "queued",
+              requestKind: "vip",
+              requestedByTwitchUserId: "viewer-1",
+              requestedByLogin: "viewer_one",
+              requestedByDisplayName: "Viewer One",
+            },
+          ],
+        })
+      ),
+    });
+
+    const result = await processEventSubChatMessage({
+      env,
+      event: createEvent({
+        rawMessage: "!sr cherub rock",
+      }),
+      parsed: createParsed({
+        command: "sr",
+        query: "cherub rock",
+      }),
+      deps,
+    });
+
+    expect(result).toEqual({
+      body: "Accepted",
+      status: 202,
+    });
+    expect(deps.changeRequestKind).toHaveBeenCalledWith(env, {
+      channelId: "channel-1",
+      itemId: "item-1",
+      requestKind: "regular",
+    });
+    expect(deps.addRequestToPlaylist).not.toHaveBeenCalled();
+    expect(deps.grantVipToken).toHaveBeenCalledWith(
+      env,
+      expect.objectContaining({
+        channelId: "channel-1",
+        login: "viewer_one",
+      })
+    );
+    expect(deps.sendChatReply).toHaveBeenCalledWith(
+      env,
+      expect.objectContaining({
+        message: expect.stringContaining(
+          'your existing VIP request "The Smashing Pumpkins - Cherub Rock" is now a regular request again. 1 VIP token was refunded.'
+        ),
       })
     );
   });

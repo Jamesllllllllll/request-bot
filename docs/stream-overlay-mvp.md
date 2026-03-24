@@ -10,7 +10,7 @@ Give streamers a private browser-source URL they can paste directly into OBS, th
 
 - private overlay URL per channel
 - in-app overlay editor for logged-in channel owners
-- live preview in the dashboard
+- live preview in owner settings
 - live playlist updates on the overlay through SSE
 - adjustable playlist background color and opacity
 
@@ -28,7 +28,7 @@ An OBS plugin may make sense later, but it should wrap a stable overlay URL prod
 
 ### Owner workflow
 
-The channel owner can open `Dashboard -> Overlay` and:
+The channel owner can open `Settings -> Stream overlay` and:
 
 - preview the overlay live against the current playlist
 - change the current set of theme controls
@@ -43,7 +43,7 @@ Each channel gets a tokenized overlay route:
 
 This route is intended for OBS browser sources. It is not linked publicly.
 
-The token can be regenerated from the dashboard, which invalidates the previous URL.
+The token can be regenerated from owner settings, which invalidates the previous URL.
 
 ### Live updates
 
@@ -99,7 +99,7 @@ The overlay is not protected by normal session auth. Instead it uses a private t
 
 Server-side access rules:
 
-- dashboard overlay configuration requires an authenticated owner session
+- owner settings overlay configuration requires an authenticated owner session
 - overlay rendering requires a valid `{slug}` + `{token}` pair
 - if the overlay is disabled, the private route does not render useful content
 
@@ -107,7 +107,7 @@ Server-side access rules:
 
 A shared overlay component is used for both:
 
-- the dashboard preview
+- the owner settings preview
 - the private browser-source route
 
 That keeps the preview honest. If the preview looks right, the OBS route should look the same.
@@ -161,7 +161,7 @@ This is simpler than adding WebSockets or a separate overlay-specific event syst
    - now playing + queue
    - bottom dock
    - side rail
-3. Add a dedicated `Overlay` card to the dashboard overview with copy/open actions.
+3. Add copy/open actions in the account overview or settings header.
 4. Add safer overlay token rotation UX with confirmation and "copied new URL" flow.
 5. Add a sample preview mode so streamers can style the overlay even with an empty playlist.
 

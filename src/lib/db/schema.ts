@@ -73,6 +73,19 @@ export const channelSettings = sqliteTable("channel_settings", {
   })
     .notNull()
     .default(false),
+  moderatorCanManageBlockedChatters: integer(
+    "moderator_can_manage_blocked_chatters",
+    {
+      mode: "boolean",
+    }
+  )
+    .notNull()
+    .default(false),
+  moderatorCanViewVipTokens: integer("moderator_can_view_vip_tokens", {
+    mode: "boolean",
+  })
+    .notNull()
+    .default(false),
   moderatorCanManageVipTokens: integer("moderator_can_manage_vip_tokens", {
     mode: "boolean",
   })

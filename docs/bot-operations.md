@@ -8,7 +8,7 @@ The app treats the Twitch bot as a separate shared account from the broadcaster:
 
 - The streamer signs into the app with their own Twitch account.
 - An admin signs the shared bot account into the app once.
-- Each streamer can opt their own channel into bot presence from Dashboard Settings.
+- Each streamer can opt their own channel into bot presence from the owner Settings area.
 - When an opted-in streamer goes live, the app activates the bot in that channel by ensuring the `channel.chat.message` EventSub subscription exists for that broadcaster + bot user pair.
 - When the streamer goes offline, the app removes that chat subscription so the bot is inactive in the channel.
 
@@ -45,7 +45,7 @@ TWITCH_SCOPES=openid user:read:moderated_channels moderator:read:chatters channe
 
 For local development, `TWITCH_BOT_USERNAME` should usually be your dedicated test bot account. Production should keep its own bot username in deployed env or secrets. The app enforces that the connected bot login matches `TWITCH_BOT_USERNAME`, so changing bot accounts locally requires changing local `.env` first.
 
-`TWITCH_SCOPES` belongs to the broadcaster login flow, not the bot login flow. It should include `channel:bot` so chat replies can use Twitch's bot badge path. If a broadcaster connected before `channel:bot` was present, they need to reconnect Twitch.
+`TWITCH_SCOPES` belongs to the broadcaster login flow, not the bot login flow. It should include `channel:bot` so chat replies can use Twitch's bot badge path. If the connected broadcaster account is missing that permission, reconnect Twitch.
 
 2. Make sure your Twitch developer application has both redirect URIs registered:
 
@@ -61,7 +61,7 @@ npm run db:migrate
 4. Start the app and log in with your broadcaster account.
 5. Go to `/dashboard/admin` as your admin user and click `Connect bot account`.
 6. Complete that OAuth flow while logged into the Twitch bot account named in `TWITCH_BOT_USERNAME`.
-7. Go to `/dashboard/settings` for your streamer account and enable `Enable bot for my channel`, then save.
+7. Go to `/dashboard/settings` for your streamer account and enable `Enable playlist on your channel`, then save.
 8. Go live on Twitch.
 9. Confirm the Settings page changes to `Active`.
 10. Send a chat request like:

@@ -22,6 +22,7 @@ export const Route = createFileRoute("/api/session")({
           viewer: viewer
             ? {
                 user: {
+                  twitchUserId: viewer.user.twitchUserId,
                   displayName: viewer.user.displayName,
                   login: viewer.user.login,
                   profileImageUrl: viewer.user.profileImageUrl,

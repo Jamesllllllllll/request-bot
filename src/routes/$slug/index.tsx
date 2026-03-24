@@ -1,17 +1,27 @@
 // Route: Shows the public playlist page for a single channel by slug.
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
 import { AnimatePresence, motion } from "motion/react";
 import { useEffect, useMemo, useState } from "react";
-import { BlacklistPanel } from "~/components/blacklist-panel";
+import { ChannelCommunityPanel } from "~/components/channel-community-panel";
+import { ChannelRulesPanel } from "~/components/channel-rules-panel";
+import { PlaylistManagementSurface } from "~/components/playlist-management-surface";
 import { PublicPlayedHistoryCard } from "~/components/public-played-history-card";
 import type {
   SearchSong,
+  SearchSongActionRenderArgs,
   SearchSongResultState,
 } from "~/components/song-search-panel";
 import { SongSearchPanel } from "~/components/song-search-panel";
+import { Button } from "~/components/ui/button";
 import { Checkbox } from "~/components/ui/checkbox";
+import { Input } from "~/components/ui/input";
 import { Label } from "~/components/ui/label";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "~/components/ui/popover";
 import { formatSlugTitle, pageTitle } from "~/lib/page-title";
 import { getPickNumbersForQueuedItems } from "~/lib/pick-order";
 import { cn, decodeHtmlEntities } from "~/lib/utils";
@@ -44,28 +54,70 @@ type PlayedSongRow = {
   createdAt?: number | null;
 };
 
-type PublicChannelPageData = {
-  playlist: {
-    channel?: {
-      displayName?: string;
-      login?: string;
+type ViewerSessionData = {
+  viewer: null | {
+    user: {
+      twitchUserId: string;
+      displayName: string;
+      login: string;
     };
-    settings?: {
-      autoGrantVipTokensToSubGifters?: boolean;
-      autoGrantVipTokensToGiftRecipients?: boolean;
-      autoGrantVipTokensForCheers?: boolean;
-      cheerBitsPerVipToken?: number;
-    };
-    items?: EnrichedPublicPlaylistItem[];
-    playedSongs?: PlayedSongRow[];
-    blacklistArtists?: Array<{ artistId: number; artistName: string }>;
-    blacklistCharters?: Array<{ charterId: number; charterName: string }>;
-    blacklistSongs?: Array<{
-      songId: number;
-      songTitle: string;
-      artistName?: string | null;
-    }>;
   };
+};
+
+type ViewerMatch = {
+  id: string;
+  login: string;
+  displayName: string;
+};
+
+type ChannelViewerSearchResponse = {
+  users: ViewerMatch[];
+  needsChatterScopeReconnect?: boolean;
+};
+
+type PublicChannelPageData = {
+  channel?: {
+    displayName?: string;
+    login?: string;
+  };
+  settings?: {
+    blacklistEnabled?: boolean;
+    setlistEnabled?: boolean;
+    letSetlistBypassBlacklist?: boolean;
+    subscribersMustFollowSetlist?: boolean;
+    canManageRequests?: boolean;
+    canManageBlacklist?: boolean;
+    canManageSetlist?: boolean;
+    canManageBlockedChatters?: boolean;
+    canViewVipTokens?: boolean;
+    canManageVipTokens?: boolean;
+    autoGrantVipTokensToSubGifters?: boolean;
+    autoGrantVipTokensToGiftRecipients?: boolean;
+    autoGrantVipTokensForCheers?: boolean;
+    cheerBitsPerVipToken?: number;
+  };
+  items?: EnrichedPublicPlaylistItem[];
+  playedSongs?: PlayedSongRow[];
+  blacklistArtists?: Array<{ artistId: number; artistName: string }>;
+  blacklistCharters?: Array<{ charterId: number; charterName: string }>;
+  blacklistSongs?: Array<{
+    songId: number;
+    songTitle: string;
+    artistName?: string | null;
+  }>;
+  setlistArtists?: Array<{ artistId: number; artistName: string }>;
+  blocks?: Array<{
+    twitchUserId: string;
+    login?: string | null;
+    displayName?: string | null;
+    reason?: string | null;
+  }>;
+  vipTokens?: Array<{
+    login: string;
+    displayName?: string | null;
+    availableCount: number;
+  }>;
+  accessRole?: "anonymous" | "viewer" | "moderator" | "owner";
 };
 
 const publicPlaylistItemTransition = {
@@ -102,68 +154,48 @@ function PublicChannelPage() {
   const { slug } = Route.useParams();
   const queryClient = useQueryClient();
   const [showBlacklisted, setShowBlacklisted] = useState(false);
+  const [pendingAddSongId, setPendingAddSongId] = useState<string | null>(null);
   const { data, isLoading } = useQuery({
-    queryKey: ["public-channel-page", slug],
+    queryKey: ["channel-playlist", slug],
     queryFn: async (): Promise<PublicChannelPageData> => {
       const playlistResponse = await fetch(`/api/channel/${slug}/playlist`);
       const playlist = (await playlistResponse.json()) as {
-        channel?: PublicChannelPageData["playlist"]["channel"];
-        settings?: PublicChannelPageData["playlist"]["settings"];
+        channel?: PublicChannelPageData["channel"];
+        settings?: PublicChannelPageData["settings"];
         items?: PublicPlaylistItem[];
         playedSongs?: PlayedSongRow[];
-        blacklistArtists?: PublicChannelPageData["playlist"]["blacklistArtists"];
-        blacklistCharters?: PublicChannelPageData["playlist"]["blacklistCharters"];
-        blacklistSongs?: PublicChannelPageData["playlist"]["blacklistSongs"];
+        blacklistArtists?: PublicChannelPageData["blacklistArtists"];
+        blacklistCharters?: PublicChannelPageData["blacklistCharters"];
+        blacklistSongs?: PublicChannelPageData["blacklistSongs"];
+        setlistArtists?: PublicChannelPageData["setlistArtists"];
+        blocks?: PublicChannelPageData["blocks"];
+        vipTokens?: PublicChannelPageData["vipTokens"];
+        accessRole?: PublicChannelPageData["accessRole"];
       };
 
       return {
-        playlist: {
-          ...playlist,
-          items: toPlaylistItems(
-            playlist.items ?? [],
-            playlist.playedSongs ?? []
-          ),
-        },
+        ...playlist,
+        items: toPlaylistItems(
+          playlist.items ?? [],
+          playlist.playedSongs ?? []
+        ),
       };
     },
     refetchInterval: 2_000,
     refetchIntervalInBackground: false,
   });
+  const { data: sessionData } = useQuery<ViewerSessionData>({
+    queryKey: ["viewer-session"],
+    queryFn: async () => {
+      const response = await fetch("/api/session", {
+        credentials: "include",
+      });
+      return response.json() as Promise<ViewerSessionData>;
+    },
+  });
 
-  useEffect(() => {
-    const source = new EventSource(`/api/channel/${slug}/playlist/stream`);
-
-    source.addEventListener("playlist", (event) => {
-      const payload = JSON.parse((event as MessageEvent<string>).data) as {
-        items: PublicPlaylistItem[];
-        playedSongs?: PlayedSongRow[];
-      };
-
-      queryClient.setQueryData(
-        ["public-channel-page", slug],
-        (current: PublicChannelPageData | undefined) => ({
-          playlist: {
-            ...(current?.playlist ?? {}),
-            items: toPlaylistItems(
-              payload.items ?? [],
-              payload.playedSongs ?? []
-            ),
-            playedSongs:
-              payload.playedSongs ?? current?.playlist.playedSongs ?? [],
-          },
-        })
-      );
-    });
-
-    return () => {
-      source.close();
-    };
-  }, [queryClient, slug]);
-
-  const channelDisplayName = data?.playlist?.channel?.displayName ?? slug;
-  const vipAutomationSummary = getVipAutomationSummary(
-    data?.playlist.settings ?? {}
-  );
+  const channelDisplayName = data?.channel?.displayName ?? slug;
+  const vipAutomationSummary = getVipAutomationSummary(data?.settings ?? {});
   const publicSearchResultState = useMemo(
     () =>
       (song: SearchSong): SearchSongResultState => {
@@ -174,9 +206,9 @@ function PublicChannelPage() {
             songCreator: song.creator ?? null,
           },
           {
-            artists: data?.playlist.blacklistArtists ?? [],
-            charters: data?.playlist.blacklistCharters ?? [],
-            songs: data?.playlist.blacklistSongs ?? [],
+            artists: data?.blacklistArtists ?? [],
+            charters: data?.blacklistCharters ?? [],
+            songs: data?.blacklistSongs ?? [],
           }
         );
 
@@ -185,32 +217,105 @@ function PublicChannelPage() {
           reasons,
         };
       },
-    [
-      data?.playlist.blacklistArtists,
-      data?.playlist.blacklistCharters,
-      data?.playlist.blacklistSongs,
-    ]
+    [data?.blacklistArtists, data?.blacklistCharters, data?.blacklistSongs]
   );
-  const playlistItems = data?.playlist?.items ?? [];
+  const playlistItems = data?.items ?? [];
   const filteredItems = useMemo(
     () =>
       playlistItems.filter((item) => {
         const blacklistReasons = getBlacklistReasons(item, {
-          artists: data?.playlist.blacklistArtists ?? [],
-          charters: data?.playlist.blacklistCharters ?? [],
-          songs: data?.playlist.blacklistSongs ?? [],
+          artists: data?.blacklistArtists ?? [],
+          charters: data?.blacklistCharters ?? [],
+          songs: data?.blacklistSongs ?? [],
         });
         return showBlacklisted || blacklistReasons.length === 0;
       }),
     [
-      data?.playlist.blacklistArtists,
-      data?.playlist.blacklistCharters,
-      data?.playlist.blacklistSongs,
+      data?.blacklistArtists,
+      data?.blacklistCharters,
+      data?.blacklistSongs,
       playlistItems,
       showBlacklisted,
     ]
   );
   const hiddenBlacklistedCount = playlistItems.length - filteredItems.length;
+  const canManagePlaylist = !!data?.settings?.canManageRequests;
+  const canManageBlacklist = !!data?.settings?.canManageBlacklist;
+  const canManageSetlist = !!data?.settings?.canManageSetlist;
+  const signedInViewer = sessionData?.viewer ?? null;
+  const addSongMutation = useMutation({
+    mutationFn: async (input: {
+      song: SearchSong;
+      requesterLogin: string;
+      requesterTwitchUserId?: string;
+      requesterDisplayName?: string;
+    }) => {
+      const response = await fetch(`/api/channel/${slug}/playlist`, {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({
+          action: "manualAdd",
+          songId: input.song.id,
+          requesterLogin: input.requesterLogin,
+          requesterTwitchUserId: input.requesterTwitchUserId,
+          requesterDisplayName: input.requesterDisplayName,
+          title: input.song.title,
+          artist: input.song.artist,
+          album: input.song.album,
+          creator: input.song.creator,
+          tuning: input.song.tuning,
+          parts: input.song.parts,
+          durationText: input.song.durationText,
+          source: input.song.source,
+          sourceId: input.song.sourceId,
+          candidateMatchesJson: JSON.stringify([
+            {
+              id: input.song.id,
+              title: input.song.title,
+              artist: input.song.artist,
+              album: input.song.album,
+              creator: input.song.creator,
+              tuning: input.song.tuning,
+              parts: input.song.parts ?? [],
+              durationText: input.song.durationText,
+              sourceId: input.song.sourceId,
+            },
+          ]),
+        }),
+      });
+      const body = (await response.json().catch(() => null)) as {
+        error?: string;
+        message?: string;
+      } | null;
+      if (!response.ok) {
+        throw new Error(
+          body?.error ?? body?.message ?? "Unable to add the song."
+        );
+      }
+      return body;
+    },
+    onMutate: (input) => {
+      setPendingAddSongId(input.song.id);
+    },
+    onSuccess: () => {
+      setPendingAddSongId(null);
+      void queryClient.invalidateQueries({
+        queryKey: ["channel-playlist", slug],
+      });
+    },
+    onSettled: () => {
+      setPendingAddSongId(null);
+    },
+  });
+  const currentViewer = signedInViewer
+    ? {
+        id: signedInViewer.user.twitchUserId,
+        login: signedInViewer.user.login,
+        displayName: signedInViewer.user.displayName,
+      }
+    : null;
 
   return (
     <section className="grid gap-6">
@@ -235,33 +340,51 @@ function PublicChannelPage() {
           </div>
         ) : null}
         {isLoading ? <p className="mt-4 px-8">Loading playlist...</p> : null}
-        <div className="mt-6 grid gap-3 px-8">
-          <AnimatePresence initial={false} mode="popLayout">
-            {filteredItems.map((item) => (
-              <PublicPlaylistRow
-                key={item.id}
-                item={item}
-                blacklistReasons={getBlacklistReasons(item, {
-                  artists: data?.playlist.blacklistArtists ?? [],
-                  charters: data?.playlist.blacklistCharters ?? [],
-                  songs: data?.playlist.blacklistSongs ?? [],
-                })}
-              />
-            ))}
-          </AnimatePresence>
-          {!isLoading && !filteredItems.length ? (
-            <p className="text-sm text-(--muted)">
-              {playlistItems.length > 0 && !showBlacklisted
-                ? "Only blacklisted songs are in the queue right now."
-                : "This playlist is empty right now."}
-            </p>
-          ) : null}
-        </div>
+        {canManagePlaylist ? (
+          <div className="mt-6 px-8">
+            <PlaylistManagementSurface
+              apiPath={`/api/channel/${slug}/playlist`}
+              queryKeyBase={`channel-playlist-management-${slug}`}
+              queryKey={["channel-playlist", slug]}
+              showAncillaryPanels={false}
+              showManualAdd={false}
+              embedCurrentPlaylist
+              currentPlaylistTitle={null}
+            />
+          </div>
+        ) : (
+          <div className="mt-6 grid gap-3 px-8">
+            <AnimatePresence initial={false} mode="popLayout">
+              {filteredItems.map((item) => (
+                <PublicPlaylistRow
+                  key={item.id}
+                  item={item}
+                  blacklistReasons={getBlacklistReasons(item, {
+                    artists: data?.blacklistArtists ?? [],
+                    charters: data?.blacklistCharters ?? [],
+                    songs: data?.blacklistSongs ?? [],
+                  })}
+                />
+              ))}
+            </AnimatePresence>
+            {!isLoading && !filteredItems.length ? (
+              <p className="text-sm text-(--muted)">
+                {playlistItems.length > 0 && !showBlacklisted
+                  ? "Only blacklisted songs are in the queue right now."
+                  : "This playlist is empty right now."}
+              </p>
+            ) : null}
+          </div>
+        )}
       </div>
 
       <SongSearchPanel
         title="Search to add a song"
-        description="Copy the request command and use it in Twitch chat."
+        description={
+          canManagePlaylist
+            ? "Add the song to the playlist or assign it to a current viewer."
+            : "Copy the request command and use it in Twitch chat."
+        }
         placeholder={`Search songs for ${channelDisplayName}`}
         extraSearchParams={{
           channelSlug: slug,
@@ -269,6 +392,29 @@ function PublicChannelPage() {
         }}
         resultState={publicSearchResultState}
         useTotalForSummary
+        actionsLabel={canManagePlaylist ? "Add" : "Actions"}
+        renderActions={
+          canManagePlaylist
+            ? ({ song, resultState }: SearchSongActionRenderArgs) => (
+                <ManageSearchSongActions
+                  slug={slug}
+                  song={song}
+                  resultState={resultState}
+                  currentViewer={currentViewer}
+                  pendingAddSongId={pendingAddSongId}
+                  mutationIsPending={addSongMutation.isPending}
+                  onAdd={(requester) =>
+                    addSongMutation.mutate({
+                      song,
+                      requesterLogin: requester.login,
+                      requesterTwitchUserId: requester.id,
+                      requesterDisplayName: requester.displayName,
+                    })
+                  }
+                />
+              )
+            : undefined
+        }
         advancedFiltersContent={
           <div className="inline-flex flex-wrap items-center gap-3 rounded-full border border-(--border) bg-(--panel) px-4 py-2.5">
             <Checkbox
@@ -293,15 +439,183 @@ function PublicChannelPage() {
         }
       />
 
-      <BlacklistPanel
-        artists={data?.playlist.blacklistArtists ?? []}
-        charters={data?.playlist.blacklistCharters ?? []}
-        songs={data?.playlist.blacklistSongs ?? []}
-        description="These exact artist IDs and track IDs are blocked for requests in this channel."
+      <ChannelRulesPanel
+        slug={slug}
+        blacklistEnabled={!!data?.settings?.blacklistEnabled}
+        setlistEnabled={!!data?.settings?.setlistEnabled}
+        letSetlistBypassBlacklist={!!data?.settings?.letSetlistBypassBlacklist}
+        subscribersMustFollowSetlist={
+          !!data?.settings?.subscribersMustFollowSetlist
+        }
+        canManageBlacklist={canManageBlacklist}
+        canManageSetlist={canManageSetlist}
+        artists={data?.blacklistArtists ?? []}
+        charters={data?.blacklistCharters ?? []}
+        songs={data?.blacklistSongs ?? []}
+        setlistArtists={data?.setlistArtists ?? []}
+      />
+
+      <ChannelCommunityPanel
+        slug={slug}
+        canManageBlockedChatters={!!data?.settings?.canManageBlockedChatters}
+        canViewVipTokens={!!data?.settings?.canViewVipTokens}
+        canManageVipTokens={!!data?.settings?.canManageVipTokens}
+        blocks={data?.blocks ?? []}
+        vipTokens={data?.vipTokens ?? []}
       />
 
       <PublicPlayedHistoryCard slug={slug} />
     </section>
+  );
+}
+
+function ManageSearchSongActions(props: {
+  slug: string;
+  song: SearchSong;
+  resultState: SearchSongResultState;
+  currentViewer: ViewerMatch | null;
+  pendingAddSongId: string | null;
+  mutationIsPending: boolean;
+  onAdd: (requester: ViewerMatch) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState("");
+  const [debouncedQuery, setDebouncedQuery] = useState("");
+  const normalizedQuery = debouncedQuery
+    .trim()
+    .replace(/^@+/, "")
+    .toLowerCase();
+
+  useEffect(() => {
+    const timeout = window.setTimeout(() => {
+      setDebouncedQuery(query);
+    }, 800);
+
+    return () => {
+      window.clearTimeout(timeout);
+    };
+  }, [query]);
+
+  const lookupQuery = useQuery<ChannelViewerSearchResponse>({
+    queryKey: ["channel-viewer-search", props.slug, normalizedQuery],
+    queryFn: async () => {
+      const params = new URLSearchParams({
+        query: normalizedQuery,
+      });
+      const response = await fetch(
+        `/api/channel/${props.slug}/viewers?${params}`
+      );
+      return response.json() as Promise<ChannelViewerSearchResponse>;
+    },
+    enabled: open && normalizedQuery.length >= 2,
+  });
+  const addDisabled =
+    props.resultState.disabled ||
+    (props.mutationIsPending && props.pendingAddSongId === props.song.id) ||
+    !props.currentViewer?.login;
+
+  return (
+    <div className="grid gap-2">
+      <div className="grid grid-cols-2 gap-2">
+        <Button
+          type="button"
+          className="w-full px-4 shadow-none"
+          onClick={() => {
+            if (!props.currentViewer || props.resultState.disabled) {
+              return;
+            }
+            props.onAdd(props.currentViewer);
+          }}
+          disabled={addDisabled}
+        >
+          {props.mutationIsPending && props.pendingAddSongId === props.song.id
+            ? "Adding..."
+            : "Add to playlist"}
+        </Button>
+        <Popover open={open} onOpenChange={setOpen}>
+          <PopoverTrigger asChild>
+            <Button
+              type="button"
+              variant="outline"
+              className="w-full px-4"
+              disabled={props.resultState.disabled || props.mutationIsPending}
+            >
+              Add for user
+            </Button>
+          </PopoverTrigger>
+          <PopoverContent
+            align="start"
+            className="w-[200px] rounded-2xl border-(--border) bg-(--panel-strong) p-3 text-(--text)"
+          >
+            <div className="grid gap-2">
+              <Input
+                value={query}
+                onChange={(event) => setQuery(event.target.value)}
+                placeholder="Search current viewers"
+              />
+              {normalizedQuery.length > 0 && normalizedQuery.length < 2 ? (
+                <p className="text-sm text-(--muted)">
+                  Type at least 2 characters to search current viewers.
+                </p>
+              ) : null}
+              {lookupQuery.data?.needsChatterScopeReconnect ? (
+                <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-amber-500/30 bg-amber-500/10 px-3 py-2">
+                  <p className="text-sm text-amber-100">
+                    Reconnect Twitch to search viewers currently in chat.
+                  </p>
+                  <Button asChild size="sm" variant="outline">
+                    <a
+                      href={`/auth/twitch/start?redirectTo=${encodeURIComponent(`/${props.slug}`)}`}
+                    >
+                      Reconnect
+                    </a>
+                  </Button>
+                </div>
+              ) : null}
+              {normalizedQuery.length >= 2 ? (
+                lookupQuery.isFetching ? (
+                  <p className="text-sm text-(--muted)">
+                    Searching current viewers...
+                  </p>
+                ) : (lookupQuery.data?.users?.length ?? 0) > 0 ? (
+                  <div className="grid gap-1">
+                    {lookupQuery.data?.users.map((user) => (
+                      <button
+                        key={user.id}
+                        type="button"
+                        onClick={() => {
+                          props.onAdd(user);
+                          setOpen(false);
+                          setQuery("");
+                          setDebouncedQuery("");
+                        }}
+                        className="flex items-center justify-between gap-3 rounded-xl px-3 py-3 text-left transition-colors hover:bg-(--panel-soft)"
+                      >
+                        <div>
+                          <p className="font-medium text-(--text)">
+                            {user.displayName}
+                          </p>
+                          <p className="text-sm text-(--muted)">
+                            @{user.login}
+                          </p>
+                        </div>
+                        <span className="text-xs font-semibold uppercase tracking-[0.16em] text-(--brand-deep)">
+                          Add
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-sm text-(--muted)">
+                    No current viewers matched that username.
+                  </p>
+                )
+              ) : null}
+            </div>
+          </PopoverContent>
+        </Popover>
+      </div>
+    </div>
   );
 }
 

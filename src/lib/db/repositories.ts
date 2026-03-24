@@ -435,10 +435,84 @@ export async function getAdminDashboardState(env: AppEnv, userId: string) {
 }
 
 export async function getLiveChannels(env: AppEnv) {
-  return getDb(env).query.channels.findMany({
+  const db = getDb(env);
+  const liveChannels = await db.query.channels.findMany({
     where: and(eq(channels.isLive, true), eq(channels.botEnabled, true)),
     orderBy: [asc(channels.displayName)],
     limit: 50,
+  });
+
+  if (!liveChannels.length) {
+    return [];
+  }
+
+  const appToken = await getAppAccessToken(env);
+  const liveStreams = await getLiveStreams({
+    env,
+    appAccessToken: appToken.access_token,
+    broadcasterUserIds: liveChannels.map((channel) => channel.twitchChannelId),
+  });
+  const liveStreamByChannelId = new Map(
+    liveStreams.map((stream) => [stream.user_id, stream])
+  );
+
+  const playlistsForChannels = await db.query.playlists.findMany({
+    where: inArray(
+      playlists.channelId,
+      liveChannels.map((channel) => channel.id)
+    ),
+  });
+  const playlistIds = playlistsForChannels.map((playlist) => playlist.id);
+  const playlistByChannelId = new Map(
+    playlistsForChannels.map((playlist) => [playlist.channelId, playlist])
+  );
+
+  const itemsForChannels = playlistIds.length
+    ? await db.query.playlistItems.findMany({
+        where: and(
+          inArray(playlistItems.playlistId, playlistIds),
+          inArray(playlistItems.status, ["queued", "current"])
+        ),
+        orderBy: [asc(playlistItems.position)],
+      })
+    : [];
+
+  return liveChannels.map((channel) => {
+    const stream = liveStreamByChannelId.get(channel.twitchChannelId);
+    const playlist = playlistByChannelId.get(channel.id);
+    const channelItems = playlist
+      ? itemsForChannels.filter((item) => item.playlistId === playlist.id)
+      : [];
+    const currentItem =
+      channelItems.find((item) => item.status === "current") ?? null;
+    const nextItem =
+      channelItems.find((item) => item.status === "queued") ??
+      (currentItem ? null : (channelItems[0] ?? null));
+
+    return {
+      id: channel.id,
+      slug: channel.slug,
+      displayName: channel.displayName,
+      login: channel.login,
+      streamTitle: stream?.title ?? null,
+      streamThumbnailUrl: stream?.thumbnail_url
+        ? stream.thumbnail_url
+            .replace("{width}", "640")
+            .replace("{height}", "360")
+        : null,
+      currentItem: currentItem
+        ? {
+            title: currentItem.songTitle,
+            artist: currentItem.songArtist ?? null,
+          }
+        : null,
+      nextItem: nextItem
+        ? {
+            title: nextItem.songTitle,
+            artist: nextItem.songArtist ?? null,
+          }
+        : null,
+    };
   });
 }
 
@@ -1901,6 +1975,8 @@ export async function updateSettings(
     moderatorCanManageRequests: boolean;
     moderatorCanManageBlacklist: boolean;
     moderatorCanManageSetlist: boolean;
+    moderatorCanManageBlockedChatters: boolean;
+    moderatorCanViewVipTokens: boolean;
     moderatorCanManageVipTokens: boolean;
     moderatorCanManageTags: boolean;
     requestsEnabled: boolean;
@@ -1936,6 +2012,9 @@ export async function updateSettings(
     commandPrefix: string;
   }
 ) {
+  const moderatorCanViewVipTokens =
+    input.moderatorCanViewVipTokens || input.moderatorCanManageVipTokens;
+
   await getDb(env)
     .update(channelSettings)
     .set({
@@ -1943,6 +2022,9 @@ export async function updateSettings(
       moderatorCanManageRequests: input.moderatorCanManageRequests,
       moderatorCanManageBlacklist: input.moderatorCanManageBlacklist,
       moderatorCanManageSetlist: input.moderatorCanManageSetlist,
+      moderatorCanManageBlockedChatters:
+        input.moderatorCanManageBlockedChatters,
+      moderatorCanViewVipTokens,
       moderatorCanManageVipTokens: input.moderatorCanManageVipTokens,
       moderatorCanManageTags: input.moderatorCanManageTags,
       requestsEnabled: input.requestsEnabled,
@@ -2512,6 +2594,18 @@ export async function getActiveBroadcasterAuthorizationForUser(
   return refreshBroadcasterAuthorizationIfNeeded(env, authorization);
 }
 
+export async function getActiveBroadcasterAuthorizationForChannel(
+  env: AppEnv,
+  channelId: string
+) {
+  const authorization = await getAuthorizationForChannel(env, channelId);
+  if (!authorization) {
+    return null;
+  }
+
+  return refreshBroadcasterAuthorizationIfNeeded(env, authorization);
+}
+
 export async function getBotAuthorization(env: AppEnv) {
   return getDb(env).query.twitchAuthorizations.findFirst({
     where: eq(twitchAuthorizations.authorizationType, "bot"),
@@ -2778,7 +2872,7 @@ export async function getDashboardChannelAccess(
     where: eq(channelSettings.channelId, requestedChannel.id),
   });
 
-  if (!settings?.moderatorCanManageRequests) {
+  if (!hasAnyModeratorChannelCapability(settings)) {
     return null;
   }
 
@@ -2809,6 +2903,35 @@ export async function getDashboardChannelAccess(
     accessRole: "moderator" as const,
     actorUserId: userId,
   };
+}
+
+function hasAnyModeratorChannelCapability(
+  settings:
+    | {
+        moderatorCanManageRequests: boolean;
+        moderatorCanManageBlacklist: boolean;
+        moderatorCanManageSetlist: boolean;
+        moderatorCanManageBlockedChatters: boolean;
+        moderatorCanViewVipTokens: boolean;
+        moderatorCanManageVipTokens: boolean;
+        moderatorCanManageTags: boolean;
+      }
+    | null
+    | undefined
+) {
+  if (!settings) {
+    return false;
+  }
+
+  return (
+    settings.moderatorCanManageRequests ||
+    settings.moderatorCanManageBlacklist ||
+    settings.moderatorCanManageSetlist ||
+    settings.moderatorCanManageBlockedChatters ||
+    settings.moderatorCanViewVipTokens ||
+    settings.moderatorCanManageVipTokens ||
+    settings.moderatorCanManageTags
+  );
 }
 
 async function getModeratedChannelViewerState(

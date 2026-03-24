@@ -1,11 +1,10 @@
 import { spawnSync } from "node:child_process";
-import { existsSync, readdirSync, statSync } from "node:fs";
+import { existsSync, statSync } from "node:fs";
 import path from "node:path";
 
 const repoRoot = process.cwd();
 
 const sourceRoots = ["src", "tests"];
-const includeExtensions = new Set([".ts", ".tsx", ".js", ".json", ".jsonc"]);
 const explicitFiles = [
   "package.json",
   "biome.json",
@@ -19,47 +18,8 @@ const explicitFiles = [
   "wrangler.jsonc",
 ];
 
-function collectFiles(dirPath, results) {
-  for (const entry of readdirSync(dirPath, { withFileTypes: true })) {
-    const fullPath = path.join(dirPath, entry.name);
-
-    if (entry.isDirectory()) {
-      collectFiles(fullPath, results);
-      continue;
-    }
-
-    if (!entry.isFile()) {
-      continue;
-    }
-
-    if (entry.name === "routeTree.gen.ts") {
-      continue;
-    }
-
-    if (!includeExtensions.has(path.extname(entry.name))) {
-      continue;
-    }
-
-    results.push(fullPath);
-  }
-}
-
-const files = [];
-for (const root of sourceRoots) {
-  const fullRoot = path.join(repoRoot, root);
-  if (existsSync(fullRoot) && statSync(fullRoot).isDirectory()) {
-    collectFiles(fullRoot, files);
-  }
-}
-
-for (const file of explicitFiles) {
-  const fullPath = path.join(repoRoot, file);
-  if (existsSync(fullPath) && statSync(fullPath).isFile()) {
-    files.push(fullPath);
-  }
-}
-
 const mode = process.argv[2] ?? "check";
+const requestedPaths = process.argv.slice(3);
 const modeArgs =
   mode === "check"
     ? []
@@ -74,15 +34,46 @@ if (!modeArgs) {
   process.exit(1);
 }
 
+const defaultPaths = [
+  ...sourceRoots.filter((root) => {
+    const fullRoot = path.join(repoRoot, root);
+    return existsSync(fullRoot) && statSync(fullRoot).isDirectory();
+  }),
+  ...explicitFiles.filter((file) => {
+    const fullPath = path.join(repoRoot, file);
+    return existsSync(fullPath) && statSync(fullPath).isFile();
+  }),
+];
+
+const targetPaths = requestedPaths.length > 0 ? requestedPaths : defaultPaths;
 const commandArgs =
   mode === "format-write"
-    ? [...modeArgs, "--files-ignore-unknown=true", ...files]
-    : ["check", ...modeArgs, "--files-ignore-unknown=true", ...files];
+    ? [...modeArgs, "--files-ignore-unknown=true", ...targetPaths]
+    : ["check", ...modeArgs, "--files-ignore-unknown=true", ...targetPaths];
 
-const result = spawnSync("npx", ["--no-install", "biome", ...commandArgs], {
+const biomeEntrypoint = path.join(
+  repoRoot,
+  "node_modules",
+  "@biomejs",
+  "biome",
+  "bin",
+  "biome"
+);
+
+if (!existsSync(biomeEntrypoint)) {
+  console.error("Biome entrypoint not found. Run npm install first.");
+  process.exit(1);
+}
+
+const result = spawnSync(process.execPath, [biomeEntrypoint, ...commandArgs], {
   stdio: "inherit",
-  shell: process.platform === "win32",
+  shell: false,
 });
+
+if (result.error) {
+  console.error(result.error.message);
+  process.exit(1);
+}
 
 if (typeof result.status === "number") {
   process.exit(result.status);

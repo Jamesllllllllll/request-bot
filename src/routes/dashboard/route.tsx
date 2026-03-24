@@ -7,14 +7,7 @@ import {
   useRouter,
   useRouterState,
 } from "@tanstack/react-router";
-import {
-  Activity,
-  ListMusic,
-  MonitorPlay,
-  Settings2,
-  Shield,
-  Wrench,
-} from "lucide-react";
+import { Activity, Settings2, Wrench } from "lucide-react";
 import {
   Select,
   SelectContent,
@@ -30,6 +23,7 @@ export const Route = createFileRoute("/dashboard")({
 
 type DashboardNavItem = {
   to: DashboardRoutePath;
+  href?: string;
   label: string;
   icon: React.ComponentType<{ className?: string }>;
   exact?: boolean;
@@ -37,38 +31,15 @@ type DashboardNavItem = {
 
 type DashboardRoutePath =
   | "/dashboard"
-  | "/dashboard/playlist"
-  | "/dashboard/moderation"
-  | "/dashboard/overlay"
   | "/dashboard/settings"
   | "/dashboard/admin";
 
-const primaryNav: DashboardNavItem[] = [
+const accountNav: DashboardNavItem[] = [
   {
     to: "/dashboard" as const,
-    label: "Overview",
+    label: "Channels",
     icon: Activity,
     exact: true,
-  },
-  {
-    to: "/dashboard/playlist" as const,
-    label: "Manage Playlist",
-    icon: ListMusic,
-  },
-  {
-    to: "/dashboard/moderation" as const,
-    label: "Moderation",
-    icon: Shield,
-  },
-  {
-    to: "/dashboard/overlay" as const,
-    label: "Overlay",
-    icon: MonitorPlay,
-  },
-  {
-    to: "/dashboard/settings" as const,
-    label: "Settings",
-    icon: Settings2,
   },
 ];
 
@@ -97,6 +68,9 @@ function DashboardLayout() {
           user: {
             isAdmin?: boolean;
           };
+          channel: {
+            slug: string;
+          } | null;
           manageableChannels?: Array<{
             slug: string;
             displayName: string;
@@ -109,6 +83,17 @@ function DashboardLayout() {
   });
 
   const isAdmin = !!data?.viewer?.user?.isAdmin;
+  const hasOwnerChannel = !!data?.viewer?.channel;
+  const primaryNav: DashboardNavItem[] = hasOwnerChannel
+    ? [
+        ...accountNav,
+        {
+          to: "/dashboard/settings" as const,
+          label: "Settings",
+          icon: Settings2,
+        },
+      ]
+    : accountNav;
   const navItems = isAdmin ? [...primaryNav, ...adminNav] : primaryNav;
   const activeDashboardPath =
     navItems.find((item) =>

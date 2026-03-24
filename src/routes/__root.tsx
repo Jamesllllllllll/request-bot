@@ -15,7 +15,7 @@ import {
   Headphones,
   LogOut,
   Radio,
-  SlidersHorizontal,
+  Settings2,
 } from "lucide-react";
 import { Button } from "~/components/ui/button";
 import "~/app.css";
@@ -118,13 +118,10 @@ function AppShell() {
               {viewer ? (
                 <NavLink
                   to="/dashboard"
-                  label="Dashboard"
-                  icon={SlidersHorizontal}
+                  label="Account"
+                  icon={Settings2}
                   active={
                     pathname === "/dashboard" ||
-                    pathname.startsWith("/dashboard/playlist") ||
-                    pathname.startsWith("/dashboard/moderation") ||
-                    pathname.startsWith("/dashboard/overlay") ||
                     pathname.startsWith("/dashboard/settings")
                   }
                 />

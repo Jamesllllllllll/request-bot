@@ -15,6 +15,7 @@ import {
   playlists,
   requestLogs,
   twitchAuthorizations,
+  users,
 } from "~/lib/db/schema";
 import { assertDatabaseSchemaCurrent } from "~/lib/db/schema-version";
 import type { BackendEnv } from "~/lib/env";
@@ -78,9 +79,61 @@ type PlaylistCandidate = {
   sourceId?: number;
 };
 
+function getMutationTraceId(payload: MutationPayload) {
+  return typeof payload.traceId === "string" && payload.traceId.length > 0
+    ? payload.traceId
+    : crypto.randomUUID();
+}
+
+function summarizeMutationPayload(payload: MutationPayload) {
+  const action =
+    typeof payload.action === "string" ? payload.action : undefined;
+
+  return {
+    action,
+    channelId:
+      typeof payload.channelId === "string" ? payload.channelId : undefined,
+    actorUserId:
+      typeof payload.actorUserId === "string" ? payload.actorUserId : undefined,
+    itemId: typeof payload.itemId === "string" ? payload.itemId : undefined,
+    requesterLogin:
+      typeof payload.requesterLogin === "string"
+        ? payload.requesterLogin
+        : undefined,
+    requesterTwitchUserId:
+      typeof payload.requesterTwitchUserId === "string"
+        ? payload.requesterTwitchUserId
+        : undefined,
+    requesterDisplayName:
+      typeof payload.requesterDisplayName === "string"
+        ? payload.requesterDisplayName
+        : undefined,
+    songId: typeof payload.songId === "string" ? payload.songId : undefined,
+    title: typeof payload.title === "string" ? payload.title : undefined,
+    kind: typeof payload.kind === "string" ? payload.kind : undefined,
+    requestKind:
+      typeof payload.requestKind === "string" ? payload.requestKind : undefined,
+  };
+}
+
+function logPlaylistWorkerStep(
+  message: string,
+  input: {
+    traceId: string;
+    channelId?: string;
+    extra?: Record<string, unknown>;
+  }
+) {
+  console.info(message, {
+    traceId: input.traceId,
+    channelId: input.channelId ?? null,
+    ...(input.extra ?? {}),
+  });
+}
+
 class D1PlaylistCoordinator implements PlaylistCoordinator {
   constructor(
-    _state: DurableObjectState,
+    private state: DurableObjectState,
     private env: BackendEnv,
     private onPlaylistChanged?: (channelId: string) => Promise<void>
   ) {}
@@ -103,9 +156,29 @@ class D1PlaylistCoordinator implements PlaylistCoordinator {
   }
 
   private async notify(channelId: string) {
+    console.info("Playlist notify start", {
+      channelId,
+      hasOnPlaylistChanged: Boolean(this.onPlaylistChanged),
+    });
     if (this.onPlaylistChanged) {
-      await this.onPlaylistChanged(channelId);
+      const notifyTask = (async () => {
+        try {
+          await this.onPlaylistChanged?.(channelId);
+          console.info("Playlist notify background delivery complete", {
+            channelId,
+          });
+        } catch (error) {
+          console.error("Playlist notify background delivery failed", {
+            channelId,
+            error: error instanceof Error ? error.message : String(error),
+          });
+        }
+      })();
+      this.state.waitUntil(notifyTask);
     }
+    console.info("Playlist notify queued", {
+      channelId,
+    });
   }
 
   private async audit(
@@ -202,6 +275,16 @@ class D1PlaylistCoordinator implements PlaylistCoordinator {
   }
 
   async addRequest(input: AddRequestInput): Promise<PlaylistMutationResult> {
+    console.info("Playlist addRequest start", {
+      channelId: input.channelId,
+      requesterLogin: input.requestedByLogin ?? null,
+      requesterTwitchUserId: input.requestedByTwitchUserId ?? null,
+      songId: input.song.id,
+      title: input.song.title,
+      prioritizeNext: input.prioritizeNext ?? false,
+      requestKind: input.requestKind ?? "regular",
+      hasMessageId: Boolean(input.messageId),
+    });
     const db = getDb(this.env);
     const { playlist, items } = await this.getPlaylist(input.channelId);
 
@@ -214,6 +297,11 @@ class D1PlaylistCoordinator implements PlaylistCoordinator {
       });
 
       if (existing) {
+        console.info("Playlist addRequest duplicate by message id", {
+          channelId: input.channelId,
+          messageId: input.messageId,
+          existingItemId: existing.id,
+        });
         return {
           ok: true,
           duplicate: true,
@@ -307,6 +395,12 @@ class D1PlaylistCoordinator implements PlaylistCoordinator {
         throw error;
       }
 
+      console.info("Playlist addRequest duplicate after insert race", {
+        channelId: input.channelId,
+        messageId: input.messageId,
+        duplicateItemId: duplicate.id,
+      });
+
       return {
         ok: true,
         duplicate: true,
@@ -325,6 +419,13 @@ class D1PlaylistCoordinator implements PlaylistCoordinator {
       input
     );
     await this.notify(input.channelId);
+
+    console.info("Playlist addRequest complete", {
+      channelId: input.channelId,
+      itemId,
+      playlistId: playlist.id,
+      currentItemId: playlist.currentItemId,
+    });
 
     return {
       ok: true,
@@ -400,6 +501,17 @@ class D1PlaylistCoordinator implements PlaylistCoordinator {
   }
 
   async manualAdd(input: ManualAddInput): Promise<PlaylistMutationResult> {
+    console.info("Playlist manualAdd start", {
+      channelId: input.channelId,
+      actorUserId: input.actorUserId,
+      requesterLogin: input.requesterLogin ?? null,
+      requesterTwitchUserId: input.requesterTwitchUserId ?? null,
+      requesterDisplayName: input.requesterDisplayName ?? null,
+      songId: input.song.id,
+      title: input.song.title,
+      source: input.song.source,
+      cdlcId: input.song.cdlcId ?? null,
+    });
     const db = getDb(this.env);
     const channel = await getDb(this.env).query.channels.findFirst({
       where: eq(channels.id, input.channelId),
@@ -410,8 +522,22 @@ class D1PlaylistCoordinator implements PlaylistCoordinator {
     }
 
     const requester = input.requesterLogin
-      ? await resolveTwitchUserForRequester(this.env, input.requesterLogin)
+      ? await resolveTwitchUserForRequester(this.env, {
+          requesterLogin: input.requesterLogin,
+          requesterTwitchUserId: input.requesterTwitchUserId,
+          requesterDisplayName: input.requesterDisplayName,
+        })
       : null;
+
+    console.info("Playlist manualAdd requester resolved", {
+      channelId: input.channelId,
+      requesterLogin: input.requesterLogin ?? null,
+      resolvedRequesterTwitchUserId: requester?.id ?? channel.twitchChannelId,
+      resolvedRequesterLogin: requester?.login ?? channel.login,
+      resolvedRequesterDisplayName:
+        requester?.display_name ?? channel.displayName,
+      resolvedFromExplicitRequester: Boolean(input.requesterLogin),
+    });
 
     const settings = await db.query.channelSettings.findFirst({
       where: eq(channelSettings.channelId, input.channelId),
@@ -455,8 +581,20 @@ class D1PlaylistCoordinator implements PlaylistCoordinator {
     });
 
     if (!songAllowed.allowed) {
+      console.info("Playlist manualAdd rejected by policy", {
+        channelId: input.channelId,
+        songId: input.song.id,
+        title: input.song.title,
+        reason: songAllowed.reason ?? null,
+      });
       throw new Error(songAllowed.reason ?? "That song is not allowed.");
     }
+
+    console.info("Playlist manualAdd allowed by policy", {
+      channelId: input.channelId,
+      songId: input.song.id,
+      title: input.song.title,
+    });
 
     return this.addRequest({
       channelId: input.channelId,
@@ -471,6 +609,13 @@ class D1PlaylistCoordinator implements PlaylistCoordinator {
   async removeRequests(
     input: RemoveRequestsInput
   ): Promise<PlaylistMutationResult> {
+    console.info("Playlist removeRequests start", {
+      channelId: input.channelId,
+      actorUserId: input.actorUserId,
+      requesterLogin: input.requesterLogin,
+      requesterTwitchUserId: input.requesterTwitchUserId,
+      kind: input.kind,
+    });
     const db = getDb(this.env);
     const { playlist, items } = await this.getPlaylist(input.channelId);
     const removable = items
@@ -483,6 +628,11 @@ class D1PlaylistCoordinator implements PlaylistCoordinator {
       .sort((a, b) => a.position - b.position);
 
     if (removable.length === 0) {
+      console.info("Playlist removeRequests found no matching items", {
+        channelId: input.channelId,
+        requesterTwitchUserId: input.requesterTwitchUserId,
+        kind: input.kind,
+      });
       return {
         ok: true,
         playlistId: playlist.id,
@@ -549,6 +699,14 @@ class D1PlaylistCoordinator implements PlaylistCoordinator {
       }
     );
     await this.notify(input.channelId);
+
+    console.info("Playlist removeRequests complete", {
+      channelId: input.channelId,
+      requesterTwitchUserId: input.requesterTwitchUserId,
+      removedCount: removable.length,
+      removedCurrentItem,
+      nextCurrent,
+    });
 
     return {
       ok: true,
@@ -932,6 +1090,11 @@ class D1PlaylistCoordinator implements PlaylistCoordinator {
   }
 
   async deleteItem(input: DeleteItemInput): Promise<PlaylistMutationResult> {
+    console.info("Playlist deleteItem start", {
+      channelId: input.channelId,
+      actorUserId: input.actorUserId,
+      itemId: input.itemId,
+    });
     const db = getDb(this.env);
     const { playlist, items } = await this.getPlaylist(input.channelId);
     await db.delete(playlistItems).where(eq(playlistItems.id, input.itemId));
@@ -960,6 +1123,12 @@ class D1PlaylistCoordinator implements PlaylistCoordinator {
       {}
     );
     await this.notify(input.channelId);
+
+    console.info("Playlist deleteItem complete", {
+      channelId: input.channelId,
+      itemId: input.itemId,
+      nextCurrent,
+    });
 
     return {
       ok: true,
@@ -1221,7 +1390,14 @@ class ChannelPlaylistDurableObjectBase {
   }
 
   private async broadcastSnapshot(channelId: string) {
+    console.info("Playlist broadcast start", {
+      channelId,
+      clientCount: this.streamClients.size,
+    });
     if (!this.streamClients.size) {
+      console.info("Playlist broadcast skipped; no stream clients", {
+        channelId,
+      });
       return;
     }
 
@@ -1238,6 +1414,11 @@ class ChannelPlaylistDurableObjectBase {
         }
       })
     );
+
+    console.info("Playlist broadcast complete", {
+      channelId,
+      remainingClientCount: this.streamClients.size,
+    });
   }
 
   private async handleStream(request: Request) {
@@ -1290,6 +1471,18 @@ class ChannelPlaylistDurableObjectBase {
       request.method === "POST"
         ? ((await request.json()) as MutationPayload)
         : {};
+    const traceId = getMutationTraceId(payload);
+
+    logPlaylistWorkerStep("Playlist DO request received", {
+      traceId,
+      channelId:
+        typeof payload.channelId === "string" ? payload.channelId : undefined,
+      extra: {
+        path: url.pathname,
+        method: request.method,
+        ...summarizeMutationPayload(payload),
+      },
+    });
 
     switch (url.pathname) {
       case "/add-request":
@@ -1299,7 +1492,7 @@ class ChannelPlaylistDurableObjectBase {
           )
         );
       case "/mutate":
-        return json(await handleMutation(this.coordinator, payload));
+        return json(await handleMutation(this.coordinator, payload, traceId));
       case "/stream":
         return this.handleStream(request);
       default:
@@ -1312,69 +1505,115 @@ export class ChannelPlaylistDurableObject extends ChannelPlaylistDurableObjectBa
 
 async function handleMutation(
   coordinator: PlaylistCoordinator,
-  payload: MutationPayload
+  payload: MutationPayload,
+  traceId: string
 ) {
-  switch (payload.action) {
-    case "markPlayed":
-      return coordinator.markPlayed(payload as unknown as MarkPlayedInput);
-    case "restorePlayed":
-      return coordinator.restorePlayed(
-        payload as unknown as RestorePlayedInput
-      );
-    case "setCurrent":
-      return coordinator.setCurrent(payload as unknown as SetCurrentInput);
-    case "shuffleNext":
-      return coordinator.shuffleNext(payload as unknown as ShuffleNextInput);
-    case "shufflePlaylist":
-      return coordinator.shufflePlaylist(
-        payload as unknown as ShufflePlaylistInput
-      );
-    case "reorderItems":
-      return coordinator.reorderItems(payload as unknown as ReorderItemsInput);
-    case "removeRequests":
-      return coordinator.removeRequests(
-        payload as unknown as RemoveRequestsInput
-      );
-    case "changeRequestKind":
-      return coordinator.changeRequestKind(
-        payload as unknown as ChangeRequestKindInput
-      );
-    case "deleteItem":
-      return coordinator.deleteItem(payload as unknown as DeleteItemInput);
-    case "chooseVersion":
-      return coordinator.chooseVersion(
-        payload as unknown as ChooseVersionInput
-      );
-    case "clearPlaylist":
-      return coordinator.clearPlaylist(
-        payload as unknown as ClearPlaylistInput
-      );
-    case "resetSession":
-      return coordinator.resetSession(payload as unknown as ResetSessionInput);
-    case "manualAdd":
-      return coordinator.manualAdd({
-        channelId: String(payload.channelId),
-        actorUserId: String(payload.actorUserId),
-        requesterLogin:
-          typeof payload.requesterLogin === "string"
-            ? payload.requesterLogin
-            : undefined,
-        song: payload.song ?? {
-          id: String(payload.songId),
-          title: String(payload.title),
-          artist: payload.artist,
-          album: payload.album,
-          creator: payload.creator,
-          tuning: payload.tuning,
-          parts: payload.parts,
-          durationText: payload.durationText,
-          cdlcId: payload.sourceId,
-          source: String(payload.source),
-          sourceUrl: payload.sourceUrl,
-        },
-      } as unknown as ManualAddInput);
-    default:
-      throw new Error("Unknown mutation");
+  logPlaylistWorkerStep("Playlist mutation dispatch start", {
+    traceId,
+    channelId:
+      typeof payload.channelId === "string" ? payload.channelId : undefined,
+    extra: summarizeMutationPayload(payload),
+  });
+
+  try {
+    switch (payload.action) {
+      case "markPlayed":
+        return await coordinator.markPlayed(
+          payload as unknown as MarkPlayedInput
+        );
+      case "restorePlayed":
+        return await coordinator.restorePlayed(
+          payload as unknown as RestorePlayedInput
+        );
+      case "setCurrent":
+        return await coordinator.setCurrent(
+          payload as unknown as SetCurrentInput
+        );
+      case "shuffleNext":
+        return await coordinator.shuffleNext(
+          payload as unknown as ShuffleNextInput
+        );
+      case "shufflePlaylist":
+        return await coordinator.shufflePlaylist(
+          payload as unknown as ShufflePlaylistInput
+        );
+      case "reorderItems":
+        return await coordinator.reorderItems(
+          payload as unknown as ReorderItemsInput
+        );
+      case "removeRequests":
+        return await coordinator.removeRequests(
+          payload as unknown as RemoveRequestsInput
+        );
+      case "changeRequestKind":
+        return await coordinator.changeRequestKind(
+          payload as unknown as ChangeRequestKindInput
+        );
+      case "deleteItem":
+        return await coordinator.deleteItem(
+          payload as unknown as DeleteItemInput
+        );
+      case "chooseVersion":
+        return await coordinator.chooseVersion(
+          payload as unknown as ChooseVersionInput
+        );
+      case "clearPlaylist":
+        return await coordinator.clearPlaylist(
+          payload as unknown as ClearPlaylistInput
+        );
+      case "resetSession":
+        return await coordinator.resetSession(
+          payload as unknown as ResetSessionInput
+        );
+      case "manualAdd":
+        return await coordinator.manualAdd({
+          channelId: String(payload.channelId),
+          actorUserId: String(payload.actorUserId),
+          requesterLogin:
+            typeof payload.requesterLogin === "string"
+              ? payload.requesterLogin
+              : undefined,
+          requesterTwitchUserId:
+            typeof payload.requesterTwitchUserId === "string"
+              ? payload.requesterTwitchUserId
+              : undefined,
+          requesterDisplayName:
+            typeof payload.requesterDisplayName === "string"
+              ? payload.requesterDisplayName
+              : undefined,
+          song: payload.song ?? {
+            id: String(payload.songId),
+            title: String(payload.title),
+            artist: payload.artist,
+            album: payload.album,
+            creator: payload.creator,
+            tuning: payload.tuning,
+            parts: payload.parts,
+            durationText: payload.durationText,
+            cdlcId: payload.sourceId,
+            source: String(payload.source),
+            sourceUrl: payload.sourceUrl,
+          },
+        } as unknown as ManualAddInput);
+      default:
+        throw new Error("Unknown mutation");
+    }
+  } catch (error) {
+    console.error("Playlist mutation dispatch failed", {
+      traceId,
+      ...summarizeMutationPayload(payload),
+      error: error instanceof Error ? error.message : String(error),
+    });
+    throw error;
+  } finally {
+    logPlaylistWorkerStep("Playlist mutation dispatch finished", {
+      traceId,
+      channelId:
+        typeof payload.channelId === "string" ? payload.channelId : undefined,
+      extra: {
+        action: typeof payload.action === "string" ? payload.action : null,
+      },
+    });
   }
 }
 
@@ -1493,7 +1732,9 @@ const backendHandler = {
         return json({ error: "Missing login" }, { status: 400 });
       }
 
-      const user = await resolveTwitchUserForRequester(env, login);
+      const user = await resolveTwitchUserForRequester(env, {
+        requesterLogin: login,
+      });
       return json({
         user: user
           ? {
@@ -1555,12 +1796,83 @@ export default withSentry<BackendEnv, ReplyQueueMessage>(
 
 async function resolveTwitchUserForRequester(
   env: BackendEnv,
-  requesterLogin: string
+  input: {
+    requesterLogin: string;
+    requesterTwitchUserId?: string;
+    requesterDisplayName?: string;
+  }
 ) {
+  const db = getDb(env);
+  const normalizedLogin = input.requesterLogin.trim().toLowerCase();
+
+  console.info("Playlist requester lookup start", {
+    requesterLogin: input.requesterLogin,
+    normalizedLogin,
+    hasRequesterTwitchUserId: Boolean(input.requesterTwitchUserId),
+    hasRequesterDisplayName: Boolean(input.requesterDisplayName),
+  });
+
+  const localChannel = await db.query.channels.findFirst({
+    where: eq(channels.login, normalizedLogin),
+  });
+  if (localChannel) {
+    console.info("Playlist requester lookup matched local channel", {
+      requesterLogin: input.requesterLogin,
+      normalizedLogin,
+      resolvedTwitchUserId: localChannel.twitchChannelId,
+    });
+    return {
+      id: localChannel.twitchChannelId,
+      login: localChannel.login,
+      display_name: localChannel.displayName,
+    };
+  }
+
+  const localUser = await db.query.users.findFirst({
+    where: eq(users.login, normalizedLogin),
+  });
+  if (localUser) {
+    console.info("Playlist requester lookup matched local user", {
+      requesterLogin: input.requesterLogin,
+      normalizedLogin,
+      resolvedTwitchUserId: localUser.twitchUserId,
+    });
+    return {
+      id: localUser.twitchUserId,
+      login: localUser.login,
+      display_name: localUser.displayName,
+    };
+  }
+
+  if (input.requesterTwitchUserId && input.requesterDisplayName) {
+    console.info("Playlist requester lookup used provided identity", {
+      requesterLogin: input.requesterLogin,
+      normalizedLogin,
+      resolvedTwitchUserId: input.requesterTwitchUserId,
+    });
+    return {
+      id: input.requesterTwitchUserId,
+      login: normalizedLogin,
+      display_name: input.requesterDisplayName,
+    };
+  }
+
+  console.info("Playlist requester lookup falling back to Twitch API", {
+    requesterLogin: input.requesterLogin,
+    normalizedLogin,
+  });
   const appToken = await getAppAccessToken(env as unknown as never);
-  return getTwitchUserByLogin({
+  const user = await getTwitchUserByLogin({
     env: env as unknown as never,
     accessToken: appToken.access_token,
-    login: requesterLogin,
+    login: input.requesterLogin,
   });
+
+  console.info("Playlist requester lookup Twitch API result", {
+    requesterLogin: input.requesterLogin,
+    normalizedLogin,
+    foundUser: Boolean(user),
+    resolvedTwitchUserId: user?.id ?? null,
+  });
+  return user;
 }

@@ -61,7 +61,7 @@ npm run dev
 
 - public pages
 - search
-- dashboard UI
+- account/settings UI
 - playlist management flows
 
 To exercise Twitch login, EventSub, and bot replies, fill in the Twitch-related values in `.env`.

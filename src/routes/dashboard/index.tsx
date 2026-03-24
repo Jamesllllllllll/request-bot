@@ -1,7 +1,7 @@
-// Route: Renders the signed-in dashboard home with accessible channels and shortcuts.
+// Route: Renders a lightweight account and channel hub for signed-in users.
 import { useQuery } from "@tanstack/react-query";
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { ExternalLink, Mic2, Radio, StickyNote } from "lucide-react";
+import { ExternalLink, Mic2, Radio, Settings2, StickyNote } from "lucide-react";
 import { DashboardPageHeader } from "~/components/dashboard-page-header";
 import { Button } from "~/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "~/components/ui/card";
@@ -9,20 +9,6 @@ import { getBotStatusLabel } from "~/lib/bot-status";
 import { pageTitle } from "~/lib/page-title";
 
 type DashboardOverviewData = {
-  playlist: {
-    items: Array<{
-      id: string;
-      status: string;
-      position: number;
-      songTitle: string;
-      songArtist?: string;
-    }>;
-  };
-  moderation: {
-    blocks: unknown[];
-    setlist: unknown[];
-    vipTokens: Array<{ balance: number }>;
-  };
   settings: {
     channel?: {
       slug?: string;
@@ -30,14 +16,10 @@ type DashboardOverviewData = {
       displayName?: string;
       botReadyState?: string;
       isLive?: boolean;
-      botEnabled?: boolean;
     };
     settings?: {
       botChannelEnabled?: boolean;
       requestsEnabled?: boolean;
-    };
-    bot?: {
-      connected?: boolean;
     };
   };
   session: {
@@ -61,7 +43,7 @@ type DashboardOverviewData = {
 
 export const Route = createFileRoute("/dashboard/")({
   head: () => ({
-    meta: [{ title: pageTitle("Dashboard") }],
+    meta: [{ title: pageTitle("Account") }],
   }),
   component: DashboardOverviewPage,
 });
@@ -70,25 +52,21 @@ function DashboardOverviewPage() {
   const { data } = useQuery<DashboardOverviewData>({
     queryKey: ["dashboard-overview"],
     queryFn: async () => {
-      const [
-        playlistResponse,
-        moderationResponse,
-        settingsResponse,
-        sessionResponse,
-      ] = await Promise.all([
-        fetch("/api/dashboard/playlist"),
-        fetch("/api/dashboard/moderation"),
-        fetch("/api/dashboard/settings"),
-        fetch("/api/session", {
-          credentials: "include",
-        }),
-      ]);
+      const sessionResponse = await fetch("/api/session", {
+        credentials: "include",
+      });
+      const session =
+        (await sessionResponse.json()) as DashboardOverviewData["session"];
+      const ownsChannel = !!session.viewer?.channel;
+      const settings = ownsChannel
+        ? await fetch("/api/dashboard/settings").then((response) =>
+            response.json()
+          )
+        : { channel: null, settings: null };
 
       return {
-        playlist: await playlistResponse.json(),
-        moderation: await moderationResponse.json(),
-        settings: await settingsResponse.json(),
-        session: await sessionResponse.json(),
+        settings,
+        session,
       } as DashboardOverviewData;
     },
   });
@@ -106,10 +84,8 @@ function DashboardOverviewPage() {
       left.displayName.localeCompare(right.displayName)
   );
   const botStatus = channel?.botReadyState ?? "disabled";
-  const isOfflineTesting = botStatus === "active_offline_testing";
   const notes = getOverviewNotes({
     botStatus,
-    botConnected: !!data?.settings?.bot?.connected,
     botChannelEnabled: !!settings?.botChannelEnabled,
     requestsEnabled: !!settings?.requestsEnabled,
     isLive: !!channel?.isLive,
@@ -118,46 +94,36 @@ function DashboardOverviewPage() {
   return (
     <div className="dashboard-overview grid gap-6">
       <DashboardPageHeader
-        title="Overview"
+        title="Account"
+        description="Channel access and owner settings."
         meta={
           <div className="flex flex-wrap items-center gap-3">
             {publicSlug ? (
               <ExternalCard
                 href={`/${publicSlug}`}
                 icon={Radio}
-                title="Public playlist"
+                title="Open channel page"
+                description="Playlist and moderation surface"
               />
-            ) : (
+            ) : null}
+            {data?.session?.viewer?.channel ? (
               <ExternalCard
-                href={
-                  channel?.login
-                    ? `https://twitch.tv/${channel.login}`
-                    : "/dashboard"
-                }
-                icon={Radio}
-                title="Channel link"
-                description="Twitch"
+                href="/dashboard/settings"
+                icon={Settings2}
+                title="Owner settings"
+                description="Permissions, bot, policy, and overlay"
               />
-            )}
+            ) : null}
             <StatusPill
               label="Bot"
-              value={
-                isOfflineTesting
-                  ? "Offline testing enabled"
-                  : getBotStatusLabel(botStatus)
-              }
+              value={getBotStatusLabel(botStatus)}
               tone={
-                botStatus === "active" || isOfflineTesting
+                botStatus === "active" || botStatus === "active_offline_testing"
                   ? "good"
                   : botStatus === "subscription_error"
                     ? "warn"
                     : "neutral"
               }
-            />
-            <StatusPill
-              label="Stream"
-              value={channel?.isLive ? "Live" : "Offline"}
-              tone={channel?.isLive ? "good" : "neutral"}
             />
             <StatusPill
               label="Requests"
@@ -171,12 +137,12 @@ function DashboardOverviewPage() {
       {needsModeratorScopeReconnect || sortedManageableChannels.length > 0 ? (
         <Card>
           <CardHeader>
-            <CardTitle className="text-2xl">Channels</CardTitle>
+            <CardTitle className="text-2xl">Your channels</CardTitle>
           </CardHeader>
           <CardContent className="grid gap-3">
             {needsModeratorScopeReconnect ? (
               <div className="rounded-[24px] border border-amber-500/30 bg-amber-500/10 px-4 py-4 text-sm text-amber-100">
-                Reconnect Twitch.
+                Reconnect Twitch to refresh your moderated channel access.
               </div>
             ) : null}
             {sortedManageableChannels.map((managedChannel) => (
@@ -207,15 +173,18 @@ function DashboardOverviewPage() {
                     @{managedChannel.login}
                   </p>
                 </div>
-                <Button asChild variant="outline">
-                  <Link
-                    to="/dashboard/playlist"
-                    search={{ channel: managedChannel.slug }}
-                  >
-                    <Mic2 className="mr-2 h-4 w-4" />
-                    Open playlist
-                  </Link>
-                </Button>
+                <div className="flex flex-wrap gap-3">
+                  <Button asChild variant="outline">
+                    <Link
+                      to="/$slug"
+                      params={{ slug: managedChannel.slug }}
+                      className="no-underline"
+                    >
+                      <Mic2 className="mr-2 h-4 w-4" />
+                      Open channel
+                    </Link>
+                  </Button>
+                </div>
               </div>
             ))}
           </CardContent>
@@ -223,37 +192,35 @@ function DashboardOverviewPage() {
       ) : null}
 
       <section className="grid gap-6">
-        <div className="grid gap-4">
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-2xl">Next steps</CardTitle>
-            </CardHeader>
-            <CardContent className="grid gap-3">
-              {notes.map((note, index) => (
-                <div
-                  key={note.title}
-                  className={`rounded-[24px] border px-4 py-4 shadow-(--shadow-soft) ${
-                    index === 0
-                      ? "border-amber-300 bg-[#3a3117]"
-                      : index === 1
-                        ? "border-[#37525d] bg-[#18262d]"
-                        : "border-[#4c3f62] bg-[#211a2d]"
-                  }`}
-                >
-                  <div className="flex items-start gap-3">
-                    <StickyNote className="mt-0.5 h-4 w-4 shrink-0 text-white/80" />
-                    <div>
-                      <p className="font-semibold text-white">{note.title}</p>
-                      <p className="mt-1 text-sm leading-6 text-white/75">
-                        {note.body}
-                      </p>
-                    </div>
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-2xl">Channel status</CardTitle>
+          </CardHeader>
+          <CardContent className="grid gap-3">
+            {notes.map((note, index) => (
+              <div
+                key={note.title}
+                className={`rounded-[24px] border px-4 py-4 shadow-(--shadow-soft) ${
+                  index === 0
+                    ? "border-amber-300 bg-[#3a3117]"
+                    : index === 1
+                      ? "border-[#37525d] bg-[#18262d]"
+                      : "border-[#4c3f62] bg-[#211a2d]"
+                }`}
+              >
+                <div className="flex items-start gap-3">
+                  <StickyNote className="mt-0.5 h-4 w-4 shrink-0 text-white/80" />
+                  <div>
+                    <p className="font-semibold text-white">{note.title}</p>
+                    <p className="mt-1 text-sm leading-6 text-white/75">
+                      {note.body}
+                    </p>
                   </div>
                 </div>
-              ))}
-            </CardContent>
-          </Card>
-        </div>
+              </div>
+            ))}
+          </CardContent>
+        </Card>
       </section>
     </div>
   );
@@ -261,56 +228,55 @@ function DashboardOverviewPage() {
 
 function getOverviewNotes(input: {
   botStatus: string;
-  botConnected: boolean;
   botChannelEnabled: boolean;
   requestsEnabled: boolean;
   isLive: boolean;
 }) {
-  const notes: Array<{ title: string; body: string }> = [];
-
-  if (!input.botConnected) {
-    notes.push({
-      title: "Bot account",
-      body: "Needs admin setup.",
-    });
-  }
-
   if (!input.botChannelEnabled) {
-    notes.push({
-      title: "Enable bot",
-      body: "Turn it on in Settings.",
-    });
+    return [
+      {
+        title: "Enable the bot",
+        body: "Turn on bot control in Settings before using requests on your channel.",
+      },
+    ];
   }
 
-  if (input.botChannelEnabled && !input.isLive) {
-    notes.push({
-      title: "Go live",
-      body: "The bot starts when your stream is live.",
-    });
+  if (!input.isLive) {
+    return [
+      {
+        title: "Go live to start taking requests",
+        body: "Requests are meant to run while your channel is live.",
+      },
+    ];
   }
 
-  if (input.botChannelEnabled && input.isLive && !input.requestsEnabled) {
-    notes.push({
-      title: "Requests are paused",
-      body: "Turn them on in Settings.",
-    });
+  if (!input.requestsEnabled) {
+    return [
+      {
+        title: "Requests are paused",
+        body: "Re-enable requests in Settings when you want viewers to add songs again.",
+      },
+    ];
   }
 
-  if (input.botStatus === "active") {
-    notes.push({
-      title: "Ready",
-      body: "Chat requests are on.",
-    });
+  if (
+    input.botStatus === "active" ||
+    input.botStatus === "active_offline_testing"
+  ) {
+    return [
+      {
+        title: "Channel is ready",
+        body: "Your stream is live and requests are available.",
+      },
+    ];
   }
 
-  if (notes.length === 0) {
-    notes.push({
-      title: "Playlist",
-      body: "Open it to manage songs.",
-    });
-  }
-
-  return notes.slice(0, 3);
+  return [
+    {
+      title: "Check channel status",
+      body: "Make sure the bot is connected before you start taking requests.",
+    },
+  ];
 }
 
 function StatusPill(props: {

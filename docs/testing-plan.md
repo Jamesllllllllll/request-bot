@@ -34,7 +34,7 @@ These are the first automated checks worth investing in:
 - public home page renders live channels and playlist links
 - search page debounce and empty-state behavior
 - dashboard settings save flow shows success or warning messages
-- moderation page can grant or remove VIP tokens
+- channel page moderation panels can grant or remove VIP tokens
 - playlist page reflects live updates and management actions
 - playlist page can convert a request between regular and VIP and keep token usage in sync
 
@@ -47,7 +47,7 @@ Keep these as manual checks, not core CI blockers:
 - real EventSub subscription creation
 - real chat reply delivery
 - real tunnel or public callback behavior
-- real `!vip` upgrade / downgrade behavior and dashboard playlist VIP toggles against a live channel
+- real `!vip` upgrade / downgrade behavior and channel playlist VIP toggles against a live channel
 
 ### What not to over-invest in
 
@@ -84,7 +84,7 @@ This should become the most important automated test path in the project.
 Use Playwright for:
 
 - settings form save
-- moderation UI
+- channel moderation UI
 - playlist owner actions
 - public playlist rendering
 

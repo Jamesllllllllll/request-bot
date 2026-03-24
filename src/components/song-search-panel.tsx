@@ -123,6 +123,11 @@ export type SearchSongResultState = {
   reasons?: string[];
 };
 
+export type SearchSongActionRenderArgs = {
+  song: SearchSong;
+  resultState: SearchSongResultState;
+};
+
 export function SongSearchPanel(props: {
   title: string;
   eyebrow?: string;
@@ -135,6 +140,9 @@ export function SongSearchPanel(props: {
   resultState?: (song: SearchSong) => SearchSongResultState;
   advancedFiltersContent?: ReactNode;
   useTotalForSummary?: boolean;
+  controlsContent?: ReactNode;
+  actionsLabel?: string;
+  renderActions?: (args: SearchSongActionRenderArgs) => ReactNode;
 }) {
   const [query, setQuery] = useState("");
   const [debouncedQuery, setDebouncedQuery] = useState("");
@@ -175,7 +183,7 @@ export function SongSearchPanel(props: {
   const searchParams = useMemo(() => {
     const params = new URLSearchParams({
       page: String(page),
-      pageSize: "25",
+      pageSize: "20",
       field,
     });
 
@@ -279,6 +287,7 @@ export function SongSearchPanel(props: {
     gcTime: 60 * 60 * 1000,
   });
 
+  const shouldLoadCatalogTotal = Boolean(props.infoNote?.includes("{count}"));
   const catalogTotalQuery = useQuery<Pick<SearchResponse, "total">>({
     queryKey: ["song-search-total-count"],
     queryFn: async () => {
@@ -298,6 +307,7 @@ export function SongSearchPanel(props: {
 
       return { total: (body as SearchResponse).total };
     },
+    enabled: shouldLoadCatalogTotal,
     staleTime: 60 * 60 * 1000,
     gcTime: 60 * 60 * 1000,
   });
@@ -343,7 +353,7 @@ export function SongSearchPanel(props: {
     : visibleResults.length;
   const totalPages = Math.max(
     1,
-    Math.ceil((data?.total ?? 0) / (data?.pageSize ?? 25))
+    Math.ceil((data?.total ?? 0) / (data?.pageSize ?? 20))
   );
   const visiblePageNumbers = useMemo(() => {
     const pages = new Set<number>([1, totalPages, page - 1, page, page + 1]);
@@ -351,6 +361,10 @@ export function SongSearchPanel(props: {
       .filter((value) => value >= 1 && value <= totalPages)
       .sort((a, b) => a - b);
   }, [page, totalPages]);
+  const hasCustomActions = typeof props.renderActions === "function";
+  const resultsGridColumns = hasCustomActions
+    ? "grid-cols-[minmax(0,2.2fr)_minmax(0,1.05fr)_minmax(0,1.15fr)_248px]"
+    : "grid-cols-[minmax(0,2.2fr)_minmax(0,1.05fr)_minmax(0,1.15fr)_188px]";
 
   async function copyRequest(
     song: SearchSong,
@@ -494,6 +508,93 @@ export function SongSearchPanel(props: {
     );
   }
 
+  function renderDefaultActions(
+    song: SearchSong,
+    isDisabled: boolean,
+    disabledReason: string,
+    copiedType: "sr" | "edit" | "vip" | null
+  ) {
+    return (
+      <div className="grid grid-cols-3 gap-2">
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <button
+              type="button"
+              onClick={() => void copyRequest(song, "sr")}
+              disabled={isDisabled}
+              className={cn(
+                "flex h-11 min-w-[3.25rem] items-center justify-center rounded-full border border-(--border) bg-(--panel) px-3 text-[11px] font-semibold uppercase tracking-[0.16em] transition-colors",
+                isDisabled && "cursor-not-allowed opacity-45",
+                copiedType === "sr"
+                  ? "border-emerald-400 text-emerald-400"
+                  : "text-(--brand)"
+              )}
+            >
+              {copiedType === "sr" ? <Check className="h-4 w-4" /> : "!sr"}
+            </button>
+          </TooltipTrigger>
+          <TooltipContent>
+            {isDisabled
+              ? disabledReason
+              : copiedType === "sr"
+                ? "Copied !sr command"
+                : "Copy !sr command"}
+          </TooltipContent>
+        </Tooltip>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <button
+              type="button"
+              onClick={() => void copyRequest(song, "edit")}
+              disabled={isDisabled}
+              className={cn(
+                "flex h-11 min-w-[3.75rem] items-center justify-center rounded-full border border-(--border) bg-(--panel) px-3 text-[11px] font-semibold uppercase tracking-[0.16em] transition-colors",
+                isDisabled && "cursor-not-allowed opacity-45",
+                copiedType === "edit"
+                  ? "border-emerald-400 text-emerald-400"
+                  : "text-(--brand)"
+              )}
+            >
+              {copiedType === "edit" ? <Check className="h-4 w-4" /> : "!edit"}
+            </button>
+          </TooltipTrigger>
+          <TooltipContent>
+            {isDisabled
+              ? disabledReason
+              : copiedType === "edit"
+                ? "Copied !edit command"
+                : "Copy !edit command"}
+          </TooltipContent>
+        </Tooltip>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <button
+              type="button"
+              onClick={() => void copyRequest(song, "vip")}
+              disabled={isDisabled}
+              className={cn(
+                "flex h-11 min-w-[3.5rem] items-center justify-center rounded-full border border-(--border) bg-(--panel) px-3 text-[11px] font-semibold uppercase tracking-[0.16em] transition-colors",
+                isDisabled && "cursor-not-allowed opacity-45",
+                copiedType === "vip"
+                  ? "border-emerald-400 text-emerald-400"
+                  : "text-(--brand-deep)"
+              )}
+            >
+              {copiedType === "vip" ? <Check className="h-4 w-4" /> : "!vip"}
+            </button>
+          </TooltipTrigger>
+          <TooltipContent>
+            {isDisabled
+              ? disabledReason
+              : copiedType === "vip"
+                ? "Copied !vip command"
+                : "Copy !vip command"}
+          </TooltipContent>
+        </Tooltip>
+      </div>
+    );
+  }
+
   return (
     <TooltipProvider>
       <section className={cn("search-panel grid gap-6", props.className)}>
@@ -577,6 +678,10 @@ export function SongSearchPanel(props: {
                 {showAdvanced ? "Hide filters" : "Show filters"}
               </Button>
             </div>
+
+            {props.controlsContent ? (
+              <div className="grid gap-3">{props.controlsContent}</div>
+            ) : null}
 
             {showAdvanced ? (
               <div className="grid items-start gap-4 rounded-[24px] border border-(--border) bg-(--panel-soft) p-5 md:grid-cols-2 xl:grid-cols-4">
@@ -701,11 +806,18 @@ export function SongSearchPanel(props: {
           <CardContent className="p-0">
             {renderPagination("top")}
 
-            <div className="search-panel__table-head grid grid-cols-[minmax(0,2.2fr)_minmax(0,1.05fr)_minmax(0,1.15fr)_188px] gap-4 border-b border-(--border) px-5 py-4 text-[11px] font-semibold uppercase tracking-[0.22em] text-(--muted)">
+            <div
+              className={cn(
+                "search-panel__table-head grid gap-4 border-b border-(--border) px-5 py-4 text-[11px] font-semibold uppercase tracking-[0.22em] text-(--muted)",
+                resultsGridColumns
+              )}
+            >
               <span>Song</span>
               <span>Paths</span>
               <span>Stats</span>
-              <span className="text-right">Actions</span>
+              <span className="text-right">
+                {props.actionsLabel ?? "Actions"}
+              </span>
             </div>
 
             {isLoading && results.length === 0 ? (
@@ -715,7 +827,12 @@ export function SongSearchPanel(props: {
             ) : null}
 
             {!isLoading && queryTooShort && !hasAdvancedFilter ? (
-              <div className="grid grid-cols-[minmax(0,2.2fr)_minmax(0,1.05fr)_minmax(0,1.15fr)_188px] gap-4 border-b border-(--border) px-5 py-4 text-[11px] font-semibold uppercase tracking-[0.22em] text-(--muted)">
+              <div
+                className={cn(
+                  "grid gap-4 border-b border-(--border) px-5 py-4 text-[11px] font-semibold uppercase tracking-[0.22em] text-(--muted)",
+                  resultsGridColumns
+                )}
+              >
                 <span className="col-span-full normal-case tracking-normal text-sm font-normal text-(--muted)">
                   Search terms must be at least 3 characters.
                 </span>
@@ -759,7 +876,8 @@ export function SongSearchPanel(props: {
                 <div
                   key={song.id}
                   className={cn(
-                    "search-panel__row grid w-full grid-cols-[minmax(0,2.2fr)_minmax(0,1.05fr)_minmax(0,1.15fr)_188px] gap-4 border-b border-(--border) px-5 py-4 text-left transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-(--brand) focus-visible:ring-inset",
+                    "search-panel__row grid w-full gap-4 border-b border-(--border) px-5 py-4 text-left transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-(--brand) focus-visible:ring-inset",
+                    resultsGridColumns,
                     index % 2 === 0
                       ? "bg-(--panel-strong)"
                       : "bg-(--panel-soft)",
@@ -768,82 +886,143 @@ export function SongSearchPanel(props: {
                       : "hover:border-(--brand) hover:bg-(--bg-elevated)"
                   )}
                 >
-                  <button
-                    type="button"
-                    onClick={() => {
-                      if (!isDisabled) {
-                        void copyRequest(song, "sr");
-                      }
-                    }}
-                    disabled={isDisabled}
-                    className={cn(
-                      "search-panel__row-main col-span-2 grid min-w-0 grid-cols-[minmax(0,2.2fr)_minmax(0,1.05fr)] gap-4 text-left",
-                      isDisabled
-                        ? "cursor-not-allowed opacity-85"
-                        : "cursor-pointer"
-                    )}
-                  >
-                    <div className="search-panel__song min-w-0">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <p className="truncate text-[15px] font-semibold text-(--text)">
-                          {song.title}
+                  {hasCustomActions ? (
+                    <div className="search-panel__row-main col-span-2 grid min-w-0 grid-cols-[minmax(0,2.2fr)_minmax(0,1.05fr)] gap-4 text-left">
+                      <div className="search-panel__song min-w-0">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <p className="truncate text-[15px] font-semibold text-(--text)">
+                            {song.title}
+                          </p>
+                          {isDisabled ? (
+                            <span className="inline-flex items-center rounded-full border border-amber-400/35 bg-amber-500/12 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.16em] text-amber-100">
+                              Blacklisted
+                            </span>
+                          ) : null}
+                        </div>
+                        <p className="mt-1 truncate text-sm text-(--brand-deep)">
+                          {song.artist ?? "Unknown artist"}
                         </p>
-                        {isDisabled ? (
-                          <span className="inline-flex items-center rounded-full border border-amber-400/35 bg-amber-500/12 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.16em] text-amber-100">
-                            Blacklisted
-                          </span>
+                        {song.album ? (
+                          <p className="mt-1 truncate text-sm text-(--muted)">
+                            {song.album}
+                            {song.year ? ` - ${song.year}` : ""}
+                          </p>
                         ) : null}
                       </div>
-                      <p className="mt-1 truncate text-sm text-(--brand-deep)">
-                        {song.artist ?? "Unknown artist"}
-                      </p>
-                      {song.album ? (
-                        <p className="mt-1 truncate text-sm text-(--muted)">
-                          {song.album}
-                          {song.year ? ` - ${song.year}` : ""}
-                        </p>
-                      ) : null}
-                    </div>
 
-                    <div className="search-panel__paths min-w-0">
-                      <div className="flex flex-wrap gap-2">
-                        {song.parts?.includes("lead") ? (
-                          <PathBadge
-                            label="Lead"
-                            shortLabel="L"
-                            className="border-emerald-400/30 bg-emerald-500/10 text-emerald-300 hover:bg-emerald-500/10"
-                          />
-                        ) : null}
-                        {song.parts?.includes("rhythm") ? (
-                          <PathBadge
-                            label="Rhythm"
-                            shortLabel="R"
-                            className="border-sky-400/30 bg-sky-500/10 text-sky-300 hover:bg-sky-500/10"
-                          />
-                        ) : null}
-                        {song.parts?.includes("bass") ? (
-                          <PathBadge
-                            label="Bass"
-                            shortLabel="B"
-                            className="border-orange-400/30 bg-orange-500/10 text-orange-300 hover:bg-orange-500/10"
-                          />
-                        ) : null}
-                        {song.parts?.includes("voice") ||
-                        song.parts?.includes("vocals") ? (
-                          <PathBadge
-                            label="Lyrics"
-                            shortLabel="V"
-                            className="border-violet-400/30 bg-violet-500/10 text-violet-300 hover:bg-violet-500/10"
-                          />
-                        ) : null}
+                      <div className="search-panel__paths min-w-0">
+                        <div className="flex flex-wrap gap-2">
+                          {song.parts?.includes("lead") ? (
+                            <PathBadge
+                              label="Lead"
+                              shortLabel="L"
+                              className="border-emerald-400/30 bg-emerald-500/10 text-emerald-300 hover:bg-emerald-500/10"
+                            />
+                          ) : null}
+                          {song.parts?.includes("rhythm") ? (
+                            <PathBadge
+                              label="Rhythm"
+                              shortLabel="R"
+                              className="border-sky-400/30 bg-sky-500/10 text-sky-300 hover:bg-sky-500/10"
+                            />
+                          ) : null}
+                          {song.parts?.includes("bass") ? (
+                            <PathBadge
+                              label="Bass"
+                              shortLabel="B"
+                              className="border-orange-400/30 bg-orange-500/10 text-orange-300 hover:bg-orange-500/10"
+                            />
+                          ) : null}
+                          {song.parts?.includes("voice") ||
+                          song.parts?.includes("vocals") ? (
+                            <PathBadge
+                              label="Lyrics"
+                              shortLabel="V"
+                              className="border-violet-400/30 bg-violet-500/10 text-violet-300 hover:bg-violet-500/10"
+                            />
+                          ) : null}
+                        </div>
                       </div>
                     </div>
-                  </button>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (!isDisabled) {
+                          void copyRequest(song, "sr");
+                        }
+                      }}
+                      disabled={isDisabled}
+                      className={cn(
+                        "search-panel__row-main col-span-2 grid min-w-0 grid-cols-[minmax(0,2.2fr)_minmax(0,1.05fr)] gap-4 text-left",
+                        isDisabled
+                          ? "cursor-not-allowed opacity-85"
+                          : "cursor-pointer"
+                      )}
+                    >
+                      <div className="search-panel__song min-w-0">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <p className="truncate text-[15px] font-semibold text-(--text)">
+                            {song.title}
+                          </p>
+                          {isDisabled ? (
+                            <span className="inline-flex items-center rounded-full border border-amber-400/35 bg-amber-500/12 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.16em] text-amber-100">
+                              Blacklisted
+                            </span>
+                          ) : null}
+                        </div>
+                        <p className="mt-1 truncate text-sm text-(--brand-deep)">
+                          {song.artist ?? "Unknown artist"}
+                        </p>
+                        {song.album ? (
+                          <p className="mt-1 truncate text-sm text-(--muted)">
+                            {song.album}
+                            {song.year ? ` - ${song.year}` : ""}
+                          </p>
+                        ) : null}
+                      </div>
+
+                      <div className="search-panel__paths min-w-0">
+                        <div className="flex flex-wrap gap-2">
+                          {song.parts?.includes("lead") ? (
+                            <PathBadge
+                              label="Lead"
+                              shortLabel="L"
+                              className="border-emerald-400/30 bg-emerald-500/10 text-emerald-300 hover:bg-emerald-500/10"
+                            />
+                          ) : null}
+                          {song.parts?.includes("rhythm") ? (
+                            <PathBadge
+                              label="Rhythm"
+                              shortLabel="R"
+                              className="border-sky-400/30 bg-sky-500/10 text-sky-300 hover:bg-sky-500/10"
+                            />
+                          ) : null}
+                          {song.parts?.includes("bass") ? (
+                            <PathBadge
+                              label="Bass"
+                              shortLabel="B"
+                              className="border-orange-400/30 bg-orange-500/10 text-orange-300 hover:bg-orange-500/10"
+                            />
+                          ) : null}
+                          {song.parts?.includes("voice") ||
+                          song.parts?.includes("vocals") ? (
+                            <PathBadge
+                              label="Lyrics"
+                              shortLabel="V"
+                              className="border-violet-400/30 bg-violet-500/10 text-violet-300 hover:bg-violet-500/10"
+                            />
+                          ) : null}
+                        </div>
+                      </div>
+                    </button>
+                  )}
 
                   <div className="search-panel__stats min-w-0 text-sm">
-                    {song.creator ? (
-                      <p className="truncate text-sm text-(--muted)">
-                        Charted by {song.creator}
+                    {song.durationText ? (
+                      <p className="search-panel__desktop-stat inline-flex items-center gap-1 text-(--text)">
+                        <Clock3 className="h-3.5 w-3.5 text-(--muted)" />
+                        <span>{song.durationText}</span>
                       </p>
                     ) : null}
                     {song.tuning ? (
@@ -851,10 +1030,9 @@ export function SongSearchPanel(props: {
                         {song.tuning}
                       </p>
                     ) : null}
-                    {song.durationText ? (
-                      <p className="search-panel__desktop-stat mt-1 inline-flex items-center gap-1 text-(--text)">
-                        <Clock3 className="h-3.5 w-3.5 text-(--muted)" />
-                        <span>{song.durationText}</span>
+                    {song.creator ? (
+                      <p className="mt-1 truncate text-sm text-(--muted)">
+                        Charted by {song.creator}
                       </p>
                     ) : null}
                     {song.sourceUpdatedAt ? (
@@ -868,95 +1046,14 @@ export function SongSearchPanel(props: {
                   </div>
 
                   <div className="search-panel__copy flex items-center justify-end">
-                    <div className="grid grid-cols-3 gap-2">
-                      <Tooltip>
-                        <TooltipTrigger asChild>
-                          <button
-                            type="button"
-                            onClick={() => void copyRequest(song, "sr")}
-                            disabled={isDisabled}
-                            className={cn(
-                              "flex h-11 min-w-[3.25rem] items-center justify-center rounded-full border border-(--border) bg-(--panel) px-3 text-[11px] font-semibold uppercase tracking-[0.16em] transition-colors",
-                              isDisabled && "cursor-not-allowed opacity-45",
-                              copiedType === "sr"
-                                ? "border-emerald-400 text-emerald-400"
-                                : "text-(--brand)"
-                            )}
-                          >
-                            {copiedType === "sr" ? (
-                              <Check className="h-4 w-4" />
-                            ) : (
-                              "!sr"
-                            )}
-                          </button>
-                        </TooltipTrigger>
-                        <TooltipContent>
-                          {isDisabled
-                            ? disabledReason
-                            : copiedType === "sr"
-                              ? "Copied !sr command"
-                              : "Copy !sr command"}
-                        </TooltipContent>
-                      </Tooltip>
-                      <Tooltip>
-                        <TooltipTrigger asChild>
-                          <button
-                            type="button"
-                            onClick={() => void copyRequest(song, "edit")}
-                            disabled={isDisabled}
-                            className={cn(
-                              "flex h-11 min-w-[3.75rem] items-center justify-center rounded-full border border-(--border) bg-(--panel) px-3 text-[11px] font-semibold uppercase tracking-[0.16em] transition-colors",
-                              isDisabled && "cursor-not-allowed opacity-45",
-                              copiedType === "edit"
-                                ? "border-emerald-400 text-emerald-400"
-                                : "text-(--brand)"
-                            )}
-                          >
-                            {copiedType === "edit" ? (
-                              <Check className="h-4 w-4" />
-                            ) : (
-                              "!edit"
-                            )}
-                          </button>
-                        </TooltipTrigger>
-                        <TooltipContent>
-                          {isDisabled
-                            ? disabledReason
-                            : copiedType === "edit"
-                              ? "Copied !edit command"
-                              : "Copy !edit command"}
-                        </TooltipContent>
-                      </Tooltip>
-                      <Tooltip>
-                        <TooltipTrigger asChild>
-                          <button
-                            type="button"
-                            onClick={() => void copyRequest(song, "vip")}
-                            disabled={isDisabled}
-                            className={cn(
-                              "flex h-11 min-w-[3.5rem] items-center justify-center rounded-full border border-(--border) bg-(--panel) px-3 text-[11px] font-semibold uppercase tracking-[0.16em] transition-colors",
-                              isDisabled && "cursor-not-allowed opacity-45",
-                              copiedType === "vip"
-                                ? "border-emerald-400 text-emerald-400"
-                                : "text-(--brand-deep)"
-                            )}
-                          >
-                            {copiedType === "vip" ? (
-                              <Check className="h-4 w-4" />
-                            ) : (
-                              "!vip"
-                            )}
-                          </button>
-                        </TooltipTrigger>
-                        <TooltipContent>
-                          {isDisabled
-                            ? disabledReason
-                            : copiedType === "vip"
-                              ? "Copied !vip command"
-                              : "Copy !vip command"}
-                        </TooltipContent>
-                      </Tooltip>
-                    </div>
+                    {hasCustomActions
+                      ? props.renderActions?.({ song, resultState })
+                      : renderDefaultActions(
+                          song,
+                          isDisabled,
+                          disabledReason,
+                          copiedType
+                        )}
                   </div>
                 </div>
               );

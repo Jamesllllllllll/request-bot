@@ -3,13 +3,20 @@ import { createFileRoute } from "@tanstack/react-router";
 import { getSessionUserId } from "~/lib/auth/session.server";
 import {
   getActiveBroadcasterAuthorizationForUser,
-  getDashboardState,
   parseAuthorizationScopes,
   searchCatalogArtistsForBlacklist,
   searchCatalogChartersForBlacklist,
   searchCatalogSongsForBlacklist,
 } from "~/lib/db/repositories";
 import type { AppEnv } from "~/lib/env";
+import {
+  canManageChannelBlacklist,
+  canManageChannelBlockedChatters,
+  canManageChannelSetlist,
+  canManageChannelVipTokens,
+  canViewChannelVipTokens,
+  requirePlaylistManagementState,
+} from "~/lib/server/playlist-management";
 import {
   getAppAccessToken,
   getChatters,
@@ -79,18 +86,23 @@ async function searchCurrentChannelChatters(input: {
   return matches;
 }
 
-export const Route = createFileRoute("/api/dashboard/moderation/search")({
+export const Route = createFileRoute("/api/channel/$slug/moderation/search")({
   server: {
     handlers: {
-      GET: async ({ request }) => {
+      GET: async ({ request, params }) => {
         const runtimeEnv = env as AppEnv;
-        const userId = await getSessionUserId(request, runtimeEnv);
-        if (!userId) {
+        const state = await requirePlaylistManagementState(
+          request,
+          runtimeEnv,
+          params.slug
+        );
+
+        if (!state) {
           return json({ error: "Unauthorized" }, { status: 401 });
         }
 
-        const state = await getDashboardState(runtimeEnv, userId);
-        if (!state) {
+        const userId = await getSessionUserId(request, runtimeEnv);
+        if (!userId) {
           return json({ error: "Unauthorized" }, { status: 401 });
         }
 
@@ -113,7 +125,17 @@ export const Route = createFileRoute("/api/dashboard/moderation/search")({
           });
         }
 
+        const canBlacklist = canManageChannelBlacklist(state);
+        const canSetlist = canManageChannelSetlist(state);
+        const canManageBlockedChatters = canManageChannelBlockedChatters(state);
+        const canTouchVipTokens =
+          canViewChannelVipTokens(state) || canManageChannelVipTokens(state);
+
         if (type === "twitch-user") {
+          if (!canManageBlockedChatters && !canTouchVipTokens) {
+            return json({ error: "Forbidden" }, { status: 403 });
+          }
+
           let chatterUsers: TwitchSearchUser[] = [];
           let needsChatterScopeReconnect = false;
           const broadcasterAuthorization =
@@ -124,7 +146,7 @@ export const Route = createFileRoute("/api/dashboard/moderation/search")({
 
           if (
             broadcasterAuthorization &&
-            state.channel?.twitchChannelId &&
+            state.channel.twitchChannelId &&
             authorizationScopes.includes("moderator:read:chatters")
           ) {
             try {
@@ -140,7 +162,7 @@ export const Route = createFileRoute("/api/dashboard/moderation/search")({
               console.error("Failed to search current channel chatters", {
                 channelId: state.channel.id,
                 twitchChannelId: state.channel.twitchChannelId,
-                moderatorTwitchUserId: broadcasterAuthorization.twitchUserId,
+                moderatorTwitchUserId: broadcasterAuthorization?.twitchUserId,
                 error: error instanceof Error ? error.message : String(error),
               });
             }
@@ -173,6 +195,10 @@ export const Route = createFileRoute("/api/dashboard/moderation/search")({
         }
 
         if (type === "artist") {
+          if (!canBlacklist && !canSetlist) {
+            return json({ error: "Forbidden" }, { status: 403 });
+          }
+
           return json({
             artists: await searchCatalogArtistsForBlacklist(runtimeEnv, {
               query,
@@ -181,6 +207,10 @@ export const Route = createFileRoute("/api/dashboard/moderation/search")({
         }
 
         if (type === "charter") {
+          if (!canBlacklist) {
+            return json({ error: "Forbidden" }, { status: 403 });
+          }
+
           return json({
             charters: await searchCatalogChartersForBlacklist(runtimeEnv, {
               query,
@@ -189,6 +219,10 @@ export const Route = createFileRoute("/api/dashboard/moderation/search")({
         }
 
         if (type === "song") {
+          if (!canBlacklist) {
+            return json({ error: "Forbidden" }, { status: 403 });
+          }
+
           return json({
             songs: await searchCatalogSongsForBlacklist(runtimeEnv, {
               query,
@@ -196,13 +230,10 @@ export const Route = createFileRoute("/api/dashboard/moderation/search")({
           });
         }
 
-        const [artists, charters, songs] = await Promise.all([
-          searchCatalogArtistsForBlacklist(runtimeEnv, { query }),
-          searchCatalogChartersForBlacklist(runtimeEnv, { query }),
-          searchCatalogSongsForBlacklist(runtimeEnv, { query }),
-        ]);
-
-        return json({ artists, charters, songs });
+        return json(
+          { error: "Unknown moderation search type." },
+          { status: 400 }
+        );
       },
     },
   },

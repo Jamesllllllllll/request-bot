@@ -144,9 +144,6 @@ export function PublicPlayedHistoryCard(props: { slug: string }) {
           </div>
           <div>
             <CardTitle>Played history</CardTitle>
-            <p className="mt-1 text-sm text-(--muted)">
-              Search lifetime played songs without loading the full history.
-            </p>
           </div>
         </div>
         <Button
@@ -183,7 +180,7 @@ export function PublicPlayedHistoryCard(props: { slug: string }) {
                   value={searchQuery}
                   onChange={(event) => setSearchQuery(event.target.value)}
                   placeholder="Song, artist, album, or charter"
-                  className="pl-9"
+                  className="pr-10 pl-10!"
                 />
                 {searchQuery ? (
                   <button

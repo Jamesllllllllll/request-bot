@@ -8,6 +8,7 @@ import type { AppEnv } from "~/lib/env";
 export type ViewerSessionData = {
   viewer: null | {
     user: {
+      twitchUserId: string;
       displayName: string;
       login: string;
       profileImageUrl?: string | null;
@@ -34,6 +35,7 @@ export const getViewerSession = createServerFn({ method: "GET" }).handler(
       viewer: viewer
         ? {
             user: {
+              twitchUserId: viewer.user.twitchUserId,
               displayName: viewer.user.displayName,
               login: viewer.user.login,
               profileImageUrl: viewer.user.profileImageUrl,

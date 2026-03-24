@@ -164,6 +164,8 @@ export const settingsInputSchema = z
     moderatorCanManageRequests: z.boolean(),
     moderatorCanManageBlacklist: z.boolean(),
     moderatorCanManageSetlist: z.boolean(),
+    moderatorCanManageBlockedChatters: z.boolean(),
+    moderatorCanViewVipTokens: z.boolean(),
     moderatorCanManageVipTokens: z.boolean(),
     moderatorCanManageTags: z.boolean(),
     requestsEnabled: z.boolean(),
@@ -224,6 +226,15 @@ export const settingsInputSchema = z
         code: z.ZodIssueCode.custom,
         message: "Cheer minimum threshold must grant at least 0.25 tokens.",
         path: ["cheerMinimumTokenPercent"],
+      });
+    }
+
+    if (input.moderatorCanManageVipTokens && !input.moderatorCanViewVipTokens) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message:
+          "Moderators must be allowed to view VIP tokens before they can manage them.",
+        path: ["moderatorCanManageVipTokens"],
       });
     }
   });
@@ -313,6 +324,8 @@ export const playlistMutationSchema = z.discriminatedUnion("action", [
     action: z.literal("manualAdd"),
     songId: z.string(),
     requesterLogin: z.string().trim().min(2).max(25).optional(),
+    requesterTwitchUserId: z.string().trim().min(1).max(50).optional(),
+    requesterDisplayName: z.string().trim().min(1).max(100).optional(),
     title: z.string().min(1),
     authorId: z.number().optional(),
     artist: z.string().optional(),

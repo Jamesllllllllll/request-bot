@@ -106,7 +106,7 @@ To test Twitch sign-in, bot behavior, and EventSub locally, also set:
 
 `ADMIN_TWITCH_USER_IDS` should contain the Twitch user ID for the admin account that is allowed to connect the shared bot account and access admin pages.
 
-If a broadcaster connected before `channel:bot`, `channel:read:subscriptions`, or `bits:read` were added to your configured scopes, they need to reconnect Twitch from the app before bot replies and VIP token automation can use the updated Twitch permissions.
+Broadcaster connections need `channel:bot`, `channel:read:subscriptions`, and `bits:read` in `TWITCH_SCOPES`. If the connected Twitch account is missing those permissions, reconnect Twitch from the app so bot replies and VIP token automation can use them.
 
 Sentry stays off locally unless you explicitly set a DSN:
 

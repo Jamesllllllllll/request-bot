@@ -9,7 +9,8 @@
       "*.jsonc",
       "*.js",
       "*.ts",
-      "*.tsx"
+      "*.tsx",
+      "!!**/src/routeTree.gen.ts"
     ]
   },
   "formatter": {
@@ -28,6 +29,11 @@
       "jsxQuoteStyle": "double",
       "semicolons": "always",
       "trailingCommas": "es5"
+    }
+  },
+  "css": {
+    "parser": {
+      "tailwindDirectives": true
     }
   },
   "overrides": [

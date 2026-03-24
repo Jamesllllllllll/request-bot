@@ -1,9 +1,6 @@
-// Route: Renders overlay settings and preview controls for the active channel.
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { createFileRoute } from "@tanstack/react-router";
 import { Copy } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
-import { DashboardPageHeader } from "~/components/dashboard-page-header";
 import {
   StreamOverlay,
   type StreamOverlayTheme,
@@ -11,7 +8,6 @@ import {
 import { Button } from "~/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "~/components/ui/card";
 import { Input } from "~/components/ui/input";
-import { pageTitle } from "~/lib/page-title";
 import { getErrorMessage } from "~/lib/utils";
 import type { OverlaySettingsInputData } from "~/lib/validation";
 
@@ -44,6 +40,10 @@ type PlaylistData = {
   }>;
 };
 
+type ChannelPlaylistPreviewResponse = {
+  items?: PlaylistData["items"];
+};
+
 const defaultOverlayForm: OverlaySettingsInputData = {
   overlayShowCreator: false,
   overlayShowAlbum: false,
@@ -63,14 +63,7 @@ const defaultOverlayForm: OverlaySettingsInputData = {
   overlayMetaFontSize: 14,
 };
 
-export const Route = createFileRoute("/dashboard/overlay")({
-  head: () => ({
-    meta: [{ title: pageTitle("Overlay") }],
-  }),
-  component: DashboardOverlayPage,
-});
-
-function DashboardOverlayPage() {
+export function OverlaySettingsPanel() {
   const queryClient = useQueryClient();
   const [form, setForm] =
     useState<OverlaySettingsInputData>(defaultOverlayForm);
@@ -102,11 +95,31 @@ function DashboardOverlayPage() {
   });
 
   const playlistQuery = useQuery<PlaylistData>({
-    queryKey: ["dashboard-playlist-preview"],
+    queryKey: [
+      "channel-overlay-playlist-preview",
+      overlayQuery.data?.channel.slug,
+    ],
     queryFn: async () => {
-      const response = await fetch("/api/dashboard/playlist");
-      return response.json() as Promise<PlaylistData>;
+      const slug = overlayQuery.data?.channel.slug;
+
+      if (!slug) {
+        return { items: [] } satisfies PlaylistData;
+      }
+
+      const response = await fetch(`/api/channel/${slug}/playlist`);
+      const body = (await response
+        .json()
+        .catch(() => null)) as ChannelPlaylistPreviewResponse | null;
+
+      if (!response.ok) {
+        throw new Error("Failed to load playlist preview.");
+      }
+
+      return {
+        items: body?.items ?? [],
+      } satisfies PlaylistData;
     },
+    enabled: !!overlayQuery.data?.channel.slug,
     refetchInterval: 2_000,
     refetchIntervalInBackground: false,
   });
@@ -256,11 +269,17 @@ function DashboardOverlayPage() {
   }
 
   return (
-    <div className="dashboard-overlay grid gap-6">
-      <DashboardPageHeader
-        title="Overlay"
-        description="Configure the browser source URL, theme, and preview behavior for your on-stream playlist."
-      />
+    <section id="overlay" className="grid gap-6">
+      <div className="grid gap-2">
+        <h2 className="text-2xl font-semibold tracking-tight text-(--text)">
+          Stream overlay
+        </h2>
+        <p className="max-w-3xl text-sm leading-7 text-(--muted)">
+          Keep browser-source configuration with the rest of your channel
+          settings. The preview still reflects your live playlist when it is
+          available.
+        </p>
+      </div>
 
       {message ? <Banner tone="success">{message}</Banner> : null}
       {errorMessage ? <Banner tone="danger">{errorMessage}</Banner> : null}
@@ -521,7 +540,7 @@ function DashboardOverlayPage() {
           </div>
         </div>
       ) : null}
-    </div>
+    </section>
   );
 }
 

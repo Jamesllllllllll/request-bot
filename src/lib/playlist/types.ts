@@ -102,6 +102,8 @@ export interface ManualAddInput {
   channelId: string;
   actorUserId: string;
   requesterLogin?: string;
+  requesterTwitchUserId?: string;
+  requesterDisplayName?: string;
   song: {
     id: string;
     title: string;

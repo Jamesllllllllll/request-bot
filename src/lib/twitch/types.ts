@@ -55,6 +55,7 @@ export interface TwitchStreamsResponse {
     type: string;
     title: string;
     started_at: string;
+    thumbnail_url: string;
   }>;
 }
 

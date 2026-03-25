@@ -1,0 +1,1 @@
+node scripts/ensure-not-main-branch.mjs && npm run check:staged

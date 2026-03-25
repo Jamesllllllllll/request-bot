@@ -54,12 +54,17 @@ function StreamPlaylistOverlayPage() {
     root.classList.add("overlay-mode");
     document.body.classList.add("overlay-mode");
     document.body.style.margin = "0";
+    root.style.background = "transparent";
+    document.body.style.background = "transparent";
 
     if (data?.settings) {
-      const background = hexToRgba(
-        data.settings.overlayBackgroundColor,
-        data.settings.overlayBackgroundOpacity
-      );
+      const background =
+        data.settings.overlayBackgroundOpacity > 0
+          ? hexToRgba(
+              data.settings.overlayBackgroundColor,
+              data.settings.overlayBackgroundOpacity
+            )
+          : "transparent";
 
       root.style.background = background;
       document.body.style.background = background;

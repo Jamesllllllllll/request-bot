@@ -169,7 +169,24 @@ The repo auto-runs local D1 migrations before `dev`, `test`, and `build`.
 
 ### Verification before commit
 
-Run checks in this order:
+The normal path is now hook-driven:
+
+```bash
+git commit
+git push
+```
+
+`npm install` sets up Husky automatically. On commit, the repo runs staged-file Biome fixes/checks. On push, it runs generated-file verification, typecheck, and tests.
+
+If you want to run the same push-time validation manually, use:
+
+```bash
+npm run check:prepush
+```
+
+`npm run lint` uses a compact summary reporter. If you want Biome's full inline diagnostics, use `npm run lint:full`.
+
+Run the full manual sequence only when you specifically want it:
 
 ```bash
 npm run typecheck
@@ -185,7 +202,7 @@ If you changed browser-driven flows, also run:
 npm run test:e2e
 ```
 
-Formatting before lint is intentional. Biome lint is much cleaner after `npm run format`, and this avoids a lot of AI-generated formatting churn before commit.
+Formatting before lint is intentional in that manual path. Biome lint is much cleaner after `npm run format`, and this avoids a lot of AI-generated formatting churn before commit.
 
 ### 6. Twitch application setup for local auth
 
@@ -311,11 +328,10 @@ For the expanded local setup notes, see [docs/local-development.md](/docs/local-
 ## Verification
 
 ```bash
-npm run lint
-npm run typecheck
-npm run test
-npm run build
+npm run check:prepush
 ```
+
+For extra confidence on deploy-sensitive changes, also run `npm run build`.
 
 ## Cloudflare deploy
 

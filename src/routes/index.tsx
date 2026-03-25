@@ -9,6 +9,7 @@ import {
   Search,
   Settings2,
 } from "lucide-react";
+import { useState } from "react";
 import { Button } from "~/components/ui/button";
 import { pageTitle } from "~/lib/page-title";
 
@@ -29,22 +30,75 @@ type HomeLiveChannel = {
   } | null;
 };
 
-const devMockLiveChannels: HomeLiveChannel[] = [
+const demoLiveChannels: HomeLiveChannel[] = [
   {
-    id: "mock-gamut",
-    slug: "gamut",
-    displayName: "Gamut",
-    login: "gamut",
-    streamTitle: "Live requests, queue picks, and channel-driven playlist flow",
+    id: "mock-christhemetalnerd",
+    slug: "christhemetalnerd",
+    displayName: "ChrisTheMetalNerd",
+    login: "christhemetalnerd",
+    streamTitle:
+      "Featured playlist queue with live requests and community picks",
     streamThumbnailUrl:
-      "https://static-cdn.jtvnw.net/previews-ttv/live_user_gamut-640x360.jpg",
+      "https://static-cdn.jtvnw.net/previews-ttv/live_user_christhemetalnerd-640x360.jpg",
     currentItem: {
-      title: "Neon Noir",
-      artist: "HIM",
+      title: "Playlist",
+      artist: "Featured queue",
     },
     nextItem: {
-      title: "Black Cat",
-      artist: "David Gilmour",
+      title: "Viewer requests",
+      artist: "Up next",
+    },
+  },
+  {
+    id: "mock-amisslamb44",
+    slug: "amisslamb44",
+    displayName: "AmissLamb44",
+    login: "amisslamb44",
+    streamTitle: "Playlist",
+    streamThumbnailUrl:
+      "https://static-cdn.jtvnw.net/previews-ttv/live_user_amisslamb44-640x360.jpg",
+    currentItem: {
+      title: "Playlist",
+      artist: "Live now",
+    },
+  },
+  {
+    id: "mock-jacoandfoxy",
+    slug: "jacoandfoxy",
+    displayName: "JacoAndFoxy",
+    login: "jacoandfoxy",
+    streamTitle: "Playlist",
+    streamThumbnailUrl:
+      "https://static-cdn.jtvnw.net/previews-ttv/live_user_jacoandfoxy-640x360.jpg",
+    currentItem: {
+      title: "Playlist",
+      artist: "Live now",
+    },
+  },
+  {
+    id: "mock-shaggy-malagy",
+    slug: "shaggy_malagy",
+    displayName: "shaggy_malagy",
+    login: "shaggy_malagy",
+    streamTitle: "Playlist",
+    streamThumbnailUrl:
+      "https://static-cdn.jtvnw.net/previews-ttv/live_user_shaggy_malagy-640x360.jpg",
+    currentItem: {
+      title: "Playlist",
+      artist: "Live now",
+    },
+  },
+  {
+    id: "mock-slyman85",
+    slug: "slyman85",
+    displayName: "Slyman85",
+    login: "slyman85",
+    streamTitle: "Playlist",
+    streamThumbnailUrl:
+      "https://static-cdn.jtvnw.net/previews-ttv/live_user_slyman85-640x360.jpg",
+    currentItem: {
+      title: "Playlist",
+      artist: "Live now",
     },
   },
 ];
@@ -57,6 +111,7 @@ export const Route = createFileRoute("/")({
 });
 
 function HomePage() {
+  const [showDemoChannels, setShowDemoChannels] = useState(import.meta.env.DEV);
   const { data: sessionData } = useQuery({
     queryKey: ["viewer-session"],
     queryFn: async () => {
@@ -99,29 +154,27 @@ function HomePage() {
     : viewer?.manageableChannels?.[0]
       ? { slug: viewer.manageableChannels[0].slug }
       : null;
-  const liveChannels =
-    data?.channels?.length && data.channels.length > 0
-      ? data.channels
-      : import.meta.env.DEV
-        ? devMockLiveChannels
-        : [];
-  const isUsingDevMockLiveChannels =
-    import.meta.env.DEV &&
-    (!data?.channels || data.channels.length === 0) &&
-    liveChannels.length > 0;
-  const [featuredChannel, ...secondaryChannels] = liveChannels;
+  const liveChannels = data?.channels ?? [];
+  const displayedChannels = showDemoChannels ? demoLiveChannels : liveChannels;
+  const toggleLabel = showDemoChannels ? "Show Live" : "Show Demo";
+  const sourceLabel = showDemoChannels
+    ? "Demo streamer data"
+    : import.meta.env.DEV
+      ? "Actual live data"
+      : null;
+  const [featuredChannel, ...secondaryChannels] = displayedChannels;
 
   return (
-    <section className="home-page grid gap-6 px-4 pt-4 pb-6 sm:px-5 sm:pt-5 md:px-6 md:pt-6 xl:grid-cols-[1.15fr_0.85fr]">
-      <div className="home-page__hero surface-grid surface-noise rounded-[36px] border border-(--border-strong) bg-(--panel) p-8 shadow-(--shadow) md:p-10">
+    <section className="home-page grid gap-6 px-4 pt-4 pb-6 sm:px-5 sm:pt-5 md:px-6 md:pt-6 xl:grid-cols-[0.72fr_1.28fr]">
+      <div className="home-page__hero surface-grid surface-noise rounded-[32px] border border-(--border-strong) bg-(--panel) p-6 shadow-(--shadow) md:p-8">
         <p className="text-xs font-semibold uppercase tracking-[0.34em] text-(--brand-deep)">
           Twitch Song Requests
         </p>
-        <h1 className="mt-5 max-w-4xl text-5xl font-semibold tracking-[-0.04em] text-(--text) md:text-6xl">
+        <h1 className="mt-4 max-w-3xl text-4xl font-semibold tracking-[-0.04em] text-(--text) md:text-5xl">
           Search songs or manage your channel.
         </h1>
 
-        <div className="mt-10 grid gap-4 md:grid-cols-2">
+        <div className="mt-8 grid gap-4 md:grid-cols-2 xl:grid-cols-1">
           <FeatureBlock
             icon={Search}
             title="Find a song"
@@ -156,32 +209,42 @@ function HomePage() {
       </div>
 
       <div className="grid gap-6">
-        <section className="rounded-[32px] border border-(--border) bg-(--panel-strong) p-6 shadow-(--shadow-soft)">
+        <section className="rounded-[34px] border border-(--border) bg-(--panel-strong) p-6 shadow-(--shadow-soft) md:p-8">
           <div className="flex items-start justify-between gap-4">
             <div>
               <p className="text-xs font-semibold uppercase tracking-[0.24em] text-(--brand-deep)">
                 Live now
               </p>
-              <h2 className="mt-3 text-2xl font-semibold text-(--text)">
+              <h2 className="mt-3 text-3xl font-semibold text-(--text)">
                 Current streamers
               </h2>
             </div>
-            <div className="rounded-full border border-(--border) bg-(--panel-soft) px-3 py-1 text-xs uppercase tracking-[0.22em] text-(--muted)">
-              {liveChannels.length} active
+            <div className="flex flex-wrap items-center justify-end gap-3">
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => setShowDemoChannels((current) => !current)}
+              >
+                {toggleLabel}
+              </Button>
+              <div className="rounded-full border border-(--border) bg-(--panel-soft) px-3 py-1 text-xs uppercase tracking-[0.22em] text-(--muted)">
+                {displayedChannels.length} active
+              </div>
             </div>
           </div>
-          {isUsingDevMockLiveChannels ? (
+          {sourceLabel ? (
             <p className="mt-3 text-xs uppercase tracking-[0.18em] text-(--muted)">
-              Dev preview data
+              {sourceLabel}
             </p>
           ) : null}
 
-          <div className="mt-5 grid gap-4">
+          <div className="mt-6 grid gap-5">
             {featuredChannel ? (
               <>
                 <FeaturedLiveChannelCard channel={featuredChannel} />
                 {secondaryChannels.length ? (
-                  <div className="grid gap-3 md:grid-cols-2">
+                  <div className="grid gap-4 md:grid-cols-2">
                     {secondaryChannels.map((channel) => (
                       <CompactLiveChannelCard
                         key={channel.id}
@@ -207,30 +270,30 @@ function FeaturedLiveChannelCard(props: { channel: HomeLiveChannel }) {
   const { channel } = props;
 
   return (
-    <div className="overflow-hidden rounded-[28px] border border-(--border-strong) bg-(--panel-soft)">
+    <div className="overflow-hidden rounded-[30px] border border-(--border-strong) bg-(--panel-soft)">
       {channel.streamThumbnailUrl ? (
         <div className="border-b border-(--border)">
           <img
             src={channel.streamThumbnailUrl}
             alt={`${channel.displayName} live stream preview`}
-            className="block aspect-video w-full object-cover"
+            className="block aspect-video max-h-[420px] w-full object-cover"
             loading="eager"
             fetchPriority="high"
             decoding="async"
           />
         </div>
       ) : null}
-      <div className="p-5">
+      <div className="p-6 md:p-7">
         <div className="flex items-start justify-between gap-4">
           <div className="min-w-0">
-            <p className="truncate text-2xl font-semibold text-(--text)">
+            <p className="truncate text-3xl font-semibold text-(--text)">
               {channel.displayName}
             </p>
-            <p className="mt-1 truncate text-sm text-(--brand-deep)">
+            <p className="mt-1 truncate text-base text-(--brand-deep)">
               @{channel.login}
             </p>
             {channel.streamTitle ? (
-              <p className="mt-3 line-clamp-2 text-sm leading-6 text-(--muted)">
+              <p className="mt-4 line-clamp-2 text-base leading-7 text-(--muted)">
                 {channel.streamTitle}
               </p>
             ) : null}
@@ -241,7 +304,7 @@ function FeaturedLiveChannelCard(props: { channel: HomeLiveChannel }) {
           </div>
         </div>
         {channel.currentItem || channel.nextItem ? (
-          <div className="mt-5 grid gap-2 rounded-[22px] border border-(--border) bg-(--panel) p-4">
+          <div className="mt-6 grid gap-3 rounded-[24px] border border-(--border) bg-(--panel) p-5">
             {channel.currentItem ? (
               <QueueSnippet
                 icon={Radio}
@@ -260,7 +323,7 @@ function FeaturedLiveChannelCard(props: { channel: HomeLiveChannel }) {
             ) : null}
           </div>
         ) : null}
-        <div className="mt-5 flex flex-wrap gap-3">
+        <div className="mt-6 flex flex-wrap gap-4">
           <a
             href={`https://twitch.tv/${channel.login}`}
             target="_blank"
@@ -287,14 +350,14 @@ function CompactLiveChannelCard(props: { channel: HomeLiveChannel }) {
   const { channel } = props;
 
   return (
-    <div className="rounded-[24px] border border-(--border) bg-(--panel-muted) p-4">
+    <div className="rounded-[26px] border border-(--border) bg-(--panel-muted) p-5">
       {channel.streamThumbnailUrl ? (
-        <div className="mb-4 overflow-hidden rounded-[18px] border border-(--border)">
+        <div className="mb-5 overflow-hidden rounded-[20px] border border-(--border)">
           <img
             src={channel.streamThumbnailUrl
-              .replace("640x360", "320x180")
-              .replace("{width}", "320")
-              .replace("{height}", "180")}
+              .replace("640x360", "480x270")
+              .replace("{width}", "480")
+              .replace("{height}", "270")}
             alt={`${channel.displayName} live stream preview`}
             className="block aspect-video w-full object-cover"
             loading="lazy"
@@ -304,17 +367,17 @@ function CompactLiveChannelCard(props: { channel: HomeLiveChannel }) {
       ) : null}
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
-          <p className="truncate text-lg font-semibold text-(--text)">
+          <p className="truncate text-xl font-semibold text-(--text)">
             {channel.displayName}
           </p>
-          <p className="mt-1 truncate text-sm text-(--brand-deep)">
+          <p className="mt-1 truncate text-base text-(--brand-deep)">
             @{channel.login}
           </p>
         </div>
         <Radio className="mt-1 h-4 w-4 shrink-0 text-(--accent-strong)" />
       </div>
       {channel.currentItem || channel.nextItem ? (
-        <div className="mt-4 grid gap-2 rounded-[18px] border border-(--border) bg-(--panel) p-3">
+        <div className="mt-5 grid gap-2 rounded-[20px] border border-(--border) bg-(--panel) p-4">
           <QueueSnippet
             icon={channel.currentItem ? Radio : ListMusic}
             label={channel.currentItem ? "Now playing" : "Next request"}
@@ -323,7 +386,7 @@ function CompactLiveChannelCard(props: { channel: HomeLiveChannel }) {
           />
         </div>
       ) : null}
-      <div className="mt-4 flex flex-wrap gap-3">
+      <div className="mt-5 flex flex-wrap gap-4">
         <a
           href={`https://twitch.tv/${channel.login}`}
           target="_blank"
@@ -382,14 +445,16 @@ function FeatureBlock(props: {
   const Icon = props.icon;
 
   return (
-    <div className="rounded-[28px] border border-(--border) bg-(--panel-soft) p-5">
+    <div className="rounded-[24px] border border-(--border) bg-(--panel-soft) p-4">
       <div className="flex items-start justify-between gap-3">
-        <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-[18px] border border-(--border) bg-(--panel-muted) text-(--brand)">
-          <Icon className="h-5 w-5" />
+        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-[16px] border border-(--border) bg-(--panel-muted) text-(--brand)">
+          <Icon className="h-[18px] w-[18px]" />
         </div>
         {props.action}
       </div>
-      <p className="mt-5 text-lg font-semibold text-(--text)">{props.title}</p>
+      <p className="mt-4 text-base font-semibold text-(--text)">
+        {props.title}
+      </p>
       <p className="mt-2 text-sm leading-6 text-(--muted)">{props.body}</p>
     </div>
   );

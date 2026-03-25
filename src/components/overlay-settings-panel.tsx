@@ -8,7 +8,7 @@ import {
 import { Button } from "~/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "~/components/ui/card";
 import { Input } from "~/components/ui/input";
-import { getErrorMessage } from "~/lib/utils";
+import { getErrorMessage, hexToRgba } from "~/lib/utils";
 import type { OverlaySettingsInputData } from "~/lib/validation";
 
 type OverlaySettingsResponse = {
@@ -165,6 +165,10 @@ export function OverlaySettingsPanel() {
   });
 
   const previewTheme = useMemo<StreamOverlayTheme>(() => form, [form]);
+  const previewBackground = useMemo(
+    () => hexToRgba(form.overlayBackgroundColor, form.overlayBackgroundOpacity),
+    [form.overlayBackgroundColor, form.overlayBackgroundOpacity]
+  );
   const savedForm = overlayQuery.data?.settings ?? defaultOverlayForm;
   const hasUnsavedChanges = JSON.stringify(form) !== JSON.stringify(savedForm);
   const overlayUrl = overlayQuery.data?.overlayUrl ?? "";
@@ -377,7 +381,8 @@ export function OverlaySettingsPanel() {
                 onChange={(value) => setColor("overlayPanelColor", value)}
               />
               <ColorField
-                label="Playlist background"
+                label="Overlay background / chroma key"
+                description="Use a normal visible background, or pick a deliberate key color like bright pink or green for OBS chroma key."
                 value={form.overlayBackgroundColor}
                 onChange={(value) => setColor("overlayBackgroundColor", value)}
               />
@@ -395,7 +400,8 @@ export function OverlaySettingsPanel() {
             </CardHeader>
             <CardContent className="grid gap-4">
               <RangeField
-                label="Background opacity"
+                label="Overlay background opacity"
+                description="Set this to 0 for a fully transparent page behind the playlist items."
                 min={0}
                 max={100}
                 value={form.overlayBackgroundOpacity}
@@ -501,8 +507,16 @@ export function OverlaySettingsPanel() {
               </div>
             </CardHeader>
             <CardContent className="p-0">
-              <div className="rounded-[28px] border border-(--border) bg-[#05070d] p-6">
-                <div className="overflow-hidden rounded-[28px] border border-(--border)">
+              <div
+                className="rounded-[28px] border border-(--border) p-6"
+                style={{
+                  background:
+                    form.overlayBackgroundOpacity > 0
+                      ? previewBackground
+                      : "repeating-conic-gradient(from 45deg, rgba(255,255,255,0.06) 0% 25%, rgba(255,255,255,0.015) 0% 50%) 50% / 20px 20px",
+                }}
+              >
+                <div className="overflow-hidden rounded-[28px]">
                   <StreamOverlay
                     preview
                     channelName={`${channelName}'s Playlist`}
@@ -570,12 +584,16 @@ function ToggleRow(props: {
 
 function ColorField(props: {
   label: string;
+  description?: string;
   value: string;
   onChange: (value: string) => void;
 }) {
   return (
     <div className="grid gap-2 rounded-[24px] border border-(--border) bg-(--panel-soft) p-4">
       <p className="text-sm font-medium text-(--text)">{props.label}</p>
+      {props.description ? (
+        <p className="text-sm leading-6 text-(--muted)">{props.description}</p>
+      ) : null}
       <div className="flex items-center gap-3">
         <input
           type="color"
@@ -594,6 +612,7 @@ function ColorField(props: {
 
 function RangeField(props: {
   label: string;
+  description?: string;
   min: number;
   max: number;
   value: number;
@@ -605,6 +624,9 @@ function RangeField(props: {
         <p className="text-sm font-medium text-(--text)">{props.label}</p>
         <span className="text-sm text-(--muted)">{props.value}</span>
       </div>
+      {props.description ? (
+        <p className="text-sm leading-6 text-(--muted)">{props.description}</p>
+      ) : null}
       <input
         type="range"
         min={props.min}

@@ -51,6 +51,9 @@ export function StreamOverlay(props: {
     props.theme.overlayBackgroundColor,
     props.theme.overlayBackgroundOpacity
   );
+  const overlaySurfaceClassName = props.preview
+    ? "min-h-[520px] w-full"
+    : "min-h-screen w-full";
 
   const style = {
     "--overlay-bg": backgroundColor,
@@ -69,7 +72,7 @@ export function StreamOverlay(props: {
 
   return (
     <div
-      className="min-h-full w-full"
+      className={overlaySurfaceClassName}
       style={{
         background: backgroundColor,
       }}
@@ -93,6 +96,7 @@ export function StreamOverlay(props: {
                   <OverlayCard
                     key={item.id}
                     item={item}
+                    theme={props.theme}
                     transparentBackground={
                       props.theme.overlayBackgroundOpacity === 0
                     }
@@ -113,6 +117,7 @@ export function StreamOverlay(props: {
 
 function OverlayCard(props: {
   item: StreamOverlayItem;
+  theme: StreamOverlayTheme;
   transparentBackground: boolean;
   animateRecord: boolean;
   fadeOut?: boolean;
@@ -129,6 +134,14 @@ function OverlayCard(props: {
   ]
     .filter(Boolean)
     .join(" - ");
+  const detailLines = [
+    props.theme.overlayShowAlbum
+      ? decodeHtmlEntities(props.item.songAlbum)
+      : null,
+    props.theme.overlayShowCreator
+      ? decodeHtmlEntities(props.item.songCreator)
+      : null,
+  ].filter((value): value is string => !!value);
 
   return (
     <motion.div
@@ -181,6 +194,15 @@ function OverlayCard(props: {
           >
             {requesterName}
           </p>
+          {detailLines.map((detailLine) => (
+            <p
+              key={detailLine}
+              className="mt-1 truncate text-(--overlay-muted)"
+              style={{ fontSize: "var(--overlay-meta-size)" }}
+            >
+              {detailLine}
+            </p>
+          ))}
           <div className="mt-2 flex flex-wrap items-center gap-2">
             {props.item.pickNumber && props.item.pickNumber <= 3 ? (
               <PickBadge pickNumber={props.item.pickNumber} />

@@ -23,8 +23,12 @@ const requestedPaths = process.argv.slice(3);
 const modeArgs =
   mode === "check"
     ? []
+    : mode === "check-compact"
+      ? ["--reporter", "summary", "--max-diagnostics", "10"]
     : mode === "check-write"
       ? ["--write"]
+      : mode === "check-write-compact"
+        ? ["--write", "--reporter", "summary", "--max-diagnostics", "10"]
       : mode === "format-write"
         ? ["format", "--write"]
         : null;

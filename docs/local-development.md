@@ -22,6 +22,13 @@ npx wrangler whoami
 npm install
 ```
 
+`npm install` also installs the repo's Git hooks through Husky.
+Those hooks run:
+
+- on commit: block commits on `main` and remind you to switch to a feature branch
+- on commit: staged-file Biome fixes/checks
+- on push: generated-file checks, `tsc --noEmit`, and tests without rewriting generated files
+
 2. Copy and fill in environment values:
 
 ```bash
@@ -207,7 +214,48 @@ If the ngrok URL changes, update both `.env` and the Twitch app redirect URIs.
 
 ### Verification before commit
 
-Run checks in this order:
+The default contributor path is:
+
+1. Commit normally.
+2. Let the `pre-commit` hook block commits on `main` and run staged-file Biome fixes/checks.
+3. Push normally.
+4. Let the `pre-push` hook run generated-file verification, typecheck, and tests.
+
+If you want to run the same push-time gate manually before pushing, use:
+
+```bash
+npm run check:prepush
+```
+
+You usually do not need to run `format`, `lint`, `test`, and `typecheck` manually in sequence.
+
+Run these extra commands only when they fit the change:
+
+1. Full-repo Biome pass:
+
+```bash
+npm run lint
+```
+
+If you want Biome's full detailed output instead of the compact summary:
+
+```bash
+npm run lint:full
+```
+
+2. Production build sanity check:
+
+```bash
+npm run build
+```
+
+3. Browser flow coverage:
+
+```bash
+npm run test:e2e
+```
+
+If you need the old manual verification path, run:
 
 1. Typecheck:
 
@@ -245,7 +293,7 @@ If you changed browser-driven behavior or UI flows, also run:
 npm run test:e2e
 ```
 
-Why `format` before `lint`:
+Why `format` before `lint` in the manual path:
 
 - Biome lint is much less noisy after formatting first
 - AI-generated edits often introduce avoidable formatting drift

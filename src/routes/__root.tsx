@@ -94,18 +94,18 @@ function AppShell() {
 
   return (
     <div className="app-shell mx-auto flex min-h-screen w-full max-w-[1480px] flex-col">
-      <header className="app-shell__header surface-grid surface-noise mb-8 rounded-[32px] border border-(--border) bg-(--panel) shadow-(--shadow) backdrop-blur-xl">
+      <header className="app-shell__header surface-grid surface-noise mb-6 rounded-[28px] border border-(--border) bg-(--panel) shadow-(--shadow) backdrop-blur-xl">
         <div className="flex flex-wrap items-center justify-between gap-4">
           <div className="min-w-0 flex items-center gap-4">
             <Link to="/" className="group flex items-center gap-4 no-underline">
-              <div className="flex h-12 w-12 items-center justify-center rounded-[18px] border border-(--border-strong) bg-(--panel-soft) text-(--brand)">
-                <Headphones className="h-5 w-5" />
+              <div className="flex h-10 w-10 items-center justify-center rounded-[16px] border border-(--border-strong) bg-(--panel-soft) text-(--brand)">
+                <Headphones className="h-[18px] w-[18px]" />
               </div>
               <div className="min-w-0">
                 <p className="app-shell__brand-meta text-[11px] font-semibold uppercase tracking-[0.22em] text-(--brand-deep)">
                   Twitch Song Requests
                 </p>
-                <p className="app-shell__brand-title truncate text-2xl font-semibold tracking-tight text-(--text)">
+                <p className="app-shell__brand-title truncate text-xl font-semibold tracking-tight text-(--text)">
                   Request Bot
                 </p>
               </div>

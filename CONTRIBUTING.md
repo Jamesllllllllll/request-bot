@@ -3,31 +3,57 @@
 ## Workflow
 
 1. Create a branch from `main`.
-2. Make changes locally.
-3. Run:
+2. Install dependencies and bootstrap the local database:
 
 ```bash
 npm install
 npm run db:bootstrap:local
-npm run typecheck
-npm run test
-npm run format
-npm run lint
-npm run build
 ```
 
-If you changed user-facing flows or browser interactions, also run:
+3. Make changes locally.
+4. Commit normally. Husky runs the routine local checks for you:
+
+- on commit: block commits on `main` with a friendly branch-switch reminder
+- on commit: staged-file Biome fixes/checks
+- on push: generated-file verification, typecheck, and tests
+
+5. If you want to run the same push-time validation manually before pushing, use:
 
 ```bash
-npm run test:e2e
+npm run check:prepush
 ```
 
-4. Open a pull request.
-5. Wait for CI to pass.
-6. Review the preview deployment if one is enabled for the repository.
-7. Merge to `main`.
+6. Only run extra checks when the change needs them:
+
+- run `npm run build` if the change affects deployment/build behavior or you want an extra production sanity check
+- run `npm run test:e2e` if you changed user-facing flows or browser interactions
+- run `npm run lint` manually if you want the compact full-repo Biome pass outside the staged-file hook
+- run `npm run lint:full` if you want Biome's detailed inline diagnostics and formatter diffs
+
+7. Open a pull request.
+8. Wait for CI to pass.
+9. Review the preview deployment if one is enabled for the repository.
+10. Merge to `main`.
 
 Merges to `main` are intended to trigger a production deploy.
+
+## Day-to-day local checks
+
+Most contributors should not need to run `format`, `lint`, `test`, and `typecheck` manually before every commit.
+
+Use this default path instead:
+
+```bash
+git add <files>
+git commit
+git push
+```
+
+If a hook fails:
+
+- fix the reported issue and retry
+- or run `npm run check:prepush` yourself to reproduce the push-time gate before pushing again
+- if the branch guard blocks a commit on `main`, switch to a feature branch before committing
 
 ## Releases
 
@@ -57,7 +83,7 @@ The app checks the latest applied migration at runtime and fails early if the lo
 
 - Keep changes focused.
 - Include tests when you change behavior.
-- Run `npm run format` before `npm run lint`. This repo has been seeing avoidable AI-generated formatting drift, and Biome lint is much cleaner after formatting first.
+- Do not rely on CI as your first feedback loop. Use the commit/push hooks, or run `npm run check:prepush` manually before opening the PR.
 - If a change affects Twitch auth, EventSub, playlist mutations, or migrations, call that out in the PR description.
 - If a change affects deployment or Cloudflare bindings, update the docs in the same PR.
 

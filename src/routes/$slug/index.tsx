@@ -22,6 +22,7 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "~/components/ui/popover";
+import { getBlacklistReasons as getChannelBlacklistReasons } from "~/lib/channel-blacklist";
 import { formatSlugTitle, pageTitle } from "~/lib/page-title";
 import { getPickNumbersForQueuedItems } from "~/lib/pick-order";
 import { cn, decodeHtmlEntities } from "~/lib/utils";
@@ -30,8 +31,13 @@ type PublicPlaylistItem = {
   id: string;
   songTitle: string;
   songArtist?: string | null;
+  songAlbum?: string | null;
   songCreator?: string | null;
   songCatalogSourceId?: number | null;
+  songGroupedProjectId?: number | null;
+  songArtistId?: number | null;
+  songCharterId?: number | null;
+  songSourceUpdatedAt?: number | null;
   requestedByTwitchUserId?: string | null;
   requestedByLogin?: string | null;
   requestedByDisplayName?: string | null;
@@ -105,6 +111,12 @@ type PublicChannelPageData = {
     songTitle: string;
     artistName?: string | null;
   }>;
+  blacklistSongGroups?: Array<{
+    groupedProjectId: number;
+    songTitle: string;
+    artistId?: number | null;
+    artistName?: string | null;
+  }>;
   setlistArtists?: Array<{ artistId: number; artistName: string }>;
   blocks?: Array<{
     twitchUserId: string;
@@ -167,6 +179,7 @@ function PublicChannelPage() {
         blacklistArtists?: PublicChannelPageData["blacklistArtists"];
         blacklistCharters?: PublicChannelPageData["blacklistCharters"];
         blacklistSongs?: PublicChannelPageData["blacklistSongs"];
+        blacklistSongGroups?: PublicChannelPageData["blacklistSongGroups"];
         setlistArtists?: PublicChannelPageData["setlistArtists"];
         blocks?: PublicChannelPageData["blocks"];
         vipTokens?: PublicChannelPageData["vipTokens"];
@@ -202,13 +215,17 @@ function PublicChannelPage() {
         const reasons = getBlacklistReasons(
           {
             songCatalogSourceId: song.sourceId ?? null,
+            songGroupedProjectId: song.groupedProjectId ?? null,
+            songArtistId: song.artistId ?? null,
             songArtist: song.artist ?? null,
+            songCharterId: song.authorId ?? null,
             songCreator: song.creator ?? null,
           },
           {
             artists: data?.blacklistArtists ?? [],
             charters: data?.blacklistCharters ?? [],
             songs: data?.blacklistSongs ?? [],
+            songGroups: data?.blacklistSongGroups ?? [],
           }
         );
 
@@ -227,6 +244,7 @@ function PublicChannelPage() {
           artists: data?.blacklistArtists ?? [],
           charters: data?.blacklistCharters ?? [],
           songs: data?.blacklistSongs ?? [],
+          songGroups: data?.blacklistSongGroups ?? [],
         });
         return showBlacklisted || blacklistReasons.length === 0;
       }),
@@ -234,11 +252,11 @@ function PublicChannelPage() {
       data?.blacklistArtists,
       data?.blacklistCharters,
       data?.blacklistSongs,
+      data?.blacklistSongGroups,
       playlistItems,
       showBlacklisted,
     ]
   );
-  const hiddenBlacklistedCount = playlistItems.length - filteredItems.length;
   const canManagePlaylist = !!data?.settings?.canManageRequests;
   const canManageBlacklist = !!data?.settings?.canManageBlacklist;
   const canManageSetlist = !!data?.settings?.canManageSetlist;
@@ -363,6 +381,7 @@ function PublicChannelPage() {
                     artists: data?.blacklistArtists ?? [],
                     charters: data?.blacklistCharters ?? [],
                     songs: data?.blacklistSongs ?? [],
+                    songGroups: data?.blacklistSongGroups ?? [],
                   })}
                 />
               ))}
@@ -415,7 +434,7 @@ function PublicChannelPage() {
               )
             : undefined
         }
-        advancedFiltersContent={
+        advancedFiltersContent={({ data: searchData }) => (
           <div className="inline-flex flex-wrap items-center gap-3 rounded-full border border-(--border) bg-(--panel) px-4 py-2.5">
             <Checkbox
               id="show-blacklisted-public-playlist"
@@ -430,13 +449,14 @@ function PublicChannelPage() {
             >
               Show blacklisted songs
             </Label>
-            {!showBlacklisted && hiddenBlacklistedCount > 0 ? (
+            {!showBlacklisted &&
+            (searchData?.hiddenBlacklistedCount ?? 0) > 0 ? (
               <span className="text-xs text-(--muted)">
-                Hiding {hiddenBlacklistedCount}
+                Hiding {searchData?.hiddenBlacklistedCount ?? 0}
               </span>
             ) : null}
           </div>
-        }
+        )}
       />
 
       <ChannelRulesPanel
@@ -452,6 +472,7 @@ function PublicChannelPage() {
         artists={data?.blacklistArtists ?? []}
         charters={data?.blacklistCharters ?? []}
         songs={data?.blacklistSongs ?? []}
+        songGroups={data?.blacklistSongGroups ?? []}
         setlistArtists={data?.setlistArtists ?? []}
       />
 
@@ -660,6 +681,12 @@ function PublicPlaylistRow(props: {
   ]
     .filter(Boolean)
     .join(" - ");
+  const albumLabel = props.item.songAlbum
+    ? decodeHtmlEntities(props.item.songAlbum)
+    : null;
+  const updatedLabel = props.item.songSourceUpdatedAt
+    ? formatPublicUpdatedDate(props.item.songSourceUpdatedAt)
+    : null;
 
   return (
     <motion.div
@@ -684,12 +711,22 @@ function PublicPlaylistRow(props: {
           <p className="truncate text-lg font-semibold text-(--text)">
             {titleLine}
           </p>
+          {albumLabel ? (
+            <p className="mt-1 truncate text-sm text-(--brand-deep)">
+              {albumLabel}
+            </p>
+          ) : null}
           <p className="mt-1 truncate text-sm font-medium text-(--muted)">
             {requesterName}
           </p>
           <div className="mt-2 flex flex-wrap items-center gap-2">
             {props.item.pickNumber && props.item.pickNumber <= 3 ? (
               <PickBadge pickNumber={props.item.pickNumber} />
+            ) : null}
+            {updatedLabel ? (
+              <span className="inline-flex items-center rounded-full border border-(--border) bg-(--panel) px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.16em] text-(--muted)">
+                Updated {updatedLabel}
+              </span>
             ) : null}
             {props.blacklistReasons.map((reason) => (
               <BlacklistReasonBadge key={reason} reason={reason} />
@@ -699,6 +736,14 @@ function PublicPlaylistRow(props: {
       </div>
     </motion.div>
   );
+}
+
+function formatPublicUpdatedDate(timestamp: number) {
+  return new Intl.DateTimeFormat(undefined, {
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+  }).format(timestamp);
 }
 
 function StatusColumn(props: { isCurrent: boolean; isVip: boolean }) {
@@ -783,14 +828,13 @@ function BlacklistReasonBadge(props: { reason: string }) {
   );
 }
 
-function normalizeBlacklistValue(value?: string | null) {
-  return value?.trim().toLowerCase() ?? "";
-}
-
 function getBlacklistReasons(
   item: {
     songCatalogSourceId?: number | null;
+    songGroupedProjectId?: number | null;
+    songArtistId?: number | null;
     songArtist?: string | null;
+    songCharterId?: number | null;
     songCreator?: string | null;
   },
   blacklist: {
@@ -801,36 +845,13 @@ function getBlacklistReasons(
       songTitle: string;
       artistName?: string | null;
     }>;
+    songGroups: Array<{
+      groupedProjectId: number;
+      songTitle: string;
+      artistId?: number | null;
+      artistName?: string | null;
+    }>;
   }
 ) {
-  const reasons: string[] = [];
-  const artistName = normalizeBlacklistValue(item.songArtist);
-  const creatorName = normalizeBlacklistValue(item.songCreator);
-
-  if (
-    item.songCatalogSourceId != null &&
-    blacklist.songs.some((song) => song.songId === item.songCatalogSourceId)
-  ) {
-    reasons.push("Song blacklisted");
-  }
-
-  if (
-    artistName &&
-    blacklist.artists.some(
-      (artist) => normalizeBlacklistValue(artist.artistName) === artistName
-    )
-  ) {
-    reasons.push("Artist blacklisted");
-  }
-
-  if (
-    creatorName &&
-    blacklist.charters.some(
-      (charter) => normalizeBlacklistValue(charter.charterName) === creatorName
-    )
-  ) {
-    reasons.push("Creator blacklisted");
-  }
-
-  return reasons;
+  return getChannelBlacklistReasons(item, blacklist);
 }

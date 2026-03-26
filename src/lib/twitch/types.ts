@@ -22,6 +22,9 @@ export interface TwitchChannelSearchResponse {
     broadcaster_login: string;
     display_name: string;
     thumbnail_url: string;
+    is_live?: boolean;
+    game_name?: string;
+    title?: string;
   }>;
 }
 

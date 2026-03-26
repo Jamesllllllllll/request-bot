@@ -104,6 +104,12 @@ export type PlaylistManagementState = {
     songTitle: string;
     artistName?: string | null;
   }>;
+  blacklistSongGroups: Array<{
+    groupedProjectId: number;
+    songTitle: string;
+    artistId?: number | null;
+    artistName?: string | null;
+  }>;
   setlistArtists: Array<{ artistId: number; artistName: string }>;
   accessRole: "owner" | "moderator";
   actorUserId: string;
@@ -186,6 +192,7 @@ export async function requirePlaylistManagementState(
     blacklistArtists: blacklist.blacklistArtists,
     blacklistCharters: blacklist.blacklistCharters,
     blacklistSongs: blacklist.blacklistSongs,
+    blacklistSongGroups: blacklist.blacklistSongGroups,
     setlistArtists: setlistRows,
     accessRole: access.accessRole,
     actorUserId: access.actorUserId,
@@ -211,6 +218,9 @@ export async function enrichPlaylistItems(
       ...item,
       songCatalogSourceId:
         item.songCatalogSourceId ?? catalogSong?.sourceId ?? null,
+      songGroupedProjectId: catalogSong?.groupedProjectId ?? null,
+      songArtistId: catalogSong?.artistId ?? null,
+      songCharterId: catalogSong?.authorId ?? null,
       songUrl: item.songUrl ?? catalogSong?.sourceUrl ?? null,
       songSourceUpdatedAt: catalogSong?.sourceUpdatedAt ?? null,
       songDownloads: catalogSong?.downloads ?? null,
@@ -231,6 +241,7 @@ export function getPlaylistManagementResponseBody(
     blacklistArtists: state.blacklistArtists,
     blacklistCharters: state.blacklistCharters,
     blacklistSongs: state.blacklistSongs,
+    blacklistSongGroups: state.blacklistSongGroups,
     setlistArtists: state.setlistArtists,
     accessRole: state.accessRole,
     requiredPaths: state.settings

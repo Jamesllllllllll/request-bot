@@ -6,6 +6,7 @@ import {
   parseAuthorizationScopes,
   searchCatalogArtistsForBlacklist,
   searchCatalogChartersForBlacklist,
+  searchCatalogSongGroupsForBlacklist,
   searchCatalogSongsForBlacklist,
 } from "~/lib/db/repositories";
 import type { AppEnv } from "~/lib/env";
@@ -121,6 +122,7 @@ export const Route = createFileRoute("/api/channel/$slug/moderation/search")({
             artists: [],
             charters: [],
             songs: [],
+            songVersions: [],
             users: [],
           });
         }
@@ -218,13 +220,25 @@ export const Route = createFileRoute("/api/channel/$slug/moderation/search")({
           });
         }
 
+        if (type === "song-version") {
+          if (!canBlacklist) {
+            return json({ error: "Forbidden" }, { status: 403 });
+          }
+
+          return json({
+            songVersions: await searchCatalogSongsForBlacklist(runtimeEnv, {
+              query,
+            }),
+          });
+        }
+
         if (type === "song") {
           if (!canBlacklist) {
             return json({ error: "Forbidden" }, { status: 403 });
           }
 
           return json({
-            songs: await searchCatalogSongsForBlacklist(runtimeEnv, {
+            songs: await searchCatalogSongGroupsForBlacklist(runtimeEnv, {
               query,
             }),
           });

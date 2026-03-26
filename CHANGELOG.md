@@ -4,6 +4,17 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.1.2] - 2026-03-26
+
+### Added
+- Whole-song blacklist groups alongside exact version blacklists, with moderation controls for artists, charters, songs, and specific versions.
+- Home page demo cards that can show Rocksmith-tagged Twitch streams with `Open playlist` and `Watch on Twitch` actions.
+
+### Changed
+- Playlist manager blacklist actions now identify the queued version more clearly and distinguish queued-version blocking from whole-song blocking.
+- Public and dashboard blacklist displays now separate songs from versions, and request filtering respects both types of blacklist.
+- The README now summarizes the current app surfaces and contributor workflow more clearly.
+
 ## [0.1.1] - 2026-03-22
 
 ### Added

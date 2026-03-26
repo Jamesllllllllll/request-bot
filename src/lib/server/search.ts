@@ -20,6 +20,9 @@ export type SearchInput = z.input<typeof searchInputSchema>;
 export type SearchResponse = {
   results: Array<{
     id: string;
+    groupedProjectId?: number;
+    artistId?: number;
+    authorId?: number;
     title: string;
     artist?: string;
     album?: string;
@@ -34,6 +37,7 @@ export type SearchResponse = {
     sourceUrl?: string;
   }>;
   total: number;
+  hiddenBlacklistedCount?: number;
   page: number;
   pageSize: number;
   hasNextPage?: boolean;
@@ -81,6 +85,7 @@ async function getSearchIdentity(runtimeEnv: AppEnv) {
 function normalizeSearchResponse(result: {
   results?: SearchResponse["results"];
   total?: number;
+  hiddenBlacklistedCount?: number;
   page?: number;
   pageSize?: number;
   hasNextPage?: boolean;
@@ -88,6 +93,7 @@ function normalizeSearchResponse(result: {
   return {
     results: result.results ?? [],
     total: result.total ?? result.results?.length ?? 0,
+    hiddenBlacklistedCount: result.hiddenBlacklistedCount ?? 0,
     page: result.page ?? 1,
     pageSize: result.pageSize ?? 25,
     hasNextPage: result.hasNextPage ?? false,

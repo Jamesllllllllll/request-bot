@@ -129,8 +129,19 @@ export const moderationActionSchema = z.discriminatedUnion("action", [
     artistName: z.string().trim().min(1).max(200).optional(),
   }),
   z.object({
+    action: z.literal("addBlacklistedSongGroup"),
+    groupedProjectId: z.number().int().positive(),
+    songTitle: z.string().trim().min(1).max(200),
+    artistId: z.number().int().positive().nullable().optional(),
+    artistName: z.string().trim().min(1).max(200).optional(),
+  }),
+  z.object({
     action: z.literal("removeBlacklistedSong"),
     songId: z.number().int().positive(),
+  }),
+  z.object({
+    action: z.literal("removeBlacklistedSongGroup"),
+    groupedProjectId: z.number().int().positive(),
   }),
   z.object({
     action: z.literal("addSetlistArtist"),
@@ -328,6 +339,7 @@ export const playlistMutationSchema = z.discriminatedUnion("action", [
     requesterDisplayName: z.string().trim().min(1).max(100).optional(),
     title: z.string().min(1),
     authorId: z.number().optional(),
+    groupedProjectId: z.number().optional(),
     artist: z.string().optional(),
     album: z.string().optional(),
     creator: z.string().optional(),

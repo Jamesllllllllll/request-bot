@@ -585,7 +585,7 @@ describe("processEventSubChatMessage", () => {
       env,
       expect.objectContaining({
         message:
-          "Commands: !sr artist, song; !sr song; !vip artist, song; !edit artist, song; !remove reg; !remove vip; !remove all. !blacklist: Artists: Chevelle. Charters: Frif. Songs: The Red. !setlist: Artists: Smashing Pumpkins. Search for songs to request: https://example.com/search",
+          "Commands: !sr artist, song; !sr song; !vip artist, song; !edit artist, song; !remove reg; !remove vip; !remove all. !blacklist: Artists: Chevelle. Charters: Frif. Songs: none. Versions: The Red. !setlist: Artists: Smashing Pumpkins. Search for songs to request: https://example.com/search",
       })
     );
   });

@@ -55,6 +55,12 @@ export interface EventSubChatState {
     songTitle: string;
     artistName?: string | null;
   }>;
+  blacklistSongGroups: Array<{
+    groupedProjectId: number;
+    songTitle: string;
+    artistId?: number | null;
+    artistName?: string | null;
+  }>;
   setlistArtists: Array<{ artistName: string }>;
   logs: Array<{
     matchedSongId: string | null;
@@ -80,6 +86,7 @@ export interface VipTokenBalance {
 export interface PlaylistAddSong {
   id: string;
   title: string;
+  groupedProjectId?: number;
   artist?: string;
   album?: string;
   creator?: string;
@@ -224,6 +231,7 @@ function buildCandidateMatchesJson(results: SongSearchResult[]) {
   return JSON.stringify(
     results.slice(0, 5).map((result) => ({
       id: result.id,
+      groupedProjectId: result.groupedProjectId,
       authorId: result.authorId,
       title: result.title,
       artist: result.artist,
@@ -267,7 +275,8 @@ function getRejectedSongMessage(input: {
 }) {
   if (
     input.reasonCode === "charter_blacklist" ||
-    input.reasonCode === "song_blacklist"
+    input.reasonCode === "song_blacklist" ||
+    input.reasonCode === "version_blacklist"
   ) {
     return `${mention(input.login)} I cannot add that song to the playlist.`;
   }
@@ -550,6 +559,7 @@ export async function processEventSubChatMessage(input: {
         blacklistArtists: state.blacklistArtists,
         blacklistCharters: state.blacklistCharters,
         blacklistSongs: state.blacklistSongs,
+        blacklistSongGroups: state.blacklistSongGroups,
         setlistArtists: state.setlistArtists,
       }),
     });
@@ -572,7 +582,8 @@ export async function processEventSubChatMessage(input: {
       message: buildBlacklistMessage(
         state.blacklistArtists,
         state.blacklistCharters,
-        state.blacklistSongs
+        state.blacklistSongs,
+        state.blacklistSongGroups
       ),
     });
     return { body: "Accepted", status: 202 };
@@ -740,6 +751,7 @@ export async function processEventSubChatMessage(input: {
           blacklistArtists: state.blacklistArtists,
           blacklistCharters: state.blacklistCharters,
           blacklistSongs: state.blacklistSongs,
+          blacklistSongGroups: state.blacklistSongGroups,
           setlistArtists: state.setlistArtists,
           requester: requesterContext,
         });
@@ -827,6 +839,7 @@ export async function processEventSubChatMessage(input: {
       blacklistArtists: state.blacklistArtists,
       blacklistCharters: state.blacklistCharters,
       blacklistSongs: state.blacklistSongs,
+      blacklistSongGroups: state.blacklistSongGroups,
       setlistArtists: state.setlistArtists,
       requester: requesterContext,
     });
@@ -1053,6 +1066,7 @@ export async function processEventSubChatMessage(input: {
       song: {
         id: firstMatch?.id ?? createId("rqm"),
         title: firstMatch?.title ?? unmatchedQuery,
+        groupedProjectId: firstMatch?.groupedProjectId,
         artist: firstMatch?.artist,
         album: firstMatch?.album,
         creator: firstMatch?.creator,

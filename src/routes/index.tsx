@@ -18,6 +18,8 @@ type HomeLiveChannel = {
   slug: string;
   displayName: string;
   login: string;
+  playlistHref?: string | null;
+  playlistExternal?: boolean;
   streamTitle?: string | null;
   streamThumbnailUrl?: string | null;
   currentItem?: {
@@ -148,6 +150,20 @@ function HomePage() {
       }>;
     },
   });
+  const { data: demoData } = useQuery({
+    queryKey: ["home-demo-channels"],
+    enabled: showDemoChannels || import.meta.env.DEV,
+    queryFn: async () => {
+      const response = await fetch("/api/channels/live?source=rocksmith");
+      if (!response.ok) {
+        throw new Error("Unable to load Rocksmith demo channels.");
+      }
+
+      return response.json() as Promise<{
+        channels: HomeLiveChannel[];
+      }>;
+    },
+  });
   const viewer = sessionData?.viewer ?? null;
   const defaultManageableChannel = viewer?.channel?.slug
     ? viewer.channel
@@ -155,22 +171,26 @@ function HomePage() {
       ? { slug: viewer.manageableChannels[0].slug }
       : null;
   const liveChannels = data?.channels ?? [];
-  const displayedChannels = showDemoChannels ? demoLiveChannels : liveChannels;
+  const rocksmithDemoChannels =
+    demoData?.channels && demoData.channels.length > 0
+      ? demoData.channels
+      : demoLiveChannels;
+  const displayedChannels = showDemoChannels
+    ? rocksmithDemoChannels
+    : liveChannels;
   const toggleLabel = showDemoChannels ? "Show Live" : "Show Demo";
   const sourceLabel = showDemoChannels
-    ? "Demo streamer data"
-    : import.meta.env.DEV
-      ? "Actual live data"
-      : null;
+    ? "This is a list of streams with the Rocksmith tag for demo purposes."
+    : null;
   const [featuredChannel, ...secondaryChannels] = displayedChannels;
 
   return (
-    <section className="home-page grid gap-6 px-4 pt-4 pb-6 sm:px-5 sm:pt-5 md:px-6 md:pt-6 xl:grid-cols-[0.72fr_1.28fr]">
-      <div className="home-page__hero surface-grid surface-noise rounded-[32px] border border-(--border-strong) bg-(--panel) p-6 shadow-(--shadow) md:p-8">
+    <section className="grid gap-6 px-4 pt-4 pb-6 [container-type:inline-size] sm:px-5 sm:pt-5 md:px-6 md:pt-6 xl:grid-cols-[0.72fr_1.28fr]">
+      <div className="surface-grid surface-noise rounded-[32px] border border-(--border-strong) bg-(--panel) p-6 shadow-(--shadow) md:p-8 max-[720px]:rounded-none max-[720px]:border-x-0 max-[720px]:border-t-0 max-[720px]:bg-transparent max-[720px]:px-0 max-[720px]:pb-4 max-[720px]:pt-0 max-[720px]:shadow-none max-[720px]:[background-image:none]">
         <p className="text-xs font-semibold uppercase tracking-[0.34em] text-(--brand-deep)">
           Twitch Song Requests
         </p>
-        <h1 className="mt-4 max-w-3xl text-4xl font-semibold tracking-[-0.04em] text-(--text) md:text-5xl">
+        <h1 className="mt-4 max-w-3xl text-4xl font-semibold tracking-[-0.04em] text-(--text) md:text-5xl max-[960px]:text-[clamp(2.3rem,6.5vw,3.8rem)] max-[720px]:text-[clamp(2rem,9vw,2.75rem)]">
           Search songs or manage your channel.
         </h1>
 
@@ -234,9 +254,7 @@ function HomePage() {
             </div>
           </div>
           {sourceLabel ? (
-            <p className="mt-3 text-xs uppercase tracking-[0.18em] text-(--muted)">
-              {sourceLabel}
-            </p>
+            <p className="mt-3 text-xs text-(--muted)">{sourceLabel}</p>
           ) : null}
 
           <div className="mt-6 grid gap-5">
@@ -268,6 +286,10 @@ function HomePage() {
 
 function FeaturedLiveChannelCard(props: { channel: HomeLiveChannel }) {
   const { channel } = props;
+  const playlistHref =
+    channel.playlistHref === undefined
+      ? `/${channel.slug}`
+      : channel.playlistHref;
 
   return (
     <div className="overflow-hidden rounded-[30px] border border-(--border-strong) bg-(--panel-soft)">
@@ -324,22 +346,31 @@ function FeaturedLiveChannelCard(props: { channel: HomeLiveChannel }) {
           </div>
         ) : null}
         <div className="mt-6 flex flex-wrap gap-4">
-          <a
-            href={`https://twitch.tv/${channel.login}`}
-            target="_blank"
-            rel="noreferrer"
-            className="inline-flex items-center gap-2 text-sm font-medium text-(--text) no-underline transition-colors hover:text-(--brand)"
-          >
-            Twitch
-            <ExternalLink className="h-4 w-4" />
-          </a>
-          <a
-            href={`/${channel.slug}`}
-            className="inline-flex items-center gap-2 text-sm font-medium text-(--brand) no-underline transition-colors hover:text-(--brand-strong)"
-          >
-            Open playlist
-            <ArrowRight className="h-4 w-4" />
-          </a>
+          {playlistHref ? (
+            <Button asChild variant="default" size="sm">
+              <a
+                href={playlistHref}
+                {...(channel.playlistExternal
+                  ? { target: "_blank", rel: "noreferrer" }
+                  : {})}
+                className="no-underline"
+              >
+                Open playlist
+                <ArrowRight className="h-4 w-4" />
+              </a>
+            </Button>
+          ) : null}
+          <Button asChild variant="outline" size="sm">
+            <a
+              href={`https://twitch.tv/${channel.login}`}
+              target="_blank"
+              rel="noreferrer"
+              className="no-underline"
+            >
+              Watch on Twitch
+              <ExternalLink className="h-4 w-4" />
+            </a>
+          </Button>
         </div>
       </div>
     </div>
@@ -348,6 +379,10 @@ function FeaturedLiveChannelCard(props: { channel: HomeLiveChannel }) {
 
 function CompactLiveChannelCard(props: { channel: HomeLiveChannel }) {
   const { channel } = props;
+  const playlistHref =
+    channel.playlistHref === undefined
+      ? `/${channel.slug}`
+      : channel.playlistHref;
 
   return (
     <div className="rounded-[26px] border border-(--border) bg-(--panel-muted) p-5">
@@ -387,22 +422,31 @@ function CompactLiveChannelCard(props: { channel: HomeLiveChannel }) {
         </div>
       ) : null}
       <div className="mt-5 flex flex-wrap gap-4">
-        <a
-          href={`https://twitch.tv/${channel.login}`}
-          target="_blank"
-          rel="noreferrer"
-          className="inline-flex items-center gap-2 text-sm font-medium text-(--text) no-underline transition-colors hover:text-(--brand)"
-        >
-          Twitch
-          <ExternalLink className="h-4 w-4" />
-        </a>
-        <a
-          href={`/${channel.slug}`}
-          className="inline-flex items-center gap-2 text-sm font-medium text-(--brand) no-underline transition-colors hover:text-(--brand-strong)"
-        >
-          Open
-          <ArrowRight className="h-4 w-4" />
-        </a>
+        {playlistHref ? (
+          <Button asChild variant="default" size="sm">
+            <a
+              href={playlistHref}
+              {...(channel.playlistExternal
+                ? { target: "_blank", rel: "noreferrer" }
+                : {})}
+              className="no-underline"
+            >
+              Open playlist
+              <ArrowRight className="h-4 w-4" />
+            </a>
+          </Button>
+        ) : null}
+        <Button asChild variant="outline" size="sm">
+          <a
+            href={`https://twitch.tv/${channel.login}`}
+            target="_blank"
+            rel="noreferrer"
+            className="no-underline"
+          >
+            Watch on Twitch
+            <ExternalLink className="h-4 w-4" />
+          </a>
+        </Button>
       </div>
     </div>
   );

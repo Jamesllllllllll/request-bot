@@ -110,6 +110,7 @@ describe("request policy", () => {
       blacklistArtists: [],
       blacklistCharters: [],
       blacklistSongs: [],
+      blacklistSongGroups: [],
       setlistArtists: [],
     });
 
@@ -189,6 +190,7 @@ describe("request policy", () => {
         blacklistArtists: [{ artistId: 777, artistName: "David Bowie" }],
         blacklistCharters: [],
         blacklistSongs: [],
+        blacklistSongGroups: [],
         setlistArtists: [],
         requester: {
           isBroadcaster: false,
@@ -200,7 +202,7 @@ describe("request policy", () => {
     ).toEqual({
       allowed: false,
       reason: "That song is blocked in this channel.",
-      reasonCode: "song_blacklist",
+      reasonCode: "artist_blacklist",
     });
 
     expect(
@@ -221,6 +223,48 @@ describe("request policy", () => {
         blacklistCharters: [],
         blacklistSongs: [
           { songId: 67890, songTitle: "Heroes", artistName: "Other Artist" },
+        ],
+        blacklistSongGroups: [],
+        setlistArtists: [],
+        requester: {
+          isBroadcaster: false,
+          isModerator: false,
+          isVip: false,
+          isSubscriber: false,
+        },
+      })
+    ).toEqual({
+      allowed: false,
+      reason: "That version is blocked in this channel.",
+      reasonCode: "version_blacklist",
+    });
+  });
+
+  it("blocks whole-song matches by grouped project ID", () => {
+    expect(
+      isSongAllowed({
+        song: {
+          id: "song-2b",
+          sourceId: 67891,
+          groupedProjectId: 444,
+          artistId: 888,
+          title: "Heroes",
+          artist: "Other Artist",
+          source: "library",
+        },
+        settings: {
+          ...baseSettings,
+          blacklistEnabled: true,
+        },
+        blacklistArtists: [],
+        blacklistCharters: [],
+        blacklistSongs: [],
+        blacklistSongGroups: [
+          {
+            groupedProjectId: 444,
+            songTitle: "Heroes",
+            artistName: "Other Artist",
+          },
         ],
         setlistArtists: [],
         requester: {
@@ -257,6 +301,7 @@ describe("request policy", () => {
         blacklistArtists: [],
         blacklistCharters: [{ charterId: 555, charterName: "Charter Name" }],
         blacklistSongs: [],
+        blacklistSongGroups: [],
         setlistArtists: [],
         requester: {
           isBroadcaster: false,

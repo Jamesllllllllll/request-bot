@@ -64,6 +64,9 @@ type SearchField = "any" | "title" | "artist" | "album" | "creator";
 
 export interface SearchSong {
   id: string;
+  groupedProjectId?: number;
+  artistId?: number;
+  authorId?: number;
   title: string;
   artist?: string;
   album?: string;
@@ -85,6 +88,7 @@ type SearchResponse = {
     }
   >;
   total: number;
+  hiddenBlacklistedCount?: number;
   page: number;
   pageSize: number;
   hasNextPage?: boolean;
@@ -138,7 +142,12 @@ export function SongSearchPanel(props: {
   extraSearchParams?: Record<string, string | number | boolean | undefined>;
   resultFilter?: (song: SearchSong) => boolean;
   resultState?: (song: SearchSong) => SearchSongResultState;
-  advancedFiltersContent?: ReactNode;
+  advancedFiltersContent?:
+    | ReactNode
+    | ((args: {
+        data?: SearchResponse;
+        visibleResults: SearchSong[];
+      }) => ReactNode);
   useTotalForSummary?: boolean;
   controlsContent?: ReactNode;
   actionsLabel?: string;
@@ -365,6 +374,13 @@ export function SongSearchPanel(props: {
   const resultsGridColumns = hasCustomActions
     ? "grid-cols-[minmax(0,2.2fr)_minmax(0,1.05fr)_minmax(0,1.15fr)_248px]"
     : "grid-cols-[minmax(0,2.2fr)_minmax(0,1.05fr)_minmax(0,1.15fr)_188px]";
+  const resolvedAdvancedFiltersContent =
+    typeof props.advancedFiltersContent === "function"
+      ? props.advancedFiltersContent({
+          data,
+          visibleResults,
+        })
+      : props.advancedFiltersContent;
 
   async function copyRequest(
     song: SearchSong,
@@ -630,7 +646,7 @@ export function SongSearchPanel(props: {
                 ) : null}
               </div>
               {!queryTooShort && !error ? (
-                <div className="search-panel__summary rounded-[24px] border border-(--border) bg-(--panel-soft) px-4 py-3 text-right">
+                <div className="rounded-[24px] border border-(--border) bg-(--panel-soft) px-4 py-3 text-right max-[960px]:w-full max-[960px]:text-left">
                   <p className="text-lg font-semibold text-(--text)">
                     Found {summaryCount} songs
                   </p>
@@ -639,7 +655,7 @@ export function SongSearchPanel(props: {
             </div>
           </CardHeader>
           <CardContent className="grid gap-5">
-            <div className="search-panel__controls grid gap-3 lg:grid-cols-[1.8fr_190px_170px]">
+            <div className="grid gap-3 lg:grid-cols-[1.8fr_190px_170px] max-[960px]:grid-cols-1">
               <div className="relative">
                 <SearchIcon className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-(--muted)" />
                 <Input
@@ -792,9 +808,9 @@ export function SongSearchPanel(props: {
                     Clear advanced filters
                   </Button>
                 </div>
-                {props.advancedFiltersContent ? (
+                {resolvedAdvancedFiltersContent ? (
                   <div className="grid gap-2 md:col-span-2 xl:col-span-4">
-                    {props.advancedFiltersContent}
+                    {resolvedAdvancedFiltersContent}
                   </div>
                 ) : null}
               </div>
@@ -802,7 +818,7 @@ export function SongSearchPanel(props: {
           </CardContent>
         </Card>
 
-        <Card className="search-panel__results overflow-hidden bg-(--panel-strong)">
+        <Card className="overflow-hidden bg-(--panel-strong) [container-type:inline-size]">
           <CardContent className="p-0">
             {renderPagination("top")}
 
@@ -1073,9 +1089,14 @@ function PathBadge(props: {
   className: string;
 }) {
   return (
-    <Badge className={cn("search-panel__path-badge", props.className)}>
-      <span className="search-panel__path-full">{props.label}</span>
-      <span className="search-panel__path-short">{props.shortLabel}</span>
+    <Badge
+      className={cn(
+        "max-[720px]:min-w-[1.75rem] max-[720px]:justify-center max-[720px]:px-[0.45rem]",
+        props.className
+      )}
+    >
+      <span className="max-[720px]:hidden">{props.label}</span>
+      <span className="hidden max-[720px]:inline">{props.shortLabel}</span>
     </Badge>
   );
 }

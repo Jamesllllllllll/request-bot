@@ -5,6 +5,7 @@ import { AnimatePresence, motion } from "motion/react";
 import { useEffect, useMemo } from "react";
 import { BlacklistPanel } from "~/components/blacklist-panel";
 import { PublicPlayedHistoryCard } from "~/components/public-played-history-card";
+import { getBlacklistReasons as getChannelBlacklistReasons } from "~/lib/channel-blacklist";
 import { formatSlugTitle, pageTitle } from "~/lib/page-title";
 import { getPickNumbersForQueuedItems } from "~/lib/pick-order";
 import { cn, decodeHtmlEntities } from "~/lib/utils";
@@ -15,6 +16,9 @@ type ChannelPlaylistItem = {
   songArtist?: string | null;
   songCreator?: string | null;
   songCatalogSourceId?: number | null;
+  songGroupedProjectId?: number | null;
+  songArtistId?: number | null;
+  songCharterId?: number | null;
   requestedByTwitchUserId?: string | null;
   requestedByLogin?: string | null;
   requestedByDisplayName?: string | null;
@@ -49,6 +53,12 @@ type ChannelPageData = {
     blacklistSongs?: Array<{
       songId: number;
       songTitle: string;
+      artistName?: string | null;
+    }>;
+    blacklistSongGroups?: Array<{
+      groupedProjectId: number;
+      songTitle: string;
+      artistId?: number | null;
       artistName?: string | null;
     }>;
   };
@@ -98,6 +108,7 @@ function ChannelPage() {
         blacklistArtists?: ChannelPageData["playlist"]["blacklistArtists"];
         blacklistCharters?: ChannelPageData["playlist"]["blacklistCharters"];
         blacklistSongs?: ChannelPageData["playlist"]["blacklistSongs"];
+        blacklistSongGroups?: ChannelPageData["playlist"]["blacklistSongGroups"];
       };
 
       return {
@@ -152,6 +163,7 @@ function ChannelPage() {
           artists: data?.playlist.blacklistArtists ?? [],
           charters: data?.playlist.blacklistCharters ?? [],
           songs: data?.playlist.blacklistSongs ?? [],
+          songGroups: data?.playlist.blacklistSongGroups ?? [],
         });
         return blacklistReasons.length === 0;
       }),
@@ -159,6 +171,7 @@ function ChannelPage() {
       data?.playlist.blacklistArtists,
       data?.playlist.blacklistCharters,
       data?.playlist.blacklistSongs,
+      data?.playlist.blacklistSongGroups,
       playlistItems,
     ]
   );
@@ -179,6 +192,7 @@ function ChannelPage() {
                   artists: data?.playlist.blacklistArtists ?? [],
                   charters: data?.playlist.blacklistCharters ?? [],
                   songs: data?.playlist.blacklistSongs ?? [],
+                  songGroups: data?.playlist.blacklistSongGroups ?? [],
                 })}
               />
             ))}
@@ -197,7 +211,8 @@ function ChannelPage() {
         artists={data?.playlist.blacklistArtists ?? []}
         charters={data?.playlist.blacklistCharters ?? []}
         songs={data?.playlist.blacklistSongs ?? []}
-        description="These exact artist IDs and track IDs are blocked for requests in this channel."
+        songGroups={data?.playlist.blacklistSongGroups ?? []}
+        description="Artists, charters, songs, and specific versions are blocked for requests in this channel."
       />
 
       <PublicPlayedHistoryCard slug={slug} />
@@ -342,14 +357,13 @@ function BlacklistReasonBadge(props: { reason: string }) {
   );
 }
 
-function normalizeBlacklistValue(value?: string | null) {
-  return value?.trim().toLowerCase() ?? "";
-}
-
 function getBlacklistReasons(
   item: {
     songCatalogSourceId?: number | null;
+    songGroupedProjectId?: number | null;
+    songArtistId?: number | null;
     songArtist?: string | null;
+    songCharterId?: number | null;
     songCreator?: string | null;
   },
   blacklist: {
@@ -360,36 +374,13 @@ function getBlacklistReasons(
       songTitle: string;
       artistName?: string | null;
     }>;
+    songGroups: Array<{
+      groupedProjectId: number;
+      songTitle: string;
+      artistId?: number | null;
+      artistName?: string | null;
+    }>;
   }
 ) {
-  const reasons: string[] = [];
-  const artistName = normalizeBlacklistValue(item.songArtist);
-  const creatorName = normalizeBlacklistValue(item.songCreator);
-
-  if (
-    item.songCatalogSourceId != null &&
-    blacklist.songs.some((song) => song.songId === item.songCatalogSourceId)
-  ) {
-    reasons.push("Song blacklisted");
-  }
-
-  if (
-    artistName &&
-    blacklist.artists.some(
-      (artist) => normalizeBlacklistValue(artist.artistName) === artistName
-    )
-  ) {
-    reasons.push("Artist blacklisted");
-  }
-
-  if (
-    creatorName &&
-    blacklist.charters.some(
-      (charter) => normalizeBlacklistValue(charter.charterName) === creatorName
-    )
-  ) {
-    reasons.push("Creator blacklisted");
-  }
-
-  return reasons;
+  return getChannelBlacklistReasons(item, blacklist);
 }

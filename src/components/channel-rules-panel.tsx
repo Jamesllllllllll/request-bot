@@ -24,10 +24,19 @@ type SongMatch = {
   artistName?: string | null;
 };
 
+type SongGroupMatch = {
+  groupedProjectId: number;
+  songTitle: string;
+  artistId?: number | null;
+  artistName?: string | null;
+  versionCount: number;
+};
+
 type SearchResponse = {
   artists?: ArtistMatch[];
   charters?: CharterMatch[];
-  songs?: SongMatch[];
+  songs?: SongGroupMatch[];
+  songVersions?: SongMatch[];
 };
 
 export function ChannelRulesPanel(props: {
@@ -45,20 +54,31 @@ export function ChannelRulesPanel(props: {
     songTitle: string;
     artistName?: string | null;
   }>;
+  songGroups: Array<{
+    groupedProjectId: number;
+    songTitle: string;
+    artistName?: string | null;
+  }>;
   setlistArtists: Array<{ artistId: number; artistName: string }>;
 }) {
   const queryClient = useQueryClient();
   const [artistQuery, setArtistQuery] = useState("");
   const [charterQuery, setCharterQuery] = useState("");
-  const [songQuery, setSongQuery] = useState("");
+  const [songGroupQuery, setSongGroupQuery] = useState("");
+  const [songVersionQuery, setSongVersionQuery] = useState("");
   const [setlistQuery, setSetlistQuery] = useState("");
   const [debouncedArtistQuery, setDebouncedArtistQuery] = useState("");
   const [debouncedCharterQuery, setDebouncedCharterQuery] = useState("");
-  const [debouncedSongQuery, setDebouncedSongQuery] = useState("");
+  const [debouncedSongGroupQuery, setDebouncedSongGroupQuery] = useState("");
+  const [debouncedSongVersionQuery, setDebouncedSongVersionQuery] =
+    useState("");
   const [debouncedSetlistQuery, setDebouncedSetlistQuery] = useState("");
   const [artistMatches, setArtistMatches] = useState<ArtistMatch[]>([]);
   const [charterMatches, setCharterMatches] = useState<CharterMatch[]>([]);
-  const [songMatches, setSongMatches] = useState<SongMatch[]>([]);
+  const [songGroupMatches, setSongGroupMatches] = useState<SongGroupMatch[]>(
+    []
+  );
+  const [songVersionMatches, setSongVersionMatches] = useState<SongMatch[]>([]);
   const [setlistMatches, setSetlistMatches] = useState<ArtistMatch[]>([]);
   const [searchError, setSearchError] = useState<string | null>(null);
 
@@ -66,12 +86,19 @@ export function ChannelRulesPanel(props: {
     const timeout = window.setTimeout(() => {
       setDebouncedArtistQuery(artistQuery.trim());
       setDebouncedCharterQuery(charterQuery.trim());
-      setDebouncedSongQuery(songQuery.trim());
+      setDebouncedSongGroupQuery(songGroupQuery.trim());
+      setDebouncedSongVersionQuery(songVersionQuery.trim());
       setDebouncedSetlistQuery(setlistQuery.trim());
     }, 350);
 
     return () => window.clearTimeout(timeout);
-  }, [artistQuery, charterQuery, setlistQuery, songQuery]);
+  }, [
+    artistQuery,
+    charterQuery,
+    setlistQuery,
+    songGroupQuery,
+    songVersionQuery,
+  ]);
 
   const mutateRules = useMutation({
     mutationFn: async (body: Record<string, unknown>) => {
@@ -108,7 +135,7 @@ export function ChannelRulesPanel(props: {
     let cancelled = false;
 
     async function runSearch(
-      type: "artist" | "charter" | "song",
+      type: "artist" | "charter" | "song" | "song-version",
       query: string,
       onSuccess: (payload: SearchResponse) => void
     ) {
@@ -151,8 +178,11 @@ export function ChannelRulesPanel(props: {
       void runSearch("charter", debouncedCharterQuery, (payload) => {
         setCharterMatches(payload.charters ?? []);
       });
-      void runSearch("song", debouncedSongQuery, (payload) => {
-        setSongMatches(payload.songs ?? []);
+      void runSearch("song", debouncedSongGroupQuery, (payload) => {
+        setSongGroupMatches(payload.songs ?? []);
+      });
+      void runSearch("song-version", debouncedSongVersionQuery, (payload) => {
+        setSongVersionMatches(payload.songVersions ?? []);
       });
     }
 
@@ -169,7 +199,8 @@ export function ChannelRulesPanel(props: {
     debouncedArtistQuery,
     debouncedCharterQuery,
     debouncedSetlistQuery,
-    debouncedSongQuery,
+    debouncedSongGroupQuery,
+    debouncedSongVersionQuery,
     props.canManageBlacklist,
     props.canManageSetlist,
     props.slug,
@@ -187,6 +218,10 @@ export function ChannelRulesPanel(props: {
     () => new Set(props.songs.map((item) => item.songId)),
     [props.songs]
   );
+  const blacklistedSongGroupIds = useMemo(
+    () => new Set(props.songGroups.map((item) => item.groupedProjectId)),
+    [props.songGroups]
+  );
   const setlistArtistIds = useMemo(
     () => new Set(props.setlistArtists.map((item) => item.artistId)),
     [props.setlistArtists]
@@ -198,7 +233,10 @@ export function ChannelRulesPanel(props: {
   const visibleCharterMatches = charterMatches.filter(
     (charter) => !blacklistedCharterIds.has(charter.charterId)
   );
-  const visibleSongMatches = songMatches.filter(
+  const visibleSongGroupMatches = songGroupMatches.filter(
+    (song) => !blacklistedSongGroupIds.has(song.groupedProjectId)
+  );
+  const visibleSongVersionMatches = songVersionMatches.filter(
     (song) => !blacklistedSongIds.has(song.songId)
   );
   const visibleSetlistMatches = setlistMatches.filter(
@@ -210,6 +248,7 @@ export function ChannelRulesPanel(props: {
     props.setlistEnabled ||
     props.artists.length > 0 ||
     props.charters.length > 0 ||
+    props.songGroups.length > 0 ||
     props.songs.length > 0 ||
     props.setlistArtists.length > 0;
 
@@ -238,6 +277,7 @@ export function ChannelRulesPanel(props: {
       {props.canManageBlacklist ||
       props.artists.length > 0 ||
       props.charters.length > 0 ||
+      props.songGroups.length > 0 ||
       props.songs.length > 0 ||
       props.canManageSetlist ||
       props.setlistArtists.length > 0 ? (
@@ -245,10 +285,12 @@ export function ChannelRulesPanel(props: {
           {props.canManageBlacklist ||
           props.artists.length > 0 ||
           props.charters.length > 0 ||
+          props.songGroups.length > 0 ||
           props.songs.length > 0 ? (
             <>
               <SearchManageCard
                 title="Blacklisted artists"
+                description="Blocks requests for any song by these artists."
                 inputValue={artistQuery}
                 onInputChange={setArtistQuery}
                 placeholder="Search artists by name"
@@ -281,6 +323,7 @@ export function ChannelRulesPanel(props: {
 
               <SearchManageCard
                 title="Blacklisted charters"
+                description="Blocks requests for any song charted by these charters."
                 inputValue={charterQuery}
                 onInputChange={setCharterQuery}
                 placeholder="Search charters by name"
@@ -313,15 +356,55 @@ export function ChannelRulesPanel(props: {
 
               <SearchManageCard
                 title="Blacklisted songs"
-                inputValue={songQuery}
-                onInputChange={setSongQuery}
+                description="Blocks every version grouped under the same song."
+                inputValue={songGroupQuery}
+                onInputChange={setSongGroupQuery}
                 placeholder="Search songs by title"
-                matches={visibleSongMatches.map((song) => ({
-                  key: `song-match-${song.songId}`,
+                matches={visibleSongGroupMatches.map((song) => ({
+                  key: `song-group-match-${song.groupedProjectId}`,
                   label: song.artistName
                     ? `${song.songTitle} - ${song.artistName}`
                     : song.songTitle,
-                  meta: `Song ID ${song.songId}`,
+                  meta: `${song.versionCount} version${song.versionCount === 1 ? "" : "s"} - Song group ${song.groupedProjectId}`,
+                  onAdd: () =>
+                    mutateRules.mutate({
+                      action: "addBlacklistedSongGroup",
+                      groupedProjectId: song.groupedProjectId,
+                      songTitle: song.songTitle,
+                      artistId: song.artistId ?? null,
+                      artistName: song.artistName ?? undefined,
+                    }),
+                }))}
+                currentItems={props.songGroups.map((item) => ({
+                  key: `song-group-current-${item.groupedProjectId}`,
+                  label: item.artistName
+                    ? `${item.songTitle} - ${item.artistName}`
+                    : item.songTitle,
+                  hoverDetail: `Song group ${item.groupedProjectId}`,
+                  onRemove: () =>
+                    mutateRules.mutate({
+                      action: "removeBlacklistedSongGroup",
+                      groupedProjectId: item.groupedProjectId,
+                    }),
+                }))}
+                isPending={mutateRules.isPending}
+                emptyCurrentLabel="No blacklisted songs."
+                canManage={props.canManageBlacklist}
+                readOnlyMessage="You can view this blacklist, but cannot change it."
+              />
+
+              <SearchManageCard
+                title="Blacklisted versions"
+                description="Blocks only one exact version ID."
+                inputValue={songVersionQuery}
+                onInputChange={setSongVersionQuery}
+                placeholder="Search versions by title"
+                matches={visibleSongVersionMatches.map((song) => ({
+                  key: `song-version-match-${song.songId}`,
+                  label: song.artistName
+                    ? `${song.songTitle} - ${song.artistName}`
+                    : song.songTitle,
+                  meta: `Version ID ${song.songId}`,
                   onAdd: () =>
                     mutateRules.mutate({
                       action: "addBlacklistedSong",
@@ -332,11 +415,11 @@ export function ChannelRulesPanel(props: {
                     }),
                 }))}
                 currentItems={props.songs.map((item) => ({
-                  key: `song-current-${item.songId}`,
+                  key: `song-version-current-${item.songId}`,
                   label: item.artistName
                     ? `${item.songTitle} - ${item.artistName}`
                     : item.songTitle,
-                  hoverDetail: `Song ID ${item.songId}`,
+                  hoverDetail: `Version ID ${item.songId}`,
                   onRemove: () =>
                     mutateRules.mutate({
                       action: "removeBlacklistedSong",
@@ -344,7 +427,7 @@ export function ChannelRulesPanel(props: {
                     }),
                 }))}
                 isPending={mutateRules.isPending}
-                emptyCurrentLabel="No blacklisted songs."
+                emptyCurrentLabel="No blacklisted versions."
                 canManage={props.canManageBlacklist}
                 readOnlyMessage="You can view this blacklist, but cannot change it."
               />
@@ -354,6 +437,7 @@ export function ChannelRulesPanel(props: {
           {props.canManageSetlist || props.setlistArtists.length > 0 ? (
             <SearchManageCard
               title="Setlist artists"
+              description="Limits requests to songs by these artists when setlist mode is active."
               inputValue={setlistQuery}
               onInputChange={setSetlistQuery}
               placeholder="Search artists by name"
@@ -398,6 +482,7 @@ export function ChannelRulesPanel(props: {
 
 function SearchManageCard(props: {
   title: string;
+  description?: string;
   inputValue: string;
   onInputChange: (value: string) => void;
   placeholder: string;
@@ -425,6 +510,9 @@ function SearchManageCard(props: {
     <Card>
       <CardHeader className="p-5 pb-3">
         <CardTitle>{props.title}</CardTitle>
+        {props.description ? (
+          <p className="text-sm text-(--muted)">{props.description}</p>
+        ) : null}
       </CardHeader>
       <CardContent className="grid gap-4 px-5 pb-5 pt-0">
         {canManage ? (

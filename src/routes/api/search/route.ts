@@ -160,8 +160,17 @@ export const Route = createFileRoute("/api/search")({
                 excludeSongIds: blacklist.blacklistSongs.map(
                   (song) => song.songId
                 ),
+                excludeGroupedProjectIds: blacklist.blacklistSongGroups.map(
+                  (song) => song.groupedProjectId
+                ),
+                excludeArtistIds: blacklist.blacklistArtists.map(
+                  (artist) => artist.artistId
+                ),
                 excludeArtistNames: blacklist.blacklistArtists.map(
                   (artist) => artist.artistName
+                ),
+                excludeAuthorIds: blacklist.blacklistCharters.map(
+                  (charter) => charter.charterId
                 ),
                 excludeCreatorNames: blacklist.blacklistCharters.map(
                   (charter) => charter.charterName

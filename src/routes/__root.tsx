@@ -93,8 +93,8 @@ function AppShell() {
   }
 
   return (
-    <div className="app-shell mx-auto flex min-h-screen w-full max-w-[1480px] flex-col">
-      <header className="app-shell__header surface-grid surface-noise mb-6 rounded-[28px] border border-(--border) bg-(--panel) shadow-(--shadow) backdrop-blur-xl">
+    <div className="mx-auto flex min-h-screen w-full max-w-[1480px] flex-col [container-type:inline-size] min-[961px]:px-6 min-[961px]:py-6 max-[960px]:p-0">
+      <header className="surface-grid surface-noise mb-6 rounded-[28px] border border-(--border) bg-(--panel) px-4 py-3 shadow-(--shadow) backdrop-blur-xl min-[961px]:px-6 min-[961px]:py-4 max-[960px]:mb-0 max-[960px]:rounded-none max-[960px]:border-x-0 max-[960px]:shadow-none max-[720px]:px-[0.875rem] max-[720px]:py-3">
         <div className="flex flex-wrap items-center justify-between gap-4">
           <div className="min-w-0 flex items-center gap-4">
             <Link to="/" className="group flex items-center gap-4 no-underline">
@@ -102,18 +102,18 @@ function AppShell() {
                 <Headphones className="h-[18px] w-[18px]" />
               </div>
               <div className="min-w-0">
-                <p className="app-shell__brand-meta text-[11px] font-semibold uppercase tracking-[0.22em] text-(--brand-deep)">
+                <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-(--brand-deep) max-[960px]:hidden">
                   Twitch Song Requests
                 </p>
-                <p className="app-shell__brand-title truncate text-xl font-semibold tracking-tight text-(--text)">
+                <p className="truncate text-xl font-semibold tracking-tight text-(--text) max-[960px]:hidden">
                   Request Bot
                 </p>
               </div>
             </Link>
           </div>
 
-          <div className="app-shell__controls flex min-w-0 flex-1 flex-wrap items-center justify-end gap-3">
-            <nav className="app-shell__nav flex items-center gap-2 rounded-full border border-(--border) bg-(--panel-soft) p-1.5 text-sm">
+          <div className="flex min-w-0 flex-1 flex-wrap items-center justify-end gap-3 max-[960px]:flex-[0_1_auto] max-[960px]:justify-start">
+            <nav className="flex max-w-full flex-wrap items-center gap-2 rounded-full border border-(--border) bg-(--panel-soft) p-1.5 text-sm max-[960px]:w-auto max-[960px]:self-start max-[960px]:gap-[0.35rem] max-[960px]:p-[0.35rem]">
               <NavLink to="/search" label="Search" icon={Radio} />
               {viewer ? (
                 <NavLink
@@ -129,13 +129,13 @@ function AppShell() {
             </nav>
 
             {viewer ? (
-              <div className="app-shell__user flex min-w-0 items-center gap-2 rounded-full border border-(--border) bg-(--panel-soft) p-1.5">
+              <div className="flex min-w-0 items-center gap-2 rounded-full border border-(--border) bg-(--panel-soft) p-1.5 max-[960px]:w-auto max-[960px]:max-w-full max-[960px]:self-start max-[960px]:gap-[0.35rem] max-[960px]:p-[0.35rem]">
                 <Link
                   to={viewer.channel ? "/$slug" : "/dashboard"}
                   params={
                     viewer.channel ? { slug: viewer.channel.slug } : undefined
                   }
-                  className="app-shell__user-link flex min-w-0 items-center gap-2 px-1.5 no-underline"
+                  className="flex min-w-0 flex-1 items-center gap-2 px-1.5 no-underline max-[960px]:px-0"
                 >
                   {viewer.user.profileImageUrl ? (
                     <span
@@ -169,7 +169,7 @@ function AppShell() {
                     </div>
                   )}
                   <div className="min-w-0">
-                    <p className="app-shell__user-name truncate text-sm font-medium text-(--text)">
+                    <p className="max-w-[14rem] truncate text-sm font-medium text-(--text) max-[960px]:hidden">
                       {viewer.user.displayName}
                     </p>
                   </div>
@@ -178,11 +178,11 @@ function AppShell() {
                   asChild
                   variant="outline"
                   size="sm"
-                  className="h-[34px] px-3"
+                  className="h-[34px] px-3 max-[960px]:h-[2.2rem] max-[960px]:w-[2.2rem] max-[960px]:min-w-[2.2rem] max-[960px]:px-0"
                 >
                   <a href="/auth/logout" className="no-underline">
                     <LogOut className="h-4 w-4" />
-                    <span className="app-shell__logout-label">Log out</span>
+                    <span className="max-[960px]:hidden">Log out</span>
                   </a>
                 </Button>
               </div>
@@ -213,7 +213,7 @@ function AppShell() {
           </div>
         ) : null}
       </header>
-      <main className="app-shell__main flex-1">
+      <main className="min-w-0 flex-1 max-[960px]:border-t max-[960px]:border-(--border)">
         <Outlet />
       </main>
     </div>
@@ -229,9 +229,9 @@ function NavLink(props: {
 }) {
   const Icon = props.icon;
   const activeClassName =
-    "flex items-center justify-center rounded-full bg-(--brand) px-4 py-2 text-white no-underline shadow-(--glow)";
+    "flex items-center justify-center rounded-full bg-(--brand) px-4 py-2 text-white no-underline shadow-(--glow) max-[960px]:h-[2.2rem] max-[960px]:w-[2.2rem] max-[960px]:min-w-[2.2rem] max-[960px]:px-0 max-[960px]:py-0";
   const inactiveClassName =
-    "flex items-center justify-center rounded-full px-4 py-2 text-(--muted) no-underline";
+    "flex items-center justify-center rounded-full px-4 py-2 text-(--muted) no-underline max-[960px]:h-[2.2rem] max-[960px]:w-[2.2rem] max-[960px]:min-w-[2.2rem] max-[960px]:px-0 max-[960px]:py-0";
 
   return (
     <Link
@@ -250,7 +250,7 @@ function NavLink(props: {
     >
       <span className="flex items-center gap-2">
         <Icon className="h-4 w-4" />
-        <span className="app-shell__nav-label">{props.label}</span>
+        <span className="max-[960px]:hidden">{props.label}</span>
       </span>
     </Link>
   );

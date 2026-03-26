@@ -222,10 +222,14 @@ export async function searchTwitchChannels(input: {
   accessToken: string;
   query: string;
   first?: number;
+  liveOnly?: boolean;
 }) {
   const url = new URL(`${twitchBaseUrl}/search/channels`);
   url.searchParams.set("query", input.query);
   url.searchParams.set("first", String(Math.min(input.first ?? 8, 100)));
+  if (input.liveOnly) {
+    url.searchParams.set("live_only", "true");
+  }
 
   const response = await fetchWithRetry({
     url,

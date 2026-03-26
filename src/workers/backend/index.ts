@@ -66,6 +66,7 @@ type MutationPayload = Record<string, unknown>;
 
 type PlaylistCandidate = {
   id: string;
+  groupedProjectId?: number;
   authorId?: number;
   title: string;
   artist?: string;
@@ -554,6 +555,7 @@ class D1PlaylistCoordinator implements PlaylistCoordinator {
     const songAllowed = isSongAllowed({
       song: {
         id: input.song.id,
+        groupedProjectId: input.song.groupedProjectId,
         artistId: undefined,
         authorId: input.song.authorId,
         title: input.song.title,
@@ -571,6 +573,7 @@ class D1PlaylistCoordinator implements PlaylistCoordinator {
       blacklistArtists: blacklist.blacklistArtists,
       blacklistCharters: blacklist.blacklistCharters,
       blacklistSongs: blacklist.blacklistSongs,
+      blacklistSongGroups: blacklist.blacklistSongGroups,
       setlistArtists: [],
       requester: {
         isBroadcaster: true,
@@ -1183,6 +1186,7 @@ class D1PlaylistCoordinator implements PlaylistCoordinator {
     const songAllowed = isSongAllowed({
       song: {
         id: candidate.id,
+        groupedProjectId: candidate.groupedProjectId,
         authorId: candidate.authorId,
         title: candidate.title,
         artist: candidate.artist,
@@ -1199,6 +1203,7 @@ class D1PlaylistCoordinator implements PlaylistCoordinator {
       blacklistArtists: blacklist.blacklistArtists,
       blacklistCharters: blacklist.blacklistCharters,
       blacklistSongs: blacklist.blacklistSongs,
+      blacklistSongGroups: blacklist.blacklistSongGroups,
       setlistArtists: [],
       requester: {
         isBroadcaster: false,
@@ -1584,6 +1589,10 @@ async function handleMutation(
           song: payload.song ?? {
             id: String(payload.songId),
             title: String(payload.title),
+            groupedProjectId:
+              typeof payload.groupedProjectId === "number"
+                ? payload.groupedProjectId
+                : undefined,
             artist: payload.artist,
             album: payload.album,
             creator: payload.creator,

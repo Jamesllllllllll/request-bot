@@ -13,9 +13,11 @@ import { getReorderDestinationIndex } from "@atlaskit/pragmatic-drag-and-drop-hi
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   AlertTriangle,
+  Ban,
   Clock3,
   GripVertical,
   type LucideIcon,
+  MoreHorizontal,
   Plus,
 } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
@@ -26,6 +28,13 @@ import { Badge } from "~/components/ui/badge";
 import { Button } from "~/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "~/components/ui/card";
 import { Input } from "~/components/ui/input";
+import {
+  Popover,
+  PopoverContent,
+  PopoverHeader,
+  PopoverTitle,
+  PopoverTrigger,
+} from "~/components/ui/popover";
 import { formatPathLabel } from "~/lib/request-policy";
 import { getErrorMessage, normalizeSongSourceUrl } from "~/lib/utils";
 import {
@@ -39,6 +48,9 @@ type PlaylistItem = {
   id: string;
   songId?: string;
   songCatalogSourceId?: number | null;
+  songGroupedProjectId?: number | null;
+  songArtistId?: number | null;
+  songCharterId?: number | null;
   songTitle: string;
   songArtist?: string;
   songAlbum?: string;
@@ -64,6 +76,7 @@ type PlaylistItem = {
 
 type PlaylistCandidate = {
   id: string;
+  groupedProjectId?: number;
   authorId?: number;
   title: string;
   artist?: string;
@@ -100,6 +113,7 @@ type ManualSearchData = Pick<SearchResponse, "results">;
 type SearchResponse = {
   results: Array<{
     id: string;
+    groupedProjectId?: number;
     authorId?: number;
     title: string;
     artist?: string;
@@ -121,6 +135,9 @@ const playlistItemTransition = {
 
 type PlaylistQueryData = {
   channel: { id: string; slug: string; displayName: string };
+  settings?: {
+    canManageBlacklist?: boolean;
+  };
   items: PlaylistItem[];
   playedSongs: PlayedSong[];
   blacklistArtists: Array<{ artistId: number; artistName: string }>;
@@ -128,6 +145,12 @@ type PlaylistQueryData = {
   blacklistSongs: Array<{
     songId: number;
     songTitle: string;
+    artistName?: string | null;
+  }>;
+  blacklistSongGroups: Array<{
+    groupedProjectId: number;
+    songTitle: string;
+    artistId?: number | null;
     artistName?: string | null;
   }>;
   vipTokens: VipTokenBalance[];
@@ -182,6 +205,9 @@ export function PlaylistManagementSurface(
       const response = await fetch(playlistEndpoint);
       return response.json() as Promise<{
         channel: { id: string; slug: string; displayName: string };
+        settings?: {
+          canManageBlacklist?: boolean;
+        };
         items: PlaylistItem[];
         playedSongs: PlayedSong[];
         vipTokens: VipTokenBalance[];
@@ -195,12 +221,21 @@ export function PlaylistManagementSurface(
           songTitle: string;
           artistName?: string | null;
         }>;
+        blacklistSongGroups: Array<{
+          groupedProjectId: number;
+          songTitle: string;
+          artistId?: number | null;
+          artistName?: string | null;
+        }>;
         accessRole?: "owner" | "moderator";
       }>;
     },
     refetchInterval: 2_000,
     refetchIntervalInBackground: false,
   });
+  const moderationEndpoint = playlistQuery.data?.channel?.slug
+    ? `/api/channel/${playlistQuery.data.channel.slug}/moderation`
+    : null;
 
   useEffect(() => {
     const timeout = window.setTimeout(() => {
@@ -444,6 +479,47 @@ export function PlaylistManagementSurface(
       setPendingRowAction(null);
     },
   });
+  const moderationMutation = useMutation({
+    mutationFn: async (body: Record<string, unknown>) => {
+      if (!moderationEndpoint) {
+        throw new Error("Moderation actions are unavailable for this channel.");
+      }
+
+      const response = await fetch(moderationEndpoint, {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+        },
+        body: JSON.stringify(body),
+      });
+      const payload = (await response.json().catch(() => null)) as {
+        error?: string;
+        message?: string;
+      } | null;
+
+      if (!response.ok) {
+        throw new Error(
+          payload?.error ?? payload?.message ?? "Blacklist update failed."
+        );
+      }
+
+      return payload;
+    },
+    onMutate: () => {
+      setPlaylistActionError(null);
+    },
+    onError: (error) => {
+      setPlaylistActionError(
+        getErrorMessage(error, "Blacklist update failed.")
+      );
+    },
+    onSuccess: () => {
+      setPlaylistActionError(null);
+      void queryClient.invalidateQueries({
+        queryKey: playlistQueryKey,
+      });
+    },
+  });
 
   const currentItemId = useMemo(
     () =>
@@ -458,6 +534,11 @@ export function PlaylistManagementSurface(
   const blacklistArtists = playlistQuery.data?.blacklistArtists ?? [];
   const blacklistCharters = playlistQuery.data?.blacklistCharters ?? [];
   const blacklistSongs = playlistQuery.data?.blacklistSongs ?? [];
+  const blacklistSongGroups = playlistQuery.data?.blacklistSongGroups ?? [];
+  const blacklistedSongIds = new Set(blacklistSongs.map((item) => item.songId));
+  const blacklistedSongGroupIds = new Set(
+    blacklistSongGroups.map((item) => item.groupedProjectId)
+  );
   const blacklistedCharterIds = new Set(
     blacklistCharters.map((item) => item.charterId)
   );
@@ -466,6 +547,7 @@ export function PlaylistManagementSurface(
   );
   const managedChannel = playlistQuery.data?.channel ?? null;
   const accessRole = playlistQuery.data?.accessRole ?? "owner";
+  const canManageBlacklist = !!playlistQuery.data?.settings?.canManageBlacklist;
   const isDeletingItem = (itemId: string) =>
     mutation.isPending &&
     pendingRowAction?.action === "deleteItem" &&
@@ -618,6 +700,7 @@ export function PlaylistManagementSurface(
                               requesterLogin:
                                 manualRequesterLogin.trim() || undefined,
                               title: song.title,
+                              groupedProjectId: song.groupedProjectId,
                               authorId: song.authorId,
                               artist: song.artist,
                               album: song.album,
@@ -631,6 +714,7 @@ export function PlaylistManagementSurface(
                               candidateMatchesJson: JSON.stringify([
                                 {
                                   id: song.id,
+                                  groupedProjectId: song.groupedProjectId,
                                   authorId: song.authorId,
                                   title: song.title,
                                   artist: song.artist,
@@ -721,6 +805,9 @@ export function PlaylistManagementSurface(
             draggingItemId={draggingItemId}
             dropTargetState={dropTargetState}
             currentItemId={currentItemId}
+            canManageBlacklist={canManageBlacklist}
+            blacklistedSongIds={blacklistedSongIds}
+            blacklistedSongGroupIds={blacklistedSongGroupIds}
             blacklistedCharterIds={blacklistedCharterIds}
             vipTokenBalancesByLogin={vipTokenBalancesByLogin}
             isDeletingItem={isDeletingItem}
@@ -770,6 +857,54 @@ export function PlaylistManagementSurface(
                 requestKind,
               })
             }
+            onBlacklistSong={(item) => {
+              if (item.songCatalogSourceId == null) {
+                setPlaylistActionError(
+                  "This request does not have a version ID to blacklist."
+                );
+                return;
+              }
+
+              moderationMutation.mutate({
+                action: "addBlacklistedSong",
+                songId: item.songCatalogSourceId,
+                songTitle: item.songTitle,
+                artistName: item.songArtist ?? undefined,
+              });
+            }}
+            onBlacklistSongGroup={(item) => {
+              if (item.songGroupedProjectId == null) {
+                setPlaylistActionError(
+                  "This request does not have a song group ID to blacklist."
+                );
+                return;
+              }
+
+              moderationMutation.mutate({
+                action: "addBlacklistedSongGroup",
+                groupedProjectId: item.songGroupedProjectId,
+                songTitle: item.songTitle,
+                artistId: item.songArtistId ?? null,
+                artistName: item.songArtist ?? undefined,
+              });
+            }}
+            onBlacklistCharter={(candidate) => {
+              if (candidate.authorId == null) {
+                setPlaylistActionError(
+                  "This version does not have a charter ID to blacklist."
+                );
+                return;
+              }
+
+              moderationMutation.mutate({
+                action: "addBlacklistedCharter",
+                charterId: candidate.authorId,
+                charterName: candidate.creator ?? "Unknown charter",
+              });
+            }}
+            isBlacklistSongPending={moderationMutation.isPending}
+            isBlacklistSongGroupPending={moderationMutation.isPending}
+            isBlacklistCharterPending={moderationMutation.isPending}
           />
         </section>
       ) : (
@@ -832,6 +967,9 @@ export function PlaylistManagementSurface(
               draggingItemId={draggingItemId}
               dropTargetState={dropTargetState}
               currentItemId={currentItemId}
+              canManageBlacklist={canManageBlacklist}
+              blacklistedSongIds={blacklistedSongIds}
+              blacklistedSongGroupIds={blacklistedSongGroupIds}
               blacklistedCharterIds={blacklistedCharterIds}
               vipTokenBalancesByLogin={vipTokenBalancesByLogin}
               isDeletingItem={isDeletingItem}
@@ -881,6 +1019,54 @@ export function PlaylistManagementSurface(
                   requestKind,
                 })
               }
+              onBlacklistSong={(item) => {
+                if (item.songCatalogSourceId == null) {
+                  setPlaylistActionError(
+                    "This request does not have a version ID to blacklist."
+                  );
+                  return;
+                }
+
+                moderationMutation.mutate({
+                  action: "addBlacklistedSong",
+                  songId: item.songCatalogSourceId,
+                  songTitle: item.songTitle,
+                  artistName: item.songArtist ?? undefined,
+                });
+              }}
+              onBlacklistSongGroup={(item) => {
+                if (item.songGroupedProjectId == null) {
+                  setPlaylistActionError(
+                    "This request does not have a song group ID to blacklist."
+                  );
+                  return;
+                }
+
+                moderationMutation.mutate({
+                  action: "addBlacklistedSongGroup",
+                  groupedProjectId: item.songGroupedProjectId,
+                  songTitle: item.songTitle,
+                  artistId: item.songArtistId ?? null,
+                  artistName: item.songArtist ?? undefined,
+                });
+              }}
+              onBlacklistCharter={(candidate) => {
+                if (candidate.authorId == null) {
+                  setPlaylistActionError(
+                    "This version does not have a charter ID to blacklist."
+                  );
+                  return;
+                }
+
+                moderationMutation.mutate({
+                  action: "addBlacklistedCharter",
+                  charterId: candidate.authorId,
+                  charterName: candidate.creator ?? "Unknown charter",
+                });
+              }}
+              isBlacklistSongPending={moderationMutation.isPending}
+              isBlacklistSongGroupPending={moderationMutation.isPending}
+              isBlacklistCharterPending={moderationMutation.isPending}
             />
           </CardContent>
         </Card>
@@ -892,7 +1078,8 @@ export function PlaylistManagementSurface(
             artists={blacklistArtists}
             charters={blacklistCharters}
             songs={blacklistSongs}
-            description="These exact artist IDs and track IDs are currently blocked for this channel."
+            songGroups={blacklistSongGroups}
+            description="Artists, charters, songs, and specific versions can be blocked for this channel."
             collapsible
             defaultOpen={false}
           />
@@ -977,10 +1164,16 @@ function CurrentPlaylistRows(props: {
   draggingItemId: string | null;
   dropTargetState: { itemId: string; edge: Edge } | null;
   currentItemId: string | null;
+  canManageBlacklist: boolean;
+  blacklistedSongIds: Set<number>;
+  blacklistedSongGroupIds: Set<number>;
   blacklistedCharterIds: Set<number>;
   vipTokenBalancesByLogin: Map<string, number>;
   isDeletingItem: (itemId: string) => boolean;
   isRowPending: (action: string, itemId: string) => boolean;
+  isBlacklistSongPending: boolean;
+  isBlacklistSongGroupPending: boolean;
+  isBlacklistCharterPending: boolean;
   onDragStart: (itemId: string) => void;
   onDragEnd: () => void;
   onDragHover: (targetItemId: string, edge: Edge) => void;
@@ -990,6 +1183,9 @@ function CurrentPlaylistRows(props: {
   onMarkPlayed: (itemId: string) => void;
   onDelete: (itemId: string) => void;
   onChangeRequestKind: (itemId: string, requestKind: "regular" | "vip") => void;
+  onBlacklistSong: (item: PlaylistItem) => void;
+  onBlacklistSongGroup: (item: PlaylistItem) => void;
+  onBlacklistCharter: (candidate: PlaylistCandidate) => void;
 }) {
   return (
     <>
@@ -1014,6 +1210,18 @@ function CurrentPlaylistRows(props: {
               "changeRequestKind",
               item.id
             )}
+            canManageBlacklist={props.canManageBlacklist}
+            isBlacklistedSong={
+              item.songCatalogSourceId != null &&
+              props.blacklistedSongIds.has(item.songCatalogSourceId)
+            }
+            isBlacklistedSongGroup={
+              item.songGroupedProjectId != null &&
+              props.blacklistedSongGroupIds.has(item.songGroupedProjectId)
+            }
+            isBlacklistSongPending={props.isBlacklistSongPending}
+            isBlacklistSongGroupPending={props.isBlacklistSongGroupPending}
+            isBlacklistCharterPending={props.isBlacklistCharterPending}
             availableVipTokenCount={
               item.requestedByLogin
                 ? (props.vipTokenBalancesByLogin.get(
@@ -1035,6 +1243,9 @@ function CurrentPlaylistRows(props: {
             onChangeRequestKind={(requestKind) =>
               props.onChangeRequestKind(item.id, requestKind)
             }
+            onBlacklistSong={() => props.onBlacklistSong(item)}
+            onBlacklistSongGroup={() => props.onBlacklistSongGroup(item)}
+            onBlacklistCharter={props.onBlacklistCharter}
           />
         ))}
       </AnimatePresence>
@@ -1079,6 +1290,8 @@ function getResolvedCandidates(item: PlaylistItem) {
     return [...candidates]
       .map((candidate) => ({
         ...candidate,
+        groupedProjectId:
+          candidate.groupedProjectId ?? item.songGroupedProjectId ?? undefined,
         album: candidate.album ?? item.songAlbum,
         sourceUrl: normalizeSongSourceUrl({
           source: "library",
@@ -1096,6 +1309,7 @@ function getResolvedCandidates(item: PlaylistItem) {
   return [
     {
       id: item.id,
+      groupedProjectId: item.songGroupedProjectId ?? undefined,
       title: item.songTitle,
       artist: item.songArtist,
       album: item.songAlbum,
@@ -1277,6 +1491,12 @@ function PlaylistQueueItem(props: {
   isSetCurrentPending: boolean;
   isMarkPlayedPending: boolean;
   isChangeRequestKindPending: boolean;
+  canManageBlacklist: boolean;
+  isBlacklistedSong: boolean;
+  isBlacklistedSongGroup: boolean;
+  isBlacklistSongPending: boolean;
+  isBlacklistSongGroupPending: boolean;
+  isBlacklistCharterPending: boolean;
   availableVipTokenCount: number;
   blacklistedCharterIds: Set<number>;
   onDragStart: (itemId: string) => void;
@@ -1288,6 +1508,9 @@ function PlaylistQueueItem(props: {
   onMarkPlayed: () => void;
   onDelete: () => void;
   onChangeRequestKind: (requestKind: "regular" | "vip") => void;
+  onBlacklistSong: () => void;
+  onBlacklistSongGroup: () => void;
+  onBlacklistCharter: (candidate: PlaylistCandidate) => void;
 }) {
   const itemRef = useRef<HTMLDivElement | null>(null);
   const dragHandleRef = useRef<HTMLButtonElement | null>(null);
@@ -1464,6 +1687,22 @@ function PlaylistQueueItem(props: {
                   Warning
                 </StatusPill>
               ) : null}
+              {props.isBlacklistedSong ? (
+                <Badge
+                  variant="outline"
+                  className="border-rose-400/40 bg-rose-500/10 text-rose-200"
+                >
+                  Version blacklisted
+                </Badge>
+              ) : null}
+              {props.isBlacklistedSongGroup ? (
+                <Badge
+                  variant="outline"
+                  className="border-rose-400/40 bg-rose-500/10 text-rose-200"
+                >
+                  Song blacklisted
+                </Badge>
+              ) : null}
             </div>
 
             <div className="dashboard-playlist__item-actions flex max-w-full flex-wrap justify-end gap-2">
@@ -1519,6 +1758,23 @@ function PlaylistQueueItem(props: {
               >
                 Delete
               </Button>
+              {props.canManageBlacklist ? (
+                <BlacklistActionsPopover
+                  item={props.item}
+                  candidates={resolvedCandidates}
+                  isBlacklistedSong={props.isBlacklistedSong}
+                  isBlacklistedSongGroup={props.isBlacklistedSongGroup}
+                  blacklistedCharterIds={props.blacklistedCharterIds}
+                  isBlacklistSongPending={props.isBlacklistSongPending}
+                  isBlacklistSongGroupPending={
+                    props.isBlacklistSongGroupPending
+                  }
+                  isBlacklistCharterPending={props.isBlacklistCharterPending}
+                  onBlacklistSong={props.onBlacklistSong}
+                  onBlacklistSongGroup={props.onBlacklistSongGroup}
+                  onBlacklistCharter={props.onBlacklistCharter}
+                />
+              ) : null}
             </div>
           </div>
 
@@ -1685,6 +1941,153 @@ function StatusPill(props: {
       <Icon className="h-3.5 w-3.5" />
       {props.children}
     </span>
+  );
+}
+
+function BlacklistActionsPopover(props: {
+  item: PlaylistItem;
+  candidates: PlaylistCandidate[];
+  isBlacklistedSong: boolean;
+  isBlacklistedSongGroup: boolean;
+  blacklistedCharterIds: Set<number>;
+  isBlacklistSongPending: boolean;
+  isBlacklistSongGroupPending: boolean;
+  isBlacklistCharterPending: boolean;
+  onBlacklistSong: () => void;
+  onBlacklistSongGroup: () => void;
+  onBlacklistCharter: (candidate: PlaylistCandidate) => void;
+}) {
+  const queuedVersionLabel =
+    props.item.songCatalogSourceId != null
+      ? `Queued version ID ${props.item.songCatalogSourceId}`
+      : "No queued version ID";
+  const charterCandidates = Array.from(
+    new Map(
+      props.candidates
+        .filter(
+          (candidate): candidate is PlaylistCandidate & { authorId: number } =>
+            candidate.authorId != null
+        )
+        .map((candidate) => [candidate.authorId, candidate])
+    ).values()
+  );
+
+  return (
+    <Popover>
+      <PopoverTrigger asChild>
+        <Button
+          type="button"
+          size="icon"
+          variant="ghost"
+          aria-label={`Open blacklist actions for ${props.item.songTitle}`}
+          className="h-9 w-9 rounded-full"
+        >
+          <MoreHorizontal className="h-4 w-4" />
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent
+        align="end"
+        className="w-80 max-w-[calc(100vw-2rem)] rounded-[20px] border-(--border) bg-(--panel-strong) p-3 text-(--text)"
+      >
+        <PopoverHeader className="gap-0">
+          <PopoverTitle className="truncate text-sm">
+            Blacklist actions
+          </PopoverTitle>
+        </PopoverHeader>
+        <p className="mt-2 text-xs leading-5 text-(--muted)">
+          Choose whether to block the queued version, every version of this
+          song, or a charter.
+        </p>
+        <p className="mt-1 text-xs leading-5 text-(--muted)">
+          {queuedVersionLabel}
+        </p>
+        <div className="mt-3 grid gap-2">
+          <Button
+            type="button"
+            variant="outline"
+            className="h-auto w-full items-start justify-start gap-3 whitespace-normal rounded-2xl px-3 py-2.5 text-left"
+            disabled={
+              props.isBlacklistedSong ||
+              props.item.songCatalogSourceId == null ||
+              props.isBlacklistSongPending
+            }
+            onClick={props.onBlacklistSong}
+          >
+            <Ban className="mt-0.5 h-4 w-4 shrink-0" />
+            <div className="grid min-w-0 flex-1 gap-0.5 text-left">
+              <span className="font-medium">
+                {props.isBlacklistedSong
+                  ? "Version blacklisted"
+                  : "Blacklist queued version"}
+              </span>
+              <span className="text-xs text-(--muted)">
+                {props.item.songCatalogSourceId != null
+                  ? `Blocks only version ID ${props.item.songCatalogSourceId}.`
+                  : "Blocks only the exact version attached to this request."}
+              </span>
+            </div>
+          </Button>
+          <Button
+            type="button"
+            variant="outline"
+            className="h-auto w-full items-start justify-start gap-3 whitespace-normal rounded-2xl px-3 py-2.5 text-left"
+            disabled={
+              props.isBlacklistedSongGroup ||
+              props.item.songGroupedProjectId == null ||
+              props.isBlacklistSongGroupPending
+            }
+            onClick={props.onBlacklistSongGroup}
+          >
+            <Ban className="mt-0.5 h-4 w-4 shrink-0" />
+            <div className="grid min-w-0 flex-1 gap-0.5 text-left">
+              <span className="font-medium">
+                {props.isBlacklistedSongGroup
+                  ? "Song blacklisted"
+                  : "Blacklist all versions of this song"}
+              </span>
+              <span className="text-xs text-(--muted)">
+                Blocks every version grouped under this song.
+              </span>
+            </div>
+          </Button>
+          {charterCandidates.map((candidate) => {
+            const isBlacklistedCharter = props.blacklistedCharterIds.has(
+              candidate.authorId
+            );
+
+            return (
+              <Button
+                key={`${props.item.id}-${candidate.id}-${candidate.authorId}`}
+                type="button"
+                variant="outline"
+                className="h-auto w-full items-start justify-start gap-3 whitespace-normal rounded-2xl px-3 py-2.5 text-left"
+                disabled={
+                  isBlacklistedCharter || props.isBlacklistCharterPending
+                }
+                onClick={() => props.onBlacklistCharter(candidate)}
+              >
+                <Ban className="mt-0.5 h-4 w-4 shrink-0" />
+                <div className="grid min-w-0 flex-1 gap-0.5 text-left">
+                  <span className="font-medium">
+                    {isBlacklistedCharter
+                      ? `Charter blacklisted: ${candidate.creator ?? "Unknown"}`
+                      : `Blacklist charter: ${candidate.creator ?? "Unknown"}`}
+                  </span>
+                  <span className="text-xs text-(--muted)">
+                    Blocks every song by this charter ID.
+                  </span>
+                </div>
+              </Button>
+            );
+          })}
+          {!charterCandidates.length ? (
+            <div className="rounded-2xl border border-dashed border-(--border) px-3 py-2 text-xs text-(--muted)">
+              No charter IDs available for these versions.
+            </div>
+          ) : null}
+        </div>
+      </PopoverContent>
+    </Popover>
   );
 }
 

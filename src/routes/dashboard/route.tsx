@@ -101,9 +101,9 @@ function DashboardLayout() {
     )?.to ?? "/dashboard";
 
   return (
-    <section className="dashboard-layout grid gap-6">
-      <aside className="dashboard-layout__sidebar surface-grid surface-noise rounded-[34px] border border-(--border-strong) bg-(--panel) p-6 shadow-(--shadow)">
-        <div className="dashboard-layout__mobile-nav mt-4">
+    <section className="grid gap-6 [container-type:inline-size] min-[961px]:grid-cols-[minmax(0,320px)_minmax(0,1fr)] min-[961px]:items-start max-[960px]:gap-0">
+      <aside className="surface-grid surface-noise grid gap-6 rounded-[34px] border border-(--border-strong) bg-(--panel) p-6 shadow-(--shadow) max-[960px]:gap-0 max-[960px]:rounded-none max-[960px]:border-x-0 max-[960px]:bg-(--panel) max-[960px]:px-[0.875rem] max-[960px]:py-3 max-[960px]:shadow-none">
+        <div className="mt-4 min-[961px]:hidden max-[960px]:mt-0">
           <Select
             value={activeDashboardPath}
             onValueChange={(value) =>
@@ -130,7 +130,7 @@ function DashboardLayout() {
           </Select>
         </div>
 
-        <div className="dashboard-layout__desktop-nav mt-6 grid gap-3">
+        <div className="mt-6 hidden gap-3 min-[961px]:grid">
           {primaryNav.map((item) => (
             <DashboardNavLink
               key={item.to}
@@ -143,7 +143,7 @@ function DashboardLayout() {
         </div>
 
         {isAdmin ? (
-          <div className="dashboard-layout__desktop-nav mt-6 grid gap-3">
+          <div className="mt-6 hidden gap-3 min-[961px]:grid">
             <p className="px-1 text-xs font-semibold uppercase tracking-[0.18em] text-(--muted)">
               Admin
             </p>
@@ -159,7 +159,7 @@ function DashboardLayout() {
         ) : null}
       </aside>
 
-      <div className="dashboard-layout__content rounded-[34px] border border-(--border-strong) bg-(--bg-elevated) p-6 shadow-(--shadow) md:p-8">
+      <div className="rounded-[34px] border border-(--border-strong) bg-(--bg-elevated) p-6 shadow-(--shadow) md:p-8 max-[960px]:rounded-none max-[960px]:border-x-0 max-[960px]:bg-(--bg-elevated) max-[960px]:px-[0.875rem] max-[960px]:py-4 max-[960px]:shadow-none">
         <Outlet />
       </div>
     </section>

@@ -1,3 +1,10 @@
+import {
+  type BlacklistedArtist,
+  type BlacklistedCharter,
+  type BlacklistedSongGroup,
+  type BlacklistedSongVersion,
+  getBlacklistReasonCodes,
+} from "./channel-blacklist";
 import type { SongSearchResult } from "./song-search/types";
 
 function normalize(value: string | undefined | null) {
@@ -158,13 +165,10 @@ export function getRateLimitWindow(
 export function isSongAllowed(input: {
   song: SongSearchResult;
   settings: ChannelRequestSettings;
-  blacklistArtists: Array<{ artistId: number; artistName: string }>;
-  blacklistCharters: Array<{ charterId: number; charterName: string }>;
-  blacklistSongs: Array<{
-    songId: number;
-    songTitle: string;
-    artistName?: string | null;
-  }>;
+  blacklistArtists: BlacklistedArtist[];
+  blacklistCharters: BlacklistedCharter[];
+  blacklistSongs: BlacklistedSongVersion[];
+  blacklistSongGroups: BlacklistedSongGroup[];
   setlistArtists: Array<{ artistId?: number | null; artistName: string }>;
   requester: RequesterContext;
 }) {
@@ -212,27 +216,48 @@ export function isSongAllowed(input: {
   }
 
   if (input.settings.blacklistEnabled) {
-    const artistBlocked = input.blacklistArtists.some(
-      (entry) =>
-        input.song.artistId != null && entry.artistId === input.song.artistId
+    const reasonCodes = getBlacklistReasonCodes(
+      {
+        songCatalogSourceId: input.song.sourceId ?? null,
+        songGroupedProjectId: input.song.groupedProjectId ?? null,
+        songArtistId: input.song.artistId ?? null,
+        songArtist: input.song.artist ?? null,
+        songCharterId: input.song.authorId ?? null,
+        songCreator: input.song.creator ?? null,
+      },
+      {
+        artists: input.blacklistArtists,
+        charters: input.blacklistCharters,
+        songs: input.blacklistSongs,
+        songGroups: input.blacklistSongGroups,
+      }
     );
-    const charterBlocked = input.blacklistCharters.find(
-      (entry) =>
-        input.song.authorId != null && entry.charterId === input.song.authorId
-    );
-    const songBlocked = input.blacklistSongs.some(
-      (entry) =>
-        input.song.sourceId != null && entry.songId === input.song.sourceId
-    );
+    const charterBlocked = reasonCodes.includes("charter_blacklist")
+      ? (input.blacklistCharters.find(
+          (entry) =>
+            input.song.authorId != null &&
+            entry.charterId === input.song.authorId
+        ) ?? null)
+      : null;
     const bypass = input.settings.letSetlistBypassBlacklist && inSetlist;
 
-    if (!bypass && (artistBlocked || charterBlocked || songBlocked)) {
+    if (!bypass && reasonCodes.length > 0) {
+      const versionBlocked = reasonCodes.includes("version_blacklist");
+      const songBlocked = reasonCodes.includes("song_blacklist");
       return {
         allowed: false,
         reason: charterBlocked
           ? `${charterBlocked.charterName} is blacklisted in this channel.`
-          : "That song is blocked in this channel.",
-        reasonCode: charterBlocked ? "charter_blacklist" : "song_blacklist",
+          : versionBlocked
+            ? "That version is blocked in this channel."
+            : "That song is blocked in this channel.",
+        reasonCode: charterBlocked
+          ? "charter_blacklist"
+          : versionBlocked
+            ? "version_blacklist"
+            : songBlocked
+              ? "song_blacklist"
+              : "artist_blacklist",
       };
     }
   }
@@ -328,19 +353,31 @@ export function buildHowMessage(input: {
     songTitle: string;
     artistName?: string | null;
   }>;
+  blacklistSongGroups?: Array<{
+    groupedProjectId?: number;
+    songTitle: string;
+    artistName?: string | null;
+  }>;
   setlistArtists: Array<{ artistId?: number | null; artistName: string }>;
 }) {
   const normalized = normalizeCommandPrefix(input.commandPrefix);
+  const blacklistSongGroups = input.blacklistSongGroups ?? [];
   const parts = [
     `Commands: ${normalized}sr artist, song; ${normalized}sr song; ${normalized}vip artist, song; ${normalized}edit artist, song; ${normalized}remove reg; ${normalized}remove vip; ${normalized}remove all.`,
   ];
 
-  if (input.blacklistArtists.length > 0 || input.blacklistSongs.length > 0) {
+  if (
+    input.blacklistArtists.length > 0 ||
+    input.blacklistSongs.length > 0 ||
+    blacklistSongGroups.length > 0 ||
+    input.blacklistCharters.length > 0
+  ) {
     parts.push(
       `${normalized}blacklist: ${buildBlacklistMessage(
         input.blacklistArtists,
         input.blacklistCharters,
-        input.blacklistSongs
+        input.blacklistSongs,
+        blacklistSongGroups
       )}`
     );
   }
@@ -369,10 +406,20 @@ export function buildBlacklistMessage(
     songId?: number;
     songTitle: string;
     artistName?: string | null;
-  }>
+  }>,
+  songGroups: Array<{
+    groupedProjectId?: number;
+    songTitle: string;
+    artistName?: string | null;
+  }> = []
 ) {
-  if (artists.length === 0 && charters.length === 0 && songs.length === 0) {
-    return "No blacklisted artists, charters, or songs.";
+  if (
+    artists.length === 0 &&
+    charters.length === 0 &&
+    songs.length === 0 &&
+    songGroups.length === 0
+  ) {
+    return "No blacklisted artists, charters, songs, or versions.";
   }
 
   const artistText = artists.length
@@ -397,7 +444,17 @@ export function buildBlacklistMessage(
         )
         .join(", ")
     : "none";
-  return `Artists: ${artistText}. Charters: ${charterText}. Songs: ${songText}.`;
+  const songGroupText = songGroups.length
+    ? songGroups
+        .slice(0, 5)
+        .map((entry) =>
+          entry.artistName
+            ? `${entry.songTitle} - ${entry.artistName}`
+            : entry.songTitle
+        )
+        .join(", ")
+    : "none";
+  return `Artists: ${artistText}. Charters: ${charterText}. Songs: ${songGroupText}. Versions: ${songText}.`;
 }
 
 export function buildSetlistMessage(

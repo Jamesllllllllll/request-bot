@@ -27,9 +27,11 @@ import {
   auditLogs,
   type BlacklistedArtistInsert,
   type BlacklistedCharterInsert,
+  type BlacklistedSongGroupInsert,
   type BlacklistedSongInsert,
   blacklistedArtists,
   blacklistedCharters,
+  blacklistedSongGroups,
   blacklistedSongs,
   blockedUsers,
   type CatalogSongInsert,
@@ -347,6 +349,7 @@ export async function getDashboardState(env: AppEnv, ownerUserId: string) {
     audits,
     blacklistArtistsRows,
     blacklistSongsRows,
+    blacklistSongGroupRows,
     blacklistCharterRows,
     setlistArtistRows,
     vipTokenRows,
@@ -387,6 +390,13 @@ export async function getDashboardState(env: AppEnv, ownerUserId: string) {
         asc(blacklistedSongs.artistName),
       ],
     }),
+    db.query.blacklistedSongGroups.findMany({
+      where: eq(blacklistedSongGroups.channelId, channel.id),
+      orderBy: [
+        asc(blacklistedSongGroups.songTitle),
+        asc(blacklistedSongGroups.artistName),
+      ],
+    }),
     db.query.blacklistedCharters.findMany({
       where: eq(blacklistedCharters.channelId, channel.id),
       orderBy: [asc(blacklistedCharters.charterName)],
@@ -419,6 +429,7 @@ export async function getDashboardState(env: AppEnv, ownerUserId: string) {
     blacklistArtists: blacklistArtistsRows,
     blacklistCharters: blacklistCharterRows,
     blacklistSongs: blacklistSongsRows,
+    blacklistSongGroups: blacklistSongGroupRows,
     setlistArtists: setlistArtistRows,
     vipTokens: vipTokenRows,
     playedSongs: playedRows,
@@ -579,7 +590,7 @@ export async function getChannelBlacklistByChannelId(
   env: AppEnv,
   channelId: string
 ) {
-  const [artistRows, charterRows, songRows] = await Promise.all([
+  const [artistRows, charterRows, songRows, songGroupRows] = await Promise.all([
     getDb(env).query.blacklistedArtists.findMany({
       where: eq(blacklistedArtists.channelId, channelId),
       orderBy: [asc(blacklistedArtists.artistName)],
@@ -595,12 +606,20 @@ export async function getChannelBlacklistByChannelId(
         asc(blacklistedSongs.artistName),
       ],
     }),
+    getDb(env).query.blacklistedSongGroups.findMany({
+      where: eq(blacklistedSongGroups.channelId, channelId),
+      orderBy: [
+        asc(blacklistedSongGroups.songTitle),
+        asc(blacklistedSongGroups.artistName),
+      ],
+    }),
   ]);
 
   return {
     blacklistArtists: artistRows,
     blacklistCharters: charterRows,
     blacklistSongs: songRows,
+    blacklistSongGroups: songGroupRows,
   };
 }
 
@@ -824,7 +843,10 @@ export interface CatalogSearchInput {
   parts?: string[];
   year?: number[];
   excludeSongIds?: number[];
+  excludeGroupedProjectIds?: number[];
+  excludeArtistIds?: number[];
   excludeArtistNames?: string[];
+  excludeAuthorIds?: number[];
   excludeCreatorNames?: string[];
   page: number;
   pageSize: number;
@@ -1129,8 +1151,20 @@ export async function searchCatalogSongs(
   const normalizedExcludedCreators = uniqueCompact(
     (input.excludeCreatorNames ?? []).map((name) => normalizeSearchPhrase(name))
   );
+  const excludedArtistIds = [...new Set(input.excludeArtistIds ?? [])].filter(
+    (artistId): artistId is number => Number.isInteger(artistId) && artistId > 0
+  );
+  const excludedAuthorIds = [...new Set(input.excludeAuthorIds ?? [])].filter(
+    (authorId): authorId is number => Number.isInteger(authorId) && authorId > 0
+  );
   const excludedSongIds = [...new Set(input.excludeSongIds ?? [])].filter(
     (songId): songId is number => Number.isInteger(songId) && songId > 0
+  );
+  const excludedGroupedProjectIds = [
+    ...new Set(input.excludeGroupedProjectIds ?? []),
+  ].filter(
+    (groupedProjectId): groupedProjectId is number =>
+      Number.isInteger(groupedProjectId) && groupedProjectId > 0
   );
   const blacklistConditions = [
     excludedSongIds.length
@@ -1139,11 +1173,31 @@ export async function searchCatalogSongs(
           sql`, `
         )})`}`
       : null,
+    excludedGroupedProjectIds.length
+      ? sql`(${catalogSongs.groupedProjectId} IS NULL OR ${catalogSongs.groupedProjectId} NOT IN ${sql`(${sql.join(
+          excludedGroupedProjectIds.map(
+            (groupedProjectId) => sql`${groupedProjectId}`
+          ),
+          sql`, `
+        )})`})`
+      : null,
+    excludedArtistIds.length
+      ? sql`(${catalogSongs.artistId} IS NULL OR ${catalogSongs.artistId} NOT IN ${sql`(${sql.join(
+          excludedArtistIds.map((artistId) => sql`${artistId}`),
+          sql`, `
+        )})`})`
+      : null,
     normalizedExcludedArtists.length
       ? sql`lower(coalesce(${catalogSongs.artistName}, '')) NOT IN ${sql`(${sql.join(
           normalizedExcludedArtists.map((name) => sql`${name}`),
           sql`, `
         )})`}`
+      : null,
+    excludedAuthorIds.length
+      ? sql`(${catalogSongs.authorId} IS NULL OR ${catalogSongs.authorId} NOT IN ${sql`(${sql.join(
+          excludedAuthorIds.map((authorId) => sql`${authorId}`),
+          sql`, `
+        )})`})`
       : null,
     normalizedExcludedCreators.length
       ? sql`lower(coalesce(${catalogSongs.creatorName}, '')) NOT IN ${sql`(${sql.join(
@@ -1158,6 +1212,7 @@ export async function searchCatalogSongs(
     blacklistConditions.length > 0
       ? sql`(${baseWhereCondition}) AND (${sql.join(blacklistConditions, sql` AND `)})`
       : baseWhereCondition;
+  const hasBlacklistFilters = blacklistConditions.length > 0;
 
   const titleTokenScore = buildTokenMatchScore(
     catalogSongs.title,
@@ -1284,7 +1339,7 @@ export async function searchCatalogSongs(
                   `
     : sql`0`;
 
-  const totalResult = await db.all<{ count: number }>(sql`
+  const totalResultPromise = db.all<{ count: number }>(sql`
     WITH fts_matches AS (
       ${
         ftsEnabled
@@ -1300,10 +1355,29 @@ export async function searchCatalogSongs(
     )
     SELECT count(*) AS count FROM matches
   `);
+  const unfilteredTotalResultPromise = hasBlacklistFilters
+    ? db.all<{ count: number }>(sql`
+        WITH fts_matches AS (
+          ${
+            ftsEnabled
+              ? sql`SELECT rowid FROM catalog_song_fts WHERE catalog_song_fts MATCH ${ftsQuery}`
+              : sql`SELECT NULL AS rowid WHERE 0`
+          }
+        ),
+        matches AS (
+          SELECT
+            catalog_songs.id
+          FROM catalog_songs
+          WHERE ${baseWhereCondition}
+        )
+        SELECT count(*) AS count FROM matches
+      `)
+    : Promise.resolve(null);
 
-  const rows = await db.all<{
+  const rowsPromise = db.all<{
     id: string;
     sourceSongId: number;
+    groupedProjectId: number | null;
     artistId: number | null;
     authorId: number | null;
     title: string;
@@ -1331,6 +1405,7 @@ export async function searchCatalogSongs(
     SELECT
         catalog_songs.id,
         catalog_songs.source_song_id AS sourceSongId,
+        catalog_songs.grouped_project_id AS groupedProjectId,
         catalog_songs.artist_id AS artistId,
         catalog_songs.author_id AS authorId,
         catalog_songs.title,
@@ -1353,13 +1428,23 @@ export async function searchCatalogSongs(
     LIMIT ${pageSize}
     OFFSET ${offset}
   `);
-
+  const [totalResult, unfilteredTotalResult, rows] = await Promise.all([
+    totalResultPromise,
+    unfilteredTotalResultPromise,
+    rowsPromise,
+  ]);
   const totalRows = unwrapD1Rows(totalResult);
+  const unfilteredTotalRows = unfilteredTotalResult
+    ? unwrapD1Rows(unfilteredTotalResult)
+    : [];
   const resultRows = unwrapD1Rows(rows);
+  const visibleTotal = totalRows[0]?.count ?? 0;
+  const unfilteredTotal = unfilteredTotalRows[0]?.count ?? visibleTotal;
 
   return {
     results: resultRows.map((row) => ({
       id: row.id,
+      groupedProjectId: row.groupedProjectId ?? undefined,
       artistId: row.artistId ?? undefined,
       authorId: row.authorId ?? undefined,
       title: decodeHtmlEntities(row.title),
@@ -1385,7 +1470,8 @@ export async function searchCatalogSongs(
       }),
       score: row.relevance,
     })),
-    total: totalRows[0]?.count ?? 0,
+    total: visibleTotal,
+    hiddenBlacklistedCount: Math.max(0, unfilteredTotal - visibleTotal),
     page,
     pageSize,
   };
@@ -1405,6 +1491,7 @@ export async function getCatalogSongBySourceId(
 
   return {
     id: row.id,
+    groupedProjectId: row.groupedProjectId ?? undefined,
     artistId: row.artistId ?? undefined,
     authorId: row.authorId ?? undefined,
     title: decodeHtmlEntities(row.title),
@@ -1512,6 +1599,67 @@ export async function searchCatalogSongsForBlacklist(
   }));
 }
 
+export async function searchCatalogSongGroupsForBlacklist(
+  env: AppEnv,
+  input: {
+    query: string;
+    limit?: number;
+  }
+) {
+  const normalizedQuery = escapeLikeValue(input.query.toLowerCase());
+  if (normalizedQuery.length < 2) {
+    return [];
+  }
+
+  const rows = await getDb(env).all<{
+    groupedProjectId: number;
+    title: string;
+    artistId: number | null;
+    artistName: string;
+    versionCount: number;
+  }>(sql`
+    WITH ranked_matches AS (
+      SELECT
+        grouped_project_id AS groupedProjectId,
+        title,
+        artist_id AS artistId,
+        artist_name AS artistName,
+        COUNT(*) OVER (PARTITION BY grouped_project_id) AS versionCount,
+        ROW_NUMBER() OVER (
+          PARTITION BY grouped_project_id
+          ORDER BY coalesce(source_updated_at, 0) DESC, source_song_id DESC
+        ) AS rowNumber
+      FROM catalog_songs
+      WHERE grouped_project_id IS NOT NULL
+        AND lower(title) LIKE ${`%${normalizedQuery}%`}
+    )
+    SELECT
+      groupedProjectId,
+      title,
+      artistId,
+      artistName,
+      versionCount
+    FROM ranked_matches
+    WHERE rowNumber = 1
+    ORDER BY
+      CASE
+        WHEN lower(title) LIKE ${`${normalizedQuery}%`} THEN 0
+        ELSE 1
+      END,
+      title ASC,
+      artistName ASC
+    LIMIT ${Math.min(Math.max(input.limit ?? 8, 1), 25)}
+  `);
+
+  return unwrapD1Rows(rows).map((row) => ({
+    groupedProjectId: row.groupedProjectId,
+    songTitle: decodeHtmlEntities(row.title),
+    artistId: row.artistId,
+    artistName: decodeHtmlEntities(row.artistName),
+    versionCount: row.versionCount,
+  }));
+}
+
 export async function searchCatalogChartersForBlacklist(
   env: AppEnv,
   input: {
@@ -1567,6 +1715,9 @@ export async function getCatalogSongsByIds(env: AppEnv, songIds: string[]) {
   return rows.map((row) => ({
     id: row.id,
     sourceId: row.sourceSongId,
+    groupedProjectId: row.groupedProjectId ?? undefined,
+    artistId: row.artistId ?? undefined,
+    authorId: row.authorId ?? undefined,
     source: row.source,
     sourceUrl: normalizeSongSourceUrl({
       source: row.source,
@@ -2199,6 +2350,16 @@ export async function addBlacklistedSong(
   await getDb(env).insert(blacklistedSongs).values(input).onConflictDoNothing();
 }
 
+export async function addBlacklistedSongGroup(
+  env: AppEnv,
+  input: Omit<BlacklistedSongGroupInsert, "createdAt">
+) {
+  await getDb(env)
+    .insert(blacklistedSongGroups)
+    .values(input)
+    .onConflictDoNothing();
+}
+
 export async function addBlacklistedCharter(
   env: AppEnv,
   input: Omit<BlacklistedCharterInsert, "createdAt">
@@ -2220,6 +2381,21 @@ export async function removeBlacklistedSong(
       and(
         eq(blacklistedSongs.channelId, channelId),
         eq(blacklistedSongs.songId, songId)
+      )
+    );
+}
+
+export async function removeBlacklistedSongGroup(
+  env: AppEnv,
+  channelId: string,
+  groupedProjectId: number
+) {
+  await getDb(env)
+    .delete(blacklistedSongGroups)
+    .where(
+      and(
+        eq(blacklistedSongGroups.channelId, channelId),
+        eq(blacklistedSongGroups.groupedProjectId, groupedProjectId)
       )
     );
 }

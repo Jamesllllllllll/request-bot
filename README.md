@@ -1,36 +1,30 @@
 # Request Bot
 
-Twitch song request MVP built around TanStack Start, Cloudflare Workers, D1, Durable Objects, Queues, KV, and TypeScript.
+Request Bot is a Twitch song request app for music and Rocksmith streams. Viewers search songs, copy request commands, and browse public playlists. Streamers and moderators manage request rules, queue behavior, overlays, and channel access from the dashboard.
 
-## Repo workflow
+It runs on TanStack Start, Cloudflare Workers, D1, Durable Objects, Queues, KV, and TypeScript.
 
-- local work happens on feature branches
-- pull requests run CI
-- preview deploys can run from pull requests once the GitHub and Cloudflare secrets are configured
-- merges to `main` deploy production
-
-Repository workflow docs:
+## Documentation
 
 - [CONTRIBUTING.md](/CONTRIBUTING.md)
 - [docs/local-development.md](/docs/local-development.md)
 - [docs/deployment-workflow.md](/docs/deployment-workflow.md)
+- [docs/bot-operations.md](/docs/bot-operations.md)
 
-## What is implemented
+## What The App Includes
 
-- TanStack Start route skeleton for public pages, auth routes, dashboard pages, and server APIs
-- Cloudflare worker configuration with D1, KV, queue producer, and an auxiliary backend worker
-- Drizzle schema and initial SQL migration for the required MVP entities
-- Server-side Twitch OAuth callback flow with session cookie + KV session storage
-- EventSub webhook intake for `channel.chat.message`, `channel.subscribe`, `channel.subscription.gift`, `channel.cheer`, `stream.online`, and `stream.offline`
-- Separate shared bot-account OAuth flow with bot replies sent from the bot identity
-- Per-channel opt-in bot presence with live-aware activation/deactivation
-- Always-on public playlist pages for each channel
-- Backend search caching plus D1-backed search rate limiting/cooldowns
-- Per-channel playlist mutation serialization through a Durable Object
-- Queue-based Twitch reply pipeline
-- Vitest and Playwright starter tests
+- Home page cards for live channels, plus a demo mode that shows Rocksmith-tagged Twitch streams with `Watch on Twitch` and `Open playlist` actions
+- Song search with copyable request commands, catalog metadata, caching, and D1-backed rate limiting
+- Public channel pages with playlist, played history, album metadata, and source update dates
+- Dashboard pages for account access, owner settings, admin controls, and playlist management
+- Channel rules with setlists plus distinct artist, charter, song, and version blacklists
+- OBS-ready stream overlay settings with live preview, chroma-key background controls, and album/creator display toggles
+- Shared bot-account OAuth, per-channel bot opt-in, and live-aware EventSub subscription management
+- VIP token tracking with manual grants plus automatic rewards for sub gifts, gift recipients, and cheers
+- Durable Object playlist serialization, Queue-based reply delivery, and Cloudflare-backed persistence
+- Vitest, Playwright, and GitHub Actions verification
 
-## Bot flow
+## Shared Bot Account
 
 The app supports a shared Twitch bot account:
 
@@ -70,7 +64,7 @@ npx wrangler login
 cp .env.example .env
 ```
 
-Current `.env.example`:
+`.env.example`:
 
 ```env
 APP_URL=http://localhost:9000
@@ -165,20 +159,20 @@ The dev server runs on:
 http://localhost:9000
 ```
 
-The repo auto-runs local D1 migrations before `dev`, `test`, and `build`.
+The repo auto-runs local D1 migrations for `dev`, `test`, and `build`.
 
-### Verification before commit
+### Verification
 
-The normal path is now hook-driven:
+`npm install` sets up Husky automatically. The standard flow is:
 
 ```bash
 git commit
 git push
 ```
 
-`npm install` sets up Husky automatically. On commit, the repo runs staged-file Biome fixes/checks. On push, it runs generated-file verification, typecheck, and tests.
+On commit, the repo runs staged-file Biome fixes/checks. On push, it runs generated-file verification, typecheck, and tests.
 
-If you want to run the same push-time validation manually, use:
+Run the same push-time validation locally with:
 
 ```bash
 npm run check:prepush
@@ -201,8 +195,6 @@ If you changed browser-driven flows, also run:
 ```bash
 npm run test:e2e
 ```
-
-Formatting before lint is intentional in that manual path. Biome lint is much cleaner after `npm run format`, and this avoids a lot of AI-generated formatting churn before commit.
 
 ### 6. Twitch application setup for local auth
 
@@ -333,7 +325,7 @@ npm run check:prepush
 
 For extra confidence on deploy-sensitive changes, also run `npm run build`.
 
-## Cloudflare deploy
+## Cloudflare Deploy
 
 High-level deploy flow:
 
@@ -346,7 +338,7 @@ High-level deploy flow:
 
 The detailed deploy guide lives in [docs/deployment-workflow.md](/docs/deployment-workflow.md).
 
-Before the first remote deploy, create the required Cloudflare resources:
+Use these config templates for the first remote deploy:
 
 - [wrangler.jsonc](/wrangler.jsonc)
 - [wrangler.aux.jsonc](/wrangler.aux.jsonc)
@@ -372,7 +364,7 @@ npx wrangler queues create twitch-reply-queue
 Keep the returned D1 and KV IDs for `.env.deploy`.
 The committed Wrangler files stay as templates with placeholder IDs.
 
-Set Worker secrets with Wrangler before the first deploy.
+Set Worker secrets with Wrangler:
 
 Frontend Worker:
 
@@ -394,7 +386,7 @@ echo "<TWITCH_EVENTSUB_SECRET>" | npx wrangler secret put TWITCH_EVENTSUB_SECRET
 echo "<SENTRY_DSN>" | npx wrangler secret put SENTRY_DSN --config wrangler.aux.jsonc
 ```
 
-If the Worker does not exist yet, `wrangler secret put` creates it before uploading the secret.
+If the Worker does not exist yet, `wrangler secret put` creates it and uploads the secret.
 
 Copy the deploy env template:
 
@@ -440,8 +432,8 @@ Seed the remote D1 database with the bundled catalog:
 npm run db:bootstrap:remote
 ```
 
-After GitHub production deploys are enabled, normal production schema changes should go through pull requests and merge to `main`.
-The production GitHub Actions workflow applies remote D1 migrations before deploying the Workers, so contributors only need to run local migrations during development.
+With GitHub production deploys enabled, production schema changes go through pull requests and merge to `main`.
+The production GitHub Actions workflow applies remote D1 migrations and deploys the Workers. Contributors run local migrations during development.
 
 Remote-affecting npm scripts are guarded and exit with a helper message outside CI.
 That includes:
@@ -461,20 +453,20 @@ npm run deploy
 
 `npm run deploy` builds the app first, generates gitignored deploy configs in `.generated/`, then deploys backend first and frontend second.
 
-After the remote bootstrap, you can verify the sample catalog with:
+Verify the sample catalog with:
 
 ```bash
 npx wrangler d1 execute request_bot --remote --config .generated/wrangler.production.jsonc --command "select count(*) as song_count from catalog_songs;"
 ```
 
-## GitHub and CI/CD
+## GitHub And CI/CD
 
 Once the repo is on GitHub, `main` can deploy automatically through the included GitHub Actions workflows.
 
-Production deploys from GitHub Actions also apply remote D1 migrations before the backend and frontend Workers are deployed.
+Production deploys from GitHub Actions apply remote D1 migrations and then deploy the backend and frontend Workers.
 The remote migration script is blocked outside CI by default so normal contributor workflows stay local-only.
 
-Before enabling GitHub deploys:
+To enable GitHub deploys:
 
 1. Create the GitHub repository.
 2. Create the Cloudflare resources and store the D1/KV IDs in gitignored `.env.deploy` or deployment environment variables.
@@ -489,7 +481,7 @@ Before enabling GitHub deploys:
    - `TWITCH_BOT_USERNAME`
    - `TWITCH_SCOPES`
 6. Optionally add `CLOUDFLARE_WORKERS_SUBDOMAIN` for preview deploy comments.
-7. Protect `main` and require CI before merge.
+7. Protect `main` and require CI for merges.
 
 Find the Cloudflare values here:
 

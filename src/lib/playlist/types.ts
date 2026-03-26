@@ -10,6 +10,7 @@ export interface AddRequestInput {
     id: string;
     title: string;
     authorId?: number;
+    groupedProjectId?: number;
     artist?: string;
     album?: string;
     creator?: string;
@@ -108,6 +109,7 @@ export interface ManualAddInput {
     id: string;
     title: string;
     authorId?: number;
+    groupedProjectId?: number;
     artist?: string;
     album?: string;
     creator?: string;

@@ -4,6 +4,7 @@ import {
   addBlacklistedArtist,
   addBlacklistedCharter,
   addBlacklistedSong,
+  addBlacklistedSongGroup,
   addBlockedUser,
   addSetlistArtist,
   createAuditLog,
@@ -12,6 +13,7 @@ import {
   removeBlacklistedArtist,
   removeBlacklistedCharter,
   removeBlacklistedSong,
+  removeBlacklistedSongGroup,
   removeBlockedUser,
   removeSetlistArtist,
   revokeVipToken,
@@ -149,6 +151,27 @@ export const Route = createFileRoute("/api/channel/$slug/moderation")({
               payloadJson: JSON.stringify(body),
             });
             break;
+          case "addBlacklistedSongGroup":
+            if (!canManageChannelBlacklist(state)) {
+              return json({ error: "Forbidden" }, { status: 403 });
+            }
+            await addBlacklistedSongGroup(runtimeEnv, {
+              channelId: state.channel.id,
+              groupedProjectId: body.groupedProjectId,
+              songTitle: body.songTitle,
+              artistId: body.artistId ?? null,
+              artistName: body.artistName ?? null,
+            });
+            await createAuditLog(runtimeEnv, {
+              channelId: state.channel.id,
+              actorUserId: state.actorUserId,
+              actorType,
+              action: "add_blacklisted_song_group",
+              entityType: "blacklisted_song_group",
+              entityId: String(body.groupedProjectId),
+              payloadJson: JSON.stringify(body),
+            });
+            break;
           case "removeBlacklistedSong":
             if (!canManageChannelBlacklist(state)) {
               return json({ error: "Forbidden" }, { status: 403 });
@@ -165,6 +188,25 @@ export const Route = createFileRoute("/api/channel/$slug/moderation")({
               action: "remove_blacklisted_song",
               entityType: "blacklisted_song",
               entityId: String(body.songId),
+              payloadJson: JSON.stringify(body),
+            });
+            break;
+          case "removeBlacklistedSongGroup":
+            if (!canManageChannelBlacklist(state)) {
+              return json({ error: "Forbidden" }, { status: 403 });
+            }
+            await removeBlacklistedSongGroup(
+              runtimeEnv,
+              state.channel.id,
+              body.groupedProjectId
+            );
+            await createAuditLog(runtimeEnv, {
+              channelId: state.channel.id,
+              actorUserId: state.actorUserId,
+              actorType,
+              action: "remove_blacklisted_song_group",
+              entityType: "blacklisted_song_group",
+              entityId: String(body.groupedProjectId),
               payloadJson: JSON.stringify(body),
             });
             break;

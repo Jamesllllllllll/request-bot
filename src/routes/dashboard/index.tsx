@@ -92,7 +92,7 @@ function DashboardOverviewPage() {
   });
 
   return (
-    <div className="dashboard-overview grid gap-6">
+    <div className="grid gap-6 [container-type:inline-size]">
       <DashboardPageHeader
         title="Account"
         description="Channel access and owner settings."

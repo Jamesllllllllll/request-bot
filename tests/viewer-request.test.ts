@@ -203,8 +203,14 @@ describe("viewer request service", () => {
       data: [],
     } as never);
     vi.mocked(createRequestLog).mockResolvedValue(undefined);
-    vi.mocked(consumeVipToken).mockResolvedValue(undefined as never);
-    vi.mocked(grantVipToken).mockResolvedValue(undefined as never);
+    vi.mocked(consumeVipToken).mockResolvedValue({
+      availableCount: 1,
+      consumedCount: 1,
+    } as never);
+    vi.mocked(grantVipToken).mockResolvedValue({
+      availableCount: 2,
+      grantedCount: 2,
+    } as never);
     vi.mocked(callBackend).mockResolvedValue(
       jsonResponse({
         ok: true,
@@ -378,6 +384,36 @@ describe("viewer request service", () => {
     );
   });
 
+  it("rejects a VIP request when the token is no longer available at consume time", async () => {
+    vi.mocked(consumeVipToken).mockResolvedValue(null as never);
+
+    await expect(
+      performViewerRequestMutation({
+        env,
+        request,
+        slug: "streamer",
+        mutation: {
+          action: "submit",
+          songId: "song-1",
+          requestKind: "vip",
+          replaceExisting: false,
+        },
+      })
+    ).rejects.toMatchObject({
+      status: 409,
+      message: "You do not have enough VIP tokens for a VIP request.",
+    });
+
+    expect(callBackend).not.toHaveBeenCalled();
+    expect(createRequestLog).toHaveBeenCalledWith(
+      env,
+      expect.objectContaining({
+        outcome: "rejected",
+        outcomeReason: "vip_token_unavailable",
+      })
+    );
+  });
+
   it("edits the existing request in place when replaceExisting is enabled for one active request", async () => {
     vi.mocked(getPlaylistByChannelId).mockResolvedValue({
       playlist: {
@@ -444,6 +480,41 @@ describe("viewer request service", () => {
         requestedQuery: "song:12345",
       },
     });
+  });
+
+  it("refunds a reserved VIP token when a VIP add fails after reservation", async () => {
+    vi.mocked(callBackend).mockRejectedValue(new Error("backend failed"));
+
+    await expect(
+      performViewerRequestMutation({
+        env,
+        request,
+        slug: "streamer",
+        mutation: {
+          action: "submit",
+          songId: "song-1",
+          requestKind: "vip",
+          replaceExisting: false,
+        },
+      })
+    ).rejects.toMatchObject({
+      status: 500,
+    });
+
+    expect(consumeVipToken).toHaveBeenCalledWith(
+      env,
+      expect.objectContaining({
+        channelId: "channel-1",
+        login: "viewer_one",
+      })
+    );
+    expect(grantVipToken).toHaveBeenCalledWith(
+      env,
+      expect.objectContaining({
+        channelId: "channel-1",
+        login: "viewer_one",
+      })
+    );
   });
 
   it("removes and re-adds when replaceExisting is enabled with multiple active requests", async () => {

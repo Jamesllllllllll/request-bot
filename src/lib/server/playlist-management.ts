@@ -489,12 +489,21 @@ export async function performPlaylistMutation(
         );
       }
 
-      await consumeVipToken(runtimeEnv, {
+      const consumed = await consumeVipToken(runtimeEnv, {
         channelId: state.channel.id,
         login: item.requestedByLogin,
         displayName: item.requestedByDisplayName,
         twitchUserId: item.requestedByTwitchUserId,
       });
+
+      if (!consumed) {
+        return json(
+          {
+            error: `@${item.requestedByLogin} no longer has enough VIP tokens for this upgrade.`,
+          },
+          { status: 409 }
+        );
+      }
 
       try {
         logPlaylistMutationStep("Playlist mutation forwarding to backend", {

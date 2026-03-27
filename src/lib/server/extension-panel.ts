@@ -3,8 +3,9 @@ import {
   getChannelBlacklistByChannelId,
   getChannelByTwitchChannelId,
   getChannelSettingsByChannelId,
-  getPlaylistByChannelId,
+  getExtensionPanelPlaylistByChannelId,
   getUserByTwitchUserId,
+  getVipTokenBalance,
   searchCatalogSongs as searchCatalogSongsInDb,
   upsertUserProfile,
 } from "~/lib/db/repositories";
@@ -13,7 +14,6 @@ import { getAppAccessToken, getTwitchUserById } from "~/lib/twitch/api";
 import type { ExtensionAuthContext } from "./extension-auth";
 import {
   canPerformPlaylistMutationAction,
-  enrichPlaylistItems,
   getForbiddenPlaylistMutationMessage,
   loadPlaylistManagementStateForAccess,
   performPlaylistMutation,
@@ -29,6 +29,10 @@ type ExtensionSearchInput = {
   query: string;
   page: number;
   pageSize: number;
+};
+
+type ExtensionTraceContext = {
+  traceId?: string;
 };
 
 type SharedCatalogSearchResponse = {
@@ -63,6 +67,26 @@ type ExtensionPanelManagement = {
   };
 };
 
+type ExtensionPanelLiveState = {
+  playlist: {
+    currentItemId: string | null;
+    items: Array<Record<string, unknown>>;
+  };
+  viewer: {
+    profile: null | {
+      twitchUserId: string;
+      login: string;
+      displayName: string;
+      profileImageUrl?: string | null;
+      vipTokensAvailable: number;
+    };
+    activeRequests: Array<Record<string, unknown>>;
+    canVipRequest: boolean;
+    canEditOwnRequest: boolean;
+    canRemoveOwnRequest: boolean;
+  };
+};
+
 function getEmptyExtensionPanelManagement(): ExtensionPanelManagement {
   return {
     accessRole: "viewer",
@@ -89,128 +113,244 @@ export class ExtensionPanelError extends Error {
   }
 }
 
+const extensionBootstrapSlowMs = 1000;
+const extensionStateSlowMs = 750;
+
+function createExtensionStageTimer() {
+  const stageDurations: Record<string, number> = {};
+
+  return {
+    stageDurations,
+    async measure<T>(stage: string, operation: () => Promise<T>) {
+      const startedAt = Date.now();
+
+      try {
+        return await operation();
+      } finally {
+        stageDurations[stage] = Date.now() - startedAt;
+      }
+    },
+  };
+}
+
 export async function getExtensionBootstrapState(input: {
   env: AppEnv;
   auth: ExtensionAuthContext;
+  traceId?: string;
 }) {
-  const channel = await getChannelByTwitchChannelId(
-    input.env,
-    input.auth.channelId
-  );
+  const startedAt = Date.now();
+  const timer = createExtensionStageTimer();
 
-  if (!channel) {
-    return {
-      connected: false,
-      channel: null,
-      playlist: {
-        currentItemId: null,
-        items: [],
+  try {
+    const channel = await timer.measure("channelLookup", async () =>
+      getChannelByTwitchChannelId(input.env, input.auth.channelId)
+    );
+
+    if (!channel) {
+      const result = {
+        connected: false,
+        channel: null,
+        playlist: {
+          currentItemId: null,
+          items: [],
+        },
+        viewer: {
+          isLinked: input.auth.isLinked,
+          opaqueUserId: input.auth.opaqueUserId,
+          profile: null,
+          activeRequests: [],
+          canRequest: false,
+          canVipRequest: false,
+          canEditOwnRequest: false,
+          canRemoveOwnRequest: false,
+          access: {
+            allowed: false,
+            reason: "This Twitch channel has not connected RockList.Live yet.",
+          },
+        },
+        management: getEmptyExtensionPanelManagement(),
+        setup: {
+          code: "channel_not_connected",
+          message: "This Twitch channel has not connected RockList.Live yet.",
+        },
+      };
+
+      logExtensionPanelRequestIfSlow({
+        requestKind: "bootstrap",
+        traceId: input.traceId,
+        auth: input.auth,
+        elapsedMs: Date.now() - startedAt,
+        stageDurations: timer.stageDurations,
+        channelId: null,
+        connected: false,
+      });
+
+      return result;
+    }
+
+    const linkedViewer = input.auth.isLinked
+      ? await timer.measure("viewerResolve", async () =>
+          resolveLinkedViewerIdentity(input.env, input.auth.viewerUserId, {
+            traceId: input.traceId,
+          })
+        )
+      : null;
+    const management = await timer.measure("managementAccess", async () =>
+      resolveExtensionPanelManagement({
+        env: input.env,
+        auth: input.auth,
+        channel,
+        linkedViewer,
+      })
+    );
+
+    const viewerState = linkedViewer
+      ? await timer.measure("viewerRequestState", async () =>
+          getViewerRequestStateForChannelViewer({
+            env: input.env,
+            channel,
+            viewer: linkedViewer,
+          })
+        )
+      : { viewer: null };
+
+    const viewer = viewerState.viewer;
+    const liveState = await timer.measure("liveState", async () =>
+      getExtensionPanelLiveState({
+        env: input.env,
+        channel,
+        linkedViewer,
+      })
+    );
+    const canRequest = !!viewer?.access.allowed;
+
+    const result = {
+      connected: true,
+      channel: {
+        id: channel.id,
+        slug: channel.slug,
+        login: channel.login,
+        displayName: channel.displayName,
+        twitchChannelId: channel.twitchChannelId,
       },
+      playlist: liveState.playlist,
       viewer: {
         isLinked: input.auth.isLinked,
         opaqueUserId: input.auth.opaqueUserId,
-        profile: null,
-        activeRequests: [],
-        canRequest: false,
-        canVipRequest: false,
-        canEditOwnRequest: false,
-        canRemoveOwnRequest: false,
-        access: {
-          allowed: false,
-          reason: "This Twitch channel has not connected RockList.Live yet.",
-        },
+        profile: viewer
+          ? {
+              twitchUserId: viewer.twitchUserId,
+              login: viewer.login,
+              displayName: viewer.displayName,
+              profileImageUrl: viewer.profileImageUrl ?? null,
+              isSubscriber: viewer.isSubscriber,
+              subscriptionVerified: viewer.subscriptionVerified,
+              vipTokensAvailable: viewer.vipTokensAvailable,
+              activeRequestLimit: viewer.activeRequestLimit,
+            }
+          : null,
+        activeRequests: liveState.viewer.activeRequests,
+        canRequest,
+        canVipRequest: canRequest && liveState.viewer.canVipRequest,
+        canEditOwnRequest: canRequest && liveState.viewer.canEditOwnRequest,
+        canRemoveOwnRequest:
+          input.auth.isLinked && liveState.viewer.canRemoveOwnRequest,
+        access:
+          viewer?.access ??
+          ({
+            allowed: false,
+            reason: input.auth.isLinked
+              ? "Viewer profile could not be resolved right now."
+              : "Share Twitch identity to request songs.",
+          } as const),
       },
-      management: getEmptyExtensionPanelManagement(),
-      setup: {
-        code: "channel_not_connected",
-        message: "This Twitch channel has not connected RockList.Live yet.",
-      },
+      management,
+      setup: null,
     };
+
+    logExtensionPanelRequestIfSlow({
+      requestKind: "bootstrap",
+      traceId: input.traceId,
+      auth: input.auth,
+      elapsedMs: Date.now() - startedAt,
+      stageDurations: timer.stageDurations,
+      channelId: channel.id,
+      connected: true,
+    });
+
+    return result;
+  } catch (error) {
+    console.error("Extension bootstrap state failed", {
+      traceId: input.traceId ?? null,
+      elapsedMs: Date.now() - startedAt,
+      channelId: input.auth.channelId,
+      viewerUserId: input.auth.viewerUserId ?? null,
+      role: input.auth.role,
+      isLinked: input.auth.isLinked,
+      stageDurations: timer.stageDurations,
+      error:
+        error instanceof Error && error.message.trim()
+          ? error.message
+          : "Unknown extension bootstrap state failure",
+    });
+    throw error;
   }
+}
 
-  const playlist = await getPlaylistByChannelId(input.env, channel.id);
-  const items = (await enrichPlaylistItems(
-    input.env,
-    playlist?.items ?? []
-  )) as Array<Record<string, unknown>>;
-  const linkedViewer = input.auth.isLinked
-    ? await resolveLinkedViewerIdentity(input.env, input.auth.viewerUserId)
-    : null;
-  const management = await resolveExtensionPanelManagement({
-    env: input.env,
-    auth: input.auth,
-    channel,
-    linkedViewer,
-  });
+export async function getExtensionPanelState(input: {
+  env: AppEnv;
+  auth: ExtensionAuthContext;
+  traceId?: string;
+}) {
+  const startedAt = Date.now();
+  const timer = createExtensionStageTimer();
 
-  const viewerState = linkedViewer
-    ? await getViewerRequestStateForChannelViewer({
+  try {
+    const channel = await timer.measure("channelLookup", async () =>
+      requireConnectedChannel(input.env, input.auth.channelId)
+    );
+    const linkedViewer =
+      input.auth.isLinked && input.auth.viewerUserId
+        ? await timer.measure("viewerLookup", async () =>
+            getExistingLinkedViewerIdentity(input.env, input.auth.viewerUserId)
+          )
+        : null;
+
+    const result = await timer.measure("liveState", async () =>
+      getExtensionPanelLiveState({
         env: input.env,
         channel,
-        viewer: linkedViewer,
+        linkedViewer,
       })
-    : { viewer: null };
+    );
 
-  const activeRequests = linkedViewer
-    ? items.filter(
-        (item) =>
-          item.requestedByTwitchUserId === linkedViewer.twitchUserId &&
-          (item.status === "queued" || item.status === "current")
-      )
-    : [];
+    logExtensionPanelRequestIfSlow({
+      requestKind: "state",
+      traceId: input.traceId,
+      auth: input.auth,
+      elapsedMs: Date.now() - startedAt,
+      stageDurations: timer.stageDurations,
+      channelId: channel.id,
+      connected: true,
+    });
 
-  const viewer = viewerState.viewer;
-  const canRequest = !!viewer?.access.allowed;
-  const canEditOwnRequest = canRequest && activeRequests.length === 1;
-
-  return {
-    connected: true,
-    channel: {
-      id: channel.id,
-      slug: channel.slug,
-      login: channel.login,
-      displayName: channel.displayName,
-      twitchChannelId: channel.twitchChannelId,
-    },
-    playlist: {
-      currentItemId:
-        items.find((item) => item.status === "current")?.id ??
-        playlist?.playlist.currentItemId ??
-        null,
-      items,
-    },
-    viewer: {
+    return result;
+  } catch (error) {
+    console.error("Extension state failed", {
+      traceId: input.traceId ?? null,
+      elapsedMs: Date.now() - startedAt,
+      channelId: input.auth.channelId,
+      viewerUserId: input.auth.viewerUserId ?? null,
+      role: input.auth.role,
       isLinked: input.auth.isLinked,
-      opaqueUserId: input.auth.opaqueUserId,
-      profile: viewer
-        ? {
-            twitchUserId: viewer.twitchUserId,
-            login: viewer.login,
-            displayName: viewer.displayName,
-            profileImageUrl: viewer.profileImageUrl ?? null,
-            isSubscriber: viewer.isSubscriber,
-            subscriptionVerified: viewer.subscriptionVerified,
-            vipTokensAvailable: viewer.vipTokensAvailable,
-            activeRequestLimit: viewer.activeRequestLimit,
-          }
-        : null,
-      activeRequests,
-      canRequest,
-      canVipRequest: canRequest && (viewer?.vipTokensAvailable ?? 0) >= 1,
-      canEditOwnRequest,
-      canRemoveOwnRequest: input.auth.isLinked && activeRequests.length > 0,
-      access:
-        viewer?.access ??
-        ({
-          allowed: false,
-          reason: input.auth.isLinked
-            ? "Viewer profile could not be resolved right now."
-            : "Share Twitch identity to request songs.",
-        } as const),
-    },
-    management,
-    setup: null,
-  };
+      stageDurations: timer.stageDurations,
+      error:
+        error instanceof Error && error.message.trim()
+          ? error.message
+          : "Unknown extension state failure",
+    });
+    throw error;
+  }
 }
 
 export async function searchExtensionCatalog(input: {
@@ -355,6 +495,59 @@ async function requireConnectedChannel(env: AppEnv, twitchChannelId: string) {
   return channel;
 }
 
+async function getExtensionPanelLiveState(input: {
+  env: AppEnv;
+  channel: NonNullable<Awaited<ReturnType<typeof getChannelByTwitchChannelId>>>;
+  linkedViewer: ViewerIdentity | null;
+}): Promise<ExtensionPanelLiveState> {
+  const playlist = await getExtensionPanelPlaylistByChannelId(
+    input.env,
+    input.channel.id
+  );
+  const items = (playlist?.items ?? []) as Array<Record<string, unknown>>;
+  const activeRequests = input.linkedViewer
+    ? items.filter(
+        (item) =>
+          item.requestedByTwitchUserId === input.linkedViewer?.twitchUserId &&
+          (item.status === "queued" || item.status === "current")
+      )
+    : [];
+  const vipTokenBalance = input.linkedViewer
+    ? await getVipTokenBalance(input.env, {
+        channelId: input.channel.id,
+        login: input.linkedViewer.login,
+      })
+    : null;
+  const vipTokensAvailable = vipTokenBalance?.availableCount ?? 0;
+  const currentItem = items.find((item) => item.status === "current");
+  const currentItemId =
+    currentItem && typeof currentItem.id === "string"
+      ? currentItem.id
+      : (playlist?.playlist.currentItemId ?? null);
+
+  return {
+    playlist: {
+      currentItemId,
+      items,
+    },
+    viewer: {
+      profile: input.linkedViewer
+        ? {
+            twitchUserId: input.linkedViewer.twitchUserId,
+            login: input.linkedViewer.login,
+            displayName: input.linkedViewer.displayName,
+            profileImageUrl: input.linkedViewer.profileImageUrl ?? null,
+            vipTokensAvailable,
+          }
+        : null,
+      activeRequests,
+      canVipRequest: vipTokensAvailable >= 1,
+      canEditOwnRequest: activeRequests.length === 1,
+      canRemoveOwnRequest: activeRequests.length > 0,
+    },
+  };
+}
+
 async function requireLinkedViewerIdentity(
   env: AppEnv,
   viewerUserId: string | null
@@ -375,6 +568,28 @@ async function requireLinkedViewerIdentity(
   }
 
   return viewer;
+}
+
+async function getExistingLinkedViewerIdentity(
+  env: AppEnv,
+  viewerUserId: string | null
+): Promise<ViewerIdentity | null> {
+  if (!viewerUserId) {
+    return null;
+  }
+
+  const user = await getUserByTwitchUserId(env, viewerUserId);
+  if (!user) {
+    return null;
+  }
+
+  return {
+    userId: user.id,
+    twitchUserId: user.twitchUserId,
+    login: user.login,
+    displayName: user.displayName,
+    profileImageUrl: user.profileImageUrl,
+  };
 }
 
 async function resolveExtensionPanelManagement(input: {
@@ -434,7 +649,8 @@ async function resolveExtensionPanelManagement(input: {
 
 async function resolveLinkedViewerIdentity(
   env: AppEnv,
-  viewerUserId: string | null
+  viewerUserId: string | null,
+  trace?: ExtensionTraceContext
 ): Promise<ViewerIdentity | null> {
   if (!viewerUserId) {
     return null;
@@ -450,6 +666,11 @@ async function resolveLinkedViewerIdentity(
       profileImageUrl: existingUser.profileImageUrl,
     };
   }
+
+  console.info("Extension linked viewer resolving via Twitch API", {
+    traceId: trace?.traceId ?? null,
+    viewerUserId,
+  });
 
   const appAccessToken = await getAppAccessToken(env);
   const twitchUser = await getTwitchUserById({
@@ -476,4 +697,35 @@ async function resolveLinkedViewerIdentity(
     displayName: user.displayName,
     profileImageUrl: user.profileImageUrl,
   };
+}
+
+function logExtensionPanelRequestIfSlow(input: {
+  requestKind: "bootstrap" | "state";
+  traceId?: string;
+  auth: ExtensionAuthContext;
+  elapsedMs: number;
+  stageDurations: Record<string, number>;
+  channelId: string | null;
+  connected: boolean;
+}) {
+  const slowThreshold =
+    input.requestKind === "bootstrap"
+      ? extensionBootstrapSlowMs
+      : extensionStateSlowMs;
+
+  if (input.elapsedMs < slowThreshold) {
+    return;
+  }
+
+  console.info(`Extension ${input.requestKind} completed slowly`, {
+    traceId: input.traceId ?? null,
+    elapsedMs: input.elapsedMs,
+    channelId: input.channelId,
+    twitchChannelId: input.auth.channelId,
+    viewerUserId: input.auth.viewerUserId ?? null,
+    role: input.auth.role,
+    isLinked: input.auth.isLinked,
+    connected: input.connected,
+    stageDurations: input.stageDurations,
+  });
 }

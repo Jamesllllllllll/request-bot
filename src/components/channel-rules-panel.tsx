@@ -17,13 +17,6 @@ type CharterMatch = {
   trackCount: number;
 };
 
-type SongMatch = {
-  songId: number;
-  songTitle: string;
-  artistId?: number | null;
-  artistName?: string | null;
-};
-
 type SongGroupMatch = {
   groupedProjectId: number;
   songTitle: string;
@@ -36,7 +29,6 @@ type SearchResponse = {
   artists?: ArtistMatch[];
   charters?: CharterMatch[];
   songs?: SongGroupMatch[];
-  songVersions?: SongMatch[];
 };
 
 export function ChannelRulesPanel(props: {
@@ -65,20 +57,16 @@ export function ChannelRulesPanel(props: {
   const [artistQuery, setArtistQuery] = useState("");
   const [charterQuery, setCharterQuery] = useState("");
   const [songGroupQuery, setSongGroupQuery] = useState("");
-  const [songVersionQuery, setSongVersionQuery] = useState("");
   const [setlistQuery, setSetlistQuery] = useState("");
   const [debouncedArtistQuery, setDebouncedArtistQuery] = useState("");
   const [debouncedCharterQuery, setDebouncedCharterQuery] = useState("");
   const [debouncedSongGroupQuery, setDebouncedSongGroupQuery] = useState("");
-  const [debouncedSongVersionQuery, setDebouncedSongVersionQuery] =
-    useState("");
   const [debouncedSetlistQuery, setDebouncedSetlistQuery] = useState("");
   const [artistMatches, setArtistMatches] = useState<ArtistMatch[]>([]);
   const [charterMatches, setCharterMatches] = useState<CharterMatch[]>([]);
   const [songGroupMatches, setSongGroupMatches] = useState<SongGroupMatch[]>(
     []
   );
-  const [songVersionMatches, setSongVersionMatches] = useState<SongMatch[]>([]);
   const [setlistMatches, setSetlistMatches] = useState<ArtistMatch[]>([]);
   const [searchError, setSearchError] = useState<string | null>(null);
 
@@ -87,18 +75,11 @@ export function ChannelRulesPanel(props: {
       setDebouncedArtistQuery(artistQuery.trim());
       setDebouncedCharterQuery(charterQuery.trim());
       setDebouncedSongGroupQuery(songGroupQuery.trim());
-      setDebouncedSongVersionQuery(songVersionQuery.trim());
       setDebouncedSetlistQuery(setlistQuery.trim());
     }, 350);
 
     return () => window.clearTimeout(timeout);
-  }, [
-    artistQuery,
-    charterQuery,
-    setlistQuery,
-    songGroupQuery,
-    songVersionQuery,
-  ]);
+  }, [artistQuery, charterQuery, setlistQuery, songGroupQuery]);
 
   const mutateRules = useMutation({
     mutationFn: async (body: Record<string, unknown>) => {
@@ -181,9 +162,6 @@ export function ChannelRulesPanel(props: {
       void runSearch("song", debouncedSongGroupQuery, (payload) => {
         setSongGroupMatches(payload.songs ?? []);
       });
-      void runSearch("song-version", debouncedSongVersionQuery, (payload) => {
-        setSongVersionMatches(payload.songVersions ?? []);
-      });
     }
 
     if (props.canManageSetlist) {
@@ -200,7 +178,6 @@ export function ChannelRulesPanel(props: {
     debouncedCharterQuery,
     debouncedSetlistQuery,
     debouncedSongGroupQuery,
-    debouncedSongVersionQuery,
     props.canManageBlacklist,
     props.canManageSetlist,
     props.slug,
@@ -213,10 +190,6 @@ export function ChannelRulesPanel(props: {
   const blacklistedCharterIds = useMemo(
     () => new Set(props.charters.map((item) => item.charterId)),
     [props.charters]
-  );
-  const blacklistedSongIds = useMemo(
-    () => new Set(props.songs.map((item) => item.songId)),
-    [props.songs]
   );
   const blacklistedSongGroupIds = useMemo(
     () => new Set(props.songGroups.map((item) => item.groupedProjectId)),
@@ -235,9 +208,6 @@ export function ChannelRulesPanel(props: {
   );
   const visibleSongGroupMatches = songGroupMatches.filter(
     (song) => !blacklistedSongGroupIds.has(song.groupedProjectId)
-  );
-  const visibleSongVersionMatches = songVersionMatches.filter(
-    (song) => !blacklistedSongIds.has(song.songId)
   );
   const visibleSetlistMatches = setlistMatches.filter(
     (artist) => !setlistArtistIds.has(artist.artistId)
@@ -392,24 +362,10 @@ export function ChannelRulesPanel(props: {
 
               <SearchManageCard
                 title="Blacklisted versions"
-                inputValue={songVersionQuery}
-                onInputChange={setSongVersionQuery}
-                placeholder="Search versions by title"
-                matches={visibleSongVersionMatches.map((song) => ({
-                  key: `song-version-match-${song.songId}`,
-                  label: song.artistName
-                    ? `${song.songTitle} - ${song.artistName}`
-                    : song.songTitle,
-                  meta: `Version ID ${song.songId}`,
-                  onAdd: () =>
-                    mutateRules.mutate({
-                      action: "addBlacklistedSong",
-                      songId: song.songId,
-                      songTitle: song.songTitle,
-                      artistId: song.artistId ?? null,
-                      artistName: song.artistName ?? undefined,
-                    }),
-                }))}
+                inputValue=""
+                onInputChange={() => {}}
+                placeholder=""
+                matches={[]}
                 currentItems={props.songs.map((item) => ({
                   key: `song-version-current-${item.songId}`,
                   label: item.artistName
@@ -425,6 +381,7 @@ export function ChannelRulesPanel(props: {
                 isPending={mutateRules.isPending}
                 emptyCurrentLabel="No blacklisted versions."
                 canManage={props.canManageBlacklist}
+                showSearch={false}
                 hideReadOnlyRemoveAction
               />
             </>
@@ -494,10 +451,12 @@ function SearchManageCard(props: {
   isPending: boolean;
   emptyCurrentLabel: string;
   canManage?: boolean;
+  showSearch?: boolean;
   hideReadOnlyRemoveAction?: boolean;
 }) {
   const normalizedLength = props.inputValue.trim().length;
   const canManage = props.canManage !== false;
+  const showSearch = props.showSearch !== false;
   const showRemoveAction = canManage || !props.hideReadOnlyRemoveAction;
 
   return (
@@ -506,7 +465,7 @@ function SearchManageCard(props: {
         <CardTitle>{props.title}</CardTitle>
       </CardHeader>
       <CardContent className="grid gap-4 px-5 pb-5 pt-0">
-        {canManage ? (
+        {canManage && showSearch ? (
           <>
             <Input
               value={props.inputValue}
@@ -520,7 +479,7 @@ function SearchManageCard(props: {
             ) : null}
           </>
         ) : null}
-        {canManage && normalizedLength >= 2 ? (
+        {canManage && showSearch && normalizedLength >= 2 ? (
           <div className="grid gap-3">
             {props.matches.length > 0 ? (
               props.matches.map((match) => (

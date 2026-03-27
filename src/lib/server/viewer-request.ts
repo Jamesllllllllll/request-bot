@@ -714,13 +714,83 @@ async function submitViewerRequest(
     }
   }
 
-  if (kindChangeOnly && existingMatchingRequest) {
-    await changeRequestKindOnPlaylist(env, {
+  const reserveVipToken = async () => {
+    if (vipTokenTransition !== "consume") {
+      return false;
+    }
+
+    const reserved = await consumeVipToken(env, {
       channelId: context.state.channel.id,
-      itemId: existingMatchingRequest.id,
-      actorUserId: null,
-      requestKind: mutation.requestKind,
+      login: context.viewer.login,
+      displayName: context.viewer.displayName,
+      twitchUserId: context.viewer.twitchUserId,
     });
+
+    if (reserved) {
+      return true;
+    }
+
+    await createViewerRequestLog(env, {
+      context,
+      rawMessage,
+      normalizedQuery,
+      song,
+      outcome: "rejected",
+      outcomeReason: "vip_token_unavailable",
+    });
+
+    throw new ViewerRequestError(
+      409,
+      "You do not have enough VIP tokens for a VIP request."
+    );
+  };
+
+  const refundReservedVipToken = async () => {
+    if (vipTokenTransition !== "consume") {
+      return;
+    }
+
+    try {
+      await grantVipToken(env, {
+        channelId: context.state.channel.id,
+        login: context.viewer.login,
+        displayName: context.viewer.displayName,
+        twitchUserId: context.viewer.twitchUserId,
+      });
+    } catch (error) {
+      console.error(
+        "Failed to refund reserved VIP token after mutation error",
+        {
+          channelId: context.state.channel.id,
+          viewerTwitchUserId: context.viewer.twitchUserId,
+          login: context.viewer.login,
+          error: error instanceof Error ? error.message : String(error),
+        }
+      );
+
+      throw new ViewerRequestError(
+        500,
+        "The request failed after reserving a VIP token. Refresh the panel and confirm your token balance."
+      );
+    }
+  };
+
+  if (kindChangeOnly && existingMatchingRequest) {
+    const vipReserved = await reserveVipToken();
+
+    try {
+      await changeRequestKindOnPlaylist(env, {
+        channelId: context.state.channel.id,
+        itemId: existingMatchingRequest.id,
+        actorUserId: null,
+        requestKind: mutation.requestKind,
+      });
+    } catch (error) {
+      if (vipReserved) {
+        await refundReservedVipToken();
+      }
+      throw error;
+    }
 
     await createViewerRequestLog(env, {
       context,
@@ -734,14 +804,7 @@ async function submitViewerRequest(
           : "vip_request_downgrade",
     });
 
-    if (vipTokenTransition === "consume") {
-      await consumeVipToken(env, {
-        channelId: context.state.channel.id,
-        login: context.viewer.login,
-        displayName: context.viewer.displayName,
-        twitchUserId: context.viewer.twitchUserId,
-      });
-    } else if (vipTokenTransition === "refund") {
+    if (vipTokenTransition === "refund") {
       await grantVipToken(env, {
         channelId: context.state.channel.id,
         login: context.viewer.login,
@@ -762,18 +825,27 @@ async function submitViewerRequest(
   }
 
   if (editInPlace && editableExistingRequest) {
-    await editRequestOnPlaylist(env, {
-      channelId: context.state.channel.id,
-      itemId: editableExistingRequest.id,
-      actorUserId: null,
-      requestKind: mutation.requestKind,
-      song: buildViewerSongPayload({
-        song,
-        normalizedQuery,
-        warningCode,
-        warningMessage,
-      }),
-    });
+    const vipReserved = await reserveVipToken();
+
+    try {
+      await editRequestOnPlaylist(env, {
+        channelId: context.state.channel.id,
+        itemId: editableExistingRequest.id,
+        actorUserId: null,
+        requestKind: mutation.requestKind,
+        song: buildViewerSongPayload({
+          song,
+          normalizedQuery,
+          warningCode,
+          warningMessage,
+        }),
+      });
+    } catch (error) {
+      if (vipReserved) {
+        await refundReservedVipToken();
+      }
+      throw error;
+    }
 
     await createViewerRequestLog(env, {
       context,
@@ -784,14 +856,7 @@ async function submitViewerRequest(
       outcomeReason: warningCode ?? "request_edited",
     });
 
-    if (vipTokenTransition === "consume") {
-      await consumeVipToken(env, {
-        channelId: context.state.channel.id,
-        login: context.viewer.login,
-        displayName: context.viewer.displayName,
-        twitchUserId: context.viewer.twitchUserId,
-      });
-    } else if (vipTokenTransition === "refund") {
+    if (vipTokenTransition === "refund") {
       await grantVipToken(env, {
         channelId: context.state.channel.id,
         login: context.viewer.login,
@@ -823,20 +888,29 @@ async function submitViewerRequest(
     });
   }
 
-  await addRequestToPlaylist(env, {
-    channelId: context.state.channel.id,
-    requestedByTwitchUserId: context.viewer.twitchUserId,
-    requestedByLogin: context.viewer.login,
-    requestedByDisplayName: context.viewer.displayName,
-    prioritizeNext: mutation.requestKind === "vip",
-    requestKind: mutation.requestKind,
-    song: buildViewerSongPayload({
-      song,
-      normalizedQuery,
-      warningCode,
-      warningMessage,
-    }),
-  });
+  const vipReserved = await reserveVipToken();
+
+  try {
+    await addRequestToPlaylist(env, {
+      channelId: context.state.channel.id,
+      requestedByTwitchUserId: context.viewer.twitchUserId,
+      requestedByLogin: context.viewer.login,
+      requestedByDisplayName: context.viewer.displayName,
+      prioritizeNext: mutation.requestKind === "vip",
+      requestKind: mutation.requestKind,
+      song: buildViewerSongPayload({
+        song,
+        normalizedQuery,
+        warningCode,
+        warningMessage,
+      }),
+    });
+  } catch (error) {
+    if (vipReserved) {
+      await refundReservedVipToken();
+    }
+    throw error;
+  }
 
   await createViewerRequestLog(env, {
     context,
@@ -847,15 +921,6 @@ async function submitViewerRequest(
     outcomeReason:
       warningCode ?? (mutation.requestKind === "vip" ? "vip_request" : null),
   });
-
-  if (vipTokenTransition === "consume") {
-    await consumeVipToken(env, {
-      channelId: context.state.channel.id,
-      login: context.viewer.login,
-      displayName: context.viewer.displayName,
-      twitchUserId: context.viewer.twitchUserId,
-    });
-  }
 
   const baseMessage =
     mutation.requestKind === "vip"

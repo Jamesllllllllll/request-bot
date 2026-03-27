@@ -71,7 +71,7 @@ With Twitch Local Test:
 
 Opening the website from the panel does not create a website session.
 
-The website recognizes the viewer only when the browser already has the normal Request Bot session cookie. Otherwise the viewer still signs in through the website Twitch OAuth flow.
+The website recognizes the viewer only when the browser already has the normal RockList.Live session cookie. Otherwise the viewer still signs in through the website Twitch OAuth flow.
 
 ## After Local Test
 

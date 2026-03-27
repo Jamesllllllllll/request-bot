@@ -1,5 +1,5 @@
 export function pageTitle(section?: string) {
-  return section ? `${section} | Request Bot` : "Request Bot";
+  return section ? `${section} | RockList.Live` : "RockList.Live";
 }
 
 export function formatSlugTitle(slug: string) {

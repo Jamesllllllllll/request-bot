@@ -119,7 +119,7 @@ function AppShell() {
                   Twitch Song Requests
                 </p>
                 <p className="truncate text-xl font-semibold tracking-tight text-(--text) max-[960px]:hidden">
-                  Request Bot
+                  RockList.Live
                 </p>
               </div>
             </Link>

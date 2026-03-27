@@ -9,13 +9,13 @@ The website flow should:
 - keep playlist viewing public
 - let signed-in viewers request songs without chat commands
 - show the signed-in viewer's current request state
-- show the viewer's Request Bot VIP token balance for the active channel
+- show the viewer's RockList.Live VIP token balance for the active channel
 - support both `Add` and `Add VIP`
 - become the shared backend foundation for the later Twitch panel extension
 
 ## Why this should ship before the panel extension
 
-The Twitch panel extension needs a server-side request system that is not tied to chat commands. Shipping the website flow first gives Request Bot a clean foundation under app-controlled auth before Twitch Extension JWT auth is layered on top.
+The Twitch panel extension needs a server-side request system that is not tied to chat commands. Shipping the website flow first gives RockList.Live a clean foundation under app-controlled auth before Twitch Extension JWT auth is layered on top.
 
 This step should prove:
 
@@ -111,10 +111,10 @@ That logic must be extracted before the website and panel can share behavior cle
 ## High-level model
 
 - Anonymous viewers can still browse the playlist and search.
-- Signed-in viewers use the existing Request Bot session cookie.
+- Signed-in viewers use the existing RockList.Live session cookie.
 - Viewer-specific request state is fetched separately from the public playlist payload.
 - Viewer request writes go through viewer-specific routes under the channel slug.
-- Viewer routes resolve the signed-in Request Bot user, then map that user to the request owner identity.
+- Viewer routes resolve the signed-in RockList.Live user, then map that user to the request owner identity.
 - Shared request service validates policy and calls the existing backend queue mutation primitives.
 
 ## Shared service extraction
@@ -169,7 +169,7 @@ Purpose:
 
 Auth:
 
-- requires a valid Request Bot session
+- requires a valid RockList.Live session
 
 Response should include:
 
@@ -201,7 +201,7 @@ Purpose:
 
 Auth:
 
-- requires a valid Request Bot session
+- requires a valid RockList.Live session
 
 Payload:
 
@@ -269,7 +269,7 @@ Website viewer requests should match the same core rules already enforced in cha
 
 ## VIP requests
 
-Website viewer requests should support internal Request Bot VIP tokens in MVP:
+Website viewer requests should support internal RockList.Live VIP tokens in MVP:
 
 - show balance on the page
 - allow `Add VIP` only when a spendable token exists

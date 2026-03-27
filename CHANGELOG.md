@@ -71,4 +71,4 @@ All notable changes to this project will be documented in this file.
 ## [0.1.0] - 2026-03-18
 
 ### Added
-- Initial public release of the Twitch request bot with playlist management, dashboard controls, and Cloudflare-backed deployment support.
+- Initial public release of RockList.Live with playlist management, dashboard controls, and Cloudflare-backed deployment support.

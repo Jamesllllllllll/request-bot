@@ -190,7 +190,9 @@ Then update:
 
 - `.env`
   - `APP_URL=https://dev.example.com`
+  - `VITE_TWITCH_EXTENSION_API_BASE_URL=https://dev.example.com` for the standalone panel build
   - `VITE_ALLOWED_HOSTS=dev.example.com` if Vite blocks the hostname
+  - `TWITCH_EXTENSION_CLIENT_ID=<your-extension-client-id>` for panel setup
 - Twitch app redirect URIs
   - `https://dev.example.com/auth/twitch/callback`
   - `https://dev.example.com/auth/twitch/bot/callback`

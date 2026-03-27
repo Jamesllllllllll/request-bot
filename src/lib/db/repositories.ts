@@ -284,6 +284,47 @@ export async function upsertUserAndChannel(
   return { user, channel };
 }
 
+export async function upsertUserProfile(
+  env: AppEnv,
+  input: {
+    twitchUserId: string;
+    login: string;
+    displayName: string;
+    profileImageUrl?: string | null;
+  }
+) {
+  await getDb(env)
+    .insert(users)
+    .values({
+      id: createId("usr"),
+      twitchUserId: input.twitchUserId,
+      login: input.login,
+      displayName: input.displayName,
+      profileImageUrl: input.profileImageUrl ?? null,
+      isAdmin: isConfiguredAdmin(env, input.twitchUserId),
+    })
+    .onConflictDoUpdate({
+      target: users.twitchUserId,
+      set: {
+        login: input.login,
+        displayName: input.displayName,
+        profileImageUrl: input.profileImageUrl ?? null,
+        isAdmin: isConfiguredAdmin(env, input.twitchUserId),
+        updatedAt: Date.now(),
+      },
+    });
+
+  const user = await getDb(env).query.users.findFirst({
+    where: eq(users.twitchUserId, input.twitchUserId),
+  });
+
+  if (!user) {
+    throw new Error("User upsert failed");
+  }
+
+  return user;
+}
+
 export async function saveTwitchAuthorization(
   env: AppEnv,
   input: {
@@ -466,11 +507,18 @@ export async function getLiveChannels(env: AppEnv) {
   const liveStreamByChannelId = new Map(
     liveStreams.map((stream) => [stream.user_id, stream])
   );
+  const confirmedLiveChannels = liveChannels.filter((channel) =>
+    liveStreamByChannelId.has(channel.twitchChannelId)
+  );
+
+  if (!confirmedLiveChannels.length) {
+    return [];
+  }
 
   const playlistsForChannels = await db.query.playlists.findMany({
     where: inArray(
       playlists.channelId,
-      liveChannels.map((channel) => channel.id)
+      confirmedLiveChannels.map((channel) => channel.id)
     ),
   });
   const playlistIds = playlistsForChannels.map((playlist) => playlist.id);
@@ -488,7 +536,7 @@ export async function getLiveChannels(env: AppEnv) {
       })
     : [];
 
-  return liveChannels.map((channel) => {
+  return confirmedLiveChannels.map((channel) => {
     const stream = liveStreamByChannelId.get(channel.twitchChannelId);
     const playlist = playlistByChannelId.get(channel.id);
     const channelItems = playlist
@@ -2932,6 +2980,12 @@ export async function deleteEventSubSubscriptionRecord(
 export async function getUserById(env: AppEnv, userId: string) {
   return getDb(env).query.users.findFirst({
     where: eq(users.id, userId),
+  });
+}
+
+export async function getUserByTwitchUserId(env: AppEnv, twitchUserId: string) {
+  return getDb(env).query.users.findFirst({
+    where: eq(users.twitchUserId, twitchUserId),
   });
 }
 

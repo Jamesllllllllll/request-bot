@@ -1,0 +1,483 @@
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import type { AppEnv } from "~/lib/env";
+
+vi.mock("~/lib/db/repositories", () => ({
+  consumeSearchRateLimit: vi.fn(),
+  getChannelBlacklistByChannelId: vi.fn(),
+  getChannelByTwitchChannelId: vi.fn(),
+  getChannelSettingsByChannelId: vi.fn(),
+  getPlaylistByChannelId: vi.fn(),
+  getUserByTwitchUserId: vi.fn(),
+  searchCatalogSongs: vi.fn(),
+  upsertUserProfile: vi.fn(),
+}));
+
+vi.mock("~/lib/twitch/api", () => ({
+  getAppAccessToken: vi.fn(),
+  getTwitchUserById: vi.fn(),
+}));
+
+vi.mock("~/lib/server/playlist-management", () => ({
+  canPerformPlaylistMutationAction: vi.fn(),
+  enrichPlaylistItems: vi.fn(),
+  getForbiddenPlaylistMutationMessage: vi.fn(),
+  loadPlaylistManagementStateForAccess: vi.fn(),
+  performPlaylistMutation: vi.fn(),
+}));
+
+vi.mock("~/lib/server/viewer-request", () => ({
+  getViewerRequestStateForChannelViewer: vi.fn(),
+  performViewerRequestMutationForChannelViewer: vi.fn(),
+}));
+
+import {
+  consumeSearchRateLimit,
+  getChannelBlacklistByChannelId,
+  getChannelByTwitchChannelId,
+  getChannelSettingsByChannelId,
+  getPlaylistByChannelId,
+  getUserByTwitchUserId,
+  searchCatalogSongs,
+  upsertUserProfile,
+} from "~/lib/db/repositories";
+import {
+  ExtensionPanelError,
+  getExtensionBootstrapState,
+  performExtensionPlaylistMutation,
+  performExtensionViewerRequestMutation,
+  searchExtensionCatalog,
+} from "~/lib/server/extension-panel";
+import {
+  canPerformPlaylistMutationAction,
+  enrichPlaylistItems,
+  getForbiddenPlaylistMutationMessage,
+  loadPlaylistManagementStateForAccess,
+  performPlaylistMutation,
+} from "~/lib/server/playlist-management";
+import {
+  getViewerRequestStateForChannelViewer,
+  performViewerRequestMutationForChannelViewer,
+} from "~/lib/server/viewer-request";
+import { getAppAccessToken, getTwitchUserById } from "~/lib/twitch/api";
+
+describe("extension panel service", () => {
+  const env = {} as AppEnv;
+  const auth = {
+    token: "jwt",
+    channelId: "twitch-channel-1",
+    role: "viewer" as const,
+    viewerUserId: "viewer-1",
+    opaqueUserId: "Uopaque-viewer",
+    isLinked: true,
+    exp: Math.floor(Date.now() / 1000) + 300,
+  };
+
+  const baseChannel = {
+    id: "channel-1",
+    slug: "streamer",
+    login: "streamer",
+    displayName: "Streamer",
+    ownerUserId: "owner-1",
+    twitchChannelId: "twitch-channel-1",
+  };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+
+    vi.mocked(getChannelByTwitchChannelId).mockResolvedValue(
+      baseChannel as never
+    );
+    vi.mocked(getPlaylistByChannelId).mockResolvedValue({
+      playlist: {
+        id: "playlist-1",
+        currentItemId: "item-current",
+      },
+      items: [
+        {
+          id: "item-current",
+          songId: "song-1",
+          requestedByTwitchUserId: "viewer-1",
+          songTitle: "Song One",
+          status: "current",
+          requestKind: "regular",
+        },
+      ],
+    } as never);
+    vi.mocked(enrichPlaylistItems).mockResolvedValue([
+      {
+        id: "item-current",
+        songId: "song-1",
+        requestedByTwitchUserId: "viewer-1",
+        songTitle: "Song One",
+        songArtist: "Artist One",
+        status: "current",
+        requestKind: "regular",
+      },
+    ] as never);
+    vi.mocked(getUserByTwitchUserId).mockResolvedValue({
+      id: "user-1",
+      twitchUserId: "viewer-1",
+      login: "viewer_one",
+      displayName: "Viewer One",
+      profileImageUrl: "https://example.com/viewer.png",
+    } as never);
+    vi.mocked(getViewerRequestStateForChannelViewer).mockResolvedValue({
+      viewer: {
+        twitchUserId: "viewer-1",
+        login: "viewer_one",
+        displayName: "Viewer One",
+        profileImageUrl: "https://example.com/viewer.png",
+        isSubscriber: false,
+        subscriptionVerified: false,
+        vipTokensAvailable: 2,
+        activeRequestLimit: 1,
+        access: {
+          allowed: true,
+        },
+      },
+    });
+    vi.mocked(consumeSearchRateLimit).mockResolvedValue({
+      allowed: true,
+      remaining: 9,
+    } as never);
+    vi.mocked(getChannelBlacklistByChannelId).mockResolvedValue({
+      blacklistArtists: [{ artistId: 1, artistName: "Blocked Artist" }],
+      blacklistCharters: [{ charterId: 2, charterName: "Blocked Charter" }],
+      blacklistSongs: [{ songId: 3, songTitle: "Blocked Song" }],
+      blacklistSongGroups: [
+        { groupedProjectId: 4, songTitle: "Blocked Group" },
+      ],
+    } as never);
+    vi.mocked(searchCatalogSongs).mockResolvedValue({
+      results: [],
+      total: 0,
+      page: 1,
+      pageSize: 10,
+      hasNextPage: false,
+    } as never);
+    vi.mocked(performViewerRequestMutationForChannelViewer).mockResolvedValue({
+      ok: true,
+      message: "Added request.",
+    } as never);
+    vi.mocked(getAppAccessToken).mockResolvedValue({
+      access_token: "app-token",
+      token_type: "bearer",
+    } as never);
+    vi.mocked(getTwitchUserById).mockResolvedValue({
+      id: "viewer-1",
+      login: "viewer_one",
+      display_name: "Viewer One",
+      profile_image_url: "https://example.com/viewer.png",
+    } as never);
+    vi.mocked(upsertUserProfile).mockResolvedValue({
+      id: "user-1",
+      twitchUserId: "viewer-1",
+      login: "viewer_one",
+      displayName: "Viewer One",
+      profileImageUrl: "https://example.com/viewer.png",
+    } as never);
+    vi.mocked(getChannelSettingsByChannelId).mockResolvedValue({
+      moderatorCanManageRequests: true,
+      moderatorCanManageBlacklist: false,
+      moderatorCanManageSetlist: false,
+      moderatorCanManageBlockedChatters: false,
+      moderatorCanViewVipTokens: false,
+      moderatorCanManageVipTokens: true,
+      moderatorCanManageTags: false,
+    } as never);
+    vi.mocked(canPerformPlaylistMutationAction).mockReturnValue(true);
+    vi.mocked(getForbiddenPlaylistMutationMessage).mockReturnValue(
+      "You do not have permission to manage this channel playlist."
+    );
+    vi.mocked(loadPlaylistManagementStateForAccess).mockResolvedValue({
+      channel: baseChannel,
+      settings: {
+        moderatorCanManageRequests: true,
+        moderatorCanManageVipTokens: true,
+      },
+      playlist: {},
+      items: [],
+      playedSongs: [],
+      blocks: [],
+      vipTokens: [],
+      blacklistArtists: [],
+      blacklistCharters: [],
+      blacklistSongs: [],
+      blacklistSongGroups: [],
+      setlistArtists: [],
+      accessRole: "moderator",
+      actorUserId: "user-1",
+    } as never);
+    vi.mocked(performPlaylistMutation).mockResolvedValue(
+      new Response(JSON.stringify({ ok: true }), {
+        status: 200,
+        headers: {
+          "content-type": "application/json",
+        },
+      }) as never
+    );
+  });
+
+  it("returns a setup state when the channel is not connected", async () => {
+    vi.mocked(getChannelByTwitchChannelId).mockResolvedValue(null as never);
+
+    await expect(
+      getExtensionBootstrapState({
+        env,
+        auth: {
+          ...auth,
+          isLinked: false,
+          viewerUserId: null,
+          opaqueUserId: "Aanon-viewer",
+        },
+      })
+    ).resolves.toMatchObject({
+      connected: false,
+      setup: {
+        code: "channel_not_connected",
+      },
+      viewer: {
+        isLinked: false,
+        canRequest: false,
+      },
+    });
+  });
+
+  it("returns linked viewer bootstrap state with capabilities", async () => {
+    await expect(
+      getExtensionBootstrapState({
+        env,
+        auth,
+      })
+    ).resolves.toMatchObject({
+      connected: true,
+      channel: {
+        slug: "streamer",
+      },
+      playlist: {
+        currentItemId: "item-current",
+      },
+      viewer: {
+        isLinked: true,
+        canRequest: true,
+        canVipRequest: true,
+        canEditOwnRequest: true,
+        canRemoveOwnRequest: true,
+      },
+      management: {
+        accessRole: "viewer",
+        permissions: {
+          canManageRequests: false,
+        },
+      },
+    });
+  });
+
+  it("returns moderator management permissions from the extension role", async () => {
+    await expect(
+      getExtensionBootstrapState({
+        env,
+        auth: {
+          ...auth,
+          role: "moderator",
+        },
+      })
+    ).resolves.toMatchObject({
+      management: {
+        accessRole: "moderator",
+        actorUserId: "user-1",
+        permissions: {
+          canManageRequests: true,
+          canManageVipTokens: true,
+          canManageBlacklist: false,
+        },
+      },
+    });
+  });
+
+  it("hydrates a missing linked viewer from Twitch", async () => {
+    vi.mocked(getUserByTwitchUserId).mockResolvedValue(null as never);
+
+    await getExtensionBootstrapState({
+      env,
+      auth,
+    });
+
+    expect(getAppAccessToken).toHaveBeenCalledWith(env);
+    expect(getTwitchUserById).toHaveBeenCalledWith({
+      env,
+      accessToken: "app-token",
+      id: "viewer-1",
+    });
+    expect(upsertUserProfile).toHaveBeenCalledWith(
+      env,
+      expect.objectContaining({
+        twitchUserId: "viewer-1",
+        login: "viewer_one",
+      })
+    );
+  });
+
+  it("passes blacklist exclusions through extension search", async () => {
+    await expect(
+      searchExtensionCatalog({
+        env,
+        auth,
+        search: {
+          query: "cherub",
+          page: 1,
+          pageSize: 10,
+        },
+      })
+    ).resolves.toEqual({
+      items: [],
+      total: 0,
+      page: 1,
+      pageSize: 10,
+      totalPages: 0,
+    });
+
+    expect(searchCatalogSongs).toHaveBeenCalledWith(
+      env,
+      expect.objectContaining({
+        query: "cherub",
+        excludeSongIds: [3],
+        excludeGroupedProjectIds: [4],
+        excludeArtistIds: [1],
+        excludeAuthorIds: [2],
+      })
+    );
+  });
+
+  it("maps shared search results into panel items", async () => {
+    vi.mocked(searchCatalogSongs).mockResolvedValue({
+      results: [
+        {
+          id: "song-1",
+          title: "Cherub Rock",
+          artist: "Smashing Pumpkins",
+        },
+      ],
+      total: 1,
+      page: 1,
+      pageSize: 10,
+      hasNextPage: false,
+    } as never);
+
+    await expect(
+      searchExtensionCatalog({
+        env,
+        auth,
+        search: {
+          query: "cherub",
+          page: 1,
+          pageSize: 10,
+        },
+      })
+    ).resolves.toEqual({
+      items: [
+        {
+          id: "song-1",
+          title: "Cherub Rock",
+          artist: "Smashing Pumpkins",
+        },
+      ],
+      total: 1,
+      page: 1,
+      pageSize: 10,
+      totalPages: 1,
+    });
+  });
+
+  it("delegates extension mutations into the shared viewer-request service", async () => {
+    await expect(
+      performExtensionViewerRequestMutation({
+        env,
+        auth,
+        mutation: {
+          action: "submit",
+          songId: "song-1",
+          requestKind: "vip",
+          replaceExisting: true,
+        },
+      })
+    ).resolves.toEqual({
+      ok: true,
+      message: "Added request.",
+    });
+
+    expect(performViewerRequestMutationForChannelViewer).toHaveBeenCalledWith({
+      env,
+      channel: baseChannel,
+      viewer: expect.objectContaining({
+        twitchUserId: "viewer-1",
+      }),
+      mutation: {
+        action: "submit",
+        songId: "song-1",
+        requestKind: "vip",
+        replaceExisting: true,
+      },
+      source: "extension",
+    });
+  });
+
+  it("rejects write actions for unlinked viewers", async () => {
+    await expect(
+      performExtensionViewerRequestMutation({
+        env,
+        auth: {
+          ...auth,
+          viewerUserId: null,
+          isLinked: false,
+        },
+        mutation: {
+          action: "remove",
+          kind: "all",
+        },
+      })
+    ).rejects.toBeInstanceOf(ExtensionPanelError);
+
+    expect(performViewerRequestMutationForChannelViewer).not.toHaveBeenCalled();
+  });
+
+  it("delegates playlist management mutations for moderators", async () => {
+    const response = await performExtensionPlaylistMutation({
+      env,
+      auth: {
+        ...auth,
+        role: "moderator",
+      },
+      mutation: {
+        action: "setCurrent",
+        itemId: "item-current",
+      },
+    });
+
+    expect(loadPlaylistManagementStateForAccess).toHaveBeenCalledWith(env, {
+      channel: baseChannel,
+      accessRole: "moderator",
+      actorUserId: "user-1",
+    });
+    expect(canPerformPlaylistMutationAction).toHaveBeenCalled();
+    expect(performPlaylistMutation).toHaveBeenCalled();
+    await expect(response.json()).resolves.toEqual({ ok: true });
+  });
+
+  it("rejects playlist management mutations for plain viewers", async () => {
+    await expect(
+      performExtensionPlaylistMutation({
+        env,
+        auth,
+        mutation: {
+          action: "deleteItem",
+          itemId: "item-current",
+        },
+      })
+    ).rejects.toMatchObject({
+      status: 403,
+    });
+
+    expect(performPlaylistMutation).not.toHaveBeenCalled();
+  });
+});

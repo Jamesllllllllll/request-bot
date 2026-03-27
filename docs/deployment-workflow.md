@@ -78,11 +78,20 @@ Set these in `.env.deploy` before a real deployment:
 - `CLOUDFLARE_D1_DATABASE_ID`
 - `CLOUDFLARE_SESSION_KV_ID`
 - `TWITCH_CLIENT_ID`
+- `TWITCH_EXTENSION_CLIENT_ID`
 - `TWITCH_CLIENT_SECRET`
 - `TWITCH_EVENTSUB_SECRET`
+- `TWITCH_EXTENSION_SECRET`
 - `SESSION_SECRET`
 - `TWITCH_BOT_USERNAME`
 - `ADMIN_TWITCH_USER_IDS`
+- `VITE_TWITCH_EXTENSION_API_BASE_URL` when you build the standalone Twitch panel artifact
+
+Use these Twitch values:
+
+- `TWITCH_CLIENT_ID`: Twitch application client ID for website sign-in and app API access
+- `TWITCH_EXTENSION_CLIENT_ID`: Twitch Extension client ID for the panel extension
+- `TWITCH_EXTENSION_SECRET`: base64 shared secret from the Twitch Extensions developer console
 
 The checked-in default broadcaster scope is:
 
@@ -111,6 +120,7 @@ Frontend Worker (`request-bot`) required secrets:
 echo "<TWITCH_CLIENT_ID>" | npx wrangler secret put TWITCH_CLIENT_ID --config wrangler.jsonc
 echo "<TWITCH_CLIENT_SECRET>" | npx wrangler secret put TWITCH_CLIENT_SECRET --config wrangler.jsonc
 echo "<TWITCH_EVENTSUB_SECRET>" | npx wrangler secret put TWITCH_EVENTSUB_SECRET --config wrangler.jsonc
+echo "<TWITCH_EXTENSION_SECRET>" | npx wrangler secret put TWITCH_EXTENSION_SECRET --config wrangler.jsonc
 echo "<SESSION_SECRET>" | npx wrangler secret put SESSION_SECRET --config wrangler.jsonc
 echo "<ADMIN_TWITCH_USER_IDS>" | npx wrangler secret put ADMIN_TWITCH_USER_IDS --config wrangler.jsonc
 echo "<SENTRY_DSN>" | npx wrangler secret put SENTRY_DSN --config wrangler.jsonc
@@ -129,8 +139,10 @@ Notes:
 
 - if the Worker does not exist yet, `wrangler secret put` creates it before uploading the secret
 - `SESSION_SECRET` is only needed by the frontend Worker because it signs and verifies sessions
+- `TWITCH_EXTENSION_SECRET` is only needed by the frontend Worker because it verifies extension JWTs on `/api/extension/*`
 - `SESSION_KV` is a KV binding, not a secret
 - `TWITCH_BOT_USERNAME` and `TWITCH_SCOPES` are not secrets
+- `TWITCH_EXTENSION_CLIENT_ID` and `VITE_TWITCH_EXTENSION_API_BASE_URL` are not secrets and belong in `.env.deploy`
 - `ADMIN_TWITCH_USER_IDS` is only needed by the frontend Worker
 - Sentry is enabled whenever `SENTRY_DSN` is present
 - local development can use a personal test DSN in `.env`
@@ -209,17 +221,38 @@ npm run deploy
 
 The frontend Worker cannot be deployed directly from the source `wrangler.jsonc` file because its Worker entry is generated during `vite build`.
 
-### First `workers.dev` deployment
+### Custom domain
 
-If you do not already know your final public URL:
+The app works with the frontend Worker's `workers.dev` URL or a custom domain.
 
-1. set a temporary `APP_URL` in `.env.deploy`
-2. run `npm run deploy`
-3. copy the frontend `workers.dev` URL from the deploy output
-4. update `APP_URL` in `.env.deploy`
-5. run `npm run deploy` again
+Use the deployed public app URL in `APP_URL`.
 
-If you already know your final custom domain or `workers.dev` URL, set `APP_URL` to that before the first deploy.
+If you want a custom domain, attach it to the frontend Worker:
+
+1. In the Cloudflare dashboard, open `Workers & Pages`.
+2. Select the frontend Worker: `request-bot`.
+3. Open `Settings` -> `Domains & Routes`.
+4. Select `Add` -> `Custom Domain`.
+5. Enter the hostname you use for the app, such as `rocklist.live`.
+6. Wait for Cloudflare to finish DNS and certificate provisioning.
+
+Use the same deployed app URL in every place that depends on the app origin:
+
+- `.env.deploy`
+  - `APP_URL=https://your-app.workers.dev` or `https://your-app.example.com`
+- GitHub Actions production secret
+  - `APP_URL=https://your-app.workers.dev` or `https://your-app.example.com`
+- Twitch developer application redirect URIs
+  - `https://your-app-host/auth/twitch/callback`
+  - `https://your-app-host/auth/twitch/bot/callback`
+
+If you build the standalone Twitch panel artifact, set:
+
+- `VITE_TWITCH_EXTENSION_API_BASE_URL=https://your-app-host`
+
+For the production Twitch panel rollout steps, use:
+
+- [docs/twitch-panel-extension-beta-rollout-checklist.md](/docs/twitch-panel-extension-beta-rollout-checklist.md)
 
 ### Verify remote data
 
@@ -330,5 +363,7 @@ Important:
 6. Set the other required `.env.deploy` values, including `APP_URL` and `SENTRY_ENVIRONMENT=production`
 7. Run `npm run db:bootstrap:remote`
 8. Run `npm run deploy`
-9. If you started with a temporary `APP_URL`, update it in `.env.deploy` to the real deployed URL and run `npm run deploy` again
-10. Open the deployed `APP_URL` and test sign-in, dashboard, and search
+9. If you want a custom domain, attach it to the frontend Worker `request-bot` and update `APP_URL`
+10. Set the GitHub Actions `APP_URL` secret to the same deployed URL
+11. Register the Twitch redirect URIs for `APP_URL`
+12. Open the deployed `APP_URL` and test sign-in, dashboard, and search

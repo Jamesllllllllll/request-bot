@@ -17,6 +17,9 @@
   --brand-deep: #f1d2ac;
   --accent: #6d7688;
   --accent-strong: #9aa4bb;
+  --viewer-highlight: #7fb8ab;
+  --viewer-highlight-bg: rgba(127, 184, 171, 0.12);
+  --viewer-highlight-border: rgba(127, 184, 171, 0.4);
   --success: #3ecf8e;
   --warning: #f4b861;
   --danger: #ff6b6b;
@@ -38,6 +41,12 @@ html {
   scrollbar-gutter: stable;
 }
 
+html.extension-mode {
+  min-height: 100%;
+  background: var(--panel);
+  scrollbar-gutter: auto;
+}
+
 html.overlay-mode {
   background: transparent;
 }
@@ -50,6 +59,12 @@ body {
   background: linear-gradient(180deg, #090a0d 0%, #08090b 100%);
   position: relative;
   isolation: isolate;
+}
+
+body.extension-mode {
+  min-height: 100%;
+  background: var(--panel);
+  overflow-x: hidden;
 }
 
 body.overlay-mode {
@@ -104,6 +119,11 @@ body.overlay-mode::before {
   display: none;
 }
 
+body.extension-mode::after,
+body.extension-mode::before {
+  display: none;
+}
+
 a {
   color: inherit;
 }
@@ -125,6 +145,12 @@ h6 {
 
 #app {
   min-height: 100vh;
+}
+
+html.extension-mode #app,
+body.extension-mode #app {
+  min-height: 100%;
+  width: 100%;
 }
 
 ::selection {

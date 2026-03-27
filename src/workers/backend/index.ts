@@ -25,6 +25,7 @@ import type {
   ChooseVersionInput,
   ClearPlaylistInput,
   DeleteItemInput,
+  EditRequestInput,
   ManualAddInput,
   MarkPlayedInput,
   PlaylistCoordinator,
@@ -501,6 +502,80 @@ class D1PlaylistCoordinator implements PlaylistCoordinator {
     };
   }
 
+  async editRequest(input: EditRequestInput): Promise<PlaylistMutationResult> {
+    const db = getDb(this.env);
+    const { playlist, items } = await this.getPlaylist(input.channelId);
+    const target = items.find((item) => item.id === input.itemId);
+
+    if (!target) {
+      throw new Error("Playlist item not found");
+    }
+
+    const nextQueuedPositions =
+      target.requestKind === input.requestKind
+        ? null
+        : await this.getUpdatedQueuedPositionsAfterKindChange({
+            items,
+            playlistCurrentItemId: playlist.currentItemId,
+            targetItemId: input.itemId,
+            requestKind: input.requestKind,
+          });
+
+    await db
+      .update(playlistItems)
+      .set({
+        songId: input.song.id,
+        songTitle: input.song.title,
+        songArtist: input.song.artist ?? null,
+        songAlbum: input.song.album ?? null,
+        songCreator: input.song.creator ?? null,
+        songTuning: input.song.tuning ?? null,
+        songPartsJson: JSON.stringify(input.song.parts ?? []),
+        songDurationText: input.song.durationText ?? null,
+        songCatalogSourceId: input.song.cdlcId ?? null,
+        songSource: input.song.source,
+        songUrl:
+          normalizeSongSourceUrl({
+            source: input.song.source,
+            sourceUrl: input.song.sourceUrl ?? null,
+            sourceId: input.song.cdlcId ?? null,
+          }) ?? null,
+        requestedQuery: input.song.requestedQuery ?? null,
+        warningCode: input.song.warningCode ?? null,
+        warningMessage: input.song.warningMessage ?? null,
+        candidateMatchesJson: input.song.candidateMatchesJson ?? null,
+        requestKind: input.requestKind,
+        updatedAt: Date.now(),
+      })
+      .where(eq(playlistItems.id, input.itemId));
+
+    if (nextQueuedPositions) {
+      await this.reindexPlaylistItems(nextQueuedPositions);
+    }
+
+    await this.audit(
+      input.channelId,
+      input.actorUserId,
+      "edit_request",
+      input.itemId,
+      {
+        songId: input.song.id,
+        sourceId: input.song.cdlcId ?? null,
+        requestKind: input.requestKind,
+        warningCode: input.song.warningCode ?? null,
+      }
+    );
+    await this.notify(input.channelId);
+
+    return {
+      ok: true,
+      playlistId: playlist.id,
+      currentItemId: playlist.currentItemId,
+      changedItemId: input.itemId,
+      message: "Request edited",
+    };
+  }
+
   async manualAdd(input: ManualAddInput): Promise<PlaylistMutationResult> {
     console.info("Playlist manualAdd start", {
       channelId: input.channelId,
@@ -618,6 +693,7 @@ class D1PlaylistCoordinator implements PlaylistCoordinator {
       requesterLogin: input.requesterLogin,
       requesterTwitchUserId: input.requesterTwitchUserId,
       kind: input.kind,
+      itemId: input.itemId ?? null,
     });
     const db = getDb(this.env);
     const { playlist, items } = await this.getPlaylist(input.channelId);
@@ -626,6 +702,7 @@ class D1PlaylistCoordinator implements PlaylistCoordinator {
         (item) =>
           item.requestedByTwitchUserId === input.requesterTwitchUserId &&
           (item.status === "queued" || item.status === "current") &&
+          (!input.itemId || item.id === input.itemId) &&
           (input.kind === "all" || item.requestKind === input.kind)
       )
       .sort((a, b) => a.position - b.position);
@@ -696,6 +773,7 @@ class D1PlaylistCoordinator implements PlaylistCoordinator {
       input.requesterTwitchUserId,
       {
         kind: input.kind,
+        itemId: input.itemId ?? null,
         requesterLogin: input.requesterLogin,
         removedCount: removable.length,
         removedItemIds: removable.map((item) => item.id),
@@ -1553,6 +1631,10 @@ async function handleMutation(
       case "changeRequestKind":
         return await coordinator.changeRequestKind(
           payload as unknown as ChangeRequestKindInput
+        );
+      case "editRequest":
+        return await coordinator.editRequest(
+          payload as unknown as EditRequestInput
         );
       case "deleteItem":
         return await coordinator.deleteItem(

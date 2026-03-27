@@ -31,6 +31,18 @@ export function withExtensionCors(response: Response) {
   });
 }
 
+export function getExtensionErrorStatus(error: unknown) {
+  if (
+    error instanceof ExtensionAuthError ||
+    error instanceof ExtensionPanelError ||
+    error instanceof ViewerRequestError
+  ) {
+    return error.status;
+  }
+
+  return 500;
+}
+
 export function toExtensionErrorResponse(
   error: unknown,
   fallback = "Unable to handle the Twitch extension request."

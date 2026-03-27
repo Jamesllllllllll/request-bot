@@ -90,11 +90,25 @@ type PanelSearchResponse = {
   totalPages?: number;
 };
 
+type PanelStateResponse = {
+  playlist: PanelBootstrapResponse["playlist"];
+  viewer: Pick<
+    PanelBootstrapResponse["viewer"],
+    | "profile"
+    | "activeRequests"
+    | "canVipRequest"
+    | "canEditOwnRequest"
+    | "canRemoveOwnRequest"
+  >;
+};
+
 type TransientPanelNotice = {
   id: number;
   message: string;
   tone: "danger" | "success";
 };
+
+const PANEL_VISIBLE_REFRESH_INTERVAL_MS = 5000;
 
 export function ExtensionPanelApp(props: { apiBaseUrl?: string }) {
   const [helperState, setHelperState] = useState<"loading" | "ready" | "error">(
@@ -107,6 +121,9 @@ export function ExtensionPanelApp(props: { apiBaseUrl?: string }) {
     null
   );
   const [bootstrapError, setBootstrapError] = useState<string | null>(null);
+  const [connectionMessage, setConnectionMessage] = useState<string | null>(
+    null
+  );
   const [searchQuery, setSearchQuery] = useState("");
   const [debouncedSearchQuery, setDebouncedSearchQuery] = useState("");
   const [searchResults, setSearchResults] =
@@ -143,7 +160,10 @@ export function ExtensionPanelApp(props: { apiBaseUrl?: string }) {
     helperState === "loading" ||
     (helperState === "ready" && !auth && !helperTimedOut);
   const waitingForBootstrap = !!auth?.token && !bootstrap && !bootstrapError;
-  const showLoadingSkeleton = waitingForAuthorization || waitingForBootstrap;
+  const showLoadingSkeleton =
+    waitingForAuthorization ||
+    waitingForBootstrap ||
+    (!!auth?.token && !bootstrap && !bootstrapError);
 
   useEffect(() => {
     document.documentElement.classList.add("extension-mode");
@@ -259,6 +279,7 @@ export function ExtensionPanelApp(props: { apiBaseUrl?: string }) {
       setAuth(nextAuth);
       setHelperTimedOut(false);
       setBootstrapError(null);
+      setConnectionMessage(null);
       setTransientNotice(null);
     });
   }, [helperState]);
@@ -283,8 +304,9 @@ export function ExtensionPanelApp(props: { apiBaseUrl?: string }) {
     }
 
     let cancelled = false;
+    let retryTimeout: number | null = null;
 
-    const loadBootstrap = async () => {
+    const loadBootstrap = async (attempt = 0) => {
       try {
         const data = await fetchExtensionJson<PanelBootstrapResponse>(
           auth.token,
@@ -299,22 +321,35 @@ export function ExtensionPanelApp(props: { apiBaseUrl?: string }) {
         startTransition(() => {
           setBootstrap(data);
           setBootstrapError(null);
+          setConnectionMessage(null);
         });
       } catch (error) {
-        if (!cancelled) {
-          setBootstrapError(getErrorText(error, "Unable to load panel state."));
+        if (cancelled) {
+          return;
         }
+
+        if (isRetriableExtensionError(error)) {
+          const retryDelayMs = getRetryDelayMs(attempt, 1500, 30000);
+          setConnectionMessage(
+            `Panel is still connecting. Retrying in ${formatRetryDelay(retryDelayMs)}.`
+          );
+          retryTimeout = window.setTimeout(() => {
+            void loadBootstrap(attempt + 1);
+          }, retryDelayMs);
+          return;
+        }
+
+        setBootstrapError(getErrorText(error, "Unable to load panel state."));
       }
     };
 
     void loadBootstrap();
-    const interval = window.setInterval(() => {
-      void loadBootstrap();
-    }, 5000);
 
     return () => {
       cancelled = true;
-      window.clearInterval(interval);
+      if (retryTimeout != null) {
+        window.clearTimeout(retryTimeout);
+      }
     };
   }, [auth?.token, props.apiBaseUrl]);
 
@@ -332,24 +367,123 @@ export function ExtensionPanelApp(props: { apiBaseUrl?: string }) {
     });
   }
 
-  async function refreshBootstrapState(token = auth?.token) {
+  async function refreshPanelState(input?: {
+    token?: string;
+    silent?: boolean;
+  }) {
+    const token = input?.token ?? auth?.token;
     if (!token) {
       return null;
     }
 
-    const data = await fetchExtensionJson<PanelBootstrapResponse>(
-      token,
-      "/api/extension/bootstrap",
-      props.apiBaseUrl
-    );
+    try {
+      const data = await fetchExtensionJson<PanelStateResponse>(
+        token,
+        "/api/extension/state",
+        props.apiBaseUrl
+      );
 
-    startTransition(() => {
-      setBootstrap(data);
-      setBootstrapError(null);
-    });
+      startTransition(() => {
+        setBootstrap((current) =>
+          current
+            ? {
+                ...current,
+                playlist: data.playlist,
+                viewer: {
+                  ...current.viewer,
+                  activeRequests: data.viewer.activeRequests,
+                  canVipRequest: data.viewer.canVipRequest,
+                  canEditOwnRequest: data.viewer.canEditOwnRequest,
+                  canRemoveOwnRequest: data.viewer.canRemoveOwnRequest,
+                  profile: data.viewer.profile ?? current.viewer.profile,
+                },
+              }
+            : current
+        );
+        setBootstrapError(null);
+        setConnectionMessage(null);
+      });
 
-    return data;
+      return data;
+    } catch (error) {
+      if (!input?.silent) {
+        setBootstrapError(
+          getErrorText(error, "Unable to refresh panel state.")
+        );
+      }
+      return null;
+    }
   }
+
+  useEffect(() => {
+    if (!auth?.token || !bootstrap) {
+      return;
+    }
+
+    let cancelled = false;
+    let retryAttempt = 0;
+    let timeoutId: number | null = null;
+
+    const scheduleNextRefresh = (delayMs: number) => {
+      timeoutId = window.setTimeout(() => {
+        void refreshIfVisible();
+      }, delayMs);
+    };
+
+    const refreshIfVisible = async () => {
+      if (cancelled) {
+        return;
+      }
+
+      if (document.visibilityState !== "visible") {
+        scheduleNextRefresh(PANEL_VISIBLE_REFRESH_INTERVAL_MS);
+        return;
+      }
+
+      const data = await refreshPanelState({
+        token: auth.token,
+        silent: true,
+      });
+
+      if (cancelled) {
+        return;
+      }
+
+      if (data) {
+        retryAttempt = 0;
+        setConnectionMessage(null);
+        scheduleNextRefresh(PANEL_VISIBLE_REFRESH_INTERVAL_MS);
+        return;
+      }
+
+      retryAttempt += 1;
+      const retryDelayMs = getRetryDelayMs(retryAttempt, 3000, 60000);
+      setConnectionMessage(
+        `Connection interrupted. Retrying in ${formatRetryDelay(retryDelayMs)}.`
+      );
+      scheduleNextRefresh(retryDelayMs);
+    };
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === "visible") {
+        if (timeoutId != null) {
+          window.clearTimeout(timeoutId);
+        }
+        void refreshIfVisible();
+      }
+    };
+
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    scheduleNextRefresh(PANEL_VISIBLE_REFRESH_INTERVAL_MS);
+
+    return () => {
+      cancelled = true;
+      if (timeoutId != null) {
+        window.clearTimeout(timeoutId);
+      }
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+    };
+  }, [auth?.token, bootstrap, props.apiBaseUrl]);
 
   async function runSearch(query: string) {
     if (!auth?.token) {
@@ -456,11 +590,17 @@ export function ExtensionPanelApp(props: { apiBaseUrl?: string }) {
       );
 
       showTransientNotice("success", result.message ?? "Request updated.");
-      await refreshBootstrapState(auth.token);
+      await refreshPanelState({
+        token: auth.token,
+      });
       startTransition(() => {
         setActiveTab("playlist");
       });
     } catch (error) {
+      await refreshPanelState({
+        token: auth.token,
+        silent: true,
+      });
       showTransientNotice(
         "danger",
         getErrorText(error, "Unable to update request.")
@@ -496,8 +636,14 @@ export function ExtensionPanelApp(props: { apiBaseUrl?: string }) {
 
       showTransientNotice("success", result.message ?? "Request removed.");
       setConfirmingRemoveItemId(null);
-      await refreshBootstrapState(auth.token);
+      await refreshPanelState({
+        token: auth.token,
+      });
     } catch (error) {
+      await refreshPanelState({
+        token: auth.token,
+        silent: true,
+      });
       showTransientNotice(
         "danger",
         getErrorText(error, "Unable to remove request.")
@@ -545,13 +691,19 @@ export function ExtensionPanelApp(props: { apiBaseUrl?: string }) {
       setConfirmingRemoveItemId((current) =>
         current === mutation.itemId ? null : current
       );
-      await refreshBootstrapState(auth.token);
+      await refreshPanelState({
+        token: auth.token,
+      });
 
       showTransientNotice(
         "success",
         getPlaylistMutationSuccessMessage(mutation, response)
       );
     } catch (error) {
+      await refreshPanelState({
+        token: auth.token,
+        silent: true,
+      });
       showTransientNotice(
         "danger",
         getErrorText(error, "Unable to update the playlist.")
@@ -640,6 +792,15 @@ export function ExtensionPanelApp(props: { apiBaseUrl?: string }) {
       {bootstrapError ? (
         <PanelNotice icon={<CircleAlert className="h-4 w-4" />} tone="danger">
           {bootstrapError}
+        </PanelNotice>
+      ) : null}
+
+      {connectionMessage && !bootstrapError ? (
+        <PanelNotice
+          icon={<LoaderCircle className="h-4 w-4 animate-spin" />}
+          tone="default"
+        >
+          {connectionMessage}
         </PanelNotice>
       ) : null}
 
@@ -1171,6 +1332,16 @@ function PanelLoadingSkeleton() {
   );
 }
 
+class ExtensionRequestError extends Error {
+  constructor(
+    message: string,
+    readonly status: number
+  ) {
+    super(message);
+    this.name = "ExtensionRequestError";
+  }
+}
+
 async function fetchExtensionJson<T>(
   token: string,
   pathname: string,
@@ -1190,17 +1361,36 @@ async function fetchExtensionJson<T>(
     | null;
 
   if (!response.ok) {
-    throw new Error(
+    throw new ExtensionRequestError(
       payload &&
         typeof payload === "object" &&
         "error" in payload &&
         typeof payload.error === "string"
         ? payload.error
-        : "Extension request failed."
+        : "Extension request failed.",
+      response.status
     );
   }
 
   return payload as T;
+}
+
+function isRetriableExtensionError(error: unknown) {
+  return !(error instanceof ExtensionRequestError) || error.status >= 500;
+}
+
+function getRetryDelayMs(attempt: number, baseMs: number, maxMs: number) {
+  return Math.min(baseMs * 2 ** attempt, maxMs);
+}
+
+function formatRetryDelay(delayMs: number) {
+  const totalSeconds = Math.max(1, Math.ceil(delayMs / 1000));
+  if (totalSeconds < 60) {
+    return `${totalSeconds}s`;
+  }
+
+  const minutes = Math.ceil(totalSeconds / 60);
+  return `${minutes}m`;
 }
 
 function getErrorText(error: unknown, fallback: string) {

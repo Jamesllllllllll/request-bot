@@ -8,10 +8,10 @@ import {
   toExtensionErrorResponse,
   withExtensionCors,
 } from "~/lib/server/extension-http";
-import { getExtensionBootstrapState } from "~/lib/server/extension-panel";
+import { getExtensionPanelState } from "~/lib/server/extension-panel";
 import { json } from "~/lib/utils";
 
-export const Route = createFileRoute("/api/extension/bootstrap")({
+export const Route = createFileRoute("/api/extension/state")({
   server: {
     handlers: {
       OPTIONS: async () => extensionCorsPreflight(),
@@ -24,11 +24,6 @@ export const Route = createFileRoute("/api/extension/bootstrap")({
           ReturnType<typeof requireExtensionAuthFromRequest>
         > | null = null;
 
-        console.info("Extension bootstrap request received", {
-          traceId,
-          origin: request.headers.get("origin"),
-        });
-
         try {
           const authStartedAt = Date.now();
           auth = await requireExtensionAuthFromRequest({
@@ -37,15 +32,15 @@ export const Route = createFileRoute("/api/extension/bootstrap")({
           });
           authMs = Date.now() - authStartedAt;
 
-          const responseBody = await getExtensionBootstrapState({
+          const responseBody = await getExtensionPanelState({
             env: runtimeEnv,
             auth,
             traceId,
           });
           const elapsedMs = Date.now() - startedAt;
 
-          if (elapsedMs >= 1000) {
-            console.info("Extension bootstrap request completed slowly", {
+          if (elapsedMs >= 750) {
+            console.info("Extension state request completed slowly", {
               traceId,
               elapsedMs,
               authMs,
@@ -57,7 +52,7 @@ export const Route = createFileRoute("/api/extension/bootstrap")({
 
           return withExtensionCors(json(responseBody));
         } catch (error) {
-          console.error("Extension bootstrap request failed", {
+          console.error("Extension state request failed", {
             traceId,
             elapsedMs: Date.now() - startedAt,
             authMs,
@@ -69,7 +64,7 @@ export const Route = createFileRoute("/api/extension/bootstrap")({
             error:
               error instanceof Error && error.message.trim()
                 ? error.message
-                : "Unknown extension bootstrap failure",
+                : "Unknown extension state failure",
           });
           return toExtensionErrorResponse(error);
         }

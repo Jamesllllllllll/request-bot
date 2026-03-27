@@ -23,7 +23,10 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "~/components/ui/popover";
-import { getBlacklistReasons as getChannelBlacklistReasons } from "~/lib/channel-blacklist";
+import {
+  formatBlacklistReasonLabel,
+  getBlacklistReasonCodes,
+} from "~/lib/channel-blacklist";
 import { formatSlugTitle, pageTitle } from "~/lib/page-title";
 import { getPickNumbersForQueuedItems } from "~/lib/pick-order";
 import { cn, decodeHtmlEntities, getErrorMessage } from "~/lib/utils";
@@ -269,7 +272,7 @@ function PublicChannelPage() {
   const publicSearchResultState = useMemo(
     () =>
       (song: SearchSong): SearchSongResultState => {
-        const reasons = getBlacklistReasons(
+        const reasons = getBlacklistReasonCodes(
           {
             songCatalogSourceId: song.sourceId ?? null,
             songGroupedProjectId: song.groupedProjectId ?? null,
@@ -284,14 +287,19 @@ function PublicChannelPage() {
             songs: data?.blacklistSongs ?? [],
             songGroups: data?.blacklistSongGroups ?? [],
           }
-        );
+        ).map(formatBlacklistReasonLabel);
 
         return {
           disabled: reasons.length > 0,
           reasons,
         };
       },
-    [data?.blacklistArtists, data?.blacklistCharters, data?.blacklistSongs]
+    [
+      data?.blacklistArtists,
+      data?.blacklistCharters,
+      data?.blacklistSongGroups,
+      data?.blacklistSongs,
+    ]
   );
   const playlistItems = data?.items ?? [];
   const filteredItems = playlistItems;
@@ -975,7 +983,9 @@ function getViewerSongActionDisabledReason(input: {
   replaceExisting: boolean;
 }) {
   if (input.resultState.disabled) {
-    return input.resultState.reasons?.[0] ?? "That song is unavailable here.";
+    return input.resultState.reasons?.length
+      ? `Blacklisted - ${input.resultState.reasons.join(" · ")}`
+      : "That song is unavailable here.";
   }
 
   if (input.viewerStateLoading) {
@@ -1390,32 +1400,4 @@ function PickBadge(props: { pickNumber: number }) {
       <span>{tone.label}</span>
     </span>
   );
-}
-
-function getBlacklistReasons(
-  item: {
-    songCatalogSourceId?: number | null;
-    songGroupedProjectId?: number | null;
-    songArtistId?: number | null;
-    songArtist?: string | null;
-    songCharterId?: number | null;
-    songCreator?: string | null;
-  },
-  blacklist: {
-    artists: Array<{ artistId: number; artistName: string }>;
-    charters: Array<{ charterId: number; charterName: string }>;
-    songs: Array<{
-      songId: number;
-      songTitle: string;
-      artistName?: string | null;
-    }>;
-    songGroups: Array<{
-      groupedProjectId: number;
-      songTitle: string;
-      artistId?: number | null;
-      artistName?: string | null;
-    }>;
-  }
-) {
-  return getChannelBlacklistReasons(item, blacklist);
 }

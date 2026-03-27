@@ -363,5 +363,42 @@ export const viewerRequestMutationSchema = z.discriminatedUnion("action", [
   z.object({
     action: z.literal("remove"),
     kind: z.enum(["regular", "vip", "all"]).optional().default("all"),
+    itemId: z.string().trim().min(1).max(80).optional(),
+  }),
+]);
+
+export const extensionSearchInputSchema = z.object({
+  query: z.string().trim().min(3).max(200),
+  page: z.coerce.number().int().min(1).default(1),
+  pageSize: z.coerce.number().int().min(1).max(25).default(10),
+});
+
+export const extensionSubmitRequestSchema = z.object({
+  songId: z.string().trim().min(1).max(80),
+  requestKind: z.enum(["regular", "vip"]),
+});
+
+export const extensionRemoveRequestSchema = z.object({
+  kind: z.enum(["regular", "vip", "all"]).optional().default("all"),
+  itemId: z.string().trim().min(1).max(80).optional(),
+});
+
+export const extensionPlaylistMutationSchema = z.discriminatedUnion("action", [
+  z.object({
+    action: z.literal("setCurrent"),
+    itemId: z.string().trim().min(1).max(80),
+  }),
+  z.object({
+    action: z.literal("markPlayed"),
+    itemId: z.string().trim().min(1).max(80),
+  }),
+  z.object({
+    action: z.literal("deleteItem"),
+    itemId: z.string().trim().min(1).max(80),
+  }),
+  z.object({
+    action: z.literal("changeRequestKind"),
+    itemId: z.string().trim().min(1).max(80),
+    requestKind: z.enum(["regular", "vip"]),
   }),
 ]);

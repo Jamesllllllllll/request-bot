@@ -541,7 +541,14 @@ function PublicChannelPage() {
           <div className="mt-6 grid gap-3 px-8">
             <AnimatePresence initial={false} mode="popLayout">
               {filteredItems.map((item) => (
-                <PublicPlaylistRow key={item.id} item={item} />
+                <PublicPlaylistRow
+                  key={item.id}
+                  item={item}
+                  isViewerRequest={
+                    currentViewer != null &&
+                    item.requestedByTwitchUserId === currentViewer.id
+                  }
+                />
               ))}
             </AnimatePresence>
             {!isLoading && !filteredItems.length ? (
@@ -1209,7 +1216,10 @@ function getVipAutomationSummary(input: {
   return `1 VIP token = ${parts.join(" or ")}.`;
 }
 
-function PublicPlaylistRow(props: { item: EnrichedPublicPlaylistItem }) {
+function PublicPlaylistRow(props: {
+  item: EnrichedPublicPlaylistItem;
+  isViewerRequest: boolean;
+}) {
   const requesterName =
     props.item.requestedByDisplayName ??
     props.item.requestedByLogin ??
@@ -1224,11 +1234,11 @@ function PublicPlaylistRow(props: { item: EnrichedPublicPlaylistItem }) {
     ? decodeHtmlEntities(props.item.songAlbum)
     : null;
   const addedLabel = props.item.createdAt
-    ? formatPlaylistRelativeTime(props.item.createdAt)
+    ? formatCompactPlaylistRelativeTime(props.item.createdAt)
     : null;
   const editedTimestamp = props.item.updatedAt ?? null;
   const editedLabel = editedTimestamp
-    ? formatPlaylistRelativeTime(editedTimestamp)
+    ? formatCompactPlaylistRelativeTime(editedTimestamp)
     : null;
   const showEditedLabel =
     editedTimestamp != null &&
@@ -1250,6 +1260,14 @@ function PublicPlaylistRow(props: { item: EnrichedPublicPlaylistItem }) {
       exit={{ opacity: 0, y: -12, scale: 0.985 }}
       transition={publicPlaylistItemTransition}
       className="rounded-[24px] border border-(--border) bg-(--panel-soft) px-5 py-4"
+      style={
+        props.isViewerRequest
+          ? {
+              borderColor: "var(--viewer-highlight-border)",
+              backgroundColor: "var(--viewer-highlight-bg)",
+            }
+          : undefined
+      }
     >
       <div className="flex items-start gap-4">
         <StatusColumn
@@ -1279,25 +1297,25 @@ function PublicPlaylistRow(props: { item: EnrichedPublicPlaylistItem }) {
   );
 }
 
-function formatPlaylistRelativeTime(timestamp: number) {
+function formatCompactPlaylistRelativeTime(timestamp: number) {
   const elapsedMs = Math.max(0, Date.now() - timestamp);
 
   if (elapsedMs < 60_000) {
-    return "just now";
+    return "now";
   }
 
   const minutes = Math.floor(elapsedMs / 60_000);
   if (minutes < 60) {
-    return `${minutes} minute${minutes === 1 ? "" : "s"} ago`;
+    return `${minutes}m`;
   }
 
   const hours = Math.floor(elapsedMs / 3_600_000);
   if (hours < 24) {
-    return `${hours} hour${hours === 1 ? "" : "s"} ago`;
+    return `${hours}h`;
   }
 
   const days = Math.floor(elapsedMs / 86_400_000);
-  return `${days} day${days === 1 ? "" : "s"} ago`;
+  return `${days}d`;
 }
 
 function StatusColumn(props: { isCurrent: boolean; isVip: boolean }) {

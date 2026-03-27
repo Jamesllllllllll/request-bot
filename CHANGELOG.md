@@ -4,6 +4,20 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-03-27
+
+### Added
+- Signed-in viewer request flows on public channel pages, including add, VIP add, edit, and remove actions with shared request-policy enforcement.
+- Twitch panel extension MVP with playlist viewing, linked-viewer request actions, VIP token balance, and compact playlist moderation controls for channel owners and moderators.
+- Extension JWT verification, extension API routes, and standalone panel build support.
+- Panel Local Test and beta-rollout documentation for self-hosted deployments and Twitch setup.
+
+### Changed
+- Public playlist rows now show clearer request timing and viewer-owned request highlighting.
+- Public channel request UI is more compact and focused on direct request actions.
+- Homepage live-stream cards now show stream titles for both featured and secondary live channels.
+- Deployment and setup docs now cover Twitch extension client configuration, extension secrets, and production/custom-domain routing for the panel.
+
 ## [0.1.2] - 2026-03-26
 
 ### Added

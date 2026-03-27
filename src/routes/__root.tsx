@@ -28,10 +28,20 @@ export const Route = createRootRouteWithContext<AppRouterContext>()({
 function RootComponent() {
   const router = useRouter();
   const queryClient = router.options.context.queryClient;
+  const pathname = useRouterState({
+    select: (state) => state.location.pathname,
+  });
+  const isExtensionRoute = pathname.startsWith("/extension/");
 
   return (
     <html lang="en">
       <head>
+        {isExtensionRoute ? (
+          <script
+            src="https://extension-files.twitch.tv/helper/v1/twitch-ext.min.js"
+            data-twitch-extension-helper="true"
+          />
+        ) : null}
         <HeadContent />
         <meta name="viewport" content="width=device-width, initial-scale=1.0" />
         <link rel="icon" href="https://fav.farm/%F0%9F%8E%B8" />
@@ -39,7 +49,7 @@ function RootComponent() {
       <body>
         <QueryClientProvider client={queryClient}>
           <AppShell />
-          <TanStackRouterDevtools />
+          {isExtensionRoute ? null : <TanStackRouterDevtools />}
         </QueryClientProvider>
         <Scripts />
       </body>
@@ -51,8 +61,12 @@ function AppShell() {
   const pathname = useRouterState({
     select: (state) => state.location.pathname,
   });
+  const isOverlayRoute = pathname.includes("/stream-playlist/");
+  const isExtensionRoute = pathname.startsWith("/extension/");
+  const shouldBypassShell = isOverlayRoute || isExtensionRoute;
   const { data } = useQuery({
     queryKey: ["viewer-session"],
+    enabled: !shouldBypassShell,
     queryFn: async () => {
       const response = await fetch("/api/session", {
         credentials: "include",
@@ -82,13 +96,12 @@ function AppShell() {
   });
 
   const viewer = data?.viewer ?? null;
-  const isOverlayRoute = pathname.includes("/stream-playlist/");
   const reconnectHref = `/auth/twitch/start?redirectTo=${encodeURIComponent(pathname)}`;
   const needsTwitchReconnect =
     !!viewer?.needsBroadcasterScopeReconnect ||
     !!viewer?.needsModeratorScopeReconnect;
 
-  if (isOverlayRoute) {
+  if (shouldBypassShell) {
     return <Outlet />;
   }
 

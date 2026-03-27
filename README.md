@@ -14,12 +14,15 @@ It runs on TanStack Start, Cloudflare Workers, D1, Durable Objects, Queues, KV, 
 - [docs/web-viewer-requests-implementation-plan.md](/docs/web-viewer-requests-implementation-plan.md)
 - [docs/twitch-panel-extension-feature-request.md](/docs/twitch-panel-extension-feature-request.md)
 - [docs/twitch-panel-extension-implementation-plan.md](/docs/twitch-panel-extension-implementation-plan.md)
+- [docs/twitch-panel-extension-local-test.md](/docs/twitch-panel-extension-local-test.md)
+- [docs/twitch-panel-extension-beta-rollout-checklist.md](/docs/twitch-panel-extension-beta-rollout-checklist.md)
 
 ## What The App Includes
 
 - Home page cards for live channels, plus a demo mode that shows Rocksmith-tagged Twitch streams with `Watch on Twitch` and `Open playlist` actions
 - Song search with direct viewer request actions, copyable chat commands, catalog metadata, caching, and D1-backed rate limiting
 - Public channel pages with playlist, played history, signed-in viewer request controls, VIP token balance, and request timestamps
+- Twitch panel extension with read-only playlist viewing, viewer request actions, and owner/moderator playlist controls
 - Dashboard pages for account access, owner settings, admin controls, and playlist management
 - Channel rules with setlists plus distinct artist, charter, song, and version blacklists
 - OBS-ready stream overlay settings with live preview, chroma-key background controls, and album/creator display toggles
@@ -72,12 +75,15 @@ cp .env.example .env
 
 ```env
 APP_URL=http://localhost:9000
+VITE_TWITCH_EXTENSION_API_BASE_URL=
 SENTRY_ENVIRONMENT=development
 SENTRY_DSN=
 SENTRY_TRACES_SAMPLE_RATE=
 TWITCH_CLIENT_ID=
+TWITCH_EXTENSION_CLIENT_ID=
 TWITCH_CLIENT_SECRET=
 TWITCH_EVENTSUB_SECRET=local-dev-eventsub-secret
+TWITCH_EXTENSION_SECRET=
 SESSION_SECRET=local-dev-session-secret
 TWITCH_BOT_USERNAME=requestbot
 TWITCH_SCOPES=openid user:read:moderated_channels moderator:read:chatters channel:bot channel:read:subscriptions bits:read
@@ -95,12 +101,26 @@ For basic local development, set:
 - `TWITCH_BOT_USERNAME`
 - `TWITCH_SCOPES=openid user:read:moderated_channels moderator:read:chatters channel:bot channel:read:subscriptions bits:read`
 - `VITE_ALLOWED_HOSTS=` if you need extra Vite hostnames
+- `VITE_TWITCH_EXTENSION_API_BASE_URL=` if you want the standalone extension build to call a different app origin
 
 To test Twitch sign-in, bot behavior, and EventSub locally, also set:
 
 - `TWITCH_CLIENT_ID`
 - `TWITCH_CLIENT_SECRET`
 - `ADMIN_TWITCH_USER_IDS`
+
+To test the Twitch panel extension locally, also set:
+
+- `TWITCH_EXTENSION_CLIENT_ID`
+- `TWITCH_EXTENSION_SECRET`
+
+Use these Twitch values:
+
+- `TWITCH_CLIENT_ID`: Twitch application client ID for website sign-in and app API access
+- `TWITCH_EXTENSION_CLIENT_ID`: Twitch Extension client ID for the panel extension
+- `TWITCH_EXTENSION_SECRET`: base64 shared secret from the Twitch Extensions developer console
+
+If you build the panel as a standalone Twitch extension artifact, set `VITE_TWITCH_EXTENSION_API_BASE_URL` to the public app origin that should receive `/api/extension/*` requests. For local iteration this can be your tunnel URL; for production it should be your deployed app URL.
 
 `ADMIN_TWITCH_USER_IDS` should contain the Twitch user ID for the admin account that is allowed to connect the shared bot account and access admin pages.
 
@@ -334,11 +354,13 @@ For extra confidence on deploy-sensitive changes, also run `npm run build`.
 High-level deploy flow:
 
 1. Create the Cloudflare resources.
-2. Configure local deploy values in `.env.deploy`.
+2. Configure local deploy values in `.env.deploy`, including the deployed `APP_URL`.
 3. Set Worker secrets with `wrangler secret put`.
 4. Bootstrap remote D1.
 5. Deploy the backend and frontend Workers.
-6. Configure GitHub Actions secrets and variables if you want automatic deploys.
+6. Optionally attach a custom domain to the frontend Worker.
+7. Register the Twitch redirect URIs for `APP_URL`.
+8. Configure GitHub Actions secrets and variables if you want automatic deploys.
 
 The detailed deploy guide lives in [docs/deployment-workflow.md](/docs/deployment-workflow.md).
 
@@ -376,10 +398,16 @@ Frontend Worker:
 echo "<TWITCH_CLIENT_ID>" | npx wrangler secret put TWITCH_CLIENT_ID --config wrangler.jsonc
 echo "<TWITCH_CLIENT_SECRET>" | npx wrangler secret put TWITCH_CLIENT_SECRET --config wrangler.jsonc
 echo "<TWITCH_EVENTSUB_SECRET>" | npx wrangler secret put TWITCH_EVENTSUB_SECRET --config wrangler.jsonc
+echo "<TWITCH_EXTENSION_SECRET>" | npx wrangler secret put TWITCH_EXTENSION_SECRET --config wrangler.jsonc
 echo "<SESSION_SECRET>" | npx wrangler secret put SESSION_SECRET --config wrangler.jsonc
 echo "<ADMIN_TWITCH_USER_IDS>" | npx wrangler secret put ADMIN_TWITCH_USER_IDS --config wrangler.jsonc
 echo "<SENTRY_DSN>" | npx wrangler secret put SENTRY_DSN --config wrangler.jsonc
 ```
+
+Set these non-secret panel values in `.env.deploy`:
+
+- `TWITCH_EXTENSION_CLIENT_ID`
+- `VITE_TWITCH_EXTENSION_API_BASE_URL`
 
 Backend Worker:
 
@@ -457,6 +485,26 @@ npm run deploy
 
 `npm run deploy` builds the app first, generates gitignored deploy configs in `.generated/`, then deploys backend first and frontend second.
 
+The app works with the frontend Worker's `workers.dev` URL or a custom domain.
+
+If you want a custom domain after the first deploy:
+
+1. Open `Workers & Pages` in Cloudflare.
+2. Select the frontend Worker: `request-bot`.
+3. Open `Settings` -> `Domains & Routes`.
+4. Select `Add` -> `Custom Domain`.
+5. Enter the hostname you use for the app.
+
+Use the same URL in:
+
+- `.env.deploy` `APP_URL`
+- the GitHub Actions `APP_URL` secret
+- Twitch redirect URIs:
+  - `https://your-app-host/auth/twitch/callback`
+  - `https://your-app-host/auth/twitch/bot/callback`
+
+If you build the standalone Twitch panel artifact, set `VITE_TWITCH_EXTENSION_API_BASE_URL` to the same app URL.
+
 Verify the sample catalog with:
 
 ```bash
@@ -507,7 +555,7 @@ gh secret set CLOUDFLARE_API_TOKEN
 gh secret set CLOUDFLARE_ACCOUNT_ID
 gh secret set CLOUDFLARE_D1_DATABASE_ID
 gh secret set CLOUDFLARE_SESSION_KV_ID
-gh secret set APP_URL --body "https://your-production-url.example"
+gh secret set APP_URL --body "https://your-app-host"
 gh variable set TWITCH_BOT_USERNAME --body "your_bot_username"
 gh variable set TWITCH_SCOPES --body "openid user:read:moderated_channels moderator:read:chatters channel:bot channel:read:subscriptions bits:read"
 ```
@@ -522,9 +570,12 @@ Set these as Codespaces repository secrets or add them to `.env` inside the Code
 - `CLOUDFLARE_D1_DATABASE_ID`
 - `CLOUDFLARE_SESSION_KV_ID`
 - `TWITCH_CLIENT_ID`
+- `TWITCH_EXTENSION_CLIENT_ID`
 - `TWITCH_CLIENT_SECRET`
 - `TWITCH_EVENTSUB_SECRET`
+- `TWITCH_EXTENSION_SECRET`
 - `SESSION_SECRET`
+- `VITE_TWITCH_EXTENSION_API_BASE_URL`
 - `TWITCH_BOT_USERNAME`
 - `ADMIN_TWITCH_USER_IDS`
 - `TWITCH_SCOPES`

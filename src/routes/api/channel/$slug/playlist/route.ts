@@ -18,8 +18,10 @@ import {
   canManageChannelRequests,
   canManageChannelSetlist,
   canManageChannelVipTokens,
+  canPerformPlaylistMutationAction,
   canViewChannelVipTokens,
   enrichPlaylistItems,
+  getForbiddenPlaylistMutationMessage,
   getPlaylistManagementResponseBody,
   performPlaylistMutation,
   requirePlaylistManagementState,
@@ -162,7 +164,7 @@ export const Route = createFileRoute("/api/channel/$slug/playlist")({
         try {
           const body = playlistMutationSchema.parse(await request.json());
 
-          if (!canPerformPlaylistMutation(state, body.action)) {
+          if (!canPerformPlaylistMutationAction(state, body.action)) {
             return json(
               {
                 error: getForbiddenPlaylistMutationMessage(body.action),
@@ -179,43 +181,3 @@ export const Route = createFileRoute("/api/channel/$slug/playlist")({
     },
   },
 });
-
-function canPerformPlaylistMutation(
-  state: Awaited<ReturnType<typeof requirePlaylistManagementState>>,
-  action: ReturnType<typeof playlistMutationSchema.parse>["action"]
-) {
-  if (!state) {
-    return false;
-  }
-
-  switch (action) {
-    case "markPlayed":
-    case "restorePlayed":
-    case "setCurrent":
-    case "deleteItem":
-    case "chooseVersion":
-    case "clearPlaylist":
-    case "resetSession":
-    case "shuffleNext":
-    case "shufflePlaylist":
-    case "reorderItems":
-    case "manualAdd":
-      return canManageChannelRequests(state);
-    case "changeRequestKind":
-      return (
-        canManageChannelRequests(state) && canManageChannelVipTokens(state)
-      );
-    default:
-      return false;
-  }
-}
-
-function getForbiddenPlaylistMutationMessage(
-  action: ReturnType<typeof playlistMutationSchema.parse>["action"]
-) {
-  if (action === "changeRequestKind") {
-    return "You do not have permission to manage VIP request changes.";
-  }
-
-  return "You do not have permission to manage this channel playlist.";
-}

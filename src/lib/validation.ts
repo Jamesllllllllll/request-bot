@@ -352,3 +352,16 @@ export const playlistMutationSchema = z.discriminatedUnion("action", [
     candidateMatchesJson: z.string().optional(),
   }),
 ]);
+
+export const viewerRequestMutationSchema = z.discriminatedUnion("action", [
+  z.object({
+    action: z.literal("submit"),
+    songId: z.string().trim().min(1).max(80),
+    requestKind: z.enum(["regular", "vip"]),
+    replaceExisting: z.boolean().optional().default(false),
+  }),
+  z.object({
+    action: z.literal("remove"),
+    kind: z.enum(["regular", "vip", "all"]).optional().default("all"),
+  }),
+]);

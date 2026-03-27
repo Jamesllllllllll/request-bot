@@ -136,5 +136,5 @@ The panel identity-share flow does not create a website session.
 
 Opening the website from the panel uses the normal website auth state:
 
-- the website recognizes the user when the browser already has the Request Bot session cookie
+- the website recognizes the user when the browser already has the RockList.Live session cookie
 - otherwise the website still requires the normal Twitch OAuth flow

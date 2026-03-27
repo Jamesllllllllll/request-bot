@@ -117,13 +117,13 @@ export async function getExtensionBootstrapState(input: {
         canRemoveOwnRequest: false,
         access: {
           allowed: false,
-          reason: "This Twitch channel has not connected Request Bot yet.",
+          reason: "This Twitch channel has not connected RockList.Live yet.",
         },
       },
       management: getEmptyExtensionPanelManagement(),
       setup: {
         code: "channel_not_connected",
-        message: "This Twitch channel has not connected Request Bot yet.",
+        message: "This Twitch channel has not connected RockList.Live yet.",
       },
     };
   }
@@ -348,7 +348,7 @@ async function requireConnectedChannel(env: AppEnv, twitchChannelId: string) {
   if (!channel) {
     throw new ExtensionPanelError(
       404,
-      "This Twitch channel has not connected Request Bot yet."
+      "This Twitch channel has not connected RockList.Live yet."
     );
   }
 

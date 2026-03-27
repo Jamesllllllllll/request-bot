@@ -2,7 +2,7 @@
 
 ## Goal
 
-Keep the Twitch request bot available even when Twitch or Cloudflare components partially fail. Failures should degrade gracefully, surface clearly in the UI, and recover automatically when possible.
+Keep RockList.Live available even when Twitch or Cloudflare components partially fail. Failures should degrade gracefully, surface clearly in the UI, and recover automatically when possible.
 
 ## What exists
 

@@ -2,7 +2,7 @@
 
 ## Scope
 
-Request Bot includes a Twitch panel extension that gives viewers a Twitch-native request surface on the channel page.
+RockList.Live includes a Twitch panel extension that gives viewers a Twitch-native request surface on the channel page.
 
 The panel supports:
 
@@ -27,11 +27,11 @@ The panel supports:
 ## Auth And Access Model
 
 - The panel verifies the Twitch Extension JWT on the server.
-- The active Twitch `channel_id` resolves the Request Bot channel.
+- The active Twitch `channel_id` resolves the RockList.Live channel.
 - The linked Twitch `user_id` resolves the same app user used by the website.
 - Panel write actions require linked identity.
 - Panel moderation actions require linked identity plus channel access for the current Twitch channel.
-- Moderator access follows the channel's existing moderator capability settings in Request Bot.
+- Moderator access follows the channel's existing moderator capability settings in RockList.Live.
 
 ## MVP Experience
 
@@ -42,7 +42,7 @@ The panel supports:
 - share Twitch identity when they want to request songs
 - search the catalog
 - add, edit, or remove their own request
-- spend existing Request Bot VIP tokens from the panel
+- spend existing RockList.Live VIP tokens from the panel
 
 ### Streamers And Moderators
 

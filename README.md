@@ -1,6 +1,6 @@
-# Request Bot
+# RockList.Live
 
-Request Bot is a Twitch song request app for music and Rocksmith streams. Viewers browse public playlists, sign in with Twitch, and add or manage their own requests from channel pages. Streamers and moderators manage request rules, queue behavior, overlays, and channel access from the dashboard.
+RockList.Live is a Twitch song request app for music and Rocksmith streams. Viewers browse public playlists, sign in with Twitch, and add or manage their own requests from channel pages. Streamers and moderators manage request rules, queue behavior, overlays, and channel access from the dashboard.
 
 It runs on TanStack Start, Cloudflare Workers, D1, Durable Objects, Queues, KV, and TypeScript.
 

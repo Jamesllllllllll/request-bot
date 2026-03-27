@@ -2,14 +2,14 @@
 
 ## Problem or use case
 
-Request Bot already has the public channel playlist page at `/$slug`, but signed-in viewers still cannot add requests from within the app. The current experience tells non-managers to copy chat commands and use Twitch chat, even though the page already knows who the signed-in viewer is and already contains the channel-aware search UI.
+RockList.Live already has the public channel playlist page at `/$slug`, but signed-in viewers still cannot add requests from within the app. The current experience tells non-managers to copy chat commands and use Twitch chat, even though the page already knows who the signed-in viewer is and already contains the channel-aware search UI.
 
 This leaves a product gap for viewers who:
 
 - are already on a streamer's playlist page and want to request from there
 - want a normal sign-in-and-click flow instead of remembering chat commands
 - want to see their current request state before submitting another song
-- want to see their Request Bot VIP token balance for the current channel
+- want to see their RockList.Live VIP token balance for the current channel
 - want to spend a VIP token directly from the website with an `Add VIP` action
 
 This also leaves an architecture gap because the planned Twitch panel extension needs a non-chat viewer request foundation in the app before it adds Twitch-specific auth and packaging on top.
@@ -22,7 +22,7 @@ The page should:
 
 - prompt signed-out viewers to sign in with Twitch before submitting a request
 - show the signed-in viewer's profile avatar and identity on the channel page
-- show the viewer's current Request Bot VIP token balance for the viewed channel
+- show the viewer's current RockList.Live VIP token balance for the viewed channel
 - let the viewer add a regular request from search results
 - let the viewer add a VIP request from search results when they have a spendable token
 - show the viewer's current active request state

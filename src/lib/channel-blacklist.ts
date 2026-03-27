@@ -112,6 +112,19 @@ export function formatBlacklistReason(reason: ChannelBlacklistReasonCode) {
   }
 }
 
+export function formatBlacklistReasonLabel(reason: ChannelBlacklistReasonCode) {
+  switch (reason) {
+    case "version_blacklist":
+      return "Version";
+    case "song_blacklist":
+      return "Song";
+    case "artist_blacklist":
+      return "Artist";
+    case "charter_blacklist":
+      return "Charter";
+  }
+}
+
 export function getBlacklistReasons(
   item: {
     songCatalogSourceId?: number | null;

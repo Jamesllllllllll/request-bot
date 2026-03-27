@@ -97,6 +97,9 @@ const defaultForm: DashboardSettingsFormData = {
   commandPrefix: "!sr",
 };
 
+const twitchExtensionInstallUrl =
+  "https://dashboard.twitch.tv/extensions/gojrfj73vbfx7fww479a77kpvyrz91-0.0.1";
+
 export const Route = createFileRoute("/dashboard/settings")({
   head: () => ({
     meta: [{ title: pageTitle("Settings") }],
@@ -251,6 +254,27 @@ function DashboardSettingsPage() {
       <DashboardPageHeader
         title="Settings"
         description="Owner-only channel configuration. Moderators use the channel page for playlist and moderation actions."
+        meta={
+          hasOwnerChannel ? (
+            <p className="max-w-2xl text-sm leading-7 text-(--muted)">
+              Beta testers can install the Twitch extension panel on Twitch.
+            </p>
+          ) : null
+        }
+        actions={
+          hasOwnerChannel ? (
+            <Button asChild variant="outline">
+              <a
+                href={twitchExtensionInstallUrl}
+                target="_blank"
+                rel="noreferrer"
+                className="no-underline"
+              >
+                Install Twitch extension beta
+              </a>
+            </Button>
+          ) : null
+        }
         aside={
           hasOwnerChannel ? (
             <div className="flex flex-wrap items-center gap-3">
@@ -845,69 +869,6 @@ function DashboardSettingsPage() {
                   setBoolean("moderatorCanManageTags", value)
                 }
               />
-            </CardContent>
-          </Card>
-
-          <Card className="dashboard-settings__section">
-            <CardHeader>
-              <CardTitle>Twitch panel extension</CardTitle>
-              <CardDescription>
-                Viewer panel requests now have backend and UI foundations in the
-                app. Twitch-side setup is still required before the panel can be
-                activated on your channel.
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="grid gap-4">
-              <div className="grid gap-2 rounded-[24px] border border-(--border) bg-(--panel-soft) p-4">
-                <p className="text-sm font-semibold text-(--text)">
-                  What you can test right now
-                </p>
-                <p className="text-sm leading-7 text-(--muted)">
-                  Use the local panel route to verify the panel UI and extension
-                  API wiring before creating the Twitch extension:
-                </p>
-                <div className="flex flex-wrap gap-3">
-                  <Button asChild variant="outline">
-                    <a href="/extension/panel" className="no-underline">
-                      Open panel route
-                    </a>
-                  </Button>
-                  <Button asChild variant="outline">
-                    <a
-                      href="https://github.com/Jamesllllllllll/request-bot/blob/main/docs/twitch-panel-extension-local-test.md"
-                      target="_blank"
-                      rel="noreferrer"
-                      className="no-underline"
-                    >
-                      Open setup doc
-                    </a>
-                  </Button>
-                </div>
-              </div>
-
-              <div className="grid gap-2 rounded-[24px] border border-(--border) bg-(--panel-soft) p-4">
-                <p className="text-sm font-semibold text-(--text)">
-                  What is still required
-                </p>
-                <p className="text-sm leading-7 text-(--muted)">
-                  Create the Twitch extension, generate the extension shared
-                  secret, enable identity sharing, and run Twitch Local Test or
-                  Hosted Test against the panel build.
-                </p>
-                <p className="text-sm leading-7 text-(--muted)">
-                  The standalone panel artifact builds with
-                  <span className="font-mono">
-                    {" "}
-                    npm run build:extension:panel
-                  </span>
-                  and is written to
-                  <span className="font-mono">
-                    {" "}
-                    dist/twitch-extension/panel
-                  </span>
-                  .
-                </p>
-              </div>
             </CardContent>
           </Card>
 

@@ -1,6 +1,6 @@
 # Request Bot
 
-Request Bot is a Twitch song request app for music and Rocksmith streams. Viewers search songs, copy request commands, and browse public playlists. Streamers and moderators manage request rules, queue behavior, overlays, and channel access from the dashboard.
+Request Bot is a Twitch song request app for music and Rocksmith streams. Viewers browse public playlists, sign in with Twitch, and add or manage their own requests from channel pages. Streamers and moderators manage request rules, queue behavior, overlays, and channel access from the dashboard.
 
 It runs on TanStack Start, Cloudflare Workers, D1, Durable Objects, Queues, KV, and TypeScript.
 
@@ -10,12 +10,16 @@ It runs on TanStack Start, Cloudflare Workers, D1, Durable Objects, Queues, KV, 
 - [docs/local-development.md](/docs/local-development.md)
 - [docs/deployment-workflow.md](/docs/deployment-workflow.md)
 - [docs/bot-operations.md](/docs/bot-operations.md)
+- [docs/web-viewer-requests-feature-request.md](/docs/web-viewer-requests-feature-request.md)
+- [docs/web-viewer-requests-implementation-plan.md](/docs/web-viewer-requests-implementation-plan.md)
+- [docs/twitch-panel-extension-feature-request.md](/docs/twitch-panel-extension-feature-request.md)
+- [docs/twitch-panel-extension-implementation-plan.md](/docs/twitch-panel-extension-implementation-plan.md)
 
 ## What The App Includes
 
 - Home page cards for live channels, plus a demo mode that shows Rocksmith-tagged Twitch streams with `Watch on Twitch` and `Open playlist` actions
-- Song search with copyable request commands, catalog metadata, caching, and D1-backed rate limiting
-- Public channel pages with playlist, played history, album metadata, and source update dates
+- Song search with direct viewer request actions, copyable chat commands, catalog metadata, caching, and D1-backed rate limiting
+- Public channel pages with playlist, played history, signed-in viewer request controls, VIP token balance, and request timestamps
 - Dashboard pages for account access, owner settings, admin controls, and playlist management
 - Channel rules with setlists plus distinct artist, charter, song, and version blacklists
 - OBS-ready stream overlay settings with live preview, chroma-key background controls, and album/creator display toggles

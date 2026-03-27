@@ -290,7 +290,6 @@ export function ChannelRulesPanel(props: {
             <>
               <SearchManageCard
                 title="Blacklisted artists"
-                description="Blocks requests for any song by these artists."
                 inputValue={artistQuery}
                 onInputChange={setArtistQuery}
                 placeholder="Search artists by name"
@@ -318,12 +317,11 @@ export function ChannelRulesPanel(props: {
                 isPending={mutateRules.isPending}
                 emptyCurrentLabel="No blacklisted artists."
                 canManage={props.canManageBlacklist}
-                readOnlyMessage="You can view this blacklist, but cannot change it."
+                hideReadOnlyRemoveAction
               />
 
               <SearchManageCard
                 title="Blacklisted charters"
-                description="Blocks requests for any song charted by these charters."
                 inputValue={charterQuery}
                 onInputChange={setCharterQuery}
                 placeholder="Search charters by name"
@@ -351,12 +349,11 @@ export function ChannelRulesPanel(props: {
                 isPending={mutateRules.isPending}
                 emptyCurrentLabel="No blacklisted charters."
                 canManage={props.canManageBlacklist}
-                readOnlyMessage="You can view this blacklist, but cannot change it."
+                hideReadOnlyRemoveAction
               />
 
               <SearchManageCard
                 title="Blacklisted songs"
-                description="Blocks every version grouped under the same song."
                 inputValue={songGroupQuery}
                 onInputChange={setSongGroupQuery}
                 placeholder="Search songs by title"
@@ -390,12 +387,11 @@ export function ChannelRulesPanel(props: {
                 isPending={mutateRules.isPending}
                 emptyCurrentLabel="No blacklisted songs."
                 canManage={props.canManageBlacklist}
-                readOnlyMessage="You can view this blacklist, but cannot change it."
+                hideReadOnlyRemoveAction
               />
 
               <SearchManageCard
                 title="Blacklisted versions"
-                description="Blocks only one exact version ID."
                 inputValue={songVersionQuery}
                 onInputChange={setSongVersionQuery}
                 placeholder="Search versions by title"
@@ -429,7 +425,7 @@ export function ChannelRulesPanel(props: {
                 isPending={mutateRules.isPending}
                 emptyCurrentLabel="No blacklisted versions."
                 canManage={props.canManageBlacklist}
-                readOnlyMessage="You can view this blacklist, but cannot change it."
+                hideReadOnlyRemoveAction
               />
             </>
           ) : null}
@@ -437,7 +433,6 @@ export function ChannelRulesPanel(props: {
           {props.canManageSetlist || props.setlistArtists.length > 0 ? (
             <SearchManageCard
               title="Setlist artists"
-              description="Limits requests to songs by these artists when setlist mode is active."
               inputValue={setlistQuery}
               onInputChange={setSetlistQuery}
               placeholder="Search artists by name"
@@ -465,7 +460,6 @@ export function ChannelRulesPanel(props: {
               isPending={mutateRules.isPending}
               emptyCurrentLabel="No setlist artists."
               canManage={props.canManageSetlist}
-              readOnlyMessage="You can view this setlist, but cannot change it."
             />
           ) : null}
         </div>
@@ -482,7 +476,6 @@ export function ChannelRulesPanel(props: {
 
 function SearchManageCard(props: {
   title: string;
-  description?: string;
   inputValue: string;
   onInputChange: (value: string) => void;
   placeholder: string;
@@ -501,18 +494,16 @@ function SearchManageCard(props: {
   isPending: boolean;
   emptyCurrentLabel: string;
   canManage?: boolean;
-  readOnlyMessage?: string;
+  hideReadOnlyRemoveAction?: boolean;
 }) {
   const normalizedLength = props.inputValue.trim().length;
   const canManage = props.canManage !== false;
+  const showRemoveAction = canManage || !props.hideReadOnlyRemoveAction;
 
   return (
     <Card>
       <CardHeader className="p-5 pb-3">
         <CardTitle>{props.title}</CardTitle>
-        {props.description ? (
-          <p className="text-sm text-(--muted)">{props.description}</p>
-        ) : null}
       </CardHeader>
       <CardContent className="grid gap-4 px-5 pb-5 pt-0">
         {canManage ? (
@@ -528,8 +519,6 @@ function SearchManageCard(props: {
               </p>
             ) : null}
           </>
-        ) : props.readOnlyMessage ? (
-          <p className="text-sm text-(--muted)">{props.readOnlyMessage}</p>
         ) : null}
         {canManage && normalizedLength >= 2 ? (
           <div className="grid gap-3">
@@ -568,22 +557,28 @@ function SearchManageCard(props: {
                 <div
                   key={item.key}
                   title={item.hoverDetail}
-                  className="flex items-start justify-between gap-4 px-4 py-3"
+                  className={
+                    showRemoveAction
+                      ? "flex items-start justify-between gap-4 px-4 py-3"
+                      : "px-4 py-3"
+                  }
                 >
                   <div className="min-w-0">
                     <p className="truncate text-sm font-medium text-(--text)">
                       {item.label}
                     </p>
                   </div>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    className="h-auto p-0 text-sm font-medium text-(--muted) hover:bg-transparent hover:text-rose-200"
-                    onClick={item.onRemove}
-                    disabled={props.isPending || !canManage}
-                  >
-                    Remove
-                  </Button>
+                  {showRemoveAction ? (
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      className="h-auto p-0 text-sm font-medium text-(--muted) hover:bg-transparent hover:text-rose-200"
+                      onClick={item.onRemove}
+                      disabled={props.isPending || !canManage}
+                    >
+                      Remove
+                    </Button>
+                  ) : null}
                 </div>
               ))}
             </div>

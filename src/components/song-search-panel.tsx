@@ -149,6 +149,7 @@ export function SongSearchPanel(props: {
         visibleResults: SearchSong[];
       }) => ReactNode);
   useTotalForSummary?: boolean;
+  summaryContent?: ReactNode;
   controlsContent?: ReactNode;
   actionsLabel?: string;
   renderActions?: (args: SearchSongActionRenderArgs) => ReactNode;
@@ -645,13 +646,16 @@ export function SongSearchPanel(props: {
                   </div>
                 ) : null}
               </div>
-              {!queryTooShort && !error ? (
-                <div className="rounded-[24px] border border-(--border) bg-(--panel-soft) px-4 py-3 text-right max-[960px]:w-full max-[960px]:text-left">
-                  <p className="text-lg font-semibold text-(--text)">
-                    Found {summaryCount} songs
-                  </p>
-                </div>
-              ) : null}
+              <div className="flex max-w-full flex-wrap items-center justify-end gap-3 max-[960px]:w-full max-[960px]:justify-start">
+                {props.summaryContent}
+                {!queryTooShort && !error ? (
+                  <div className="rounded-[24px] border border-(--border) bg-(--panel-soft) px-4 py-3 text-right max-[960px]:w-full max-[960px]:text-left">
+                    <p className="text-lg font-semibold text-(--text)">
+                      Found {summaryCount} songs
+                    </p>
+                  </div>
+                ) : null}
+              </div>
             </div>
           </CardHeader>
           <CardContent className="grid gap-5">

@@ -2,7 +2,7 @@
 
 ## Purpose
 
-The Twitch panel extension acts as a compact Request Bot client inside Twitch. It lets viewers work with the active channel playlist without using chat commands, and it lets the channel owner or channel moderators perform core playlist actions directly from the panel.
+The Twitch panel extension acts as a compact RockList.Live client inside Twitch. It lets viewers work with the active channel playlist without using chat commands, and it lets the channel owner or channel moderators perform core playlist actions directly from the panel.
 
 ## Current MVP Surface
 
@@ -12,7 +12,7 @@ The Twitch panel extension acts as a compact Request Bot client inside Twitch. I
 - share Twitch identity from the panel
 - search the channel-aware catalog
 - add a regular request
-- add a VIP request when the viewer has a spendable Request Bot VIP token
+- add a VIP request when the viewer has a spendable RockList.Live VIP token
 - edit the current request
 - remove the current request
 - view VIP token balance and current request usage for the active channel
@@ -28,8 +28,8 @@ The Twitch panel extension acts as a compact Request Bot client inside Twitch. I
 ## Channel Access Model
 
 - The panel trusts only the verified Twitch Extension JWT.
-- The active `channel_id` resolves the Request Bot channel.
-- The linked `user_id` resolves or creates the matching Request Bot user by `twitchUserId`.
+- The active `channel_id` resolves the RockList.Live channel.
+- The linked `user_id` resolves or creates the matching RockList.Live user by `twitchUserId`.
 - The panel resolves access for the current channel as one of:
   - `owner`
   - `moderator`
@@ -159,7 +159,7 @@ The panel identity-share flow does not create a website session.
 
 If the panel opens `rocklist.live` in a new window:
 
-- the user is signed in on the website only when the browser already has the Request Bot session cookie
+- the user is signed in on the website only when the browser already has the RockList.Live session cookie
 - otherwise the website still requires the normal Twitch OAuth flow
 
 ## Main Files

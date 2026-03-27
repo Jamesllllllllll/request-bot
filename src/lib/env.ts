@@ -12,6 +12,7 @@ export interface AppEnv {
   TWITCH_CLIENT_ID: string;
   TWITCH_CLIENT_SECRET: string;
   TWITCH_EVENTSUB_SECRET: string;
+  TWITCH_EXTENSION_SECRET: string;
   TWITCH_BOT_USERNAME: string;
   TWITCH_SCOPES: string;
   SESSION_SECRET: string;
@@ -30,6 +31,7 @@ export interface BackendEnv {
   TWITCH_CLIENT_ID: string;
   TWITCH_CLIENT_SECRET: string;
   TWITCH_EVENTSUB_SECRET: string;
+  TWITCH_EXTENSION_SECRET?: string;
   TWITCH_BOT_USERNAME: string;
   ADMIN_TWITCH_USER_IDS?: string;
 }

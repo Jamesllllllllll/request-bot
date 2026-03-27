@@ -9,8 +9,9 @@ import {
   Search,
   Settings2,
 } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Button } from "~/components/ui/button";
+import { Skeleton } from "~/components/ui/skeleton";
 import { pageTitle } from "~/lib/page-title";
 
 type HomeLiveChannel = {
@@ -32,78 +33,17 @@ type HomeLiveChannel = {
   } | null;
 };
 
-const demoLiveChannels: HomeLiveChannel[] = [
-  {
-    id: "mock-christhemetalnerd",
-    slug: "christhemetalnerd",
-    displayName: "ChrisTheMetalNerd",
-    login: "christhemetalnerd",
-    streamTitle:
-      "Featured playlist queue with live requests and community picks",
-    streamThumbnailUrl:
-      "https://static-cdn.jtvnw.net/previews-ttv/live_user_christhemetalnerd-640x360.jpg",
-    currentItem: {
-      title: "Playlist",
-      artist: "Featured queue",
-    },
-    nextItem: {
-      title: "Viewer requests",
-      artist: "Up next",
-    },
-  },
-  {
-    id: "mock-amisslamb44",
-    slug: "amisslamb44",
-    displayName: "AmissLamb44",
-    login: "amisslamb44",
-    streamTitle: "Playlist",
-    streamThumbnailUrl:
-      "https://static-cdn.jtvnw.net/previews-ttv/live_user_amisslamb44-640x360.jpg",
-    currentItem: {
-      title: "Playlist",
-      artist: "Live now",
-    },
-  },
-  {
-    id: "mock-jacoandfoxy",
-    slug: "jacoandfoxy",
-    displayName: "JacoAndFoxy",
-    login: "jacoandfoxy",
-    streamTitle: "Playlist",
-    streamThumbnailUrl:
-      "https://static-cdn.jtvnw.net/previews-ttv/live_user_jacoandfoxy-640x360.jpg",
-    currentItem: {
-      title: "Playlist",
-      artist: "Live now",
-    },
-  },
-  {
-    id: "mock-shaggy-malagy",
-    slug: "shaggy_malagy",
-    displayName: "shaggy_malagy",
-    login: "shaggy_malagy",
-    streamTitle: "Playlist",
-    streamThumbnailUrl:
-      "https://static-cdn.jtvnw.net/previews-ttv/live_user_shaggy_malagy-640x360.jpg",
-    currentItem: {
-      title: "Playlist",
-      artist: "Live now",
-    },
-  },
-  {
-    id: "mock-slyman85",
-    slug: "slyman85",
-    displayName: "Slyman85",
-    login: "slyman85",
-    streamTitle: "Playlist",
-    streamThumbnailUrl:
-      "https://static-cdn.jtvnw.net/previews-ttv/live_user_slyman85-640x360.jpg",
-    currentItem: {
-      title: "Playlist",
-      artist: "Live now",
-    },
-  },
-];
+const HOME_LIVE_CHANNELS_CACHE_KEY = "request-bot:home-live-channels:v1";
+const HOME_LIVE_CHANNELS_CACHE_TTL_MS = 5 * 60 * 1000;
+
+type HomeLiveChannelsResponse = {
+  channels: HomeLiveChannel[];
+};
+
+type HomeLiveChannelsCache = {
+  cachedAt: number;
+  channels: HomeLiveChannel[];
+};
 
 export const Route = createFileRoute("/")({
   head: () => ({
@@ -114,6 +54,7 @@ export const Route = createFileRoute("/")({
 
 function HomePage() {
   const [showDemoChannels, setShowDemoChannels] = useState(import.meta.env.DEV);
+  const [cachedLiveChannels] = useState(() => readHomeLiveChannelsCache());
   const { data: sessionData } = useQuery({
     queryKey: ["viewer-session"],
     queryFn: async () => {
@@ -141,27 +82,29 @@ function HomePage() {
       }>;
     },
   });
-  const { data } = useQuery({
+  const liveChannelsQuery = useQuery({
     queryKey: ["home-live-channels"],
+    enabled: !showDemoChannels,
     queryFn: async () => {
       const response = await fetch("/api/channels/live");
-      return response.json() as Promise<{
-        channels: HomeLiveChannel[];
-      }>;
+      return response.json() as Promise<HomeLiveChannelsResponse>;
     },
+    initialData: cachedLiveChannels
+      ? { channels: cachedLiveChannels.channels }
+      : undefined,
+    initialDataUpdatedAt: cachedLiveChannels?.cachedAt,
+    staleTime: HOME_LIVE_CHANNELS_CACHE_TTL_MS,
   });
-  const { data: demoData } = useQuery({
+  const demoChannelsQuery = useQuery({
     queryKey: ["home-demo-channels"],
-    enabled: showDemoChannels || import.meta.env.DEV,
+    enabled: showDemoChannels,
     queryFn: async () => {
       const response = await fetch("/api/channels/live?source=rocksmith");
       if (!response.ok) {
         throw new Error("Unable to load Rocksmith demo channels.");
       }
 
-      return response.json() as Promise<{
-        channels: HomeLiveChannel[];
-      }>;
+      return response.json() as Promise<HomeLiveChannelsResponse>;
     },
   });
   const viewer = sessionData?.viewer ?? null;
@@ -170,14 +113,22 @@ function HomePage() {
     : viewer?.manageableChannels?.[0]
       ? { slug: viewer.manageableChannels[0].slug }
       : null;
-  const liveChannels = data?.channels ?? [];
-  const rocksmithDemoChannels =
-    demoData?.channels && demoData.channels.length > 0
-      ? demoData.channels
-      : demoLiveChannels;
+  useEffect(() => {
+    if (!liveChannelsQuery.data) {
+      return;
+    }
+
+    writeHomeLiveChannelsCache(liveChannelsQuery.data.channels);
+  }, [liveChannelsQuery.data]);
+
+  const liveChannels = liveChannelsQuery.data?.channels ?? [];
+  const rocksmithDemoChannels = demoChannelsQuery.data?.channels ?? [];
   const displayedChannels = showDemoChannels
     ? rocksmithDemoChannels
     : liveChannels;
+  const isDisplayedChannelsLoading = showDemoChannels
+    ? demoChannelsQuery.isLoading
+    : liveChannelsQuery.isLoading;
   const toggleLabel = showDemoChannels ? "Show Live" : "Show Demo";
   const sourceLabel = showDemoChannels
     ? "This is a list of streams with the Rocksmith tag for demo purposes."
@@ -248,9 +199,13 @@ function HomePage() {
               >
                 {toggleLabel}
               </Button>
-              <div className="rounded-full border border-(--border) bg-(--panel-soft) px-3 py-1 text-xs uppercase tracking-[0.22em] text-(--muted)">
-                {displayedChannels.length} active
-              </div>
+              {isDisplayedChannelsLoading ? (
+                <Skeleton className="h-8 w-24 rounded-full border border-(--border) bg-(--panel-soft)" />
+              ) : (
+                <div className="rounded-full border border-(--border) bg-(--panel-soft) px-3 py-1 text-xs uppercase tracking-[0.22em] text-(--muted)">
+                  {displayedChannels.length} active
+                </div>
+              )}
             </div>
           </div>
           {sourceLabel ? (
@@ -258,7 +213,9 @@ function HomePage() {
           ) : null}
 
           <div className="mt-6 grid gap-5">
-            {featuredChannel ? (
+            {isDisplayedChannelsLoading ? (
+              <LiveChannelsSectionSkeleton />
+            ) : featuredChannel ? (
               <>
                 <FeaturedLiveChannelCard channel={featuredChannel} />
                 {secondaryChannels.length ? (
@@ -408,6 +365,11 @@ function CompactLiveChannelCard(props: { channel: HomeLiveChannel }) {
           <p className="mt-1 truncate text-base text-(--brand-deep)">
             @{channel.login}
           </p>
+          {channel.streamTitle ? (
+            <p className="mt-3 line-clamp-2 text-sm leading-6 text-(--muted)">
+              {channel.streamTitle}
+            </p>
+          ) : null}
         </div>
         <Radio className="mt-1 h-4 w-4 shrink-0 text-(--accent-strong)" />
       </div>
@@ -480,6 +442,76 @@ function QueueSnippet(props: {
   );
 }
 
+function LiveChannelsSectionSkeleton() {
+  return (
+    <>
+      <div className="overflow-hidden rounded-[30px] border border-(--border-strong) bg-(--panel-soft)">
+        <Skeleton className="aspect-video w-full rounded-none bg-(--panel-muted)" />
+        <div className="p-6 md:p-7">
+          <div className="flex items-start justify-between gap-4">
+            <div className="min-w-0 flex-1">
+              <Skeleton className="h-8 w-52 rounded-full bg-(--panel-muted)" />
+              <Skeleton className="mt-2 h-5 w-32 rounded-full bg-(--panel-muted)" />
+              <Skeleton className="mt-5 h-4 w-full rounded-full bg-(--panel-muted)" />
+              <Skeleton className="mt-2 h-4 w-3/4 rounded-full bg-(--panel-muted)" />
+            </div>
+            <Skeleton className="h-7 w-16 rounded-full bg-(--panel-muted)" />
+          </div>
+          <div className="mt-6 grid gap-3 rounded-[24px] border border-(--border) bg-(--panel) p-5">
+            <LiveQueueSnippetSkeleton />
+            <LiveQueueSnippetSkeleton />
+          </div>
+          <div className="mt-6 flex flex-wrap gap-4">
+            <Skeleton className="h-9 w-32 rounded-full bg-(--panel-muted)" />
+            <Skeleton className="h-9 w-36 rounded-full bg-(--panel-muted)" />
+          </div>
+        </div>
+      </div>
+      <div className="grid gap-4 md:grid-cols-2">
+        <CompactLiveChannelCardSkeleton />
+        <CompactLiveChannelCardSkeleton />
+      </div>
+    </>
+  );
+}
+
+function CompactLiveChannelCardSkeleton() {
+  return (
+    <div className="rounded-[26px] border border-(--border) bg-(--panel-muted) p-5">
+      <Skeleton className="mb-5 aspect-video w-full rounded-[20px] bg-(--panel)" />
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0 flex-1">
+          <Skeleton className="h-6 w-36 rounded-full bg-(--panel)" />
+          <Skeleton className="mt-2 h-4 w-24 rounded-full bg-(--panel)" />
+          <Skeleton className="mt-3 h-4 w-full rounded-full bg-(--panel)" />
+          <Skeleton className="mt-2 h-4 w-4/5 rounded-full bg-(--panel)" />
+        </div>
+        <Skeleton className="mt-1 h-4 w-4 rounded-full bg-(--panel)" />
+      </div>
+      <div className="mt-5 grid gap-2 rounded-[20px] border border-(--border) bg-(--panel) p-4">
+        <LiveQueueSnippetSkeleton />
+      </div>
+      <div className="mt-5 flex flex-wrap gap-4">
+        <Skeleton className="h-9 w-28 rounded-full bg-(--panel)" />
+        <Skeleton className="h-9 w-32 rounded-full bg-(--panel)" />
+      </div>
+    </div>
+  );
+}
+
+function LiveQueueSnippetSkeleton() {
+  return (
+    <div className="flex items-start gap-3">
+      <Skeleton className="h-9 w-9 shrink-0 rounded-full bg-(--panel-soft)" />
+      <div className="min-w-0 flex-1">
+        <Skeleton className="h-3 w-24 rounded-full bg-(--panel-soft)" />
+        <Skeleton className="mt-2 h-4 w-40 rounded-full bg-(--panel-soft)" />
+        <Skeleton className="mt-2 h-3 w-28 rounded-full bg-(--panel-soft)" />
+      </div>
+    </div>
+  );
+}
+
 function FeatureBlock(props: {
   icon: React.ComponentType<{ className?: string }>;
   title: string;
@@ -502,4 +534,56 @@ function FeatureBlock(props: {
       <p className="mt-2 text-sm leading-6 text-(--muted)">{props.body}</p>
     </div>
   );
+}
+
+function readHomeLiveChannelsCache() {
+  if (typeof window === "undefined") {
+    return null;
+  }
+
+  try {
+    const raw = window.localStorage.getItem(HOME_LIVE_CHANNELS_CACHE_KEY);
+    if (!raw) {
+      return null;
+    }
+
+    const parsed = JSON.parse(raw) as Partial<HomeLiveChannelsCache> | null;
+    if (
+      !parsed ||
+      typeof parsed.cachedAt !== "number" ||
+      !Array.isArray(parsed.channels)
+    ) {
+      return null;
+    }
+
+    if (Date.now() - parsed.cachedAt > HOME_LIVE_CHANNELS_CACHE_TTL_MS) {
+      return null;
+    }
+
+    return {
+      cachedAt: parsed.cachedAt,
+      channels: parsed.channels as HomeLiveChannel[],
+    } satisfies HomeLiveChannelsCache;
+  } catch {
+    return null;
+  }
+}
+
+function writeHomeLiveChannelsCache(channels: HomeLiveChannel[]) {
+  if (typeof window === "undefined") {
+    return;
+  }
+
+  try {
+    const payload: HomeLiveChannelsCache = {
+      cachedAt: Date.now(),
+      channels,
+    };
+    window.localStorage.setItem(
+      HOME_LIVE_CHANNELS_CACHE_KEY,
+      JSON.stringify(payload)
+    );
+  } catch {
+    // Ignore storage failures in private or restricted contexts.
+  }
 }

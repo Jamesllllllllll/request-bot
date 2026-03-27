@@ -33,6 +33,7 @@ export interface RemoveRequestsInput {
   requesterLogin: string;
   actorUserId: string | null;
   kind: "regular" | "vip" | "all";
+  itemId?: string;
 }
 
 export interface ChangeRequestKindInput {
@@ -40,6 +41,32 @@ export interface ChangeRequestKindInput {
   itemId: string;
   actorUserId: string | null;
   requestKind: "regular" | "vip";
+}
+
+export interface EditRequestInput {
+  channelId: string;
+  itemId: string;
+  actorUserId: string | null;
+  requestKind: "regular" | "vip";
+  song: {
+    id: string;
+    title: string;
+    authorId?: number;
+    groupedProjectId?: number;
+    artist?: string;
+    album?: string;
+    creator?: string;
+    tuning?: string;
+    parts?: string[] | string;
+    durationText?: string;
+    cdlcId?: number;
+    source: string;
+    sourceUrl?: string;
+    requestedQuery?: string;
+    warningCode?: string;
+    warningMessage?: string;
+    candidateMatchesJson?: string;
+  };
 }
 
 export interface MarkPlayedInput {
@@ -137,6 +164,7 @@ export interface PlaylistMutationResult {
 
 export interface PlaylistCoordinator {
   addRequest(input: AddRequestInput): Promise<PlaylistMutationResult>;
+  editRequest(input: EditRequestInput): Promise<PlaylistMutationResult>;
   changeRequestKind(
     input: ChangeRequestKindInput
   ): Promise<PlaylistMutationResult>;

@@ -37,7 +37,9 @@ import { hasRedeemableVipToken } from "~/lib/vip-tokens";
 type ViewerRequestKind = "regular" | "vip";
 type ViewerRemoveKind = ViewerRequestKind | "all";
 
-type ViewerRequestMutationInput =
+export type ViewerRequestSource = "web" | "extension";
+
+export type ViewerRequestMutationInput =
   | {
       action: "submit";
       songId: string;
@@ -47,10 +49,13 @@ type ViewerRequestMutationInput =
   | {
       action: "remove";
       kind: ViewerRemoveKind;
+      itemId?: string;
     };
 
-type ViewerIdentity = {
-  userId: string;
+type ViewerChannel = NonNullable<Awaited<ReturnType<typeof getChannelBySlug>>>;
+
+export type ViewerIdentity = {
+  userId?: string | null;
   twitchUserId: string;
   login: string;
   displayName: string;
@@ -86,6 +91,26 @@ type ViewerRequestContext = {
   vipTokensAvailable: number;
   activeRequestLimit: number | null;
   isBlocked: boolean;
+};
+
+type ViewerSongPayload = {
+  id: string;
+  title: string;
+  authorId?: number;
+  groupedProjectId?: number;
+  artist?: string;
+  album?: string;
+  creator?: string;
+  tuning?: string;
+  parts?: string[];
+  durationText?: string;
+  cdlcId?: number;
+  source: string;
+  sourceUrl?: string;
+  requestedQuery?: string;
+  warningCode?: string;
+  warningMessage?: string;
+  candidateMatchesJson?: string;
 };
 
 export type ViewerRequestStatePayload = {
@@ -127,20 +152,11 @@ export async function getViewerRequestState(input: {
     return { viewer: null };
   }
 
-  const context = await loadViewerRequestContext(input.env, channel, viewer);
-  return {
-    viewer: {
-      twitchUserId: context.viewer.twitchUserId,
-      login: context.viewer.login,
-      displayName: context.viewer.displayName,
-      profileImageUrl: context.viewer.profileImageUrl,
-      isSubscriber: context.subscription.isSubscriber,
-      subscriptionVerified: context.subscription.verified,
-      vipTokensAvailable: context.vipTokensAvailable,
-      activeRequestLimit: context.activeRequestLimit,
-      access: context.access,
-    },
-  };
+  return getViewerRequestStateForChannelViewer({
+    env: input.env,
+    channel,
+    viewer,
+  });
 }
 
 export async function performViewerRequestMutation(input: {
@@ -159,13 +175,13 @@ export async function performViewerRequestMutation(input: {
     throw new ViewerRequestError(401, "Sign in with Twitch to request songs.");
   }
 
-  const context = await loadViewerRequestContext(input.env, channel, viewer);
-
-  if (input.mutation.action === "remove") {
-    return removeViewerRequests(input.env, context, input.mutation.kind);
-  }
-
-  return submitViewerRequest(input.env, context, input.mutation);
+  return performViewerRequestMutationForChannelViewer({
+    env: input.env,
+    channel,
+    viewer,
+    mutation: input.mutation,
+    source: "web",
+  });
 }
 
 async function resolveViewerIdentity(env: AppEnv, request: Request) {
@@ -188,9 +204,60 @@ async function resolveViewerIdentity(env: AppEnv, request: Request) {
   } satisfies ViewerIdentity;
 }
 
+export async function getViewerRequestStateForChannelViewer(input: {
+  env: AppEnv;
+  channel: ViewerChannel;
+  viewer: ViewerIdentity;
+}): Promise<ViewerRequestStatePayload> {
+  const context = await loadViewerRequestContext(
+    input.env,
+    input.channel,
+    input.viewer
+  );
+
+  return {
+    viewer: {
+      twitchUserId: context.viewer.twitchUserId,
+      login: context.viewer.login,
+      displayName: context.viewer.displayName,
+      profileImageUrl: context.viewer.profileImageUrl,
+      isSubscriber: context.subscription.isSubscriber,
+      subscriptionVerified: context.subscription.verified,
+      vipTokensAvailable: context.vipTokensAvailable,
+      activeRequestLimit: context.activeRequestLimit,
+      access: context.access,
+    },
+  };
+}
+
+export async function performViewerRequestMutationForChannelViewer(input: {
+  env: AppEnv;
+  channel: ViewerChannel;
+  viewer: ViewerIdentity;
+  mutation: ViewerRequestMutationInput;
+  source?: ViewerRequestSource;
+}) {
+  const context = await loadViewerRequestContext(
+    input.env,
+    input.channel,
+    input.viewer
+  );
+
+  if (input.mutation.action === "remove") {
+    return removeViewerRequests(input.env, context, {
+      kind: input.mutation.kind,
+      itemId: input.mutation.itemId,
+    });
+  }
+
+  return submitViewerRequest(input.env, context, input.mutation, {
+    source: input.source ?? "web",
+  });
+}
+
 async function loadViewerRequestContext(
   env: AppEnv,
-  channel: NonNullable<Awaited<ReturnType<typeof getChannelBySlug>>>,
+  channel: ViewerChannel,
   viewer: ViewerIdentity
 ): Promise<ViewerRequestContext> {
   const [
@@ -349,14 +416,34 @@ async function resolveViewerSubscription(
 async function removeViewerRequests(
   env: AppEnv,
   context: ViewerRequestContext,
-  kind: ViewerRemoveKind
+  input: {
+    kind: ViewerRemoveKind;
+    itemId?: string;
+  }
 ) {
+  if (input.itemId) {
+    const target = context.state.playlist.items.find(
+      (item) =>
+        item.id === input.itemId &&
+        item.requestedByTwitchUserId === context.viewer.twitchUserId &&
+        (item.status === "queued" || item.status === "current")
+    );
+
+    if (!target) {
+      throw new ViewerRequestError(
+        404,
+        "That request is no longer in the playlist."
+      );
+    }
+  }
+
   const result = await removeRequestsFromPlaylist(env, {
     channelId: context.state.channel.id,
     requesterTwitchUserId: context.viewer.twitchUserId,
     requesterLogin: context.viewer.login,
     actorUserId: null,
-    kind,
+    kind: input.kind,
+    itemId: input.itemId,
   });
 
   return {
@@ -364,14 +451,19 @@ async function removeViewerRequests(
     message:
       result.message === "No matching requests found"
         ? "You do not have any matching active requests in this playlist."
-        : `${result.message} from the playlist.`,
+        : input.itemId
+          ? "Removed your request from the playlist."
+          : `${result.message} from the playlist.`,
   };
 }
 
 async function submitViewerRequest(
   env: AppEnv,
   context: ViewerRequestContext,
-  mutation: Extract<ViewerRequestMutationInput, { action: "submit" }>
+  mutation: Extract<ViewerRequestMutationInput, { action: "submit" }>,
+  options?: {
+    source?: ViewerRequestSource;
+  }
 ) {
   if (!context.access.allowed) {
     throw new ViewerRequestError(
@@ -387,6 +479,7 @@ async function submitViewerRequest(
 
   const normalizedQuery = buildViewerQuery(song);
   const rawMessage = buildViewerRawMessage({
+    source: options?.source ?? "web",
     replaceExisting: mutation.replaceExisting,
     requestKind: mutation.requestKind,
     query: normalizedQuery,
@@ -396,6 +489,15 @@ async function submitViewerRequest(
     channelId: context.state.channel.id,
     twitchUserId: context.viewer.twitchUserId,
   });
+  const existingActiveRequests = context.state.playlist.items.filter(
+    (item) =>
+      item.requestedByTwitchUserId === context.viewer.twitchUserId &&
+      (item.status === "queued" || item.status === "current")
+  );
+  const editableExistingRequest =
+    mutation.replaceExisting && existingActiveCount === 1
+      ? (existingActiveRequests[0] ?? null)
+      : null;
 
   const existingMatchingRequest =
     context.state.playlist.items.find(
@@ -409,6 +511,18 @@ async function submitViewerRequest(
     existingMatchingRequest != null &&
     existingMatchingRequest.requestKind !== mutation.requestKind &&
     !mutation.replaceExisting;
+  const editInPlace = editableExistingRequest != null;
+  const editingSameSong =
+    editInPlace && editableExistingRequest.songId === song.id;
+  const previousRequestKind = editInPlace
+    ? editableExistingRequest.requestKind
+    : kindChangeOnly && existingMatchingRequest
+      ? existingMatchingRequest.requestKind
+      : null;
+  const vipTokenTransition = getVipTokenTransition(
+    previousRequestKind,
+    mutation.requestKind
+  );
 
   if (
     existingMatchingRequest &&
@@ -430,10 +544,32 @@ async function submitViewerRequest(
     );
   }
 
+  if (
+    editInPlace &&
+    editingSameSong &&
+    editableExistingRequest.requestKind === mutation.requestKind
+  ) {
+    await createViewerRequestLog(env, {
+      context,
+      rawMessage,
+      normalizedQuery,
+      song,
+      outcome: "rejected",
+      outcomeReason: "existing_request_same_song",
+    });
+
+    throw new ViewerRequestError(
+      409,
+      "That song is already your current request."
+    );
+  }
+
   const activeLimit = context.activeRequestLimit;
-  const effectiveActiveCount = mutation.replaceExisting
+  const effectiveActiveCount = editInPlace
     ? 0
-    : existingActiveCount;
+    : mutation.replaceExisting
+      ? 0
+      : existingActiveCount;
 
   if (
     activeLimit != null &&
@@ -481,7 +617,7 @@ async function submitViewerRequest(
   }
 
   if (
-    mutation.requestKind === "vip" &&
+    vipTokenTransition === "consume" &&
     !hasRedeemableVipToken(context.vipTokensAvailable)
   ) {
     await createViewerRequestLog(env, {
@@ -535,6 +671,7 @@ async function submitViewerRequest(
 
   if (
     !kindChangeOnly &&
+    !editingSameSong &&
     context.state.settings.duplicateWindowSeconds > 0 &&
     (await wasSongRequestedRecently(env, {
       channelId: context.state.channel.id,
@@ -557,7 +694,7 @@ async function submitViewerRequest(
     );
   }
 
-  if (!kindChangeOnly) {
+  if (!kindChangeOnly && !editInPlace) {
     const queueCount = context.state.playlist.items.length;
     const effectiveQueueCount = mutation.replaceExisting
       ? Math.max(0, queueCount - existingActiveCount)
@@ -597,14 +734,14 @@ async function submitViewerRequest(
           : "vip_request_downgrade",
     });
 
-    if (mutation.requestKind === "vip") {
+    if (vipTokenTransition === "consume") {
       await consumeVipToken(env, {
         channelId: context.state.channel.id,
         login: context.viewer.login,
         displayName: context.viewer.displayName,
         twitchUserId: context.viewer.twitchUserId,
       });
-    } else {
+    } else if (vipTokenTransition === "refund") {
       await grantVipToken(env, {
         channelId: context.state.channel.id,
         login: context.viewer.login,
@@ -621,6 +758,58 @@ async function submitViewerRequest(
             ? `Your request "${formatSong(song)}" is now marked as VIP.`
             : `Your request "${formatSong(song)}" is now marked as VIP and will play next.`
           : `Your request "${formatSong(song)}" is now a regular request again.`,
+    };
+  }
+
+  if (editInPlace && editableExistingRequest) {
+    await editRequestOnPlaylist(env, {
+      channelId: context.state.channel.id,
+      itemId: editableExistingRequest.id,
+      actorUserId: null,
+      requestKind: mutation.requestKind,
+      song: buildViewerSongPayload({
+        song,
+        normalizedQuery,
+        warningCode,
+        warningMessage,
+      }),
+    });
+
+    await createViewerRequestLog(env, {
+      context,
+      rawMessage,
+      normalizedQuery,
+      song,
+      outcome: "accepted",
+      outcomeReason: warningCode ?? "request_edited",
+    });
+
+    if (vipTokenTransition === "consume") {
+      await consumeVipToken(env, {
+        channelId: context.state.channel.id,
+        login: context.viewer.login,
+        displayName: context.viewer.displayName,
+        twitchUserId: context.viewer.twitchUserId,
+      });
+    } else if (vipTokenTransition === "refund") {
+      await grantVipToken(env, {
+        channelId: context.state.channel.id,
+        login: context.viewer.login,
+        displayName: context.viewer.displayName,
+        twitchUserId: context.viewer.twitchUserId,
+      });
+    }
+
+    const baseMessage =
+      mutation.requestKind === "vip"
+        ? `Edited your request to "${formatSong(song)}" as a VIP request.`
+        : `Edited your request to "${formatSong(song)}".`;
+
+    return {
+      ok: true,
+      message: warningMessage
+        ? `${baseMessage} ${warningMessage}`
+        : baseMessage,
     };
   }
 
@@ -641,36 +830,12 @@ async function submitViewerRequest(
     requestedByDisplayName: context.viewer.displayName,
     prioritizeNext: mutation.requestKind === "vip",
     requestKind: mutation.requestKind,
-    song: {
-      id: song.id,
-      title: song.title,
-      authorId: song.authorId,
-      groupedProjectId: song.groupedProjectId,
-      artist: song.artist,
-      album: song.album,
-      creator: song.creator,
-      tuning: song.tuning,
-      parts: song.parts,
-      durationText: song.durationText,
-      cdlcId: song.sourceId,
-      source: song.source,
-      sourceUrl: song.sourceUrl,
+    song: buildViewerSongPayload({
+      song,
+      normalizedQuery,
       warningCode,
-      warningMessage: warningMessage ?? undefined,
-      candidateMatchesJson: JSON.stringify([
-        {
-          id: song.id,
-          title: song.title,
-          artist: song.artist,
-          album: song.album,
-          creator: song.creator,
-          tuning: song.tuning,
-          parts: song.parts ?? [],
-          durationText: song.durationText,
-          sourceId: song.sourceId,
-        },
-      ]),
-    },
+      warningMessage,
+    }),
   });
 
   await createViewerRequestLog(env, {
@@ -683,7 +848,7 @@ async function submitViewerRequest(
       warningCode ?? (mutation.requestKind === "vip" ? "vip_request" : null),
   });
 
-  if (mutation.requestKind === "vip") {
+  if (vipTokenTransition === "consume") {
     await consumeVipToken(env, {
       channelId: context.state.channel.id,
       login: context.viewer.login,
@@ -761,24 +926,7 @@ async function addRequestToPlaylist(
     requestedByDisplayName: string;
     prioritizeNext?: boolean;
     requestKind: ViewerRequestKind;
-    song: {
-      id: string;
-      title: string;
-      authorId?: number;
-      groupedProjectId?: number;
-      artist?: string;
-      album?: string;
-      creator?: string;
-      tuning?: string;
-      parts?: string[];
-      durationText?: string;
-      cdlcId?: number;
-      source: string;
-      sourceUrl?: string;
-      warningCode?: string;
-      warningMessage?: string;
-      candidateMatchesJson?: string;
-    };
+    song: ViewerSongPayload;
   }
 ) {
   return callPlaylistMutation(env, "/internal/playlist/add-request", input);
@@ -792,6 +940,7 @@ async function removeRequestsFromPlaylist(
     requesterLogin: string;
     actorUserId: string | null;
     kind: ViewerRemoveKind;
+    itemId?: string;
   }
 ) {
   return callPlaylistMutation(env, "/internal/playlist/remove-requests", input);
@@ -808,6 +957,22 @@ async function changeRequestKindOnPlaylist(
 ) {
   return callPlaylistMutation(env, "/internal/playlist/mutate", {
     action: "changeRequestKind",
+    ...input,
+  });
+}
+
+async function editRequestOnPlaylist(
+  env: AppEnv,
+  input: {
+    channelId: string;
+    itemId: string;
+    actorUserId: string | null;
+    requestKind: ViewerRequestKind;
+    song: ViewerSongPayload;
+  }
+) {
+  return callPlaylistMutation(env, "/internal/playlist/mutate", {
+    action: "editRequest",
     ...input,
   });
 }
@@ -846,11 +1011,57 @@ function buildViewerQuery(
 }
 
 function buildViewerRawMessage(input: {
+  source: ViewerRequestSource;
   replaceExisting: boolean;
   requestKind: ViewerRequestKind;
   query: string;
 }) {
-  return `web:${input.replaceExisting ? "edit" : "request"}:${input.requestKind}:${input.query}`;
+  return `${input.source}:${input.replaceExisting ? "edit" : "request"}:${input.requestKind}:${input.query}`;
+}
+
+function buildViewerSongPayload(input: {
+  song: NonNullable<Awaited<ReturnType<typeof getCatalogSongById>>>;
+  normalizedQuery: string;
+  warningCode?: string | null;
+  warningMessage?: string | null;
+}): ViewerSongPayload {
+  return {
+    id: input.song.id,
+    title: input.song.title,
+    authorId: input.song.authorId ?? undefined,
+    groupedProjectId: input.song.groupedProjectId ?? undefined,
+    artist: input.song.artist ?? undefined,
+    album: input.song.album ?? undefined,
+    creator: input.song.creator ?? undefined,
+    tuning: input.song.tuning ?? undefined,
+    parts: Array.isArray(input.song.parts) ? input.song.parts : undefined,
+    durationText: input.song.durationText ?? undefined,
+    cdlcId: input.song.sourceId ?? undefined,
+    source: input.song.source,
+    sourceUrl: input.song.sourceUrl ?? undefined,
+    requestedQuery: input.normalizedQuery,
+    warningCode: input.warningCode ?? undefined,
+    warningMessage: input.warningMessage ?? undefined,
+  };
+}
+
+function getVipTokenTransition(
+  previousRequestKind: string | null,
+  nextRequestKind: ViewerRequestKind
+) {
+  if (previousRequestKind === nextRequestKind) {
+    return "none" as const;
+  }
+
+  if (nextRequestKind === "vip") {
+    return "consume" as const;
+  }
+
+  if (previousRequestKind === "vip") {
+    return "refund" as const;
+  }
+
+  return "none" as const;
 }
 
 function formatSong(

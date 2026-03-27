@@ -115,6 +115,10 @@ export type PlaylistManagementState = {
   actorUserId: string;
 };
 
+type PlaylistManagementAccess = NonNullable<
+  Awaited<ReturnType<typeof getDashboardChannelAccess>>
+>;
+
 export async function requirePlaylistManagementState(
   request: Request,
   runtimeEnv: AppEnv,
@@ -135,8 +139,15 @@ export async function requirePlaylistManagementState(
     return null;
   }
 
+  return loadPlaylistManagementStateForAccess(runtimeEnv, access);
+}
+
+export async function loadPlaylistManagementStateForAccess(
+  runtimeEnv: AppEnv,
+  access: PlaylistManagementAccess
+) {
   if (access.accessRole === "owner") {
-    const state = await getDashboardState(runtimeEnv, userId);
+    const state = await getDashboardState(runtimeEnv, access.actorUserId);
     if (!state) {
       return null;
     }
@@ -291,6 +302,42 @@ export function canManageChannelVipTokens(state: PlaylistManagementState) {
     state.accessRole === "owner" ||
     !!state.settings?.moderatorCanManageVipTokens
   );
+}
+
+export function canPerformPlaylistMutationAction(
+  state: PlaylistManagementState,
+  action: PlaylistMutation["action"]
+) {
+  switch (action) {
+    case "markPlayed":
+    case "restorePlayed":
+    case "setCurrent":
+    case "deleteItem":
+    case "chooseVersion":
+    case "clearPlaylist":
+    case "resetSession":
+    case "shuffleNext":
+    case "shufflePlaylist":
+    case "reorderItems":
+    case "manualAdd":
+      return canManageChannelRequests(state);
+    case "changeRequestKind":
+      return (
+        canManageChannelRequests(state) && canManageChannelVipTokens(state)
+      );
+    default:
+      return false;
+  }
+}
+
+export function getForbiddenPlaylistMutationMessage(
+  action: PlaylistMutation["action"]
+) {
+  if (action === "changeRequestKind") {
+    return "You do not have permission to manage VIP request changes.";
+  }
+
+  return "You do not have permission to manage this channel playlist.";
 }
 
 async function queuePlaylistReply(

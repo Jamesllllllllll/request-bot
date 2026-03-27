@@ -1,91 +1,76 @@
 # Feature Request: Twitch Panel Extension For Playlist Viewing And Viewer Song Requests
 
-## Problem or use case
+## Scope
 
-Request Bot currently supports public playlist viewing, chat-command requests, and dashboard playlist management. It does not yet offer a Twitch-native request experience directly on the channel page.
+Request Bot includes a Twitch panel extension that gives viewers a Twitch-native request surface on the channel page.
 
-This leaves a product gap for streamers and viewers who want:
+The panel supports:
 
-- a Twitch-native queue surface that does not depend on OBS setup
-- a way to browse the live playlist without leaving Twitch
-- a way for viewers to search and submit requests without learning chat commands
-- a way for viewers to edit or remove their own requests from Twitch
-- a way for viewers to spend their existing Request Bot VIP tokens from Twitch
+- read-only playlist viewing without identity sharing
+- current queue and now-playing state
+- linked viewer request actions:
+  - add regular request
+  - add VIP request
+  - edit current request
+  - remove own request
+- linked viewer summary:
+  - display name
+  - VIP token balance for the active channel
+  - current request count and limit
+- requester attribution on playlist items
+- owner and moderator playlist actions when the linked viewer has channel access:
+  - play now
+  - mark played
+  - delete item
+  - switch request kind between regular and VIP when VIP-token management is allowed
 
-## Proposed solution
+## Auth And Access Model
 
-Add a Twitch panel extension that acts as a compact, channel-aware Request Bot client inside Twitch.
+- The panel verifies the Twitch Extension JWT on the server.
+- The active Twitch `channel_id` resolves the Request Bot channel.
+- The linked Twitch `user_id` resolves the same app user used by the website.
+- Panel write actions require linked identity.
+- Panel moderation actions require linked identity plus channel access for the current Twitch channel.
+- Moderator access follows the channel's existing moderator capability settings in Request Bot.
 
-The panel extension should:
+## MVP Experience
 
-- render the current playlist and now-playing state for the active channel
-- show requester attribution on queue items
-- allow read-only access to queue state without requiring identity sharing
-- prompt viewers to share Twitch identity before allowing write actions
-- let identity-linked viewers search the channel catalog and add a regular song request
-- let identity-linked viewers add a VIP request when they have a spendable Request Bot VIP token balance
-- let identity-linked viewers edit their own active request
-- let identity-linked viewers remove their own active request
-- show the linked viewer's current request state and VIP token balance for that channel
-- enforce the same core request-policy rules used by chat requests and website viewer requests
-- keep broadcaster and moderator removal controls in the main app so extension-submitted content can still be moderated from existing tooling
+### Viewers
 
-## Additional context
+- open the panel on Twitch
+- view the playlist without leaving Twitch
+- share Twitch identity when they want to request songs
+- search the catalog
+- add, edit, or remove their own request
+- spend existing Request Bot VIP tokens from the panel
 
-### Foundation dependency
+### Streamers And Moderators
 
-Website-based viewer requests on `/$slug` should ship before the panel extension. The panel should reuse the same shared viewer-request service, request-state model, and queue mutation rules instead of becoming the first non-chat write surface.
+- open the panel on the live channel page
+- view the active queue
+- use compact playlist actions directly from the panel when they have access for that channel
+- rely on the same queue mutation rules and playlist state used by the main app
 
-### Current code we can reuse
+## Current Technical Shape
 
-- Public playlist reads: `src/routes/api/channel/$slug/playlist/route.ts`
-- Public playlist streaming: `src/routes/api/channel/$slug/playlist/stream.ts`
-- Channel-aware search with blacklist filtering: `src/routes/api/search/route.ts`
-- Public channel page composition: `src/routes/$slug/index.tsx`
-- Queue mutation primitives: `src/workers/backend/index.ts`
-- Existing add/remove/change request behavior: `src/lib/eventsub/chat-message.ts`
-- Existing playlist/request policy helpers: `src/lib/request-policy.ts`
-- Existing requester ownership model and VIP token persistence: `src/lib/db/schema.ts`
+- Extension Backend Service routes live under `src/routes/api/extension`
+- linked viewers resolve through `users.twitchUserId`
+- playlist moderation uses the shared playlist-management service
+- viewer request actions use the shared viewer-request service
 
-### Main technical requirements
+## Recommended MVP Acceptance
 
-- This feature requires an Extension Backend Service (EBS).
-- All panel write actions must verify the Twitch Extension JWT on the server.
-- The verified Twitch channel ID must resolve the current Request Bot channel.
-- The verified linked Twitch user ID must resolve the viewer identity used for request ownership and VIP token balance checks.
-- Request Bot VIP token spending should be supported from the panel MVP because token lookup and consumption already belong to app-owned data.
+- A connected channel can install the panel and load playlist state.
+- Unlinked viewers can read the playlist.
+- Linked viewers can add, edit, and remove their own requests.
+- Linked viewers can see their VIP token balance for the current channel.
+- Stream owners can manage the playlist from the panel.
+- Twitch moderators can manage the playlist from the panel when the channel settings allow it.
+- Request behavior matches the website and chat request policy.
+- The panel is documented for Local Test, Hosted Test, and self-hosted deployment.
 
-### Bits follow-up
+## Notes
 
-Twitch supports Bits in Extensions for panels, so a later version could offer a Bits-backed VIP request purchase flow. That should be treated as a follow-up feature after the core linked-identity request flow is working.
-
-### Twitch documentation that drives this request
-
-- Extensions Reference: <https://dev.twitch.tv/docs/extensions/reference/>
-- Building Extensions: <https://dev.twitch.tv/docs/extensions/building/>
-- Using the Twitch API in an Extension Front End: <https://dev.twitch.tv/docs/extensions/frontend-api-usage/>
-- Life Cycle Management: <https://dev.twitch.tv/docs/extensions/life-cycle>
-- Submission Best Practices: <https://dev.twitch.tv/docs/extensions/submission-best-practices/>
-- Guidelines and Policies: <https://dev.twitch.tv/docs/extensions/guidelines-and-policies>
-- Twitch API Reference: <https://dev.twitch.tv/docs/api/reference>
-- Bits in Extensions: <https://dev.twitch.tv/extensions/bits/>
-
-### Acceptance criteria
-
-- A Twitch panel extension can be installed on a connected Request Bot channel.
-- The panel can load channel playlist state using the active Twitch channel context.
-- Unlinked viewers can view the playlist without write access.
-- Identity-linked viewers can add a regular request from the panel.
-- Identity-linked viewers with spendable Request Bot VIP tokens can add a VIP request from the panel.
-- Identity-linked viewers can edit or remove their own request from the panel.
-- The panel shows the linked viewer's current VIP token balance for the active channel.
-- Request policy enforcement matches the shared viewer-request service used by chat and the website.
-- Queue rows clearly display the requester username.
-- Broadcasters can remove extension-submitted content using existing channel management tools.
-- The extension is documented, testable in Twitch hosted test, and review-ready.
-
-### Follow-up documentation
-
-Implementation details live in:
-
-- `docs/twitch-panel-extension-implementation-plan.md`
+- The panel identity-share flow and the website session are separate.
+- Opening the website from the panel does not create a website app session by itself.
+- Website sign-in still uses the normal Twitch OAuth flow on `rocklist.live`.

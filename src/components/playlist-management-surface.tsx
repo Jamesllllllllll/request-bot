@@ -872,6 +872,21 @@ export function PlaylistManagementSurface(
                 artistName: item.songArtist ?? undefined,
               });
             }}
+            onBlacklistCandidateSong={(candidate) => {
+              if (candidate.sourceId == null) {
+                setPlaylistActionError(
+                  "This version does not have a version ID to blacklist."
+                );
+                return;
+              }
+
+              moderationMutation.mutate({
+                action: "addBlacklistedSong",
+                songId: candidate.sourceId,
+                songTitle: candidate.title,
+                artistName: candidate.artist ?? undefined,
+              });
+            }}
             onBlacklistSongGroup={(item) => {
               if (item.songGroupedProjectId == null) {
                 setPlaylistActionError(
@@ -1034,6 +1049,21 @@ export function PlaylistManagementSurface(
                   artistName: item.songArtist ?? undefined,
                 });
               }}
+              onBlacklistCandidateSong={(candidate) => {
+                if (candidate.sourceId == null) {
+                  setPlaylistActionError(
+                    "This version does not have a version ID to blacklist."
+                  );
+                  return;
+                }
+
+                moderationMutation.mutate({
+                  action: "addBlacklistedSong",
+                  songId: candidate.sourceId,
+                  songTitle: candidate.title,
+                  artistName: candidate.artist ?? undefined,
+                });
+              }}
               onBlacklistSongGroup={(item) => {
                 if (item.songGroupedProjectId == null) {
                   setPlaylistActionError(
@@ -1184,6 +1214,7 @@ function CurrentPlaylistRows(props: {
   onDelete: (itemId: string) => void;
   onChangeRequestKind: (itemId: string, requestKind: "regular" | "vip") => void;
   onBlacklistSong: (item: PlaylistItem) => void;
+  onBlacklistCandidateSong: (candidate: PlaylistCandidate) => void;
   onBlacklistSongGroup: (item: PlaylistItem) => void;
   onBlacklistCharter: (candidate: PlaylistCandidate) => void;
 }) {
@@ -1230,6 +1261,7 @@ function CurrentPlaylistRows(props: {
                 : 0
             }
             blacklistedCharterIds={props.blacklistedCharterIds}
+            blacklistedSongIds={props.blacklistedSongIds}
             onDragStart={props.onDragStart}
             onDragEnd={props.onDragEnd}
             onDragHover={props.onDragHover}
@@ -1244,6 +1276,7 @@ function CurrentPlaylistRows(props: {
               props.onChangeRequestKind(item.id, requestKind)
             }
             onBlacklistSong={() => props.onBlacklistSong(item)}
+            onBlacklistCandidateSong={props.onBlacklistCandidateSong}
             onBlacklistSongGroup={() => props.onBlacklistSongGroup(item)}
             onBlacklistCharter={props.onBlacklistCharter}
           />
@@ -1498,6 +1531,7 @@ function PlaylistQueueItem(props: {
   isBlacklistSongGroupPending: boolean;
   isBlacklistCharterPending: boolean;
   availableVipTokenCount: number;
+  blacklistedSongIds: Set<number>;
   blacklistedCharterIds: Set<number>;
   onDragStart: (itemId: string) => void;
   onDragEnd: () => void;
@@ -1509,6 +1543,7 @@ function PlaylistQueueItem(props: {
   onDelete: () => void;
   onChangeRequestKind: (requestKind: "regular" | "vip") => void;
   onBlacklistSong: () => void;
+  onBlacklistCandidateSong: (candidate: PlaylistCandidate) => void;
   onBlacklistSongGroup: () => void;
   onBlacklistCharter: (candidate: PlaylistCandidate) => void;
 }) {
@@ -1823,6 +1858,9 @@ function PlaylistQueueItem(props: {
             <div className="mt-3 overflow-hidden rounded-[16px] border border-(--border)">
               <div className="grid">
                 {resolvedCandidates.map((candidate, candidateIndex) => {
+                  const isBlacklistedCandidateSong =
+                    candidate.sourceId != null &&
+                    props.blacklistedSongIds.has(candidate.sourceId);
                   const isBlacklistedCharter =
                     candidate.authorId != null &&
                     props.blacklistedCharterIds.has(candidate.authorId);
@@ -1860,23 +1898,44 @@ function PlaylistQueueItem(props: {
                             ) : null}
                           </div>
                         </div>
-                        {candidate.sourceUrl ? (
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            asChild
-                            className="shrink-0"
-                          >
-                            <a
-                              href={candidate.sourceUrl}
-                              target="_blank"
-                              rel="noreferrer"
-                              className="no-underline"
+                        <div className="flex shrink-0 flex-wrap items-center gap-2">
+                          {props.canManageBlacklist ? (
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              className="shrink-0"
+                              disabled={
+                                isBlacklistedCandidateSong ||
+                                candidate.sourceId == null ||
+                                props.isBlacklistSongPending
+                              }
+                              onClick={() =>
+                                props.onBlacklistCandidateSong(candidate)
+                              }
                             >
-                              Download
-                            </a>
-                          </Button>
-                        ) : null}
+                              {isBlacklistedCandidateSong
+                                ? "Version blacklisted"
+                                : "Blacklist version"}
+                            </Button>
+                          ) : null}
+                          {candidate.sourceUrl ? (
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              asChild
+                              className="shrink-0"
+                            >
+                              <a
+                                href={candidate.sourceUrl}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="no-underline"
+                              >
+                                Download
+                              </a>
+                            </Button>
+                          ) : null}
+                        </div>
                       </div>
 
                       <div className="grid gap-x-6 gap-y-2 text-sm sm:grid-cols-2 xl:grid-cols-3">

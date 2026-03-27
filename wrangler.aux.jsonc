@@ -43,5 +43,12 @@
     "APP_URL": "http://localhost:9000",
     "SENTRY_ENVIRONMENT": "development",
     "TWITCH_BOT_USERNAME": "requestbot"
+  },
+  "observability": {
+    "enabled": true,
+    "logs": {
+      "enabled": true,
+      "invocation_logs": true
+    }
   }
 }

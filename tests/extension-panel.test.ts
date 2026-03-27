@@ -6,8 +6,9 @@ vi.mock("~/lib/db/repositories", () => ({
   getChannelBlacklistByChannelId: vi.fn(),
   getChannelByTwitchChannelId: vi.fn(),
   getChannelSettingsByChannelId: vi.fn(),
-  getPlaylistByChannelId: vi.fn(),
+  getExtensionPanelPlaylistByChannelId: vi.fn(),
   getUserByTwitchUserId: vi.fn(),
+  getVipTokenBalance: vi.fn(),
   searchCatalogSongs: vi.fn(),
   upsertUserProfile: vi.fn(),
 }));
@@ -19,7 +20,6 @@ vi.mock("~/lib/twitch/api", () => ({
 
 vi.mock("~/lib/server/playlist-management", () => ({
   canPerformPlaylistMutationAction: vi.fn(),
-  enrichPlaylistItems: vi.fn(),
   getForbiddenPlaylistMutationMessage: vi.fn(),
   loadPlaylistManagementStateForAccess: vi.fn(),
   performPlaylistMutation: vi.fn(),
@@ -35,21 +35,22 @@ import {
   getChannelBlacklistByChannelId,
   getChannelByTwitchChannelId,
   getChannelSettingsByChannelId,
-  getPlaylistByChannelId,
+  getExtensionPanelPlaylistByChannelId,
   getUserByTwitchUserId,
+  getVipTokenBalance,
   searchCatalogSongs,
   upsertUserProfile,
 } from "~/lib/db/repositories";
 import {
   ExtensionPanelError,
   getExtensionBootstrapState,
+  getExtensionPanelState,
   performExtensionPlaylistMutation,
   performExtensionViewerRequestMutation,
   searchExtensionCatalog,
 } from "~/lib/server/extension-panel";
 import {
   canPerformPlaylistMutationAction,
-  enrichPlaylistItems,
   getForbiddenPlaylistMutationMessage,
   loadPlaylistManagementStateForAccess,
   performPlaylistMutation,
@@ -87,7 +88,7 @@ describe("extension panel service", () => {
     vi.mocked(getChannelByTwitchChannelId).mockResolvedValue(
       baseChannel as never
     );
-    vi.mocked(getPlaylistByChannelId).mockResolvedValue({
+    vi.mocked(getExtensionPanelPlaylistByChannelId).mockResolvedValue({
       playlist: {
         id: "playlist-1",
         currentItemId: "item-current",
@@ -103,17 +104,6 @@ describe("extension panel service", () => {
         },
       ],
     } as never);
-    vi.mocked(enrichPlaylistItems).mockResolvedValue([
-      {
-        id: "item-current",
-        songId: "song-1",
-        requestedByTwitchUserId: "viewer-1",
-        songTitle: "Song One",
-        songArtist: "Artist One",
-        status: "current",
-        requestKind: "regular",
-      },
-    ] as never);
     vi.mocked(getUserByTwitchUserId).mockResolvedValue({
       id: "user-1",
       twitchUserId: "viewer-1",
@@ -154,6 +144,9 @@ describe("extension panel service", () => {
       page: 1,
       pageSize: 10,
       hasNextPage: false,
+    } as never);
+    vi.mocked(getVipTokenBalance).mockResolvedValue({
+      availableCount: 2,
     } as never);
     vi.mocked(performViewerRequestMutationForChannelViewer).mockResolvedValue({
       ok: true,
@@ -271,6 +264,9 @@ describe("extension panel service", () => {
         },
       },
     });
+    vi.mocked(getVipTokenBalance).mockResolvedValue({
+      availableCount: 2,
+    } as never);
   });
 
   it("returns moderator management permissions from the extension role", async () => {
@@ -290,6 +286,34 @@ describe("extension panel service", () => {
           canManageRequests: true,
           canManageVipTokens: true,
           canManageBlacklist: false,
+        },
+      },
+    });
+  });
+
+  it("returns lightweight live state for polling refreshes", async () => {
+    await expect(
+      getExtensionPanelState({
+        env,
+        auth,
+      })
+    ).resolves.toMatchObject({
+      playlist: {
+        currentItemId: "item-current",
+      },
+      viewer: {
+        activeRequests: [
+          expect.objectContaining({
+            id: "item-current",
+          }),
+        ],
+        canVipRequest: true,
+        canEditOwnRequest: true,
+        canRemoveOwnRequest: true,
+        profile: {
+          twitchUserId: "viewer-1",
+          displayName: "Viewer One",
+          vipTokensAvailable: 2,
         },
       },
     });

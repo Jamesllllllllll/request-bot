@@ -45,6 +45,10 @@
     "TWITCH_SCOPES": "openid user:read:moderated_channels channel:bot"
   },
   "observability": {
-    "enabled": true
+    "enabled": true,
+    "logs": {
+      "enabled": true,
+      "invocation_logs": true
+    }
   }
 }

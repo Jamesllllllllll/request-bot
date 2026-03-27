@@ -38,6 +38,12 @@ Build the standalone panel artifact:
 npm run build:extension:panel
 ```
 
+For any build that should call a deployed app origin, set the API base URL in the same shell before you build:
+
+```bash
+VITE_TWITCH_EXTENSION_API_BASE_URL=https://your-app-host npm run build:extension:panel
+```
+
 The built panel artifact is written to:
 
 ```text
@@ -76,5 +82,6 @@ The website recognizes the viewer only when the browser already has the normal R
 ## After Local Test
 
 - package the final hosted panel artifact for Twitch Hosted Test
+- rebuild and re-upload the Hosted Test zip whenever panel code or `VITE_TWITCH_EXTENSION_API_BASE_URL` changes
 - add review-prep notes for fetched URLs and enabled capabilities
 - validate the full identity-share flow with a real extension registration

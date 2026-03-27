@@ -54,7 +54,6 @@ import {
   setlistArtists,
   twitchAuthorizations,
   users,
-  type VipTokenInsert,
   vipTokens,
 } from "./schema";
 
@@ -631,6 +630,50 @@ export async function getPlaylistByChannelId(env: AppEnv, channelId: string) {
     items: items.filter(
       (item) => item.status === "queued" || item.status === "current"
     ),
+  };
+}
+
+export async function getExtensionPanelPlaylistByChannelId(
+  env: AppEnv,
+  channelId: string
+) {
+  const db = getDb(env);
+  const playlist = await db.query.playlists.findFirst({
+    where: eq(playlists.channelId, channelId),
+    columns: {
+      id: true,
+      currentItemId: true,
+    },
+  });
+
+  if (!playlist) {
+    return null;
+  }
+
+  const items = await db.query.playlistItems.findMany({
+    where: and(
+      eq(playlistItems.playlistId, playlist.id),
+      inArray(playlistItems.status, ["queued", "current"])
+    ),
+    orderBy: [asc(playlistItems.position)],
+    columns: {
+      id: true,
+      songTitle: true,
+      songArtist: true,
+      requestedByTwitchUserId: true,
+      requestedByLogin: true,
+      requestedByDisplayName: true,
+      requestKind: true,
+      createdAt: true,
+      updatedAt: true,
+      position: true,
+      status: true,
+    },
+  });
+
+  return {
+    playlist,
+    items,
   };
 }
 
@@ -2532,78 +2575,63 @@ export async function grantVipToken(
   }
 ) {
   const now = Date.now();
-  const existing = await getVipTokenBalance(env, {
-    channelId: input.channelId,
-    login: input.login,
-  });
   const count = clampVipTokenCount(input.count ?? 1);
 
   if (count <= 0) {
-    return existing ?? null;
-  }
-
-  if (existing) {
-    const availableCount = normalizeVipTokenCount(
-      existing.availableCount + count
-    );
-    const grantedCount = normalizeVipTokenCount(existing.grantedCount + count);
-    await getDb(env)
-      .update(vipTokens)
-      .set({
-        twitchUserId: input.twitchUserId ?? existing.twitchUserId ?? null,
-        login: input.login,
-        displayName: input.displayName ?? existing.displayName ?? null,
-        availableCount,
-        grantedCount,
-        autoSubscriberGranted: input.autoSubscriberGrant
-          ? true
-          : existing.autoSubscriberGranted,
-        lastGrantedAt: now,
-        updatedAt: now,
-      })
-      .where(
-        and(
-          eq(vipTokens.channelId, input.channelId),
-          eq(vipTokens.normalizedLogin, normalizeLogin(input.login))
-        )
-      );
-
-    return {
-      ...existing,
-      twitchUserId: input.twitchUserId ?? existing.twitchUserId ?? null,
-      login: input.login,
-      displayName: input.displayName ?? existing.displayName ?? null,
-      availableCount,
-      grantedCount,
-      autoSubscriberGranted: input.autoSubscriberGrant
-        ? true
-        : existing.autoSubscriberGranted,
-      lastGrantedAt: now,
-      updatedAt: now,
-    };
-  } else {
-    const normalizedCount = normalizeVipTokenCount(count);
-    await getDb(env)
-      .insert(vipTokens)
-      .values({
-        channelId: input.channelId,
-        normalizedLogin: normalizeLogin(input.login),
-        twitchUserId: input.twitchUserId ?? null,
-        login: input.login,
-        displayName: input.displayName ?? null,
-        availableCount: normalizedCount,
-        grantedCount: normalizedCount,
-        consumedCount: 0,
-        autoSubscriberGranted: !!input.autoSubscriberGrant,
-        lastGrantedAt: now,
-        updatedAt: now,
-      } satisfies VipTokenInsert);
-
     return getVipTokenBalance(env, {
       channelId: input.channelId,
       login: input.login,
     });
   }
+
+  const normalizedCount = normalizeVipTokenCount(count);
+  const normalizedLogin = normalizeLogin(input.login);
+
+  await getDb(env).run(sql`
+    INSERT INTO vip_tokens (
+      channel_id,
+      normalized_login,
+      twitch_user_id,
+      login,
+      display_name,
+      available_count,
+      granted_count,
+      consumed_count,
+      auto_subscriber_granted,
+      last_granted_at,
+      updated_at
+    )
+    VALUES (
+      ${input.channelId},
+      ${normalizedLogin},
+      ${input.twitchUserId ?? null},
+      ${input.login},
+      ${input.displayName ?? null},
+      ${normalizedCount},
+      ${normalizedCount},
+      0,
+      ${input.autoSubscriberGrant ? 1 : 0},
+      ${now},
+      ${now}
+    )
+    ON CONFLICT(channel_id, normalized_login) DO UPDATE SET
+      twitch_user_id = COALESCE(excluded.twitch_user_id, vip_tokens.twitch_user_id),
+      login = excluded.login,
+      display_name = COALESCE(excluded.display_name, vip_tokens.display_name),
+      available_count = vip_tokens.available_count + excluded.available_count,
+      granted_count = vip_tokens.granted_count + excluded.granted_count,
+      auto_subscriber_granted = CASE
+        WHEN ${input.autoSubscriberGrant ? 1 : 0} = 1 THEN 1
+        ELSE vip_tokens.auto_subscriber_granted
+      END,
+      last_granted_at = ${now},
+      updated_at = ${now}
+  `);
+
+  return getVipTokenBalance(env, {
+    channelId: input.channelId,
+    login: input.login,
+  });
 }
 
 export async function consumeVipToken(
@@ -2615,42 +2643,60 @@ export async function consumeVipToken(
     twitchUserId?: string | null;
   }
 ) {
-  const existing = await getVipTokenBalance(env, {
-    channelId: input.channelId,
-    login: input.login,
-  });
+  const now = Date.now();
+  const rows = unwrapD1Rows(
+    await getDb(env).all<{
+      channelId: string;
+      normalizedLogin: string;
+      twitchUserId: string | null;
+      login: string;
+      displayName: string | null;
+      availableCount: number;
+      grantedCount: number;
+      consumedCount: number;
+      autoSubscriberGranted: number | boolean;
+      lastGrantedAt: number | null;
+      lastConsumedAt: number | null;
+      createdAt: number;
+      updatedAt: number;
+    }>(sql`
+      UPDATE vip_tokens
+      SET
+        twitch_user_id = COALESCE(${input.twitchUserId ?? null}, twitch_user_id),
+        login = ${input.login},
+        display_name = COALESCE(${input.displayName ?? null}, display_name),
+        available_count = available_count - 1,
+        consumed_count = consumed_count + 1,
+        last_consumed_at = ${now},
+        updated_at = ${now}
+      WHERE channel_id = ${input.channelId}
+        AND normalized_login = ${normalizeLogin(input.login)}
+        AND available_count >= 1
+      RETURNING
+        channel_id AS channelId,
+        normalized_login AS normalizedLogin,
+        twitch_user_id AS twitchUserId,
+        login,
+        display_name AS displayName,
+        available_count AS availableCount,
+        granted_count AS grantedCount,
+        consumed_count AS consumedCount,
+        auto_subscriber_granted AS autoSubscriberGranted,
+        last_granted_at AS lastGrantedAt,
+        last_consumed_at AS lastConsumedAt,
+        created_at AS createdAt,
+        updated_at AS updatedAt
+    `)
+  );
+  const updated = rows[0];
 
-  if (!existing || !hasRedeemableVipToken(existing.availableCount)) {
+  if (!updated) {
     return null;
   }
 
-  const now = Date.now();
-  const availableCount = subtractVipTokenRedemption(existing.availableCount);
-  const consumedCount = normalizeVipTokenCount(existing.consumedCount + 1);
-  await getDb(env)
-    .update(vipTokens)
-    .set({
-      twitchUserId: input.twitchUserId ?? existing.twitchUserId ?? null,
-      login: input.login,
-      displayName: input.displayName ?? existing.displayName ?? null,
-      availableCount,
-      consumedCount,
-      lastConsumedAt: now,
-      updatedAt: now,
-    })
-    .where(
-      and(
-        eq(vipTokens.channelId, input.channelId),
-        eq(vipTokens.normalizedLogin, normalizeLogin(input.login))
-      )
-    );
-
   return {
-    ...existing,
-    availableCount,
-    consumedCount,
-    lastConsumedAt: now,
-    updatedAt: now,
+    ...updated,
+    autoSubscriberGranted: Boolean(updated.autoSubscriberGranted),
   };
 }
 

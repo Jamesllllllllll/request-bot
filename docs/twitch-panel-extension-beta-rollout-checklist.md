@@ -89,6 +89,12 @@ Build the hosted panel files:
 npm run build:extension:panel
 ```
 
+When you build the Hosted Test artifact, make sure the shell sets the final app origin:
+
+```bash
+VITE_TWITCH_EXTENSION_API_BASE_URL=https://your-app-host npm run build:extension:panel
+```
+
 Upload the contents of:
 
 ```text
@@ -102,6 +108,8 @@ Set the Hosted Test asset paths for the panel version:
 - `Live Config Path`: leave blank unless you add a live config surface
 
 Use Hosted Test for beta channels that should load the production panel without your local dev server or tunnel.
+
+The uploaded Twitch panel bundle is separate from the website deploy. When you change panel code or the extension API base URL, rebuild the panel artifact and upload a new zip before you retest Hosted Test.
 
 ## 9. Set tester access
 
@@ -129,6 +137,8 @@ Verify these paths on the Hosted Test build:
   - set current, mark played, delete item, and request-kind changes work
 - channel moderator:
   - playlist moderation controls follow the channel's moderator capability settings
+
+If an extension request fails in production, check the frontend Worker logs. Slow and failed panel `bootstrap` and `state` requests log a trace id, elapsed time, and stage timings for channel lookup, viewer resolution, viewer request state, and live playlist state.
 
 ## 11. Keep the website login expectation clear
 

@@ -889,7 +889,7 @@ export function SongSearchPanel(props: {
               const isDisabled = resultState.disabled === true;
               const disabledReason =
                 resultState.reasons && resultState.reasons.length > 0
-                  ? resultState.reasons.join(" · ")
+                  ? `Blacklisted - ${resultState.reasons.join(" · ")}`
                   : "Blacklisted";
 
               return (
@@ -915,7 +915,7 @@ export function SongSearchPanel(props: {
                           </p>
                           {isDisabled ? (
                             <span className="inline-flex items-center rounded-full border border-amber-400/35 bg-amber-500/12 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.16em] text-amber-100">
-                              Blacklisted
+                              {disabledReason}
                             </span>
                           ) : null}
                         </div>
@@ -987,7 +987,7 @@ export function SongSearchPanel(props: {
                           </p>
                           {isDisabled ? (
                             <span className="inline-flex items-center rounded-full border border-amber-400/35 bg-amber-500/12 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.16em] text-amber-100">
-                              Blacklisted
+                              {disabledReason}
                             </span>
                           ) : null}
                         </div>

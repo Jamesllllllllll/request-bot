@@ -6,6 +6,7 @@ import type {
   EventSubStreamOnlineEvent,
   EventSubSubscribeEvent,
   EventSubSubscriptionGiftEvent,
+  TwitchBroadcasterSubscriptionsResponse,
   TwitchChannelSearchResponse,
   TwitchChattersResponse,
   TwitchEventSubCreateResponse,
@@ -284,6 +285,38 @@ export async function getChatters(input: {
   }
 
   return (await response.json()) as TwitchChattersResponse;
+}
+
+export async function getBroadcasterSubscriptions(input: {
+  env: AppEnv;
+  accessToken: string;
+  broadcasterUserId: string;
+  userIds?: string[];
+}) {
+  const url = new URL(`${twitchBaseUrl}/subscriptions`);
+  url.searchParams.set("broadcaster_id", input.broadcasterUserId);
+
+  for (const userId of [...new Set(input.userIds ?? [])].slice(0, 100)) {
+    url.searchParams.append("user_id", userId);
+  }
+
+  const response = await fetchWithRetry({
+    url,
+    init: {
+      headers: authHeaders(input.env, input.accessToken),
+    },
+  });
+
+  if (!response.ok) {
+    const errorBody = await response.text().catch(() => "");
+    throw new TwitchApiError(
+      `Failed to fetch broadcaster subscriptions: ${response.status}`,
+      response.status,
+      errorBody
+    );
+  }
+
+  return (await response.json()) as TwitchBroadcasterSubscriptionsResponse;
 }
 
 export async function getAppAccessToken(env: AppEnv) {

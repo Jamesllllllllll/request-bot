@@ -1477,18 +1477,10 @@ export async function searchCatalogSongs(
   };
 }
 
-export async function getCatalogSongBySourceId(
-  env: AppEnv,
-  sourceSongId: number
+function toCatalogSongSearchResult(
+  row: typeof catalogSongs.$inferSelect,
+  score?: number
 ) {
-  const row = await getDb(env).query.catalogSongs.findFirst({
-    where: eq(catalogSongs.sourceSongId, sourceSongId),
-  });
-
-  if (!row) {
-    return null;
-  }
-
   return {
     id: row.id,
     groupedProjectId: row.groupedProjectId ?? undefined,
@@ -1512,7 +1504,35 @@ export async function getCatalogSongBySourceId(
       source: row.source,
       sourceId: row.sourceSongId,
     }),
+    ...(score == null ? {} : { score }),
   };
+}
+
+export async function getCatalogSongBySourceId(
+  env: AppEnv,
+  sourceSongId: number
+) {
+  const row = await getDb(env).query.catalogSongs.findFirst({
+    where: eq(catalogSongs.sourceSongId, sourceSongId),
+  });
+
+  if (!row) {
+    return null;
+  }
+
+  return toCatalogSongSearchResult(row);
+}
+
+export async function getCatalogSongById(env: AppEnv, songId: string) {
+  const row = await getDb(env).query.catalogSongs.findFirst({
+    where: eq(catalogSongs.id, songId),
+  });
+
+  if (!row) {
+    return null;
+  }
+
+  return toCatalogSongSearchResult(row);
 }
 
 export async function searchCatalogArtistsForBlacklist(

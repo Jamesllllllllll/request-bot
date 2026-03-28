@@ -867,7 +867,7 @@ function DashboardSettingsPage() {
                 }
               />
               <PermissionRow
-                label="Manage blocked chatters"
+                label="Manage blocked viewers"
                 checked={form.moderatorCanManageBlockedChatters}
                 onChange={(value) =>
                   setBoolean("moderatorCanManageBlockedChatters", value)

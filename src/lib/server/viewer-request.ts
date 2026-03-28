@@ -137,6 +137,9 @@ export class ViewerRequestError extends Error {
   }
 }
 
+const blockedViewerRequestReason =
+  "You are blocked from requesting songs in this channel.";
+
 export async function getViewerRequestState(input: {
   env: AppEnv;
   request: Request;
@@ -337,7 +340,7 @@ function resolveViewerAccess(input: {
   if (input.blocked) {
     return {
       allowed: false,
-      reason: "You cannot add new requests in this channel.",
+      reason: blockedViewerRequestReason,
     };
   }
 

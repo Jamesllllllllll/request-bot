@@ -21,7 +21,7 @@ Notes:
 
 - `TWITCH_EXTENSION_CLIENT_ID` is the Twitch Extension client ID from the Twitch developer console.
 - `TWITCH_EXTENSION_SECRET` must be the base64 shared secret from the Twitch Extensions developer console.
-- `VITE_TWITCH_EXTENSION_API_BASE_URL` should point at the app origin that serves the `/api/extension/*` endpoints.
+- `VITE_TWITCH_EXTENSION_API_BASE_URL` points at the app origin that serves the `/api/extension/*` endpoints.
 - For local development, `VITE_TWITCH_EXTENSION_API_BASE_URL` can be a tunnel URL if Twitch cannot reach `localhost`.
 
 ## Useful commands
@@ -38,7 +38,7 @@ Build the standalone panel artifact:
 npm run build:extension:panel
 ```
 
-For any build that should call a deployed app origin, set the API base URL in the same shell before you build:
+For any build that calls a deployed app origin, set the API base URL in the same shell before you build:
 
 ```bash
 VITE_TWITCH_EXTENSION_API_BASE_URL=https://your-app-host npm run build:extension:panel
@@ -68,6 +68,8 @@ With Twitch Local Test:
    - bootstrap succeeds
    - unlinked viewers can read the queue
    - linked viewers can search and submit requests
+   - blocked viewers can read the queue and search, but request actions stay unavailable
+   - blacklisted search results stay hidden when the channel blacklist is enabled
    - VIP token balance is shown
    - edit/remove works for the linked viewer
    - channel owners can use playlist actions from the panel

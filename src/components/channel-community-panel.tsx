@@ -244,7 +244,7 @@ export function ChannelCommunityPanel(props: {
           Community controls
         </h2>
         <p className="max-w-3xl text-sm leading-7 text-(--muted)">
-          Manage blocked chatters and VIP token balances directly on the channel
+          Manage blocked viewers and VIP token balances directly on the channel
           page when your role allows it.
         </p>
       </div>
@@ -254,7 +254,7 @@ export function ChannelCommunityPanel(props: {
           {props.canManageBlockedChatters ? (
             <Card>
               <CardHeader>
-                <CardTitle>Blocked chatters</CardTitle>
+                <CardTitle>Blocked viewers</CardTitle>
               </CardHeader>
               <CardContent className="grid gap-4">
                 <Input
@@ -364,17 +364,18 @@ export function ChannelCommunityPanel(props: {
                         twitchUserId: selectedBlockedUser.id,
                         login: selectedBlockedUser.login,
                         displayName: selectedBlockedUser.displayName,
-                        reason: "Ignored bot commands from this chatter.",
+                        reason: "Blocked from making requests in this channel.",
                       });
                     }}
                     disabled={mutation.isPending || !selectedBlockedUser}
                   >
-                    Block selected chatter
+                    Block selected viewer
                   </Button>
                 </div>
                 <p className="text-sm text-(--muted)">
-                  Blocked chatters can still talk in Twitch chat, but the bot
-                  will ignore their commands.
+                  Blocked viewers can still talk in Twitch chat, but they cannot
+                  add or edit requests from chat, the website, or the extension
+                  panel.
                 </p>
                 {props.blocks.length > 0 ? (
                   <div className="grid gap-3">
@@ -397,7 +398,7 @@ export function ChannelCommunityPanel(props: {
                           </p>
                           <p className="text-sm text-(--muted)">
                             {block.reason ??
-                              "Ignored bot commands from this chatter."}
+                              "Blocked from making requests in this channel."}
                           </p>
                         </div>
                         <Button
@@ -417,7 +418,7 @@ export function ChannelCommunityPanel(props: {
                     ))}
                   </div>
                 ) : (
-                  <p className="text-sm text-(--muted)">No blocked chatters.</p>
+                  <p className="text-sm text-(--muted)">No blocked viewers.</p>
                 )}
               </CardContent>
             </Card>

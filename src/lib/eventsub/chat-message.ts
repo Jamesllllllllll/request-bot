@@ -600,6 +600,7 @@ export async function processEventSubChatMessage(input: {
 
   const isVipCommand = parsed.command === "vip";
   const isEditCommand = parsed.command === "edit";
+  const allowBlacklistOverride = event.isBroadcaster || event.isModerator;
   const requesterAccess = isRequesterAllowed(state.settings, requesterContext);
   if (!requesterAccess.allowed) {
     await deps.createRequestLog(env, {
@@ -754,6 +755,7 @@ export async function processEventSubChatMessage(input: {
           blacklistSongGroups: state.blacklistSongGroups,
           setlistArtists: state.setlistArtists,
           requester: requesterContext,
+          allowBlacklistOverride,
         });
 
         if (songAllowed.allowed) {
@@ -842,6 +844,7 @@ export async function processEventSubChatMessage(input: {
       blacklistSongGroups: state.blacklistSongGroups,
       setlistArtists: state.setlistArtists,
       requester: requesterContext,
+      allowBlacklistOverride,
     });
 
     if (!songAllowed.allowed) {

@@ -46,6 +46,9 @@ type ChannelPageData = {
     channel?: {
       displayName?: string;
     };
+    settings?: {
+      blacklistEnabled?: boolean;
+    };
     items?: EnrichedChannelPlaylistItem[];
     playedSongs?: PlayedSongRow[];
     blacklistArtists?: Array<{ artistId: number; artistName: string }>;
@@ -103,6 +106,7 @@ function ChannelPage() {
       const playlistResponse = await fetch(`/api/channel/${slug}/playlist`);
       const playlist = (await playlistResponse.json()) as {
         channel?: ChannelPageData["playlist"]["channel"];
+        settings?: ChannelPageData["playlist"]["settings"];
         items?: ChannelPlaylistItem[];
         playedSongs?: PlayedSongRow[];
         blacklistArtists?: ChannelPageData["playlist"]["blacklistArtists"];
@@ -156,18 +160,22 @@ function ChannelPage() {
   }, [queryClient, slug]);
 
   const playlistItems = data?.playlist?.items ?? [];
+  const blacklistEnabled = !!data?.playlist.settings?.blacklistEnabled;
   const filteredItems = useMemo(
     () =>
-      playlistItems.filter((item) => {
-        const blacklistReasons = getBlacklistReasons(item, {
-          artists: data?.playlist.blacklistArtists ?? [],
-          charters: data?.playlist.blacklistCharters ?? [],
-          songs: data?.playlist.blacklistSongs ?? [],
-          songGroups: data?.playlist.blacklistSongGroups ?? [],
-        });
-        return blacklistReasons.length === 0;
-      }),
+      blacklistEnabled
+        ? playlistItems.filter((item) => {
+            const blacklistReasons = getBlacklistReasons(item, {
+              artists: data?.playlist.blacklistArtists ?? [],
+              charters: data?.playlist.blacklistCharters ?? [],
+              songs: data?.playlist.blacklistSongs ?? [],
+              songGroups: data?.playlist.blacklistSongGroups ?? [],
+            });
+            return blacklistReasons.length === 0;
+          })
+        : playlistItems,
     [
+      blacklistEnabled,
       data?.playlist.blacklistArtists,
       data?.playlist.blacklistCharters,
       data?.playlist.blacklistSongs,
@@ -188,18 +196,22 @@ function ChannelPage() {
               <PublicPlaylistRow
                 key={item.id}
                 item={item}
-                blacklistReasons={getBlacklistReasons(item, {
-                  artists: data?.playlist.blacklistArtists ?? [],
-                  charters: data?.playlist.blacklistCharters ?? [],
-                  songs: data?.playlist.blacklistSongs ?? [],
-                  songGroups: data?.playlist.blacklistSongGroups ?? [],
-                })}
+                blacklistReasons={
+                  blacklistEnabled
+                    ? getBlacklistReasons(item, {
+                        artists: data?.playlist.blacklistArtists ?? [],
+                        charters: data?.playlist.blacklistCharters ?? [],
+                        songs: data?.playlist.blacklistSongs ?? [],
+                        songGroups: data?.playlist.blacklistSongGroups ?? [],
+                      })
+                    : []
+                }
               />
             ))}
           </AnimatePresence>
           {!isLoading && !filteredItems.length ? (
             <p className="text-sm text-(--muted)">
-              {playlistItems.length > 0
+              {blacklistEnabled && playlistItems.length > 0
                 ? "Only blacklisted songs are in the queue right now."
                 : "This playlist is empty right now."}
             </p>
@@ -212,7 +224,11 @@ function ChannelPage() {
         charters={data?.playlist.blacklistCharters ?? []}
         songs={data?.playlist.blacklistSongs ?? []}
         songGroups={data?.playlist.blacklistSongGroups ?? []}
-        description="Artists, charters, songs, and specific versions are blocked for requests in this channel."
+        description={
+          blacklistEnabled
+            ? "Artists, charters, songs, and specific versions are blocked for requests in this channel."
+            : "Blacklist rules are off for this channel."
+        }
       />
 
       <PublicPlayedHistoryCard slug={slug} />

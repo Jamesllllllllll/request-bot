@@ -10,6 +10,10 @@ import {
   upsertUserProfile,
 } from "~/lib/db/repositories";
 import type { AppEnv } from "~/lib/env";
+import {
+  getArraySetting,
+  getRequiredPathsMatchMode,
+} from "~/lib/request-policy";
 import { getAppAccessToken, getTwitchUserById } from "~/lib/twitch/api";
 import type { ExtensionAuthContext } from "./extension-auth";
 import {
@@ -380,7 +384,30 @@ export async function searchExtensionCatalog(input: {
     );
   }
 
-  const blacklist = await getChannelBlacklistByChannelId(input.env, channel.id);
+  const [blacklist, settings] = await Promise.all([
+    getChannelBlacklistByChannelId(input.env, channel.id),
+    getChannelSettingsByChannelId(input.env, channel.id),
+  ]);
+  const blacklistFilterInput = settings?.blacklistEnabled
+    ? {
+        excludeSongIds: blacklist.blacklistSongs.map((song) => song.songId),
+        excludeGroupedProjectIds: blacklist.blacklistSongGroups.map(
+          (song) => song.groupedProjectId
+        ),
+        excludeArtistIds: blacklist.blacklistArtists.map(
+          (artist) => artist.artistId
+        ),
+        excludeArtistNames: blacklist.blacklistArtists.map(
+          (artist) => artist.artistName
+        ),
+        excludeAuthorIds: blacklist.blacklistCharters.map(
+          (charter) => charter.charterId
+        ),
+        excludeCreatorNames: blacklist.blacklistCharters.map(
+          (charter) => charter.charterName
+        ),
+      }
+    : {};
 
   const results = (await searchCatalogSongsInDb(input.env, {
     query: input.search.query,
@@ -388,22 +415,13 @@ export async function searchExtensionCatalog(input: {
     pageSize: input.search.pageSize,
     sortBy: "updated",
     sortDirection: "desc",
-    excludeSongIds: blacklist.blacklistSongs.map((song) => song.songId),
-    excludeGroupedProjectIds: blacklist.blacklistSongGroups.map(
-      (song) => song.groupedProjectId
+    restrictToOfficial: !!settings?.onlyOfficialDlc,
+    allowedTuningsFilter: getArraySetting(settings?.allowedTuningsJson),
+    requiredPartsFilter: getArraySetting(settings?.requiredPathsJson),
+    requiredPartsFilterMatchMode: getRequiredPathsMatchMode(
+      settings?.requiredPathsMatchMode
     ),
-    excludeArtistIds: blacklist.blacklistArtists.map(
-      (artist) => artist.artistId
-    ),
-    excludeArtistNames: blacklist.blacklistArtists.map(
-      (artist) => artist.artistName
-    ),
-    excludeAuthorIds: blacklist.blacklistCharters.map(
-      (charter) => charter.charterId
-    ),
-    excludeCreatorNames: blacklist.blacklistCharters.map(
-      (charter) => charter.charterName
-    ),
+    ...blacklistFilterInput,
   })) as SharedCatalogSearchResponse;
 
   return {

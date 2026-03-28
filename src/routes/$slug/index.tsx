@@ -269,9 +269,17 @@ function PublicChannelPage() {
 
   const channelDisplayName = data?.channel?.displayName ?? slug;
   const vipAutomationSummary = getVipAutomationSummary(data?.settings ?? {});
+  const blacklistEnabled = !!data?.settings?.blacklistEnabled;
   const publicSearchResultState = useMemo(
     () =>
       (song: SearchSong): SearchSongResultState => {
+        if (!blacklistEnabled) {
+          return {
+            disabled: false,
+            reasons: [],
+          };
+        }
+
         const reasons = getBlacklistReasonCodes(
           {
             songCatalogSourceId: song.sourceId ?? null,
@@ -295,6 +303,7 @@ function PublicChannelPage() {
         };
       },
     [
+      blacklistEnabled,
       data?.blacklistArtists,
       data?.blacklistCharters,
       data?.blacklistSongGroups,
@@ -493,6 +502,7 @@ function PublicChannelPage() {
       }
     : null;
   const viewerRequestState = viewerRequestStateQuery.data?.viewer ?? null;
+  const viewerCanSubmitRequests = !!viewerRequestState?.access.allowed;
   const viewerActiveRequests = useMemo(
     () =>
       currentViewer
@@ -599,12 +609,16 @@ function PublicChannelPage() {
         placeholder={`Search songs for ${channelDisplayName}`}
         extraSearchParams={{
           channelSlug: slug,
-          showBlacklisted,
+          showBlacklisted: blacklistEnabled ? showBlacklisted : undefined,
         }}
         resultState={publicSearchResultState}
         useTotalForSummary
         actionsLabel={
-          canManagePlaylist ? "Add" : signedInViewer ? "Request" : "Actions"
+          canManagePlaylist
+            ? "Add"
+            : signedInViewer && viewerCanSubmitRequests
+              ? "Request"
+              : "Actions"
         }
         summaryContent={
           canManagePlaylist ? null : (
@@ -641,55 +655,61 @@ function PublicChannelPage() {
                 />
               )
             : signedInViewer
-              ? ({ song, resultState }: SearchSongActionRenderArgs) => (
-                  <ViewerSearchSongActions
-                    song={song}
-                    resultState={resultState}
-                    viewerState={viewerRequestState}
-                    viewerStateLoading={viewerRequestStateQuery.isLoading}
-                    viewerStateError={getErrorMessage(
-                      viewerRequestStateQuery.error,
-                      ""
-                    )}
-                    activeRequests={viewerActiveRequests}
-                    replaceExisting={effectiveReplaceExisting}
-                    mutationIsPending={viewerRequestMutation.isPending}
-                    pendingViewerRequest={pendingViewerRequest}
-                    onSubmit={(requestKind) =>
-                      viewerRequestMutation.mutate({
-                        action: "submit",
-                        song,
-                        requestKind,
-                        replaceExisting: effectiveReplaceExisting,
-                      })
-                    }
-                  />
-                )
+              ? viewerCanSubmitRequests
+                ? ({ song, resultState }: SearchSongActionRenderArgs) => (
+                    <ViewerSearchSongActions
+                      song={song}
+                      resultState={resultState}
+                      viewerState={viewerRequestState}
+                      viewerStateLoading={viewerRequestStateQuery.isLoading}
+                      viewerStateError={getErrorMessage(
+                        viewerRequestStateQuery.error,
+                        ""
+                      )}
+                      activeRequests={viewerActiveRequests}
+                      replaceExisting={effectiveReplaceExisting}
+                      mutationIsPending={viewerRequestMutation.isPending}
+                      pendingViewerRequest={pendingViewerRequest}
+                      onSubmit={(requestKind) =>
+                        viewerRequestMutation.mutate({
+                          action: "submit",
+                          song,
+                          requestKind,
+                          replaceExisting: effectiveReplaceExisting,
+                        })
+                      }
+                    />
+                  )
+                : undefined
               : undefined
         }
-        advancedFiltersContent={({ data: searchData }) => (
-          <div className="inline-flex w-fit self-start flex-wrap items-center gap-3 rounded-full border border-(--border) bg-(--panel) px-4 py-2.5">
-            <Checkbox
-              id="show-blacklisted-public-playlist"
-              checked={showBlacklisted}
-              onCheckedChange={(checked) =>
-                setShowBlacklisted(checked === true)
-              }
-            />
-            <Label
-              htmlFor="show-blacklisted-public-playlist"
-              className="cursor-pointer text-sm font-medium text-(--text)"
-            >
-              Show blacklisted songs
-            </Label>
-            {!showBlacklisted &&
-            (searchData?.hiddenBlacklistedCount ?? 0) > 0 ? (
-              <span className="inline-flex items-center text-xs text-(--muted)">
-                Hiding {searchData?.hiddenBlacklistedCount ?? 0}
-              </span>
-            ) : null}
-          </div>
-        )}
+        advancedFiltersContent={
+          blacklistEnabled
+            ? ({ data: searchData }) => (
+                <div className="inline-flex w-fit self-start flex-wrap items-center gap-3 rounded-full border border-(--border) bg-(--panel) px-4 py-2.5">
+                  <Checkbox
+                    id="show-blacklisted-public-playlist"
+                    checked={showBlacklisted}
+                    onCheckedChange={(checked) =>
+                      setShowBlacklisted(checked === true)
+                    }
+                  />
+                  <Label
+                    htmlFor="show-blacklisted-public-playlist"
+                    className="cursor-pointer text-sm font-medium text-(--text)"
+                  >
+                    Show blacklisted songs
+                  </Label>
+                  {!showBlacklisted &&
+                  (searchData?.hiddenBlacklistedCount ?? 0) > 0 ? (
+                    <span className="inline-flex items-center text-xs text-(--muted)">
+                      Hiding {searchData?.hiddenBlacklistedCount ?? 0}
+                    </span>
+                  ) : null}
+                </div>
+              )
+            : undefined
+        }
       />
 
       <ChannelRulesPanel

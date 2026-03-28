@@ -170,6 +170,7 @@ describe("extension panel service", () => {
       profileImageUrl: "https://example.com/viewer.png",
     } as never);
     vi.mocked(getChannelSettingsByChannelId).mockResolvedValue({
+      blacklistEnabled: true,
       moderatorCanManageRequests: true,
       moderatorCanManageBlacklist: false,
       moderatorCanManageSetlist: false,
@@ -291,6 +292,41 @@ describe("extension panel service", () => {
     });
   });
 
+  it("disables viewer request actions in bootstrap when the viewer is blocked", async () => {
+    vi.mocked(getViewerRequestStateForChannelViewer).mockResolvedValue({
+      viewer: {
+        twitchUserId: "viewer-1",
+        login: "viewer_one",
+        displayName: "Viewer One",
+        profileImageUrl: "https://example.com/viewer.png",
+        isSubscriber: false,
+        subscriptionVerified: false,
+        vipTokensAvailable: 2,
+        activeRequestLimit: 1,
+        access: {
+          allowed: false,
+          reason: "You are blocked from requesting songs in this channel.",
+        },
+      },
+    });
+
+    await expect(
+      getExtensionBootstrapState({
+        env,
+        auth,
+      })
+    ).resolves.toMatchObject({
+      viewer: {
+        canRequest: false,
+        canVipRequest: false,
+        access: {
+          allowed: false,
+          reason: "You are blocked from requesting songs in this channel.",
+        },
+      },
+    });
+  });
+
   it("returns lightweight live state for polling refreshes", async () => {
     await expect(
       getExtensionPanelState({
@@ -371,6 +407,60 @@ describe("extension panel service", () => {
         excludeAuthorIds: [2],
       })
     );
+  });
+
+  it("passes channel request filters through extension search", async () => {
+    vi.mocked(getChannelSettingsByChannelId).mockResolvedValue({
+      onlyOfficialDlc: true,
+      allowedTuningsJson: '["E Standard","Drop D"]',
+      requiredPathsJson: '["lead","voice"]',
+      requiredPathsMatchMode: "all",
+    } as never);
+
+    await searchExtensionCatalog({
+      env,
+      auth,
+      search: {
+        query: "cherub",
+        page: 1,
+        pageSize: 10,
+      },
+    });
+
+    expect(searchCatalogSongs).toHaveBeenCalledWith(
+      env,
+      expect.objectContaining({
+        restrictToOfficial: true,
+        allowedTuningsFilter: ["E Standard", "Drop D"],
+        requiredPartsFilter: ["lead", "voice"],
+        requiredPartsFilterMatchMode: "all",
+      })
+    );
+  });
+
+  it("skips blacklist exclusions when blacklist rules are off", async () => {
+    vi.mocked(getChannelSettingsByChannelId).mockResolvedValue({
+      blacklistEnabled: false,
+    } as never);
+
+    await searchExtensionCatalog({
+      env,
+      auth,
+      search: {
+        query: "cherub",
+        page: 1,
+        pageSize: 10,
+      },
+    });
+
+    const searchInput = vi.mocked(searchCatalogSongs).mock.calls.at(-1)?.[1];
+
+    expect(searchInput).not.toHaveProperty("excludeSongIds");
+    expect(searchInput).not.toHaveProperty("excludeGroupedProjectIds");
+    expect(searchInput).not.toHaveProperty("excludeArtistIds");
+    expect(searchInput).not.toHaveProperty("excludeArtistNames");
+    expect(searchInput).not.toHaveProperty("excludeAuthorIds");
+    expect(searchInput).not.toHaveProperty("excludeCreatorNames");
   });
 
   it("maps shared search results into panel items", async () => {

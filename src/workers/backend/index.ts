@@ -656,6 +656,7 @@ class D1PlaylistCoordinator implements PlaylistCoordinator {
         isVip: false,
         isSubscriber: false,
       },
+      allowBlacklistOverride: true,
     });
 
     if (!songAllowed.allowed) {
@@ -1289,6 +1290,7 @@ class D1PlaylistCoordinator implements PlaylistCoordinator {
         isVip: false,
         isSubscriber: false,
       },
+      allowBlacklistOverride: true,
     });
 
     if (!songAllowed.allowed) {

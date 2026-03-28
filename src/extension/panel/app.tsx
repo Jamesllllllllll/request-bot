@@ -289,6 +289,8 @@ export function ExtensionPanelApp(props: { apiBaseUrl?: string }) {
   const canManageVipRequests =
     !!managementPermissions?.canManageRequests &&
     !!managementPermissions?.canManageVipTokens;
+  const showViewerSearchActions =
+    !!bootstrap?.viewer.canRequest || !!bootstrap?.viewer.canVipRequest;
   const playlistItems = bootstrap?.playlist.items ?? [];
   const currentPlaylistItemId = bootstrap?.playlist.currentItemId ?? null;
   const queuedPlaylistItems = playlistItems.filter(
@@ -1224,63 +1226,65 @@ export function ExtensionPanelApp(props: { apiBaseUrl?: string }) {
                                 {formatSearchSongMeta(item)}
                               </p>
                             </div>
-                            <div className="flex shrink-0 items-center gap-1">
-                              <Button
-                                size="sm"
-                                variant="outline"
-                                className="h-7 rounded-none px-2 text-[11px] shadow-none"
-                                disabled={
-                                  !songId ||
-                                  !bootstrap?.viewer.canRequest ||
-                                  pendingAction === actionKey
-                                }
-                                onClick={() => {
-                                  if (!songId) {
-                                    return;
+                            {showViewerSearchActions ? (
+                              <div className="flex shrink-0 items-center gap-1">
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  className="h-7 rounded-none px-2 text-[11px] shadow-none"
+                                  disabled={
+                                    !songId ||
+                                    !bootstrap?.viewer.canRequest ||
+                                    pendingAction === actionKey
                                   }
+                                  onClick={() => {
+                                    if (!songId) {
+                                      return;
+                                    }
 
-                                  void handleSubmitRequest({
-                                    songId,
-                                    requestKind: "regular",
-                                  });
-                                }}
-                              >
-                                {pendingAction === actionKey
-                                  ? effectiveReplaceExisting
-                                    ? "Editing..."
-                                    : "Adding..."
-                                  : effectiveReplaceExisting
-                                    ? "Edit"
-                                    : "Add"}
-                              </Button>
-                              <Button
-                                size="sm"
-                                className="h-7 rounded-none px-2 text-[11px] shadow-none"
-                                disabled={
-                                  !songId ||
-                                  !bootstrap?.viewer.canVipRequest ||
-                                  pendingAction === vipActionKey
-                                }
-                                onClick={() => {
-                                  if (!songId) {
-                                    return;
+                                    void handleSubmitRequest({
+                                      songId,
+                                      requestKind: "regular",
+                                    });
+                                  }}
+                                >
+                                  {pendingAction === actionKey
+                                    ? effectiveReplaceExisting
+                                      ? "Editing..."
+                                      : "Adding..."
+                                    : effectiveReplaceExisting
+                                      ? "Edit"
+                                      : "Add"}
+                                </Button>
+                                <Button
+                                  size="sm"
+                                  className="h-7 rounded-none px-2 text-[11px] shadow-none"
+                                  disabled={
+                                    !songId ||
+                                    !bootstrap?.viewer.canVipRequest ||
+                                    pendingAction === vipActionKey
                                   }
+                                  onClick={() => {
+                                    if (!songId) {
+                                      return;
+                                    }
 
-                                  void handleSubmitRequest({
-                                    songId,
-                                    requestKind: "vip",
-                                  });
-                                }}
-                              >
-                                {pendingAction === vipActionKey
-                                  ? effectiveReplaceExisting
-                                    ? "Editing..."
-                                    : "Adding..."
-                                  : effectiveReplaceExisting
-                                    ? "Edit VIP"
-                                    : "VIP"}
-                              </Button>
-                            </div>
+                                    void handleSubmitRequest({
+                                      songId,
+                                      requestKind: "vip",
+                                    });
+                                  }}
+                                >
+                                  {pendingAction === vipActionKey
+                                    ? effectiveReplaceExisting
+                                      ? "Editing..."
+                                      : "Adding..."
+                                    : effectiveReplaceExisting
+                                      ? "Edit VIP"
+                                      : "VIP"}
+                                </Button>
+                              </div>
+                            ) : null}
                           </div>
                         </div>
                       );

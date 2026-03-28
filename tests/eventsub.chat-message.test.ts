@@ -773,6 +773,59 @@ describe("processEventSubChatMessage", () => {
     );
   });
 
+  it("allows moderators to override blacklist matches when requesting for another viewer", async () => {
+    const deps = createDeps({
+      getDashboardState: vi.fn().mockResolvedValue(
+        createState({
+          blacklistEnabled: true,
+          blacklistCharters: [{ charterId: 101, charterName: "charter" }],
+        })
+      ),
+      resolveTwitchUserByLogin: vi.fn().mockResolvedValue({
+        twitchUserId: "viewer-2",
+        login: "viewer_two",
+        displayName: "Viewer Two",
+      }),
+      searchSongs: vi.fn().mockResolvedValue({
+        results: [createSong({ authorId: 101, creator: "charter" })],
+      }),
+    });
+
+    const result = await processEventSubChatMessage({
+      env,
+      event: createEvent({
+        chatterTwitchUserId: "mod-1",
+        chatterLogin: "mod_one",
+        chatterDisplayName: "Mod One",
+        isModerator: true,
+        rawMessage: "!sr cherub rock @viewer_two",
+      }),
+      parsed: createParsed({
+        command: "sr",
+        query: "cherub rock",
+        targetLogin: "viewer_two",
+      }),
+      deps,
+    });
+
+    expect(result).toEqual({
+      body: "Accepted",
+      status: 202,
+    });
+    expect(deps.addRequestToPlaylist).toHaveBeenCalledWith(
+      env,
+      expect.objectContaining({
+        requestedByTwitchUserId: "viewer-2",
+        requestedByLogin: "viewer_two",
+        requestedByDisplayName: "Viewer Two",
+        song: expect.objectContaining({
+          title: "Cherub Rock",
+          creator: "charter",
+        }),
+      })
+    );
+  });
+
   it("adds an unmatched request to the playlist with a warning", async () => {
     const deps = createDeps({
       searchSongs: vi.fn().mockResolvedValue({ results: [] }),

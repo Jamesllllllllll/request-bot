@@ -280,6 +280,33 @@ describe("viewer request service", () => {
     });
   });
 
+  it("returns blocked viewer access when the viewer is banned from requests", async () => {
+    vi.mocked(isBlockedUser).mockResolvedValue(true);
+
+    await expect(
+      getViewerRequestState({
+        env,
+        request,
+        slug: "streamer",
+      })
+    ).resolves.toEqual({
+      viewer: {
+        twitchUserId: "viewer-1",
+        login: "viewer_one",
+        displayName: "Viewer One",
+        profileImageUrl: "https://example.com/viewer.png",
+        isSubscriber: false,
+        subscriptionVerified: false,
+        vipTokensAvailable: 2,
+        activeRequestLimit: 1,
+        access: {
+          allowed: false,
+          reason: "You are blocked from requesting songs in this channel.",
+        },
+      },
+    });
+  });
+
   it("submits a regular request through the playlist backend", async () => {
     const result = await performViewerRequestMutation({
       env,
@@ -741,6 +768,29 @@ describe("viewer request service", () => {
         },
       })
     ).rejects.toBeInstanceOf(ViewerRequestError);
+
+    expect(callBackend).not.toHaveBeenCalled();
+  });
+
+  it("rejects blocked viewers before sending a playlist add mutation", async () => {
+    vi.mocked(isBlockedUser).mockResolvedValue(true);
+
+    await expect(
+      performViewerRequestMutation({
+        env,
+        request,
+        slug: "streamer",
+        mutation: {
+          action: "submit",
+          songId: "song-1",
+          requestKind: "regular",
+          replaceExisting: false,
+        },
+      })
+    ).rejects.toMatchObject({
+      status: 403,
+      message: "You are blocked from requesting songs in this channel.",
+    });
 
     expect(callBackend).not.toHaveBeenCalled();
   });

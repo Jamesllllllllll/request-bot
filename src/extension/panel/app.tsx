@@ -51,6 +51,13 @@ import {
 } from "~/components/ui/tooltip";
 import { toExtensionApiUrl } from "./config";
 import {
+  applyDemoViewerRequestMutation,
+  createMockModeratorPlaylistItems,
+  getDemoViewerActiveRequests,
+  mockModeratorViewerProfile,
+  type PanelDemoPlaylist,
+} from "./demo";
+import {
   getTwitchExtensionHelper,
   loadTwitchExtensionHelper,
   type TwitchExtensionAuth,
@@ -133,6 +140,15 @@ type PanelStateResponse = {
   >;
 };
 
+type PreviewCatalogSearchResponse = {
+  results: Array<Record<string, unknown>>;
+  total?: number;
+  page?: number;
+  pageSize?: number;
+  hiddenBlacklistedCount?: number;
+  error?: string;
+};
+
 type PanelPlaylistMutation =
   | { action: "setCurrent"; itemId: string }
   | { action: "markPlayed"; itemId: string }
@@ -166,78 +182,6 @@ type TransientPanelNotice = {
 };
 
 const PANEL_VISIBLE_REFRESH_INTERVAL_MS = 5000;
-
-const mockModeratorViewerProfile: NonNullable<
-  PanelBootstrapResponse["viewer"]["profile"]
-> = {
-  twitchUserId: "mod-preview-user",
-  login: "modmark",
-  displayName: "ModMark",
-  profileImageUrl: null,
-  isSubscriber: true,
-  subscriptionVerified: true,
-  vipTokensAvailable: 2,
-  activeRequestLimit: 5,
-};
-
-function createMockModeratorPlaylistItems(): PanelPlaylistItem[] {
-  const now = Date.now();
-
-  return [
-    {
-      id: "preview-current",
-      songTitle: "On My Soul",
-      songArtist: "Bruno Mars",
-      requestedByTwitchUserId: "viewer-alpha",
-      requestedByLogin: "riffpilot",
-      requestedByDisplayName: "RiffPilot",
-      requestKind: "regular",
-      createdAt: now - 12 * 60_000,
-      updatedAt: now - 12 * 60_000,
-      status: "current",
-      position: 1,
-    },
-    {
-      id: "preview-queued-1",
-      songTitle: "Black Cat",
-      songArtist: "Janet Jackson",
-      requestedByTwitchUserId: "viewer-beta",
-      requestedByLogin: "duhstructo",
-      requestedByDisplayName: "Duhstructo",
-      requestKind: "vip",
-      createdAt: now - 8 * 60_000,
-      updatedAt: now - 6 * 60_000,
-      status: "queued",
-      position: 2,
-    },
-    {
-      id: "preview-queued-2",
-      songTitle: "The Trooper",
-      songArtist: "Iron Maiden",
-      requestedByTwitchUserId: "viewer-gamma",
-      requestedByLogin: "younggun",
-      requestedByDisplayName: "YoungGun",
-      requestKind: "regular",
-      createdAt: now - 5 * 60_000,
-      updatedAt: now - 5 * 60_000,
-      status: "queued",
-      position: 3,
-    },
-    {
-      id: "preview-queued-3",
-      songTitle: "Barracuda",
-      songArtist: "Heart",
-      requestedByTwitchUserId: "viewer-delta",
-      requestedByLogin: "riffqueen",
-      requestedByDisplayName: "RiffQueen",
-      requestKind: "regular",
-      createdAt: now - 3 * 60_000,
-      updatedAt: now - 3 * 60_000,
-      status: "queued",
-      position: 4,
-    },
-  ];
-}
 
 export function ExtensionPanelApp(props: { apiBaseUrl?: string }) {
   const [helperState, setHelperState] = useState<"loading" | "ready" | "error">(
@@ -927,6 +871,15 @@ export function ExtensionPanelApp(props: { apiBaseUrl?: string }) {
   const channelTitle = bootstrap?.channel?.displayName
     ? `${bootstrap.channel.displayName}'s Request Playlist`
     : "Request Playlist";
+  const showStandaloneDemo =
+    !auth &&
+    typeof window !== "undefined" &&
+    window.self === window.top &&
+    (helperTimedOut || helperState === "error");
+
+  if (showStandaloneDemo) {
+    return <ExtensionPanelModeratorPreview />;
+  }
 
   return (
     <TooltipProvider>
@@ -1305,7 +1258,7 @@ export function ExtensionPanelApp(props: { apiBaseUrl?: string }) {
 }
 
 export function ExtensionPanelModeratorPreview() {
-  const [playlist, setPlaylist] = useState<PanelBootstrapResponse["playlist"]>({
+  const [playlist, setPlaylist] = useState<PanelDemoPlaylist>({
     currentItemId: "preview-current",
     items: createMockModeratorPlaylistItems(),
   });
@@ -1321,9 +1274,26 @@ export function ExtensionPanelModeratorPreview() {
   const [draggingItemId, setDraggingItemId] = useState<string | null>(null);
   const [dropTargetState, setDropTargetState] =
     useState<PanelDropTargetState>(null);
+  const [activeTab, setActiveTab] = useState<"playlist" | "search">("playlist");
+  const [searchQuery, setSearchQuery] = useState("");
+  const [debouncedSearchQuery, setDebouncedSearchQuery] = useState("");
+  const [searchResults, setSearchResults] =
+    useState<PanelSearchResponse | null>(null);
+  const [searchError, setSearchError] = useState<string | null>(null);
+  const [searching, setSearching] = useState(false);
+  const [replaceExisting, setReplaceExisting] = useState(false);
   const latestTransientNoticeIdRef = useRef(0);
+  const latestSearchRequestRef = useRef(0);
   const removeConfirmRef = useRef<HTMLDivElement | null>(null);
 
+  const activeRequests = getDemoViewerActiveRequests(
+    playlist,
+    mockModeratorViewerProfile.twitchUserId
+  );
+  const activeRequestCount = activeRequests.length;
+  const activeRequestLimit = mockModeratorViewerProfile.activeRequestLimit;
+  const editModeAvailable = activeRequestCount === 1;
+  const effectiveReplaceExisting = editModeAvailable && replaceExisting;
   const currentPlaylistItemId = playlist.currentItemId;
   const queueCount = playlist.items.length;
   const queuedPlaylistItems = playlist.items.filter(
@@ -1336,6 +1306,25 @@ export function ExtensionPanelModeratorPreview() {
   const shufflePlaylistTooltip = currentPlaylistItemId
     ? "Mark the current song played before shuffling."
     : "Shuffle the queue.";
+
+  useEffect(() => {
+    if (editModeAvailable && activeRequestCount === 1) {
+      setReplaceExisting(true);
+      return;
+    }
+
+    setReplaceExisting(false);
+  }, [activeRequestCount, editModeAvailable]);
+
+  useEffect(() => {
+    const timeout = window.setTimeout(() => {
+      setDebouncedSearchQuery(searchQuery);
+    }, 300);
+
+    return () => {
+      window.clearTimeout(timeout);
+    };
+  }, [searchQuery]);
 
   useEffect(() => {
     if (!transientNotice) {
@@ -1378,17 +1367,20 @@ export function ExtensionPanelModeratorPreview() {
     };
   }, [confirmingRemoveItemId]);
 
-  function showTransientSuccess(message: string) {
+  function showTransientMessage(
+    tone: TransientPanelNotice["tone"],
+    message: string
+  ) {
     latestTransientNoticeIdRef.current += 1;
     setTransientNotice({
       id: latestTransientNoticeIdRef.current,
-      tone: "success",
+      tone,
       message,
     });
   }
 
   function applyPreviewPlaylistMutation(
-    current: PanelBootstrapResponse["playlist"],
+    current: PanelDemoPlaylist,
     mutation: PanelPlaylistMutation
   ) {
     switch (mutation.action) {
@@ -1505,6 +1497,123 @@ export function ExtensionPanelModeratorPreview() {
     }
   }
 
+  async function runPreviewSearch(query: string) {
+    const requestId = latestSearchRequestRef.current + 1;
+    latestSearchRequestRef.current = requestId;
+    setSearching(true);
+    setSearchError(null);
+
+    try {
+      const params = new URLSearchParams({
+        page: "1",
+        pageSize: "35",
+      });
+      if (query.trim()) {
+        params.set("query", query.trim());
+      }
+
+      const response = await fetch(`/api/search?${params.toString()}`);
+      const payload = (await response
+        .json()
+        .catch(() => null)) as PreviewCatalogSearchResponse | null;
+
+      if (!response.ok) {
+        throw new Error(payload?.error ?? "Unable to search songs.");
+      }
+
+      if (latestSearchRequestRef.current !== requestId) {
+        return;
+      }
+
+      startTransition(() => {
+        setSearchResults({
+          items: payload?.results ?? [],
+          total: payload?.total ?? 0,
+          page: payload?.page ?? 1,
+          pageSize: payload?.pageSize ?? 35,
+          totalPages:
+            payload?.pageSize && payload.total != null
+              ? Math.ceil(payload.total / payload.pageSize)
+              : 0,
+        });
+      });
+    } catch (error) {
+      if (latestSearchRequestRef.current !== requestId) {
+        return;
+      }
+
+      setSearchError(getErrorText(error, "Unable to search songs."));
+    } finally {
+      if (latestSearchRequestRef.current === requestId) {
+        setSearching(false);
+      }
+    }
+  }
+
+  useEffect(() => {
+    void runPreviewSearch(debouncedSearchQuery);
+  }, [debouncedSearchQuery]);
+
+  async function handleSearchSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+
+    if (debouncedSearchQuery !== searchQuery) {
+      setDebouncedSearchQuery(searchQuery);
+      return;
+    }
+
+    void runPreviewSearch(searchQuery);
+  }
+
+  async function handleSubmitRequest(input: {
+    songId: string;
+    requestKind: "regular" | "vip";
+  }) {
+    const song =
+      searchResults?.items.find(
+        (item) => getString(item, "id") === input.songId
+      ) ?? null;
+
+    if (!song) {
+      showTransientMessage("danger", "That song is unavailable right now.");
+      return;
+    }
+
+    if (
+      !effectiveReplaceExisting &&
+      activeRequestLimit != null &&
+      activeRequestCount >= activeRequestLimit
+    ) {
+      showTransientMessage(
+        "danger",
+        "Remove one of your requests or turn on Edit current request."
+      );
+      return;
+    }
+
+    setPendingAction(`${input.songId}:${input.requestKind}`);
+    setTransientNotice(null);
+
+    startTransition(() => {
+      setPlaylist((current) =>
+        applyDemoViewerRequestMutation({
+          playlist: current,
+          viewerProfile: mockModeratorViewerProfile,
+          song,
+          requestKind: input.requestKind,
+          replaceExisting: effectiveReplaceExisting,
+        })
+      );
+      setActiveTab("playlist");
+    });
+
+    showTransientMessage(
+      "success",
+      effectiveReplaceExisting ? "Request updated." : "Request added."
+    );
+    setPendingAction(null);
+  }
+
   async function handlePlaylistMutation(mutation: PanelPlaylistMutation) {
     const actionKey =
       "itemId" in mutation
@@ -1529,7 +1638,8 @@ export function ExtensionPanelModeratorPreview() {
     });
 
     if (mutation.action !== "reorderItems") {
-      showTransientSuccess(
+      showTransientMessage(
+        "success",
         getPlaylistMutationSuccessMessage(mutation, {
           ok: true,
         })
@@ -1599,7 +1709,11 @@ export function ExtensionPanelModeratorPreview() {
                 {formatVipTokensCompact(
                   mockModeratorViewerProfile.vipTokensAvailable
                 )}{" "}
-                · Moderator
+                ·{" "}
+                {formatRequestLimitCompact(
+                  activeRequestCount,
+                  activeRequestLimit
+                )}
               </p>
             </div>
             <div className="mt-0.5 flex h-8 w-8 items-center justify-center rounded-full border border-(--border-strong) bg-(--panel-soft) text-[10px] font-semibold uppercase text-(--brand-deep)">
@@ -1618,91 +1732,246 @@ export function ExtensionPanelModeratorPreview() {
             </TransientNoticeBanner>
           ) : null}
         </AnimatePresence>
-
-        <div className="flex min-h-0 flex-1 flex-col border-b border-(--border-strong)">
-          <div className="grid h-auto w-full grid-cols-1 gap-0 rounded-none border-b border-(--border-strong) bg-(--panel) p-0">
-            <div
-              className="px-3 py-2 text-center text-[11px] font-semibold uppercase tracking-[0.18em] text-(--brand-deep)"
+        <Tabs
+          value={activeTab}
+          onValueChange={(value) => {
+            if (value === "playlist" || value === "search") {
+              setActiveTab(value);
+            }
+          }}
+          className="flex min-h-0 flex-1 flex-col gap-0 border-b border-(--border-strong)"
+        >
+          <TabsList
+            variant="line"
+            className="grid h-auto w-full grid-cols-2 gap-0 rounded-none border-b border-(--border-strong) bg-(--panel) p-0"
+          >
+            <TabsTrigger
+              value="playlist"
+              className="h-auto justify-center rounded-none border-0 px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-(--muted) shadow-none after:bottom-0 after:h-px after:bg-(--brand-deep) data-[state=active]:text-(--brand-deep)"
               style={{ fontFamily: '"IBM Plex Sans", sans-serif' }}
             >
-              Playlist ({queueCount})
-            </div>
-          </div>
-
-          {showShufflePlaylistControl ? (
-            <div className="flex items-center justify-between border-t border-(--border) px-3 py-1.5">
-              <span className="text-[10px] font-semibold uppercase tracking-[0.16em] text-(--muted)">
-                Queue tools
+              <span className="inline-flex items-center gap-1">
+                <span>Playlist</span>
+                <span className="shrink-0 text-[11px] font-semibold uppercase tracking-[0.18em] text-current">
+                  ({queueCount})
+                </span>
               </span>
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <span className="inline-flex">
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      className="h-6 w-6 rounded-none px-0 text-(--muted) shadow-none hover:bg-(--panel-soft) hover:text-(--text)"
-                      onClick={handleShufflePlaylist}
-                      disabled={
-                        !canShufflePlaylist ||
-                        pendingAction === "shufflePlaylist"
-                      }
-                      aria-label={shufflePlaylistTooltip}
-                    >
-                      {pendingAction === "shufflePlaylist" ? (
-                        <LoaderCircle className="h-3.5 w-3.5 animate-spin" />
-                      ) : (
-                        <Shuffle className="h-3.5 w-3.5" />
-                      )}
-                    </Button>
+            </TabsTrigger>
+            <TabsTrigger
+              value="search"
+              className="h-auto rounded-none border-0 px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-(--muted) shadow-none after:bottom-0 after:h-px after:bg-(--brand-deep) data-[state=active]:text-(--brand-deep)"
+              style={{ fontFamily: '"IBM Plex Sans", sans-serif' }}
+            >
+              Search
+            </TabsTrigger>
+          </TabsList>
+
+          <TabsContent value="playlist" className="mt-0 flex-1 overflow-y-auto">
+            <div>
+              {showShufflePlaylistControl ? (
+                <div className="flex items-center justify-between border-t border-(--border) px-3 py-1.5">
+                  <span className="text-[10px] font-semibold uppercase tracking-[0.16em] text-(--muted)">
+                    Queue tools
                   </span>
-                </TooltipTrigger>
-                <TooltipContent>{shufflePlaylistTooltip}</TooltipContent>
-              </Tooltip>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <span className="inline-flex">
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          className="h-6 w-6 rounded-none px-0 text-(--muted) shadow-none hover:bg-(--panel-soft) hover:text-(--text)"
+                          onClick={handleShufflePlaylist}
+                          disabled={
+                            !canShufflePlaylist ||
+                            pendingAction === "shufflePlaylist"
+                          }
+                          aria-label={shufflePlaylistTooltip}
+                        >
+                          {pendingAction === "shufflePlaylist" ? (
+                            <LoaderCircle className="h-3.5 w-3.5 animate-spin" />
+                          ) : (
+                            <Shuffle className="h-3.5 w-3.5" />
+                          )}
+                        </Button>
+                      </span>
+                    </TooltipTrigger>
+                    <TooltipContent>{shufflePlaylistTooltip}</TooltipContent>
+                  </Tooltip>
+                </div>
+              ) : null}
+
+              <div className="flex-1 overflow-y-auto">
+                {playlist.items.map((item, index) => {
+                  const itemId =
+                    getString(item, "id") ?? `preview-item-${index}`;
+
+                  return (
+                    <PanelPlaylistRow
+                      key={itemId}
+                      item={item}
+                      itemId={itemId}
+                      currentItemId={playlist.currentItemId}
+                      viewerProfile={mockModeratorViewerProfile}
+                      canManagePlaylist
+                      canManageVipRequests
+                      canReorderPlaylist={canReorderPlaylist}
+                      pendingAction={pendingAction}
+                      confirmingRemoveItemId={confirmingRemoveItemId}
+                      onConfirmRemoveChange={setConfirmingRemoveItemId}
+                      expandedModeratorItemId={expandedModeratorItemId}
+                      onExpandedModeratorItemChange={setExpandedModeratorItemId}
+                      removeConfirmRef={removeConfirmRef}
+                      draggingItemId={draggingItemId}
+                      dropTargetState={dropTargetState}
+                      onDragStart={setDraggingItemId}
+                      onDragEnd={() => {
+                        setDraggingItemId(null);
+                        setDropTargetState(null);
+                      }}
+                      onDragHover={(hoverItemId, edge) => {
+                        setDropTargetState({
+                          itemId: hoverItemId,
+                          edge,
+                        });
+                      }}
+                      onDragLeave={() => setDropTargetState(null)}
+                      onReorder={handleReorderPlaylist}
+                      onRemoveRequest={handleRemoveRequest}
+                      onPlaylistMutation={handlePlaylistMutation}
+                    />
+                  );
+                })}
+              </div>
             </div>
-          ) : null}
+          </TabsContent>
 
-          <div className="flex-1 overflow-y-auto">
-            {playlist.items.map((item, index) => {
-              const itemId = getString(item, "id") ?? `preview-item-${index}`;
-
-              return (
-                <PanelPlaylistRow
-                  key={itemId}
-                  item={item}
-                  itemId={itemId}
-                  currentItemId={playlist.currentItemId}
-                  viewerProfile={mockModeratorViewerProfile}
-                  canManagePlaylist
-                  canManageVipRequests
-                  canReorderPlaylist={canReorderPlaylist}
-                  pendingAction={pendingAction}
-                  confirmingRemoveItemId={confirmingRemoveItemId}
-                  onConfirmRemoveChange={setConfirmingRemoveItemId}
-                  expandedModeratorItemId={expandedModeratorItemId}
-                  onExpandedModeratorItemChange={setExpandedModeratorItemId}
-                  removeConfirmRef={removeConfirmRef}
-                  draggingItemId={draggingItemId}
-                  dropTargetState={dropTargetState}
-                  onDragStart={setDraggingItemId}
-                  onDragEnd={() => {
-                    setDraggingItemId(null);
-                    setDropTargetState(null);
-                  }}
-                  onDragHover={(hoverItemId, edge) => {
-                    setDropTargetState({
-                      itemId: hoverItemId,
-                      edge,
-                    });
-                  }}
-                  onDragLeave={() => setDropTargetState(null)}
-                  onReorder={handleReorderPlaylist}
-                  onRemoveRequest={handleRemoveRequest}
-                  onPlaylistMutation={handlePlaylistMutation}
+          <TabsContent value="search" className="mt-0 flex-1 overflow-y-auto">
+            <div className="border-b border-(--border) px-3 py-2">
+              <form className="flex gap-1" onSubmit={handleSearchSubmit}>
+                <Input
+                  value={searchQuery}
+                  onChange={(event) => setSearchQuery(event.target.value)}
+                  placeholder="Search title, artist, or album"
+                  className="h-8 rounded-none border-(--border-strong) px-2 py-1 text-[12px] shadow-none focus-visible:ring-1 focus-visible:ring-(--brand) focus-visible:ring-offset-0"
                 />
-              );
-            })}
-          </div>
-        </div>
+                <Button
+                  type="submit"
+                  size="sm"
+                  className="h-8 rounded-none px-2 shadow-none"
+                  disabled={searching}
+                >
+                  {searching ? (
+                    <LoaderCircle className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <Search className="h-4 w-4" />
+                  )}
+                </Button>
+              </form>
+
+              <label className="mt-2 flex items-center gap-2 text-[11px] text-(--muted)">
+                <input
+                  type="checkbox"
+                  checked={replaceExisting}
+                  onChange={(event) => setReplaceExisting(event.target.checked)}
+                  className="h-3.5 w-3.5 rounded-none border-(--border)"
+                  disabled={!editModeAvailable}
+                />
+                Edit current request
+              </label>
+
+              {searchError ? (
+                <p className="mt-2 text-[11px] text-(--danger)">
+                  {searchError}
+                </p>
+              ) : null}
+            </div>
+
+            <div>
+              {searchResults?.items?.length ? (
+                <div>
+                  {searchResults.items.map((item, index) => {
+                    const songId = getString(item, "id");
+                    const actionKey = `${songId ?? "unknown"}:regular`;
+                    const vipActionKey = `${songId ?? "unknown"}:vip`;
+
+                    return (
+                      <div
+                        key={songId ?? `preview-search-result-${index}`}
+                        className="border-t border-(--border) px-3 py-2"
+                      >
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="min-w-0">
+                            <p className="truncate text-[13px] leading-4 font-medium text-(--text)">
+                              {formatSearchSongLabel(item)}
+                            </p>
+                            <p className="mt-0.5 truncate text-[11px] leading-4 text-(--muted)">
+                              {formatSearchSongMeta(item)}
+                            </p>
+                          </div>
+                          <div className="flex shrink-0 items-center gap-1">
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              className="h-7 rounded-none px-2 text-[11px] shadow-none"
+                              disabled={!songId || pendingAction === actionKey}
+                              onClick={() => {
+                                if (!songId) {
+                                  return;
+                                }
+
+                                void handleSubmitRequest({
+                                  songId,
+                                  requestKind: "regular",
+                                });
+                              }}
+                            >
+                              {pendingAction === actionKey
+                                ? effectiveReplaceExisting
+                                  ? "Editing..."
+                                  : "Adding..."
+                                : effectiveReplaceExisting
+                                  ? "Edit"
+                                  : "Add"}
+                            </Button>
+                            <Button
+                              size="sm"
+                              className="h-7 rounded-none px-2 text-[11px] shadow-none"
+                              disabled={
+                                !songId || pendingAction === vipActionKey
+                              }
+                              onClick={() => {
+                                if (!songId) {
+                                  return;
+                                }
+
+                                void handleSubmitRequest({
+                                  songId,
+                                  requestKind: "vip",
+                                });
+                              }}
+                            >
+                              {pendingAction === vipActionKey
+                                ? effectiveReplaceExisting
+                                  ? "Editing..."
+                                  : "Adding..."
+                                : effectiveReplaceExisting
+                                  ? "Edit VIP"
+                                  : "VIP"}
+                            </Button>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              ) : !searching ? (
+                <div className="border-t border-(--border) px-3 py-2 text-[11px] text-(--muted)">
+                  No songs matched that search.
+                </div>
+              ) : null}
+            </div>
+          </TabsContent>
+        </Tabs>
       </div>
     </TooltipProvider>
   );

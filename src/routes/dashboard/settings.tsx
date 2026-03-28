@@ -43,6 +43,10 @@ type DashboardSettingsData = {
 
 type ViewerSessionData = {
   viewer: null | {
+    user: {
+      twitchUserId: string;
+      isAdmin?: boolean;
+    };
     channel: {
       slug: string;
     } | null;
@@ -99,6 +103,12 @@ const defaultForm: DashboardSettingsFormData = {
 
 const twitchExtensionInstallUrl =
   "https://dashboard.twitch.tv/extensions/gojrfj73vbfx7fww479a77kpvyrz91-0.0.1";
+const twitchExtensionBetaUserIds = new Set([
+  "152539019", // xEmmy98x
+  "26914244", // Unleashed2k
+  "44932690", // YoungGun
+  "49572641", // Gamut
+]);
 
 export const Route = createFileRoute("/dashboard/settings")({
   head: () => ({
@@ -121,7 +131,12 @@ function DashboardSettingsPage() {
       return response.json() as Promise<ViewerSessionData>;
     },
   });
-  const hasOwnerChannel = !!sessionQuery.data?.viewer?.channel;
+  const viewer = sessionQuery.data?.viewer ?? null;
+  const hasOwnerChannel = !!viewer?.channel;
+  const canSeeTwitchExtensionInstall =
+    !!viewer &&
+    (viewer.user.isAdmin === true ||
+      twitchExtensionBetaUserIds.has(viewer.user.twitchUserId));
   const settingsQuery = useQuery({
     queryKey: ["dashboard-settings"],
     queryFn: async (): Promise<DashboardSettingsData> => {
@@ -255,24 +270,35 @@ function DashboardSettingsPage() {
         title="Settings"
         description="Owner-only channel configuration. Moderators use the channel page for playlist and moderation actions."
         meta={
-          hasOwnerChannel ? (
+          canSeeTwitchExtensionInstall ? (
             <p className="max-w-2xl text-sm leading-7 text-(--muted)">
               Beta testers can install the Twitch extension panel on Twitch.
             </p>
           ) : null
         }
         actions={
-          hasOwnerChannel ? (
-            <Button asChild variant="outline">
-              <a
-                href={twitchExtensionInstallUrl}
-                target="_blank"
-                rel="noreferrer"
-                className="no-underline"
-              >
-                Install Twitch extension beta
-              </a>
-            </Button>
+          hasOwnerChannel || canSeeTwitchExtensionInstall ? (
+            <div className="flex flex-wrap gap-2">
+              {hasOwnerChannel ? (
+                <Button asChild variant="outline">
+                  <a href="/dashboard/panel-preview" className="no-underline">
+                    Preview mod panel
+                  </a>
+                </Button>
+              ) : null}
+              {canSeeTwitchExtensionInstall ? (
+                <Button asChild variant="outline">
+                  <a
+                    href={twitchExtensionInstallUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="no-underline"
+                  >
+                    Install Twitch extension beta
+                  </a>
+                </Button>
+              ) : null}
+            </div>
           ) : null
         }
         aside={

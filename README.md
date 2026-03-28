@@ -22,7 +22,7 @@ It runs on TanStack Start, Cloudflare Workers, D1, Durable Objects, Queues, KV, 
 - Home page cards for live channels, plus a demo mode that shows Rocksmith-tagged Twitch streams with `Watch on Twitch` and `Open playlist` actions
 - Song search with direct viewer request actions, copyable chat commands, catalog metadata, caching, and D1-backed rate limiting
 - Public channel pages with playlist, played history, signed-in viewer request controls, VIP token balance, and request timestamps
-- Twitch panel extension with read-only playlist viewing, viewer request actions, and owner/moderator playlist controls
+- Twitch panel extension with playlist viewing, viewer request actions, and owner/moderator controls for play-now, shuffle, reorder, delete, and request-type changes
 - Dashboard pages for account access, owner settings, admin controls, and playlist management
 - Channel rules with setlists plus distinct artist, charter, song, and version blacklists
 - OBS-ready stream overlay settings with live preview, chroma-key background controls, and album/creator display toggles

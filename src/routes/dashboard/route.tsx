@@ -95,10 +95,11 @@ function DashboardLayout() {
       ]
     : accountNav;
   const navItems = isAdmin ? [...primaryNav, ...adminNav] : primaryNav;
-  const activeDashboardPath =
-    navItems.find((item) =>
-      item.exact ? pathname === item.to : pathname.startsWith(item.to)
-    )?.to ?? "/dashboard";
+  const activeDashboardPath = pathname.startsWith("/dashboard/panel-preview")
+    ? "/dashboard/settings"
+    : (navItems.find((item) =>
+        item.exact ? pathname === item.to : pathname.startsWith(item.to)
+      )?.to ?? "/dashboard");
 
   return (
     <section className="grid gap-6 [container-type:inline-size] min-[961px]:grid-cols-[minmax(0,320px)_minmax(0,1fr)] min-[961px]:items-start max-[960px]:gap-0">

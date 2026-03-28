@@ -401,4 +401,11 @@ export const extensionPlaylistMutationSchema = z.discriminatedUnion("action", [
     itemId: z.string().trim().min(1).max(80),
     requestKind: z.enum(["regular", "vip"]),
   }),
+  z.object({
+    action: z.literal("shufflePlaylist"),
+  }),
+  z.object({
+    action: z.literal("reorderItems"),
+    orderedItemIds: z.array(z.string().trim().min(1).max(80)).min(1),
+  }),
 ]);

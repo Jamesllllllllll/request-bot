@@ -51,6 +51,11 @@ type ExtensionPlaylistMutationInput =
       action: "changeRequestKind";
       itemId: string;
       requestKind: "regular" | "vip";
+    }
+  | { action: "shufflePlaylist" }
+  | {
+      action: "reorderItems";
+      orderedItemIds: string[];
     };
 
 type ExtensionPanelManagement = {

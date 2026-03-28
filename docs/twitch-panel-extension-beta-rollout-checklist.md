@@ -134,9 +134,10 @@ Verify these paths on the Hosted Test build:
   - remove current request works
 - channel owner:
   - playlist moderation controls appear
-  - set current, mark played, delete item, and request-kind changes work
+  - set current, mark played, shuffle, reorder, delete item, and request-kind changes work
 - channel moderator:
   - playlist moderation controls follow the channel's moderator capability settings
+  - queue shuffle and manual reorder work when request-management access is enabled
 
 If an extension request fails in production, check the frontend Worker logs. Slow and failed panel `bootstrap` and `state` requests log a trace id, elapsed time, and stage timings for channel lookup, viewer resolution, viewer request state, and live playlist state.
 

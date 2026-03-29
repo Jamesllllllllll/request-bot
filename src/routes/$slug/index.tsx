@@ -29,6 +29,7 @@ import {
 } from "~/lib/channel-blacklist";
 import { formatSlugTitle, pageTitle } from "~/lib/page-title";
 import { getPickNumbersForQueuedItems } from "~/lib/pick-order";
+import { STREAMER_CHOICE_WARNING_CODE } from "~/lib/request-modes";
 import { cn, decodeHtmlEntities, getErrorMessage } from "~/lib/utils";
 import { formatVipTokenCount, hasRedeemableVipToken } from "~/lib/vip-tokens";
 
@@ -49,10 +50,12 @@ type PublicPlaylistItem = {
   requestedByLogin?: string | null;
   requestedByDisplayName?: string | null;
   requestKind?: "regular" | "vip" | null;
+  requestedQuery?: string | null;
   status: string;
   createdAt?: number | null;
   editedAt?: number | null;
   pickNumber?: number | null;
+  warningCode?: string | null;
 };
 
 type EnrichedPublicPlaylistItem = PublicPlaylistItem & {
@@ -189,6 +192,50 @@ function toPlaylistItems(
   });
 }
 
+function isStreamerChoicePlaylistItem(item: {
+  warningCode?: string | null;
+  requestedQuery?: string | null;
+}) {
+  return item.warningCode === STREAMER_CHOICE_WARNING_CODE;
+}
+
+function formatPublicPlaylistTitle(item: {
+  songTitle: string;
+  songArtist?: string | null;
+  requestedQuery?: string | null;
+  warningCode?: string | null;
+}) {
+  if (isStreamerChoicePlaylistItem(item)) {
+    return item.requestedQuery?.trim()
+      ? `Streamer choice: ${item.requestedQuery.trim()}`
+      : item.songTitle;
+  }
+
+  return [
+    decodeHtmlEntities(item.songTitle),
+    decodeHtmlEntities(item.songArtist),
+  ]
+    .filter(Boolean)
+    .join(" - ");
+}
+
+function formatPublicPlaylistSecondaryLine(item: {
+  songArtist?: string | null;
+  songAlbum?: string | null;
+  requestedQuery?: string | null;
+  warningCode?: string | null;
+}) {
+  if (isStreamerChoicePlaylistItem(item)) {
+    return "Streamer picks the exact song.";
+  }
+
+  if (item.songAlbum) {
+    return decodeHtmlEntities(item.songAlbum);
+  }
+
+  return item.songArtist || null;
+}
+
 function PublicChannelPage() {
   const { slug } = Route.useParams();
   const queryClient = useQueryClient();
@@ -203,6 +250,8 @@ function PublicChannelPage() {
   const [pendingViewerRequest, setPendingViewerRequest] = useState<{
     action: "submit" | "remove";
     songId?: string;
+    query?: string;
+    requestMode?: "catalog" | "random" | "choice";
     requestKind?: "regular" | "vip";
   } | null>(null);
   const { data, isLoading } = useQuery({
@@ -385,12 +434,22 @@ function PublicChannelPage() {
     },
   });
   const viewerRequestMutation = useMutation({
-    mutationFn: async (input: {
-      action: "submit";
-      song: SearchSong;
-      requestKind: "regular" | "vip";
-      replaceExisting: boolean;
-    }) => {
+    mutationFn: async (
+      input:
+        | {
+            action: "submit";
+            song: SearchSong;
+            requestKind: "regular" | "vip";
+            replaceExisting: boolean;
+          }
+        | {
+            action: "submit";
+            query: string;
+            requestMode: "random" | "choice";
+            requestKind: "regular" | "vip";
+            replaceExisting: boolean;
+          }
+    ) => {
       const response = await fetch(`/api/channel/${slug}/viewer-request`, {
         method: "POST",
         headers: {
@@ -398,7 +457,15 @@ function PublicChannelPage() {
         },
         body: JSON.stringify({
           action: "submit",
-          songId: input.song.id,
+          ...("song" in input
+            ? {
+                songId: input.song.id,
+                requestMode: "catalog",
+              }
+            : {
+                query: input.query,
+                requestMode: input.requestMode,
+              }),
           requestKind: input.requestKind,
           replaceExisting: input.replaceExisting,
         }),
@@ -421,7 +488,9 @@ function PublicChannelPage() {
       setViewerRequestError(null);
       setPendingViewerRequest({
         action: "submit",
-        songId: input.song.id,
+        songId: "song" in input ? input.song.id : undefined,
+        query: "query" in input ? input.query : undefined,
+        requestMode: "query" in input ? input.requestMode : "catalog",
         requestKind: input.requestKind,
       });
     },
@@ -624,6 +693,34 @@ function PublicChannelPage() {
         }}
         resultState={publicSearchResultState}
         useTotalForSummary
+        controlsContent={
+          signedInViewer
+            ? ({ query }: { query: string }) => (
+                <ViewerSpecialRequestControls
+                  canManagePlaylist={canManagePlaylist}
+                  query={query}
+                  viewerState={viewerRequestState}
+                  viewerStateLoading={viewerRequestStateQuery.isLoading}
+                  viewerStateError={getErrorMessage(
+                    viewerRequestStateQuery.error,
+                    ""
+                  )}
+                  replaceExisting={effectiveReplaceExisting}
+                  mutationIsPending={viewerRequestMutation.isPending}
+                  pendingViewerRequest={pendingViewerRequest}
+                  onSubmit={(requestMode, requestKind) =>
+                    viewerRequestMutation.mutate({
+                      action: "submit",
+                      query,
+                      requestMode,
+                      requestKind,
+                      replaceExisting: effectiveReplaceExisting,
+                    })
+                  }
+                />
+              )
+            : undefined
+        }
         actionsLabel={
           canManagePlaylist
             ? "Add"
@@ -868,11 +965,13 @@ function ViewerRequestSummaryWidget(props: {
                 >
                   <div className="min-w-0">
                     <p className="truncate font-medium text-(--text)">
-                      {item.songTitle}
+                      {formatPublicPlaylistTitle(item)}
                     </p>
-                    <p className="truncate text-sm text-(--muted)">
-                      {item.songArtist || "Unknown artist"}
-                    </p>
+                    {formatPublicPlaylistSecondaryLine(item) ? (
+                      <p className="truncate text-sm text-(--muted)">
+                        {formatPublicPlaylistSecondaryLine(item)}
+                      </p>
+                    ) : null}
                   </div>
                   <div className="flex flex-wrap items-center gap-2">
                     <Badge
@@ -1000,6 +1099,175 @@ function ViewerSearchSongActions(props: {
           {matchingRequest.requestKind === "vip"
             ? "Already in your queue as a VIP request."
             : "Already in your queue as a regular request."}
+        </p>
+      ) : null}
+    </div>
+  );
+}
+
+function ViewerSpecialRequestControls(props: {
+  canManagePlaylist: boolean;
+  query: string;
+  viewerState: ViewerRequestStateData["viewer"];
+  viewerStateLoading: boolean;
+  viewerStateError: string;
+  replaceExisting: boolean;
+  mutationIsPending: boolean;
+  pendingViewerRequest: {
+    action: "submit" | "remove";
+    query?: string;
+    requestMode?: "catalog" | "random" | "choice";
+    requestKind?: "regular" | "vip";
+  } | null;
+  onSubmit: (
+    requestMode: "random" | "choice",
+    requestKind: "regular" | "vip"
+  ) => void;
+}) {
+  const normalizedQuery = props.query.trim();
+  const isViewerReady =
+    props.viewerStateLoading ||
+    props.viewerState != null ||
+    props.viewerStateError.trim().length > 0;
+
+  if (!isViewerReady) {
+    return null;
+  }
+
+  const regularRandomDisabledReason = getViewerSpecialActionDisabledReason({
+    query: normalizedQuery,
+    requestMode: "random",
+    requestKind: "regular",
+    viewerState: props.viewerState,
+    viewerStateLoading: props.viewerStateLoading,
+    viewerStateError: props.viewerStateError,
+  });
+  const vipRandomDisabledReason = getViewerSpecialActionDisabledReason({
+    query: normalizedQuery,
+    requestMode: "random",
+    requestKind: "vip",
+    viewerState: props.viewerState,
+    viewerStateLoading: props.viewerStateLoading,
+    viewerStateError: props.viewerStateError,
+  });
+  const regularChoiceDisabledReason = getViewerSpecialActionDisabledReason({
+    query: normalizedQuery,
+    requestMode: "choice",
+    requestKind: "regular",
+    viewerState: props.viewerState,
+    viewerStateLoading: props.viewerStateLoading,
+    viewerStateError: props.viewerStateError,
+  });
+  const vipChoiceDisabledReason = getViewerSpecialActionDisabledReason({
+    query: normalizedQuery,
+    requestMode: "choice",
+    requestKind: "vip",
+    viewerState: props.viewerState,
+    viewerStateLoading: props.viewerStateLoading,
+    viewerStateError: props.viewerStateError,
+  });
+  const helperText =
+    regularRandomDisabledReason ||
+    vipRandomDisabledReason ||
+    regularChoiceDisabledReason ||
+    vipChoiceDisabledReason;
+  const regularRandomPending =
+    props.mutationIsPending &&
+    props.pendingViewerRequest?.action === "submit" &&
+    props.pendingViewerRequest.requestMode === "random" &&
+    props.pendingViewerRequest.requestKind === "regular" &&
+    props.pendingViewerRequest.query?.trim() === normalizedQuery;
+  const vipRandomPending =
+    props.mutationIsPending &&
+    props.pendingViewerRequest?.action === "submit" &&
+    props.pendingViewerRequest.requestMode === "random" &&
+    props.pendingViewerRequest.requestKind === "vip" &&
+    props.pendingViewerRequest.query?.trim() === normalizedQuery;
+  const regularChoicePending =
+    props.mutationIsPending &&
+    props.pendingViewerRequest?.action === "submit" &&
+    props.pendingViewerRequest.requestMode === "choice" &&
+    props.pendingViewerRequest.requestKind === "regular" &&
+    props.pendingViewerRequest.query?.trim() === normalizedQuery;
+  const vipChoicePending =
+    props.mutationIsPending &&
+    props.pendingViewerRequest?.action === "submit" &&
+    props.pendingViewerRequest.requestMode === "choice" &&
+    props.pendingViewerRequest.requestKind === "vip" &&
+    props.pendingViewerRequest.query?.trim() === normalizedQuery;
+
+  return (
+    <div className="grid gap-3 border border-(--border) bg-(--panel-soft) px-4 py-3">
+      <div className="grid gap-1">
+        <p className="text-xs font-semibold uppercase tracking-[0.16em] text-(--brand-deep)">
+          {props.canManagePlaylist ? "Add your own request" : "Quick request"}
+        </p>
+        <p className="text-sm text-(--muted)">
+          Use this search for a random song or let the streamer choose.
+        </p>
+      </div>
+
+      <div className="grid gap-3 md:grid-cols-2">
+        <div className="grid gap-2">
+          <p className="text-xs font-semibold uppercase tracking-[0.14em] text-(--muted)">
+            Random
+          </p>
+          <div className="grid grid-cols-2 gap-2">
+            <Button
+              type="button"
+              className="w-full px-4 shadow-none"
+              onClick={() => props.onSubmit("random", "regular")}
+              disabled={
+                !!regularRandomDisabledReason || props.mutationIsPending
+              }
+            >
+              {regularRandomPending ? "Adding..." : "Add"}
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              className="w-full px-4"
+              onClick={() => props.onSubmit("random", "vip")}
+              disabled={!!vipRandomDisabledReason || props.mutationIsPending}
+            >
+              {vipRandomPending ? "Adding..." : "Add VIP"}
+            </Button>
+          </div>
+        </div>
+
+        <div className="grid gap-2">
+          <p className="text-xs font-semibold uppercase tracking-[0.14em] text-(--muted)">
+            Streamer choice
+          </p>
+          <div className="grid grid-cols-2 gap-2">
+            <Button
+              type="button"
+              className="w-full px-4 shadow-none"
+              onClick={() => props.onSubmit("choice", "regular")}
+              disabled={
+                !!regularChoiceDisabledReason || props.mutationIsPending
+              }
+            >
+              {regularChoicePending ? "Adding..." : "Add"}
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              className="w-full px-4"
+              onClick={() => props.onSubmit("choice", "vip")}
+              disabled={!!vipChoiceDisabledReason || props.mutationIsPending}
+            >
+              {vipChoicePending ? "Adding..." : "Add VIP"}
+            </Button>
+          </div>
+        </div>
+      </div>
+
+      {helperText ? (
+        <p className="text-right text-xs text-(--muted)">{helperText}</p>
+      ) : props.replaceExisting ? (
+        <p className="text-right text-xs text-(--muted)">
+          New adds replace your queued requests.
         </p>
       ) : null}
     </div>
@@ -1265,6 +1533,42 @@ function getVipAutomationSummary(input: {
   return `1 VIP token = ${parts.join(" or ")}.`;
 }
 
+function getViewerSpecialActionDisabledReason(input: {
+  query: string;
+  requestMode: "random" | "choice";
+  requestKind: "regular" | "vip";
+  viewerState: ViewerRequestStateData["viewer"];
+  viewerStateLoading: boolean;
+  viewerStateError: string;
+}) {
+  if (input.query.length < 2) {
+    return input.requestMode === "random"
+      ? "Type at least 2 characters to request a random song."
+      : "Type at least 2 characters to use streamer choice.";
+  }
+
+  if (input.viewerStateLoading) {
+    return "Checking your request access...";
+  }
+
+  if (!input.viewerState) {
+    return input.viewerStateError || "Viewer request tools are unavailable.";
+  }
+
+  if (!input.viewerState.access.allowed) {
+    return input.viewerState.access.reason ?? "You cannot request songs here.";
+  }
+
+  if (
+    input.requestKind === "vip" &&
+    !hasRedeemableVipToken(input.viewerState.vipTokensAvailable)
+  ) {
+    return "You do not have enough VIP tokens.";
+  }
+
+  return null;
+}
+
 function PublicPlaylistRow(props: {
   item: EnrichedPublicPlaylistItem;
   index: number;
@@ -1275,15 +1579,8 @@ function PublicPlaylistRow(props: {
     props.item.requestedByDisplayName ??
     props.item.requestedByLogin ??
     "viewer";
-  const titleLine = [
-    decodeHtmlEntities(props.item.songTitle),
-    decodeHtmlEntities(props.item.songArtist),
-  ]
-    .filter(Boolean)
-    .join(" - ");
-  const albumLabel = props.item.songAlbum
-    ? decodeHtmlEntities(props.item.songAlbum)
-    : null;
+  const titleLine = formatPublicPlaylistTitle(props.item);
+  const secondaryLine = formatPublicPlaylistSecondaryLine(props.item);
   const addedLabel = props.item.createdAt
     ? formatCompactPlaylistRelativeTime(props.item.createdAt)
     : null;
@@ -1334,9 +1631,9 @@ function PublicPlaylistRow(props: {
           <p className="truncate text-lg font-semibold text-(--text)">
             {titleLine}
           </p>
-          {albumLabel ? (
+          {secondaryLine ? (
             <p className="mt-1 truncate text-sm text-(--brand-deep)">
-              {albumLabel}
+              {secondaryLine}
             </p>
           ) : null}
           <p className="mt-1 truncate text-sm font-medium text-(--muted)">

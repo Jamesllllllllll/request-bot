@@ -3,6 +3,7 @@ import { getSessionUserId } from "~/lib/auth/session.server";
 import { callBackend } from "~/lib/backend";
 import { getDb } from "~/lib/db/client";
 import {
+  type CatalogSearchInput,
   consumeVipToken,
   countAcceptedRequestsInPeriod,
   countActiveRequestsForUser,
@@ -18,20 +19,27 @@ import {
   grantVipToken,
   isBlockedUser,
   parseAuthorizationScopes,
+  searchCatalogSongs,
 } from "~/lib/db/repositories";
 import { requestLogs, setlistArtists } from "~/lib/db/schema";
 import type { AppEnv } from "~/lib/env";
 import type { PlaylistMutationResult } from "~/lib/playlist/types";
 import {
+  STREAMER_CHOICE_TITLE,
+  STREAMER_CHOICE_WARNING_CODE,
+} from "~/lib/request-modes";
+import {
   getActiveRequestLimit,
+  getArraySetting,
   getRateLimitWindow,
+  getRequiredPathsMatchMode,
   getRequiredPathsWarning,
   isRequesterAllowed,
   isSongAllowed,
   type RequesterContext,
 } from "~/lib/request-policy";
 import { getBroadcasterSubscriptions, TwitchApiError } from "~/lib/twitch/api";
-import { getErrorMessage } from "~/lib/utils";
+import { createId, getErrorMessage } from "~/lib/utils";
 import { hasRedeemableVipToken } from "~/lib/vip-tokens";
 
 type ViewerRequestKind = "regular" | "vip";
@@ -43,6 +51,17 @@ export type ViewerRequestMutationInput =
   | {
       action: "submit";
       songId: string;
+      requestMode?: "catalog";
+      query?: never;
+      itemId?: string;
+      requestKind: ViewerRequestKind;
+      replaceExisting: boolean;
+    }
+  | {
+      action: "submit";
+      query: string;
+      requestMode: "random" | "choice";
+      songId?: never;
       requestKind: ViewerRequestKind;
       replaceExisting: boolean;
       itemId?: string;
@@ -113,6 +132,8 @@ type ViewerSongPayload = {
   warningMessage?: string;
   candidateMatchesJson?: string;
 };
+
+type CatalogSong = NonNullable<Awaited<ReturnType<typeof getCatalogSongById>>>;
 
 export type ViewerRequestStatePayload = {
   viewer: null | {
@@ -299,7 +320,9 @@ async function loadViewerRequestContext(
   }
 
   const requester: RequesterContext = {
-    isBroadcaster: false,
+    isBroadcaster:
+      viewer.userId === channel.ownerUserId ||
+      viewer.twitchUserId === channel.twitchChannelId,
     isModerator: false,
     isVip: false,
     isSubscriber: subscription.isSubscriber,
@@ -417,6 +440,268 @@ async function resolveViewerSubscription(
   }
 }
 
+function buildViewerCatalogSearchInput(input: {
+  context: ViewerRequestContext;
+  query: string;
+  page: number;
+  pageSize: number;
+}): CatalogSearchInput {
+  const blacklistFilters = input.context.state.settings.blacklistEnabled
+    ? {
+        excludeSongIds: input.context.state.blacklist.blacklistSongs.map(
+          (song) => song.songId
+        ),
+        excludeGroupedProjectIds:
+          input.context.state.blacklist.blacklistSongGroups.map(
+            (song) => song.groupedProjectId
+          ),
+        excludeArtistIds: input.context.state.blacklist.blacklistArtists.map(
+          (artist) => artist.artistId
+        ),
+        excludeArtistNames: input.context.state.blacklist.blacklistArtists.map(
+          (artist) => artist.artistName
+        ),
+        excludeAuthorIds: input.context.state.blacklist.blacklistCharters.map(
+          (charter) => charter.charterId
+        ),
+        excludeCreatorNames:
+          input.context.state.blacklist.blacklistCharters.map(
+            (charter) => charter.charterName
+          ),
+      }
+    : {};
+
+  return {
+    query: input.query,
+    page: input.page,
+    pageSize: input.pageSize,
+    sortBy: "relevance" as const,
+    sortDirection: "desc" as const,
+    restrictToOfficial: !!input.context.state.settings.onlyOfficialDlc,
+    allowedTuningsFilter: getArraySetting(
+      input.context.state.settings.allowedTuningsJson
+    ),
+    requiredPartsFilter: getArraySetting(
+      input.context.state.settings.requiredPathsJson
+    ),
+    requiredPartsFilterMatchMode: getRequiredPathsMatchMode(
+      input.context.state.settings.requiredPathsMatchMode
+    ),
+    ...blacklistFilters,
+  };
+}
+
+function buildViewerChoiceSongPayload(
+  requestedText: string
+): ViewerSongPayload {
+  return {
+    id: createId("rqm"),
+    title: STREAMER_CHOICE_TITLE,
+    source: "choice",
+    requestedQuery: requestedText,
+    warningCode: STREAMER_CHOICE_WARNING_CODE,
+  };
+}
+
+function findViewerMatchingChoiceRequest(input: {
+  context: ViewerRequestContext;
+  requestedText: string;
+  excludeItemId?: string | null;
+}) {
+  const normalizedRequestedText = input.requestedText.trim().toLowerCase();
+
+  return (
+    input.context.state.playlist.items.find(
+      (item) =>
+        item.requestedByTwitchUserId === input.context.viewer.twitchUserId &&
+        item.warningCode === STREAMER_CHOICE_WARNING_CODE &&
+        item.id !== input.excludeItemId &&
+        item.requestedQuery?.trim().toLowerCase() === normalizedRequestedText &&
+        (item.status === "queued" || item.status === "current")
+    ) ?? null
+  );
+}
+
+function formatViewerChoiceRequest(input: {
+  requestedText: string;
+  requestKind: ViewerRequestKind;
+  status?: string | null;
+  existing?: boolean;
+  editing?: boolean;
+}) {
+  if (input.editing) {
+    return input.requestKind === "vip"
+      ? `Edited your request to streamer choice "${input.requestedText}" as a VIP request.`
+      : `Edited your request to streamer choice "${input.requestedText}".`;
+  }
+
+  if (input.requestKind === "vip") {
+    const nextPositionSuffix =
+      input.status === "current" ? "." : " and will play next.";
+
+    return input.existing
+      ? `Your streamer choice request "${input.requestedText}" is now marked as VIP${nextPositionSuffix}`
+      : `Added streamer choice "${input.requestedText}" as a VIP request${nextPositionSuffix}`;
+  }
+
+  return input.existing
+    ? `Your streamer choice request "${input.requestedText}" is now a regular request again.`
+    : `Added streamer choice "${input.requestedText}" to the playlist.`;
+}
+
+async function resolveViewerRandomSong(
+  env: AppEnv,
+  context: ViewerRequestContext,
+  query: string
+) {
+  const filteredSearch = await searchCatalogSongs(
+    env,
+    buildViewerCatalogSearchInput({
+      context,
+      query,
+      page: 1,
+      pageSize: 1,
+    })
+  );
+  const filteredTotal = Math.max(
+    0,
+    filteredSearch.total ?? filteredSearch.results.length
+  );
+  const attemptedPages = new Set<number>();
+
+  const attemptLimit = Math.min(filteredTotal, 12);
+  while (attemptedPages.size < attemptLimit) {
+    const nextPage = Math.floor(Math.random() * filteredTotal) + 1;
+    if (attemptedPages.has(nextPage)) {
+      continue;
+    }
+
+    attemptedPages.add(nextPage);
+    const randomPage = await searchCatalogSongs(
+      env,
+      buildViewerCatalogSearchInput({
+        context,
+        query,
+        page: nextPage,
+        pageSize: 1,
+      })
+    );
+    const candidate = randomPage.results[0] ?? null;
+    if (!candidate) {
+      continue;
+    }
+
+    const songAllowed = isSongAllowed({
+      song: candidate,
+      settings: context.state.settings,
+      blacklistArtists: context.state.blacklist.blacklistArtists,
+      blacklistCharters: context.state.blacklist.blacklistCharters,
+      blacklistSongs: context.state.blacklist.blacklistSongs,
+      blacklistSongGroups: context.state.blacklist.blacklistSongGroups,
+      setlistArtists: context.state.setlist,
+      requester: context.requester,
+    });
+    if (songAllowed.allowed) {
+      return candidate;
+    }
+  }
+
+  if (filteredTotal > 0) {
+    const fallbackSearch = await searchCatalogSongs(
+      env,
+      buildViewerCatalogSearchInput({
+        context,
+        query,
+        page: 1,
+        pageSize: Math.min(filteredTotal, 25),
+      })
+    );
+    const allowedResults = fallbackSearch.results.filter(
+      (song) =>
+        isSongAllowed({
+          song,
+          settings: context.state.settings,
+          blacklistArtists: context.state.blacklist.blacklistArtists,
+          blacklistCharters: context.state.blacklist.blacklistCharters,
+          blacklistSongs: context.state.blacklist.blacklistSongs,
+          blacklistSongGroups: context.state.blacklist.blacklistSongGroups,
+          setlistArtists: context.state.setlist,
+          requester: context.requester,
+        }).allowed
+    );
+
+    if (allowedResults.length > 0) {
+      return (
+        allowedResults[Math.floor(Math.random() * allowedResults.length)] ??
+        allowedResults[0]
+      );
+    }
+  }
+
+  return null;
+}
+
+async function resolveViewerChoiceAvailability(
+  env: AppEnv,
+  context: ViewerRequestContext,
+  query: string
+) {
+  const filteredSearch = await searchCatalogSongs(
+    env,
+    buildViewerCatalogSearchInput({
+      context,
+      query,
+      page: 1,
+      pageSize: 1,
+    })
+  );
+
+  if ((filteredSearch.total ?? filteredSearch.results.length) > 0) {
+    return {
+      allowed: true,
+      reason: null,
+    };
+  }
+
+  const rawSearch = await searchCatalogSongs(env, {
+    query,
+    page: 1,
+    pageSize: 5,
+    sortBy: "relevance",
+    sortDirection: "desc",
+  });
+
+  for (const result of rawSearch.results) {
+    const songAllowed = isSongAllowed({
+      song: result,
+      settings: context.state.settings,
+      blacklistArtists: context.state.blacklist.blacklistArtists,
+      blacklistCharters: context.state.blacklist.blacklistCharters,
+      blacklistSongs: context.state.blacklist.blacklistSongs,
+      blacklistSongGroups: context.state.blacklist.blacklistSongGroups,
+      setlistArtists: context.state.setlist,
+      requester: context.requester,
+    });
+
+    if (songAllowed.allowed) {
+      return {
+        allowed: true,
+        reason: null,
+      };
+    }
+
+    return {
+      allowed: false,
+      reason: songAllowed.reason ?? "That song is not allowed in this channel.",
+    };
+  }
+
+  return {
+    allowed: true,
+    reason: null,
+  };
+}
+
 async function removeViewerRequests(
   env: AppEnv,
   context: ViewerRequestContext,
@@ -495,17 +780,73 @@ async function submitViewerRequest(
     );
   }
 
-  const song = await getCatalogSongById(env, mutation.songId);
-  if (!song) {
-    throw new ViewerRequestError(404, "Song not found.");
+  const requestMode = mutation.requestMode ?? "catalog";
+  const requestedText =
+    typeof mutation.query === "string" ? mutation.query.trim() : undefined;
+
+  if (
+    (requestMode === "choice" || requestMode === "random") &&
+    !requestedText
+  ) {
+    throw new ViewerRequestError(
+      400,
+      "Add an artist or song before using that request option."
+    );
+  }
+  const specialRequestText = requestedText ?? "";
+
+  let song: CatalogSong | null = null;
+  let normalizedQuery = "";
+  let warningCode: string | undefined;
+  let warningMessage: string | undefined;
+
+  if (requestMode === "catalog") {
+    const requestedSongId = "songId" in mutation ? mutation.songId : null;
+    if (!requestedSongId) {
+      throw new ViewerRequestError(400, "Song not found.");
+    }
+
+    song = await getCatalogSongById(env, requestedSongId);
+    if (!song) {
+      throw new ViewerRequestError(404, "Song not found.");
+    }
+
+    normalizedQuery = buildViewerQuery(song);
+  } else if (requestMode === "random") {
+    song = await resolveViewerRandomSong(env, context, specialRequestText);
+    if (!song) {
+      throw new ViewerRequestError(
+        409,
+        `I couldn't find an allowed random match for "${specialRequestText}".`
+      );
+    }
+
+    normalizedQuery = specialRequestText;
+  } else {
+    const choiceAvailability = await resolveViewerChoiceAvailability(
+      env,
+      context,
+      specialRequestText
+    );
+
+    if (!choiceAvailability.allowed) {
+      throw new ViewerRequestError(
+        409,
+        choiceAvailability.reason ??
+          "That streamer choice is not allowed in this channel."
+      );
+    }
+
+    normalizedQuery = specialRequestText;
+    warningCode = STREAMER_CHOICE_WARNING_CODE;
   }
 
-  const normalizedQuery = buildViewerQuery(song);
   const rawMessage = buildViewerRawMessage({
     source: options?.source ?? "web",
     replaceExisting: mutation.replaceExisting,
     requestKind: mutation.requestKind,
     query: normalizedQuery,
+    requestMode,
   });
 
   const existingActiveCount = await countActiveRequestsForUser(env, {
@@ -557,12 +898,19 @@ async function submitViewerRequest(
   }
 
   const existingMatchingRequest =
-    context.state.playlist.items.find(
-      (item) =>
-        item.songId === song.id &&
-        item.requestedByTwitchUserId === context.viewer.twitchUserId &&
-        (item.status === "queued" || item.status === "current")
-    ) ?? null;
+    requestMode === "choice"
+      ? findViewerMatchingChoiceRequest({
+          context,
+          requestedText: requestedText ?? "",
+        })
+      : song
+        ? (context.state.playlist.items.find(
+            (item) =>
+              item.songId === song.id &&
+              item.requestedByTwitchUserId === context.viewer.twitchUserId &&
+              (item.status === "queued" || item.status === "current")
+          ) ?? null)
+        : null;
 
   const kindChangeOnly =
     existingMatchingRequest != null &&
@@ -571,15 +919,31 @@ async function submitViewerRequest(
   const editTarget = editableExistingRequest;
   const editInPlace = editTarget != null;
   const matchingDifferentExistingRequest = editTarget
-    ? (context.state.playlist.items.find(
-        (item) =>
-          item.songId === song.id &&
-          item.requestedByTwitchUserId === context.viewer.twitchUserId &&
-          item.id !== editTarget.id &&
-          (item.status === "queued" || item.status === "current")
-      ) ?? null)
+    ? requestMode === "choice"
+      ? findViewerMatchingChoiceRequest({
+          context,
+          requestedText: requestedText ?? "",
+          excludeItemId: editTarget.id,
+        })
+      : song
+        ? (context.state.playlist.items.find(
+            (item) =>
+              item.songId === song.id &&
+              item.requestedByTwitchUserId === context.viewer.twitchUserId &&
+              item.id !== editTarget.id &&
+              (item.status === "queued" || item.status === "current")
+          ) ?? null)
+        : null
     : null;
-  const editingSameSong = editTarget != null && editTarget.songId === song.id;
+  const editingSameChoice =
+    editTarget != null &&
+    requestMode === "choice" &&
+    editTarget.warningCode === STREAMER_CHOICE_WARNING_CODE &&
+    editTarget.requestedQuery?.trim().toLowerCase() ===
+      requestedText?.trim().toLowerCase();
+  const editingSameSong =
+    editTarget != null && song != null && editTarget.songId === song.id;
+  const editingSameResolvedRequest = editingSameSong || editingSameChoice;
   const previousRequestKind = editTarget
     ? editTarget.requestKind
     : kindChangeOnly && existingMatchingRequest
@@ -602,7 +966,9 @@ async function submitViewerRequest(
 
     throw new ViewerRequestError(
       409,
-      "That song is already in your active requests."
+      requestMode === "choice"
+        ? "That streamer choice is already in your active requests."
+        : "That song is already in your active requests."
     );
   }
 
@@ -622,7 +988,9 @@ async function submitViewerRequest(
 
     throw new ViewerRequestError(
       409,
-      "That song is already in your active requests."
+      requestMode === "choice"
+        ? "That streamer choice is already in your active requests."
+        : "That song is already in your active requests."
     );
   }
 
@@ -639,7 +1007,7 @@ async function submitViewerRequest(
 
   if (
     editTarget &&
-    editingSameSong &&
+    editingSameResolvedRequest &&
     editTarget.requestKind === mutation.requestKind
   ) {
     await createViewerRequestLog(env, {
@@ -653,7 +1021,9 @@ async function submitViewerRequest(
 
     throw new ViewerRequestError(
       409,
-      "That song is already your current request."
+      requestMode === "choice"
+        ? "That streamer choice is already your current request."
+        : "That song is already your current request."
     );
   }
 
@@ -728,43 +1098,49 @@ async function submitViewerRequest(
     );
   }
 
-  const songAllowed = isSongAllowed({
-    song,
-    settings: context.state.settings,
-    blacklistArtists: context.state.blacklist.blacklistArtists,
-    blacklistCharters: context.state.blacklist.blacklistCharters,
-    blacklistSongs: context.state.blacklist.blacklistSongs,
-    blacklistSongGroups: context.state.blacklist.blacklistSongGroups,
-    setlistArtists: context.state.setlist,
-    requester: context.requester,
-  });
-
-  if (!songAllowed.allowed) {
-    await createViewerRequestLog(env, {
-      context,
-      rawMessage,
-      normalizedQuery,
+  if (song) {
+    const songAllowed = isSongAllowed({
       song,
-      outcome: "rejected",
-      outcomeReason:
-        songAllowed.reasonCode ?? songAllowed.reason ?? "song_not_allowed",
+      settings: context.state.settings,
+      blacklistArtists: context.state.blacklist.blacklistArtists,
+      blacklistCharters: context.state.blacklist.blacklistCharters,
+      blacklistSongs: context.state.blacklist.blacklistSongs,
+      blacklistSongGroups: context.state.blacklist.blacklistSongGroups,
+      setlistArtists: context.state.setlist,
+      requester: context.requester,
     });
 
-    throw new ViewerRequestError(
-      409,
-      songAllowed.reason ?? "That song is not allowed in this channel."
-    );
+    if (!songAllowed.allowed) {
+      await createViewerRequestLog(env, {
+        context,
+        rawMessage,
+        normalizedQuery,
+        song,
+        outcome: "rejected",
+        outcomeReason:
+          songAllowed.reasonCode ?? songAllowed.reason ?? "song_not_allowed",
+      });
+
+      throw new ViewerRequestError(
+        409,
+        songAllowed.reason ?? "That song is not allowed in this channel."
+      );
+    }
+
+    const requiredPathsWarning = getRequiredPathsWarning({
+      song,
+      settings: context.state.settings,
+    });
+    warningMessage = requiredPathsWarning ?? undefined;
+    if (requiredPathsWarning) {
+      warningCode = "missing_required_paths";
+    }
   }
 
-  const warningMessage = getRequiredPathsWarning({
-    song,
-    settings: context.state.settings,
-  });
-  const warningCode = warningMessage ? "missing_required_paths" : undefined;
-
   if (
+    song &&
     !kindChangeOnly &&
-    !editingSameSong &&
+    !editingSameResolvedRequest &&
     context.state.settings.duplicateWindowSeconds > 0 &&
     (await wasSongRequestedRecently(env, {
       channelId: context.state.channel.id,
@@ -909,11 +1285,18 @@ async function submitViewerRequest(
     return {
       ok: true,
       message:
-        mutation.requestKind === "vip"
-          ? existingMatchingRequest.status === "current"
-            ? `Your request "${formatSong(song)}" is now marked as VIP.`
-            : `Your request "${formatSong(song)}" is now marked as VIP and will play next.`
-          : `Your request "${formatSong(song)}" is now a regular request again.`,
+        requestMode === "choice"
+          ? formatViewerChoiceRequest({
+              requestedText: specialRequestText,
+              requestKind: mutation.requestKind,
+              status: existingMatchingRequest.status,
+              existing: true,
+            })
+          : mutation.requestKind === "vip"
+            ? existingMatchingRequest.status === "current"
+              ? `Your request "${formatSong(song as CatalogSong)}" is now marked as VIP.`
+              : `Your request "${formatSong(song as CatalogSong)}" is now marked as VIP and will play next.`
+            : `Your request "${formatSong(song as CatalogSong)}" is now a regular request again.`,
     };
   }
 
@@ -926,12 +1309,15 @@ async function submitViewerRequest(
         itemId: editableExistingRequest.id,
         actorUserId: null,
         requestKind: mutation.requestKind,
-        song: buildViewerSongPayload({
-          song,
-          normalizedQuery,
-          warningCode,
-          warningMessage,
-        }),
+        song:
+          requestMode === "choice"
+            ? buildViewerChoiceSongPayload(specialRequestText)
+            : buildViewerSongPayload({
+                song: song as CatalogSong,
+                normalizedQuery,
+                warningCode,
+                warningMessage,
+              }),
       });
     } catch (error) {
       if (vipReserved) {
@@ -959,9 +1345,15 @@ async function submitViewerRequest(
     }
 
     const baseMessage =
-      mutation.requestKind === "vip"
-        ? `Edited your request to "${formatSong(song)}" as a VIP request.`
-        : `Edited your request to "${formatSong(song)}".`;
+      requestMode === "choice"
+        ? formatViewerChoiceRequest({
+            requestedText: specialRequestText,
+            requestKind: mutation.requestKind,
+            editing: true,
+          })
+        : mutation.requestKind === "vip"
+          ? `Edited your request to "${formatSong(song as CatalogSong)}" as a VIP request.`
+          : `Edited your request to "${formatSong(song as CatalogSong)}".`;
 
     return {
       ok: true,
@@ -991,12 +1383,15 @@ async function submitViewerRequest(
       requestedByDisplayName: context.viewer.displayName,
       prioritizeNext: mutation.requestKind === "vip",
       requestKind: mutation.requestKind,
-      song: buildViewerSongPayload({
-        song,
-        normalizedQuery,
-        warningCode,
-        warningMessage,
-      }),
+      song:
+        requestMode === "choice"
+          ? buildViewerChoiceSongPayload(specialRequestText)
+          : buildViewerSongPayload({
+              song: song as CatalogSong,
+              normalizedQuery,
+              warningCode,
+              warningMessage,
+            }),
     });
   } catch (error) {
     if (vipReserved) {
@@ -1016,9 +1411,14 @@ async function submitViewerRequest(
   });
 
   const baseMessage =
-    mutation.requestKind === "vip"
-      ? `Added "${formatSong(song)}" as a VIP request.`
-      : `Added "${formatSong(song)}" to the playlist.`;
+    requestMode === "choice"
+      ? formatViewerChoiceRequest({
+          requestedText: specialRequestText,
+          requestKind: mutation.requestKind,
+        })
+      : mutation.requestKind === "vip"
+        ? `Added "${formatSong(song as CatalogSong)}" as a VIP request.`
+        : `Added "${formatSong(song as CatalogSong)}" to the playlist.`;
 
   return {
     ok: true,
@@ -1054,7 +1454,7 @@ async function createViewerRequestLog(
     context: ViewerRequestContext;
     rawMessage: string;
     normalizedQuery: string;
-    song: NonNullable<Awaited<ReturnType<typeof getCatalogSongById>>>;
+    song: Pick<CatalogSong, "id" | "title" | "artist"> | null;
     outcome: "accepted" | "rejected";
     outcomeReason?: string | null;
   }
@@ -1067,9 +1467,9 @@ async function createViewerRequestLog(
     requesterDisplayName: input.context.viewer.displayName,
     rawMessage: input.rawMessage,
     normalizedQuery: input.normalizedQuery,
-    matchedSongId: input.song.id,
-    matchedSongTitle: input.song.title,
-    matchedSongArtist: input.song.artist ?? null,
+    matchedSongId: input.song?.id ?? null,
+    matchedSongTitle: input.song?.title ?? null,
+    matchedSongArtist: input.song?.artist ?? null,
     outcome: input.outcome,
     outcomeReason: input.outcomeReason ?? null,
   });
@@ -1173,8 +1573,9 @@ function buildViewerRawMessage(input: {
   replaceExisting: boolean;
   requestKind: ViewerRequestKind;
   query: string;
+  requestMode?: "catalog" | "random" | "choice";
 }) {
-  return `${input.source}:${input.replaceExisting ? "edit" : "request"}:${input.requestKind}:${input.query}`;
+  return `${input.source}:${input.replaceExisting ? "edit" : "request"}:${input.requestKind}:${input.requestMode ?? "catalog"}:${input.query}`;
 }
 
 function buildViewerSongPayload(input: {

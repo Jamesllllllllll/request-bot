@@ -105,7 +105,9 @@ export function getDemoViewerActiveRequests(
 export function applyDemoViewerRequestMutation(input: {
   playlist: PanelDemoPlaylist;
   viewerProfile: PanelDemoViewerProfile;
-  song: Record<string, unknown>;
+  song?: Record<string, unknown>;
+  query?: string;
+  requestMode?: "catalog" | "random" | "choice";
   requestKind: "regular" | "vip";
   replaceExisting: boolean;
   replaceItemId?: string;
@@ -113,7 +115,12 @@ export function applyDemoViewerRequestMutation(input: {
   nextId?: string;
 }): PanelDemoPlaylist {
   const now = input.now ?? Date.now();
-  const songId = getString(input.song, "id") ?? `preview-song-${now}`;
+  const requestMode = input.requestMode ?? "catalog";
+  const songRecord = input.song ?? {};
+  const songId =
+    requestMode === "choice"
+      ? `preview-choice-${now}`
+      : (getString(songRecord, "id") ?? `preview-song-${now}`);
   const nextId = input.nextId ?? `preview-request-${songId}-${now}`;
   const replaceTarget =
     input.replaceItemId != null
@@ -142,14 +149,41 @@ export function applyDemoViewerRequestMutation(input: {
           ? {
               ...item,
               songId,
-              songTitle: getString(input.song, "title") ?? "Unknown song",
-              songArtist: getString(input.song, "artist"),
-              songAlbum: getString(input.song, "album"),
-              songCreator: getString(input.song, "creator"),
-              songCatalogSourceId: getNumber(input.song, "sourceId"),
-              songGroupedProjectId: getNumber(input.song, "groupedProjectId"),
-              songArtistId: getNumber(input.song, "artistId"),
-              songCharterId: getNumber(input.song, "authorId"),
+              songTitle:
+                requestMode === "choice"
+                  ? "Streamer choice"
+                  : (getString(songRecord, "title") ?? "Unknown song"),
+              songArtist:
+                requestMode === "choice"
+                  ? null
+                  : getString(songRecord, "artist"),
+              songAlbum:
+                requestMode === "choice"
+                  ? null
+                  : getString(songRecord, "album"),
+              songCreator:
+                requestMode === "choice"
+                  ? null
+                  : getString(songRecord, "creator"),
+              songCatalogSourceId:
+                requestMode === "choice"
+                  ? null
+                  : getNumber(songRecord, "sourceId"),
+              songGroupedProjectId:
+                requestMode === "choice"
+                  ? null
+                  : getNumber(songRecord, "groupedProjectId"),
+              songArtistId:
+                requestMode === "choice"
+                  ? null
+                  : getNumber(songRecord, "artistId"),
+              songCharterId:
+                requestMode === "choice"
+                  ? null
+                  : getNumber(songRecord, "authorId"),
+              requestedQuery:
+                requestMode === "choice" ? (input.query?.trim() ?? null) : null,
+              warningCode: requestMode === "choice" ? "streamer_choice" : null,
               requestKind: input.requestKind,
               editedAt: now,
               updatedAt: now,
@@ -183,14 +217,28 @@ export function applyDemoViewerRequestMutation(input: {
   const nextItem: PanelDemoPlaylistItem = {
     id: nextId,
     songId,
-    songTitle: getString(input.song, "title") ?? "Unknown song",
-    songArtist: getString(input.song, "artist"),
-    songAlbum: getString(input.song, "album"),
-    songCreator: getString(input.song, "creator"),
-    songCatalogSourceId: getNumber(input.song, "sourceId"),
-    songGroupedProjectId: getNumber(input.song, "groupedProjectId"),
-    songArtistId: getNumber(input.song, "artistId"),
-    songCharterId: getNumber(input.song, "authorId"),
+    songTitle:
+      requestMode === "choice"
+        ? "Streamer choice"
+        : (getString(songRecord, "title") ?? "Unknown song"),
+    songArtist:
+      requestMode === "choice" ? null : getString(songRecord, "artist"),
+    songAlbum: requestMode === "choice" ? null : getString(songRecord, "album"),
+    songCreator:
+      requestMode === "choice" ? null : getString(songRecord, "creator"),
+    songCatalogSourceId:
+      requestMode === "choice" ? null : getNumber(songRecord, "sourceId"),
+    songGroupedProjectId:
+      requestMode === "choice"
+        ? null
+        : getNumber(songRecord, "groupedProjectId"),
+    songArtistId:
+      requestMode === "choice" ? null : getNumber(songRecord, "artistId"),
+    songCharterId:
+      requestMode === "choice" ? null : getNumber(songRecord, "authorId"),
+    requestedQuery:
+      requestMode === "choice" ? (input.query?.trim() ?? null) : null,
+    warningCode: requestMode === "choice" ? "streamer_choice" : null,
     requestedByTwitchUserId: input.viewerProfile.twitchUserId,
     requestedByLogin: input.viewerProfile.login,
     requestedByDisplayName: input.viewerProfile.displayName,

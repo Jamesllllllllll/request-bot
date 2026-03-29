@@ -1,6 +1,7 @@
 // Route: Renders request behavior and channel configuration settings.
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
+import { Copy } from "lucide-react";
 import { type ReactNode, useEffect, useState } from "react";
 import { DashboardPageHeader } from "~/components/dashboard-page-header";
 import { OverlaySettingsPanel } from "~/components/overlay-settings-panel";
@@ -38,6 +39,9 @@ type DashboardSettingsData = {
   ownedOfficialDlcImport: {
     count: number;
     importedAt: number | null;
+  };
+  integrations: {
+    streamElementsTipRelayUrl: string | null;
   };
   bot: {
     connected: boolean;
@@ -106,8 +110,11 @@ const defaultForm: DashboardSettingsFormData = {
   autoGrantVipTokensToSubGifters: false,
   autoGrantVipTokensToGiftRecipients: false,
   autoGrantVipTokensForCheers: false,
+  autoGrantVipTokensForStreamElementsTips: false,
+  allowRequestPathModifiers: false,
   cheerBitsPerVipToken: 200,
   cheerMinimumTokenPercent: 25,
+  streamElementsTipAmountPerVipToken: 5,
   duplicateWindowSeconds: 900,
   showPlaylistPositions: false,
   commandPrefix: "!sr",
@@ -134,6 +141,7 @@ function DashboardSettingsPage() {
   const [saveMessage, setSaveMessage] = useState<string | null>(null);
   const [saveWarning, setSaveWarning] = useState<string | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
+  const [relayUrlCopied, setRelayUrlCopied] = useState(false);
   const sessionQuery = useQuery<ViewerSessionData>({
     queryKey: ["viewer-session"],
     queryFn: async () => {
@@ -267,6 +275,16 @@ function DashboardSettingsPage() {
     form.requiredPaths,
     form.requiredPathsMatchMode
   );
+  const streamElementsTipRelayUrl =
+    settingsQuery.data?.integrations.streamElementsTipRelayUrl ?? null;
+  const cheerMinimumBits = getCheerMinimumBitsPreview(
+    form.cheerBitsPerVipToken,
+    form.cheerMinimumTokenPercent
+  );
+  const cheerMinimumPartialTokens =
+    form.cheerBitsPerVipToken > 0
+      ? cheerMinimumBits / form.cheerBitsPerVipToken
+      : 0;
 
   function toggleArrayValue(list: string[], value: string) {
     return list.includes(value)
@@ -302,6 +320,18 @@ function DashboardSettingsPage() {
     value: number
   ) {
     setForm((current) => ({ ...current, [key]: value }));
+  }
+
+  async function copyRelayUrl() {
+    if (!streamElementsTipRelayUrl) {
+      return;
+    }
+
+    await navigator.clipboard.writeText(streamElementsTipRelayUrl);
+    setRelayUrlCopied(true);
+    window.setTimeout(() => {
+      setRelayUrlCopied(false);
+    }, 1500);
   }
 
   return (
@@ -529,6 +559,18 @@ function DashboardSettingsPage() {
                         }
                       />
                     </div>
+                  </FieldBlock>
+                  <FieldBlock
+                    label="Request modifiers"
+                    description="Let chat request bass arrangements with the *bass modifier."
+                  >
+                    <PermissionRow
+                      label="Allow the *bass modifier in chat commands"
+                      checked={form.allowRequestPathModifiers}
+                      onChange={(value) =>
+                        setBoolean("allowRequestPathModifiers", value)
+                      }
+                    />
                   </FieldBlock>
                   <FieldBlock
                     label="Duplicate cooldown (minutes)"
@@ -946,82 +988,227 @@ function DashboardSettingsPage() {
               <CardHeader>
                 <CardTitle>VIP token automation</CardTitle>
                 <CardDescription>
-                  Automatically reward VIP tokens for gifted subs and cheers.
+                  Automatically reward VIP tokens for Twitch support events and
+                  StreamElements tips.
                 </CardDescription>
               </CardHeader>
               <CardContent className="grid gap-6">
-                <div className="grid gap-3 border border-(--border) bg-(--panel-soft) p-4">
-                  <p className="text-sm font-semibold text-(--text)">
-                    Gifted subs
-                  </p>
-                  <PermissionRow
-                    label="Give 1 VIP token to the gifter for each gifted sub"
-                    checked={form.autoGrantVipTokensToSubGifters}
-                    onChange={(value) =>
-                      setBoolean("autoGrantVipTokensToSubGifters", value)
-                    }
-                  />
-                  <PermissionRow
-                    label="Give 1 VIP token to each gifted sub recipient"
-                    checked={form.autoGrantVipTokensToGiftRecipients}
-                    onChange={(value) =>
-                      setBoolean("autoGrantVipTokensToGiftRecipients", value)
-                    }
-                  />
+                <div className="grid gap-4 xl:grid-cols-[minmax(0,0.78fr)_minmax(0,1.22fr)]">
+                  <div className="grid min-w-0 gap-3 border border-(--border) bg-(--panel-soft) p-4">
+                    <p className="text-sm font-semibold text-(--text)">
+                      Gifted subs
+                    </p>
+                    <PermissionRow
+                      label="Give 1 VIP token to the gifter for each gifted sub"
+                      checked={form.autoGrantVipTokensToSubGifters}
+                      onChange={(value) =>
+                        setBoolean("autoGrantVipTokensToSubGifters", value)
+                      }
+                    />
+                    <PermissionRow
+                      label="Give 1 VIP token to each gifted sub recipient"
+                      checked={form.autoGrantVipTokensToGiftRecipients}
+                      onChange={(value) =>
+                        setBoolean("autoGrantVipTokensToGiftRecipients", value)
+                      }
+                    />
+                  </div>
+
+                  <div
+                    className={`grid min-w-0 gap-4 border p-4 ${
+                      form.autoGrantVipTokensForCheers
+                        ? "border-(--border-strong) bg-(--panel-soft)"
+                        : "border-(--border) bg-(--panel-muted)/40"
+                    }`}
+                  >
+                    <PermissionRow
+                      label="Give VIP tokens for cheers"
+                      checked={form.autoGrantVipTokensForCheers}
+                      onChange={(value) =>
+                        setBoolean("autoGrantVipTokensForCheers", value)
+                      }
+                    />
+                    <div className="grid gap-4 lg:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]">
+                      <div
+                        className={`grid gap-2 ${!form.autoGrantVipTokensForCheers ? "opacity-60" : ""}`}
+                      >
+                        <p className="text-sm font-medium text-(--text)">
+                          Cheer conversion
+                        </p>
+                        <div className="flex flex-wrap items-center gap-3">
+                          <div className="w-24 shrink-0">
+                            <Input
+                              id="cheer-bits-per-vip-token"
+                              type="number"
+                              min={0}
+                              value={form.cheerBitsPerVipToken}
+                              disabled={!form.autoGrantVipTokensForCheers}
+                              onChange={(event) =>
+                                setNumber(
+                                  "cheerBitsPerVipToken",
+                                  Number(event.target.value) || 0
+                                )
+                              }
+                            />
+                          </div>
+                          <label
+                            htmlFor="cheer-bits-per-vip-token"
+                            className="text-sm text-(--muted)"
+                          >
+                            bits per 1 VIP token
+                          </label>
+                        </div>
+                      </div>
+                      <div
+                        className={`grid gap-2 ${!form.autoGrantVipTokensForCheers ? "opacity-60" : ""}`}
+                      >
+                        <p className="text-sm font-medium text-(--text)">
+                          Minimum cheer to earn a partial token
+                        </p>
+                        <div className="flex flex-wrap gap-2">
+                          {[25, 50, 75, 100].map((percent) => (
+                            <button
+                              key={percent}
+                              type="button"
+                              disabled={!form.autoGrantVipTokensForCheers}
+                              onClick={() =>
+                                setNumber(
+                                  "cheerMinimumTokenPercent",
+                                  percent as DashboardSettingsFormData["cheerMinimumTokenPercent"]
+                                )
+                              }
+                              className={`border px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.18em] transition-colors disabled:cursor-not-allowed ${
+                                form.cheerMinimumTokenPercent === percent
+                                  ? "border-(--brand) bg-(--brand) text-white"
+                                  : "border-(--border) bg-(--panel-muted) text-(--muted)"
+                              }`}
+                            >
+                              {percent}%
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+                    <div
+                      className={`grid gap-1.5 border border-dashed border-(--border) bg-(--panel-muted)/60 p-3 ${
+                        !form.autoGrantVipTokensForCheers ? "opacity-60" : ""
+                      }`}
+                    >
+                      <p className="text-sm font-medium text-(--text)">
+                        Live example
+                      </p>
+                      {form.cheerBitsPerVipToken > 0 ? (
+                        <>
+                          <p className="text-sm leading-6 text-(--muted)">
+                            Minimum cheer:{" "}
+                            {formatSettingsNumber(cheerMinimumBits)} bits grants{" "}
+                            {formatSettingsNumber(cheerMinimumPartialTokens)} of
+                            a VIP token at the {form.cheerMinimumTokenPercent}%
+                            threshold.
+                          </p>
+                          <p className="text-sm leading-6 text-(--muted)">
+                            {formatSettingsNumber(form.cheerBitsPerVipToken)}{" "}
+                            bits grants 1 VIP token.{" "}
+                            {formatSettingsNumber(
+                              form.cheerBitsPerVipToken * 5
+                            )}{" "}
+                            bits grants 5 VIP tokens.
+                          </p>
+                        </>
+                      ) : (
+                        <p className="text-sm leading-6 text-(--muted)">
+                          Set the bits per VIP token above 0 to preview the
+                          minimum cheer threshold.
+                        </p>
+                      )}
+                    </div>
+                  </div>
                 </div>
 
                 <div
                   className={`grid gap-4 border p-4 ${
-                    form.autoGrantVipTokensForCheers
+                    form.autoGrantVipTokensForStreamElementsTips
                       ? "border-(--border-strong) bg-(--panel-soft)"
                       : "border-(--border) bg-(--panel-muted)/40"
                   }`}
                 >
                   <PermissionRow
-                    label="Give VIP tokens for cheers"
-                    checked={form.autoGrantVipTokensForCheers}
+                    label="Give VIP tokens for StreamElements tips"
+                    checked={form.autoGrantVipTokensForStreamElementsTips}
                     onChange={(value) =>
-                      setBoolean("autoGrantVipTokensForCheers", value)
+                      setBoolean(
+                        "autoGrantVipTokensForStreamElementsTips",
+                        value
+                      )
                     }
                   />
-                  <div className="grid gap-4 md:grid-cols-2">
-                    <CompactNumberRow
-                      label="Bits per 1 VIP token"
-                      value={form.cheerBitsPerVipToken}
-                      onChange={(value) =>
-                        setNumber("cheerBitsPerVipToken", value)
-                      }
-                      disabled={!form.autoGrantVipTokensForCheers}
-                    />
-                    <div
-                      className={`grid gap-2 ${!form.autoGrantVipTokensForCheers ? "opacity-60" : ""}`}
+                  <div className="grid gap-4 md:grid-cols-[minmax(0,0.8fr)_minmax(0,1.2fr)]">
+                    <FieldBlock
+                      label="Tip amount per 1 VIP token"
+                      description="A $25 tip grants 5 VIP tokens when this is set to 5."
                     >
-                      <p className="text-sm font-medium text-(--text)">
-                        Minimum cheer to earn a partial token
-                      </p>
-                      <div className="flex flex-wrap gap-2">
-                        {[25, 50, 75, 100].map((percent) => (
-                          <button
-                            key={percent}
-                            type="button"
-                            disabled={!form.autoGrantVipTokensForCheers}
-                            onClick={() =>
-                              setNumber(
-                                "cheerMinimumTokenPercent",
-                                percent as DashboardSettingsFormData["cheerMinimumTokenPercent"]
-                              )
-                            }
-                            className={`border px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.18em] transition-colors disabled:cursor-not-allowed ${
-                              form.cheerMinimumTokenPercent === percent
-                                ? "border-(--brand) bg-(--brand) text-white"
-                                : "border-(--border) bg-(--panel-muted) text-(--muted)"
-                            }`}
-                          >
-                            {percent}%
-                          </button>
-                        ))}
+                      <div className="max-w-40">
+                        <Input
+                          type="number"
+                          min={0.01}
+                          step={0.01}
+                          value={form.streamElementsTipAmountPerVipToken}
+                          disabled={
+                            !form.autoGrantVipTokensForStreamElementsTips
+                          }
+                          onChange={(event) =>
+                            setNumber(
+                              "streamElementsTipAmountPerVipToken",
+                              Number(event.target.value) || 0
+                            )
+                          }
+                        />
                       </div>
-                    </div>
+                    </FieldBlock>
+                    <FieldBlock
+                      label="Relay URL"
+                      description="Paste this into the Streamer.bot step that forwards your StreamElements Tip event."
+                    >
+                      <div className="grid min-w-0 grid-cols-[minmax(0,1fr)_auto] items-stretch gap-2">
+                        <Input
+                          value={streamElementsTipRelayUrl ?? ""}
+                          readOnly
+                          disabled={!streamElementsTipRelayUrl}
+                        />
+                        <Button
+                          type="button"
+                          variant="outline"
+                          onClick={copyRelayUrl}
+                          disabled={!streamElementsTipRelayUrl}
+                          className="self-stretch"
+                        >
+                          <Copy className="h-4 w-4" />
+                          {relayUrlCopied ? "Copied" : "Copy URL"}
+                        </Button>
+                      </div>
+                    </FieldBlock>
+                    <FieldBlock
+                      label="Setup today"
+                      description="StreamElements can already show tip alerts in OBS. VIP token rewards need Streamer.bot to forward the tip event here."
+                    >
+                      <ol className="grid gap-2 pl-5 text-sm leading-6 text-(--muted) list-decimal">
+                        <li>
+                          Keep your StreamElements tip alert in OBS the way you
+                          already use it.
+                        </li>
+                        <li>
+                          Connect Streamer.bot to StreamElements and use the
+                          StreamElements Tip trigger.
+                        </li>
+                        <li>
+                          Send that tip event to the Relay URL shown here.
+                        </li>
+                        <li>
+                          If you do not use Streamer.bot yet, tips still show in
+                          OBS, but they do not add VIP tokens here.
+                        </li>
+                      </ol>
+                    </FieldBlock>
                   </div>
                 </div>
               </CardContent>
@@ -1147,7 +1334,7 @@ function FieldBlock(props: {
   children: ReactNode;
 }) {
   return (
-    <div className="grid gap-2 border border-(--border) bg-(--panel-soft) p-4">
+    <div className="grid min-w-0 gap-2 border border-(--border) bg-(--panel-soft) p-4">
       <p className="font-medium text-(--text)">{props.label}</p>
       {props.description ? (
         <p className="text-sm leading-6 text-(--muted)">{props.description}</p>
@@ -1203,6 +1390,19 @@ function CompactNumberRow(props: {
       </div>
     </div>
   );
+}
+
+function getCheerMinimumBitsPreview(
+  bitsPerVipToken: number,
+  minimumTokenPercent: DashboardSettingsFormData["cheerMinimumTokenPercent"]
+) {
+  return Math.ceil(Math.max(0, bitsPerVipToken) * (minimumTokenPercent / 100));
+}
+
+function formatSettingsNumber(value: number) {
+  return new Intl.NumberFormat("en-US", {
+    maximumFractionDigits: 2,
+  }).format(value);
 }
 
 function normalizeSettingsFormData(

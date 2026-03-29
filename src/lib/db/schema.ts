@@ -190,12 +190,33 @@ export const channelSettings = sqliteTable("channel_settings", {
   })
     .notNull()
     .default(false),
+  autoGrantVipTokensForStreamElementsTips: integer(
+    "auto_grant_vip_tokens_for_streamelements_tips",
+    {
+      mode: "boolean",
+    }
+  )
+    .notNull()
+    .default(false),
+  allowRequestPathModifiers: integer("allow_request_path_modifiers", {
+    mode: "boolean",
+  })
+    .notNull()
+    .default(false),
   cheerBitsPerVipToken: integer("cheer_bits_per_vip_token")
     .notNull()
     .default(200),
   cheerMinimumTokenPercent: integer("cheer_minimum_token_percent")
     .notNull()
     .default(25),
+  streamElementsTipAmountPerVipToken: real(
+    "streamelements_tip_amount_per_vip_token"
+  )
+    .notNull()
+    .default(5),
+  streamElementsTipWebhookToken: text("streamelements_tip_webhook_token")
+    .notNull()
+    .default(""),
   duplicateWindowSeconds: integer("duplicate_window_seconds")
     .notNull()
     .default(900),

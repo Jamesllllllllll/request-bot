@@ -5,6 +5,7 @@ import { getSessionUserId } from "~/lib/auth/session.server";
 import { callBackend } from "~/lib/backend";
 import {
   createAuditLog,
+  ensureStreamElementsTipWebhookToken,
   getBotAuthorization,
   getDashboardState,
   updateSettings,
@@ -41,6 +42,12 @@ export const Route = createFileRoute("/api/dashboard/settings")({
         }
 
         const botAuthorization = await getBotAuthorization(runtimeEnv);
+        const streamElementsTipWebhookToken = state.settings
+          ? await ensureStreamElementsTipWebhookToken(
+              runtimeEnv,
+              state.channel.id
+            )
+          : null;
 
         return json({
           channel: state.channel,
@@ -58,6 +65,11 @@ export const Route = createFileRoute("/api/dashboard/settings")({
                 ),
               }
             : null,
+          integrations: {
+            streamElementsTipRelayUrl: streamElementsTipWebhookToken
+              ? `${runtimeEnv.APP_URL}/api/integrations/streamelements/${state.channel.slug}/${streamElementsTipWebhookToken}`
+              : null,
+          },
           playedSongs: state.playedSongs,
           bot: {
             connected: !!botAuthorization,

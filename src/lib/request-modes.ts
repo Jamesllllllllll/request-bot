@@ -3,7 +3,22 @@ export type RequestMode = "catalog" | "random" | "choice";
 export const STREAMER_CHOICE_WARNING_CODE = "streamer_choice";
 export const STREAMER_CHOICE_TITLE = "Streamer choice";
 
-export function parseRequestModifiers(query: string) {
+const requestPathModifierMap: Record<string, string> = {
+  "*bass": "bass",
+};
+
+const ignoredPathModifiers = new Set([
+  "*lead",
+  "*rhythm",
+  "*voice",
+  "*vocals",
+  "*lyrics",
+]);
+
+export function parseRequestModifiers(
+  query: string,
+  options?: { allowPathModifiers?: boolean }
+) {
   const tokens = query
     .trim()
     .split(/\s+/)
@@ -14,6 +29,7 @@ export function parseRequestModifiers(query: string) {
   let hasRandomModifier = false;
   let hasChoiceModifier = false;
   let ignoredOfficialModifier = false;
+  const requestedPaths: string[] = [];
 
   for (const token of tokens) {
     const normalized = token.toLowerCase();
@@ -33,6 +49,15 @@ export function parseRequestModifiers(query: string) {
       continue;
     }
 
+    if (options?.allowPathModifiers && requestPathModifierMap[normalized]) {
+      requestedPaths.push(requestPathModifierMap[normalized]);
+      continue;
+    }
+
+    if (options?.allowPathModifiers && ignoredPathModifiers.has(normalized)) {
+      continue;
+    }
+
     keptTokens.push(token);
   }
 
@@ -46,6 +71,7 @@ export function parseRequestModifiers(query: string) {
     hasRandomModifier,
     hasChoiceModifier,
     ignoredOfficialModifier,
+    requestedPaths: [...new Set(requestedPaths)],
   };
 }
 

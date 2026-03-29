@@ -4,17 +4,9 @@ import {
   createFileRoute,
   Link,
   Outlet,
-  useRouter,
   useRouterState,
 } from "@tanstack/react-router";
 import { Activity, Settings2, Wrench } from "lucide-react";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "~/components/ui/select";
 import { cn } from "~/lib/utils";
 
 export const Route = createFileRoute("/dashboard")({
@@ -23,7 +15,6 @@ export const Route = createFileRoute("/dashboard")({
 
 type DashboardNavItem = {
   to: DashboardRoutePath;
-  href?: string;
   label: string;
   icon: React.ComponentType<{ className?: string }>;
   exact?: boolean;
@@ -53,7 +44,6 @@ const adminNav: DashboardNavItem[] = [
 ];
 
 function DashboardLayout() {
-  const router = useRouter();
   const pathname = useRouterState({
     select: (state) => state.location.pathname,
   });
@@ -102,109 +92,61 @@ function DashboardLayout() {
       )?.to ?? "/dashboard");
 
   return (
-    <section className="grid gap-6 [container-type:inline-size] min-[961px]:grid-cols-[minmax(0,320px)_minmax(0,1fr)] min-[961px]:items-start max-[960px]:gap-0">
-      <aside className="surface-grid surface-noise grid gap-6 border border-(--border-strong) bg-(--panel) p-6 shadow-none max-[960px]:gap-0 max-[960px]:border-x-0 max-[960px]:bg-(--panel) max-[960px]:px-[0.875rem] max-[960px]:py-3 max-[960px]:shadow-none">
-        <div className="mt-4 min-[961px]:hidden max-[960px]:mt-0">
-          <Select
-            value={activeDashboardPath}
-            onValueChange={(value) =>
-              router.navigate({ to: value as DashboardRoutePath })
-            }
-          >
-            <SelectTrigger>
-              <SelectValue placeholder="Choose a section" />
-            </SelectTrigger>
-            <SelectContent>
-              {primaryNav.map((item) => (
-                <SelectItem key={item.to} value={item.to}>
-                  {item.label}
-                </SelectItem>
-              ))}
-              {isAdmin
-                ? adminNav.map((item) => (
-                    <SelectItem key={item.to} value={item.to}>
-                      {item.label}
-                    </SelectItem>
-                  ))
-                : null}
-            </SelectContent>
-          </Select>
-        </div>
-
-        <div className="mt-6 hidden gap-3 min-[961px]:grid">
-          {primaryNav.map((item) => (
+    <section className="grid gap-4 [container-type:inline-size] max-[960px]:gap-0">
+      <div className="surface-grid surface-noise border border-(--border-strong) bg-(--panel) p-2 shadow-none max-[960px]:border-x-0 max-[960px]:px-[0.875rem] max-[960px]:py-3">
+        <nav className="flex w-full items-center gap-2 max-[480px]:gap-1.5">
+          {navItems.map((item) => (
             <DashboardNavLink
               key={item.to}
               to={item.to}
               exact={item.exact}
               label={item.label}
               icon={item.icon}
+              active={activeDashboardPath === item.to}
             />
           ))}
-        </div>
-
-        {isAdmin ? (
-          <div className="mt-6 hidden gap-3 min-[961px]:grid">
-            <p className="px-1 text-xs font-semibold uppercase tracking-[0.18em] text-(--muted)">
-              Admin
-            </p>
-            {adminNav.map((item) => (
-              <DashboardNavLink
-                key={item.to}
-                to={item.to}
-                label={item.label}
-                icon={item.icon}
-              />
-            ))}
-          </div>
-        ) : null}
-      </aside>
-
-      <div className="border border-(--border-strong) bg-(--bg-elevated) p-6 shadow-none md:p-8 max-[960px]:border-x-0 max-[960px]:bg-(--bg-elevated) max-[960px]:px-[0.875rem] max-[960px]:py-4 max-[960px]:shadow-none">
+        </nav>
+      </div>
+      <div className="min-w-0 border border-(--border-strong) bg-(--bg-elevated) p-6 shadow-none md:p-8 max-[960px]:border-x-0 max-[960px]:bg-(--bg-elevated) max-[960px]:px-[0.875rem] max-[960px]:py-4 max-[960px]:shadow-none">
         <Outlet />
       </div>
     </section>
   );
 }
 
-function DashboardNavLink(props: {} & DashboardNavItem) {
+function DashboardNavLink(
+  props: DashboardNavItem & {
+    active?: boolean;
+  }
+) {
   const Icon = props.icon;
 
   return (
     <Link
       to={props.to}
       activeOptions={props.exact ? { exact: true } : undefined}
-      className="block no-underline"
+      className="min-w-0 flex-1 no-underline min-[641px]:flex-none"
       activeProps={{
-        className: "block no-underline",
+        className: "min-w-0 flex-1 no-underline min-[641px]:flex-none",
       }}
     >
-      {({ isActive }: { isActive: boolean }) => (
-        <div
-          className={cn(
-            "border px-4 py-4 transition-all",
-            isActive
-              ? "border-(--brand) bg-(--panel-soft) shadow-none"
-              : "border-(--border) bg-(--panel-muted) hover:bg-(--panel-soft)"
-          )}
-        >
-          <div className="flex items-center gap-3">
-            <div
-              className={cn(
-                "flex h-11 w-11 shrink-0 items-center justify-center border",
-                isActive
-                  ? "border-(--brand) bg-(--brand) text-white"
-                  : "border-(--border) bg-(--panel) text-(--brand-deep)"
-              )}
-            >
-              <Icon className="h-5 w-5" />
-            </div>
-            <p className="text-base font-semibold text-(--text)">
-              {props.label}
-            </p>
+      {({ isActive }: { isActive: boolean }) => {
+        const active = props.active ?? isActive;
+
+        return (
+          <div
+            className={cn(
+              "flex min-h-[2.6rem] items-center justify-center gap-2 border px-3 py-2 text-center text-sm font-semibold transition-colors max-[480px]:min-h-[2.35rem] max-[480px]:px-2 max-[480px]:text-[0.78rem]",
+              active
+                ? "border-(--brand) bg-(--panel-soft) text-(--text) shadow-none"
+                : "border-(--border) bg-(--panel-muted) text-(--muted) hover:border-(--brand) hover:bg-(--panel-soft) hover:text-(--text)"
+            )}
+          >
+            <Icon className="h-4 w-4 shrink-0 max-[560px]:hidden" />
+            <span className="truncate">{props.label}</span>
           </div>
-        </div>
-      )}
+        );
+      }}
     </Link>
   );
 }

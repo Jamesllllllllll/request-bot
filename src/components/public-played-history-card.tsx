@@ -149,14 +149,14 @@ export function PublicPlayedHistoryCard(props: {
   });
 
   return (
-    <Card className="max-[960px]:rounded-none max-[960px]:border-x-0 max-[960px]:bg-transparent max-[960px]:shadow-none max-[960px]:[background-image:none]">
-      <CardHeader className="flex flex-row items-center justify-between gap-4 max-[960px]:px-0">
-        <div className="flex items-center gap-3">
+    <Card className="min-w-0 max-[960px]:rounded-none max-[960px]:border-x-0 max-[960px]:bg-transparent max-[960px]:shadow-none max-[960px]:[background-image:none]">
+      <CardHeader className="flex min-w-0 flex-wrap items-start justify-between gap-3 max-[960px]:px-4">
+        <div className="flex min-w-0 items-center gap-3">
           <div className="border border-(--border) bg-(--panel-soft) p-2 text-(--brand)">
             <History className="h-4 w-4" />
           </div>
-          <div>
-            <CardTitle>
+          <div className="min-w-0">
+            <CardTitle className="break-words">
               {props.channelDisplayName
                 ? `${props.channelDisplayName}'s played history`
                 : "Played history"}
@@ -165,6 +165,7 @@ export function PublicPlayedHistoryCard(props: {
         </div>
         <Button
           variant="outline"
+          className="shrink-0 max-[520px]:w-full"
           onClick={() => setHistoryOpen((current) => !current)}
         >
           {historyOpen ? (
@@ -181,7 +182,7 @@ export function PublicPlayedHistoryCard(props: {
         </Button>
       </CardHeader>
       {historyOpen ? (
-        <CardContent className="grid gap-4 max-[960px]:px-0">
+        <CardContent className="grid gap-4 max-[960px]:px-4">
           <div className="grid gap-4 lg:grid-cols-[minmax(0,1.35fr)_minmax(0,1fr)]">
             <div className="grid gap-2">
               <label

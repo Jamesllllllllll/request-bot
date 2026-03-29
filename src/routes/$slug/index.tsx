@@ -694,10 +694,9 @@ function PublicChannelPage() {
         useTotalForSummary
         controlsContent={
           signedInViewer
-            ? ({ query }: { query: string }) => (
+            ? (_: { query: string }) => (
                 <ViewerSpecialRequestControls
                   canManagePlaylist={canManagePlaylist}
-                  query={query}
                   viewerState={viewerRequestState}
                   viewerStateLoading={viewerRequestStateQuery.isLoading}
                   viewerStateError={getErrorMessage(
@@ -707,7 +706,7 @@ function PublicChannelPage() {
                   replaceExisting={effectiveReplaceExisting}
                   mutationIsPending={viewerRequestMutation.isPending}
                   pendingViewerRequest={pendingViewerRequest}
-                  onSubmit={(requestMode, requestKind) =>
+                  onSubmit={(query, requestMode, requestKind) =>
                     viewerRequestMutation.mutate({
                       action: "submit",
                       query,
@@ -1104,7 +1103,6 @@ function ViewerSearchSongActions(props: {
 
 function ViewerSpecialRequestControls(props: {
   canManagePlaylist: boolean;
-  query: string;
   viewerState: ViewerRequestStateData["viewer"];
   viewerStateLoading: boolean;
   viewerStateError: string;
@@ -1117,11 +1115,15 @@ function ViewerSpecialRequestControls(props: {
     requestKind?: "regular" | "vip";
   } | null;
   onSubmit: (
+    query: string,
     requestMode: "random" | "choice",
     requestKind: "regular" | "vip"
   ) => void;
 }) {
-  const normalizedQuery = props.query.trim();
+  const [artistQuery, setArtistQuery] = useState("");
+  const [requestMode, setRequestMode] = useState<"random" | "choice">("random");
+  const [requestKind, setRequestKind] = useState<"regular" | "vip">("regular");
+  const normalizedQuery = artistQuery.trim();
   const isViewerReady =
     props.viewerStateLoading ||
     props.viewerState != null ||
@@ -1131,133 +1133,127 @@ function ViewerSpecialRequestControls(props: {
     return null;
   }
 
-  const regularRandomDisabledReason = getViewerSpecialActionDisabledReason({
+  const selectedDisabledReason = getViewerSpecialActionDisabledReason({
     query: normalizedQuery,
-    requestMode: "random",
-    requestKind: "regular",
-    viewerState: props.viewerState,
-    viewerStateLoading: props.viewerStateLoading,
-    viewerStateError: props.viewerStateError,
-  });
-  const vipRandomDisabledReason = getViewerSpecialActionDisabledReason({
-    query: normalizedQuery,
-    requestMode: "random",
-    requestKind: "vip",
-    viewerState: props.viewerState,
-    viewerStateLoading: props.viewerStateLoading,
-    viewerStateError: props.viewerStateError,
-  });
-  const regularChoiceDisabledReason = getViewerSpecialActionDisabledReason({
-    query: normalizedQuery,
-    requestMode: "choice",
-    requestKind: "regular",
-    viewerState: props.viewerState,
-    viewerStateLoading: props.viewerStateLoading,
-    viewerStateError: props.viewerStateError,
-  });
-  const vipChoiceDisabledReason = getViewerSpecialActionDisabledReason({
-    query: normalizedQuery,
-    requestMode: "choice",
-    requestKind: "vip",
+    requestMode,
+    requestKind,
     viewerState: props.viewerState,
     viewerStateLoading: props.viewerStateLoading,
     viewerStateError: props.viewerStateError,
   });
   const helperText =
-    regularRandomDisabledReason ||
-    vipRandomDisabledReason ||
-    regularChoiceDisabledReason ||
-    vipChoiceDisabledReason;
-  const regularRandomPending =
+    selectedDisabledReason ||
+    (normalizedQuery.length >= 2
+      ? requestMode === "random"
+        ? "Adds a random song from the matching songs for this artist."
+        : "Adds a streamer choice request for this artist."
+      : null);
+  const submitPending =
     props.mutationIsPending &&
     props.pendingViewerRequest?.action === "submit" &&
-    props.pendingViewerRequest.requestMode === "random" &&
-    props.pendingViewerRequest.requestKind === "regular" &&
-    props.pendingViewerRequest.query?.trim() === normalizedQuery;
-  const vipRandomPending =
-    props.mutationIsPending &&
-    props.pendingViewerRequest?.action === "submit" &&
-    props.pendingViewerRequest.requestMode === "random" &&
-    props.pendingViewerRequest.requestKind === "vip" &&
-    props.pendingViewerRequest.query?.trim() === normalizedQuery;
-  const regularChoicePending =
-    props.mutationIsPending &&
-    props.pendingViewerRequest?.action === "submit" &&
-    props.pendingViewerRequest.requestMode === "choice" &&
-    props.pendingViewerRequest.requestKind === "regular" &&
-    props.pendingViewerRequest.query?.trim() === normalizedQuery;
-  const vipChoicePending =
-    props.mutationIsPending &&
-    props.pendingViewerRequest?.action === "submit" &&
-    props.pendingViewerRequest.requestMode === "choice" &&
-    props.pendingViewerRequest.requestKind === "vip" &&
+    props.pendingViewerRequest.requestMode === requestMode &&
+    props.pendingViewerRequest.requestKind === requestKind &&
     props.pendingViewerRequest.query?.trim() === normalizedQuery;
 
   return (
     <div className="grid gap-3 border border-(--border) bg-(--panel-soft) px-4 py-3">
       <div className="grid gap-1">
         <p className="text-xs font-semibold uppercase tracking-[0.16em] text-(--brand-deep)">
-          {props.canManagePlaylist ? "Add your own request" : "Quick request"}
+          {props.canManagePlaylist
+            ? "Add your own request"
+            : "Request by artist"}
         </p>
         <p className="text-sm text-(--muted)">
-          Use this search for a random song or let the streamer choose.
+          Type an artist name, then choose random or streamer choice.
         </p>
       </div>
 
-      <div className="grid gap-3 md:grid-cols-2">
-        <div className="grid gap-2">
-          <p className="text-xs font-semibold uppercase tracking-[0.14em] text-(--muted)">
-            Random
-          </p>
-          <div className="grid grid-cols-2 gap-2">
-            <Button
-              type="button"
-              className="w-full px-4 shadow-none"
-              onClick={() => props.onSubmit("random", "regular")}
-              disabled={
-                !!regularRandomDisabledReason || props.mutationIsPending
-              }
+      <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-end">
+        <div className="grid gap-3">
+          <div className="grid gap-2">
+            <Label
+              className="text-xs font-semibold uppercase tracking-[0.14em] text-(--muted)"
+              htmlFor="viewer-special-request-artist"
             >
-              {regularRandomPending ? "Adding..." : "Add"}
-            </Button>
-            <Button
-              type="button"
-              variant="outline"
-              className="w-full px-4"
-              onClick={() => props.onSubmit("random", "vip")}
-              disabled={!!vipRandomDisabledReason || props.mutationIsPending}
-            >
-              {vipRandomPending ? "Adding..." : "Add VIP"}
-            </Button>
+              Artist
+            </Label>
+            <Input
+              id="viewer-special-request-artist"
+              value={artistQuery}
+              onChange={(event) => setArtistQuery(event.target.value)}
+              placeholder="Type an artist name"
+            />
+          </div>
+
+          <div className="grid gap-3 sm:grid-cols-2">
+            <div className="grid gap-2">
+              <p className="text-xs font-semibold uppercase tracking-[0.14em] text-(--muted)">
+                Mode
+              </p>
+              <div className="grid grid-cols-2 gap-2">
+                <Button
+                  type="button"
+                  variant={requestMode === "random" ? "default" : "outline"}
+                  className="w-full px-3 shadow-none"
+                  aria-pressed={requestMode === "random"}
+                  onClick={() => setRequestMode("random")}
+                >
+                  Random
+                </Button>
+                <Button
+                  type="button"
+                  variant={requestMode === "choice" ? "default" : "outline"}
+                  className="w-full px-3 shadow-none"
+                  aria-pressed={requestMode === "choice"}
+                  onClick={() => setRequestMode("choice")}
+                >
+                  Streamer choice
+                </Button>
+              </div>
+            </div>
+
+            <div className="grid gap-2">
+              <p className="text-xs font-semibold uppercase tracking-[0.14em] text-(--muted)">
+                Request
+              </p>
+              <div className="grid grid-cols-2 gap-2">
+                <Button
+                  type="button"
+                  variant={requestKind === "regular" ? "default" : "outline"}
+                  className="w-full px-3 shadow-none"
+                  aria-pressed={requestKind === "regular"}
+                  onClick={() => setRequestKind("regular")}
+                >
+                  Regular
+                </Button>
+                <Button
+                  type="button"
+                  variant={requestKind === "vip" ? "default" : "outline"}
+                  className="w-full px-3 shadow-none"
+                  aria-pressed={requestKind === "vip"}
+                  onClick={() => setRequestKind("vip")}
+                >
+                  VIP
+                </Button>
+              </div>
+            </div>
           </div>
         </div>
 
-        <div className="grid gap-2">
-          <p className="text-xs font-semibold uppercase tracking-[0.14em] text-(--muted)">
-            Streamer choice
-          </p>
-          <div className="grid grid-cols-2 gap-2">
-            <Button
-              type="button"
-              className="w-full px-4 shadow-none"
-              onClick={() => props.onSubmit("choice", "regular")}
-              disabled={
-                !!regularChoiceDisabledReason || props.mutationIsPending
-              }
-            >
-              {regularChoicePending ? "Adding..." : "Add"}
-            </Button>
-            <Button
-              type="button"
-              variant="outline"
-              className="w-full px-4"
-              onClick={() => props.onSubmit("choice", "vip")}
-              disabled={!!vipChoiceDisabledReason || props.mutationIsPending}
-            >
-              {vipChoicePending ? "Adding..." : "Add VIP"}
-            </Button>
-          </div>
-        </div>
+        <Button
+          type="button"
+          className="min-w-40 px-4 shadow-none max-lg:w-full"
+          onClick={() =>
+            props.onSubmit(normalizedQuery, requestMode, requestKind)
+          }
+          disabled={!!selectedDisabledReason || props.mutationIsPending}
+        >
+          {submitPending
+            ? "Adding..."
+            : requestKind === "vip"
+              ? "Add VIP request"
+              : "Add request"}
+        </Button>
       </div>
 
       {helperText ? (
@@ -1396,10 +1392,10 @@ function ManageSearchSongActions(props: {
 
   return (
     <div className="grid gap-2">
-      <div className="grid grid-cols-2 gap-2">
+      <div className="grid w-full min-w-0 grid-cols-2 gap-2 max-[860px]:w-36 max-[860px]:grid-cols-1 max-[720px]:w-[clamp(5.75rem,27vw,7.75rem)]">
         <Button
           type="button"
-          className="w-full px-4 shadow-none"
+          className="h-auto min-h-10 w-full px-2 py-2 text-center text-[clamp(0.65rem,0.2vw+0.62rem,0.76rem)] leading-[1.15] whitespace-normal tracking-[0.08em] shadow-none"
           onClick={() => {
             if (!props.currentViewer || props.resultState.disabled) {
               return;
@@ -1417,7 +1413,7 @@ function ManageSearchSongActions(props: {
             <Button
               type="button"
               variant="outline"
-              className="w-full px-4"
+              className="h-auto min-h-10 w-full px-2 py-2 text-center text-[clamp(0.65rem,0.2vw+0.62rem,0.76rem)] leading-[1.15] whitespace-normal tracking-[0.08em]"
               disabled={props.resultState.disabled || props.mutationIsPending}
             >
               Add for user
@@ -1539,9 +1535,7 @@ function getViewerSpecialActionDisabledReason(input: {
   viewerStateError: string;
 }) {
   if (input.query.length < 2) {
-    return input.requestMode === "random"
-      ? "Type at least 2 characters to request a random song."
-      : "Type at least 2 characters to use streamer choice.";
+    return "Type at least 2 characters from an artist name.";
   }
 
   if (input.viewerStateLoading) {

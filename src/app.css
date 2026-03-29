@@ -504,6 +504,16 @@ body.extension-mode #app {
     flex: 1 1 12rem;
   }
 
+  .dashboard-playlist__actions--public {
+    width: auto;
+    max-width: 100%;
+    justify-content: center;
+  }
+
+  .dashboard-playlist__actions--public > * {
+    flex: 0 0 auto;
+  }
+
   .dashboard-admin > section:nth-of-type(2) {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
@@ -608,6 +618,14 @@ body.extension-mode #app {
 
   .dashboard-playlist__item-actions > * {
     flex: 1 1 8rem;
+  }
+
+  .dashboard-playlist__actions--public {
+    justify-content: center;
+  }
+
+  .dashboard-playlist__actions--public > * {
+    flex: 0 0 auto;
   }
 
   .dashboard-playlist__versions-updated {

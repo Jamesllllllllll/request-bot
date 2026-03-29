@@ -325,22 +325,19 @@ export function OverlaySettingsPanel() {
               <CardHeader>
                 <CardTitle>Layout and behavior</CardTitle>
               </CardHeader>
-              <CardContent className="grid gap-4">
+              <CardContent className="overflow-hidden border border-(--border) p-0">
                 <ToggleRow
                   label="Show creator"
-                  description="Show creator"
                   checked={form.overlayShowCreator}
                   onChange={(value) => setBoolean("overlayShowCreator", value)}
                 />
                 <ToggleRow
                   label="Show album"
-                  description="Show album"
                   checked={form.overlayShowAlbum}
                   onChange={(value) => setBoolean("overlayShowAlbum", value)}
                 />
                 <ToggleRow
                   label="Animate now playing"
-                  description="Animate current song"
                   checked={form.overlayAnimateNowPlaying}
                   onChange={(value) =>
                     setBoolean("overlayAnimateNowPlaying", value)
@@ -353,7 +350,7 @@ export function OverlaySettingsPanel() {
               <CardHeader>
                 <CardTitle>Theme</CardTitle>
               </CardHeader>
-              <CardContent className="grid gap-4">
+              <CardContent className="overflow-hidden border border-(--border) p-0">
                 <ColorField
                   label="Accent"
                   value={form.overlayAccentColor}
@@ -380,8 +377,8 @@ export function OverlaySettingsPanel() {
                   onChange={(value) => setColor("overlayPanelColor", value)}
                 />
                 <ColorField
-                  label="Overlay background / chroma key"
-                  description="Use a normal visible background, or pick a deliberate key color like bright pink or green for OBS chroma key."
+                  label="Background color"
+                  description="For a transparent background, set background opacity to 0."
                   value={form.overlayBackgroundColor}
                   onChange={(value) =>
                     setColor("overlayBackgroundColor", value)
@@ -399,10 +396,10 @@ export function OverlaySettingsPanel() {
               <CardHeader>
                 <CardTitle>Density and sizing</CardTitle>
               </CardHeader>
-              <CardContent className="grid gap-4">
+              <CardContent className="overflow-hidden border border-(--border) p-0">
                 <RangeField
                   label="Overlay background opacity"
-                  description="Set this to 0 for a fully transparent page behind the playlist items."
+                  description="Set this to 0 for a fully transparent background behind the playlist items."
                   min={0}
                   max={100}
                   value={form.overlayBackgroundOpacity}
@@ -557,24 +554,24 @@ export function OverlaySettingsPanel() {
 
 function ToggleRow(props: {
   label: string;
-  description: string;
+  description?: string;
   checked: boolean;
   onChange: (value: boolean) => void;
 }) {
   return (
-    <label className="flex items-start justify-between gap-4 border border-(--border) bg-(--panel-soft) p-4">
-      <div>
+    <label className="grid gap-2 px-4 py-3 odd:bg-(--panel-soft) even:bg-(--panel-muted)">
+      <div className="flex items-center justify-between gap-4">
         <p className="font-medium text-(--text)">{props.label}</p>
-        <p className="mt-1 text-sm leading-7 text-(--muted)">
-          {props.description}
-        </p>
+        <input
+          type="checkbox"
+          checked={props.checked}
+          onChange={(event) => props.onChange(event.target.checked)}
+          className="h-5 w-5 shrink-0"
+        />
       </div>
-      <input
-        type="checkbox"
-        checked={props.checked}
-        onChange={(event) => props.onChange(event.target.checked)}
-        className="mt-1 h-5 w-5"
-      />
+      {props.description ? (
+        <p className="text-sm leading-6 text-(--muted)">{props.description}</p>
+      ) : null}
     </label>
   );
 }
@@ -586,23 +583,27 @@ function ColorField(props: {
   onChange: (value: string) => void;
 }) {
   return (
-    <div className="grid gap-2 border border-(--border) bg-(--panel-soft) p-4">
-      <p className="text-sm font-medium text-(--text)">{props.label}</p>
+    <div className="grid gap-2 px-4 py-3 odd:bg-(--panel-soft) even:bg-(--panel-muted)">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <p className="text-sm font-medium text-(--text)">{props.label}</p>
+        <div className="flex min-w-0 items-center gap-3 sm:w-auto">
+          <input
+            type="color"
+            value={props.value}
+            onChange={(event) => props.onChange(event.target.value)}
+            className="h-10 w-12 shrink-0 border border-(--border) bg-transparent"
+          />
+          <div className="w-full sm:w-44">
+            <Input
+              value={props.value}
+              onChange={(event) => props.onChange(event.target.value)}
+            />
+          </div>
+        </div>
+      </div>
       {props.description ? (
         <p className="text-sm leading-6 text-(--muted)">{props.description}</p>
       ) : null}
-      <div className="flex items-center gap-3">
-        <input
-          type="color"
-          value={props.value}
-          onChange={(event) => props.onChange(event.target.value)}
-          className="h-11 w-14 border border-(--border) bg-transparent"
-        />
-        <Input
-          value={props.value}
-          onChange={(event) => props.onChange(event.target.value)}
-        />
-      </div>
     </div>
   );
 }
@@ -616,14 +617,16 @@ function RangeField(props: {
   onChange: (value: number) => void;
 }) {
   return (
-    <div className="grid gap-3 border border-(--border) bg-(--panel-soft) p-4">
+    <div className="grid gap-2 px-4 py-3 odd:bg-(--panel-soft) even:bg-(--panel-muted)">
       <div className="flex items-center justify-between gap-3">
         <p className="text-sm font-medium text-(--text)">{props.label}</p>
-        <span className="text-sm text-(--muted)">{props.value}</span>
+        <div className="flex items-center justify-between gap-3">
+          <span className="text-xs font-semibold uppercase tracking-[0.16em] text-(--muted)">
+            Value
+          </span>
+          <span className="text-sm text-(--text)">{props.value}</span>
+        </div>
       </div>
-      {props.description ? (
-        <p className="text-sm leading-6 text-(--muted)">{props.description}</p>
-      ) : null}
       <input
         type="range"
         min={props.min}
@@ -631,6 +634,9 @@ function RangeField(props: {
         value={props.value}
         onChange={(event) => props.onChange(Number(event.target.value))}
       />
+      {props.description ? (
+        <p className="text-sm leading-6 text-(--muted)">{props.description}</p>
+      ) : null}
     </div>
   );
 }

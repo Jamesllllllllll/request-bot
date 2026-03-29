@@ -3,12 +3,18 @@ import { env } from "cloudflare:workers";
 import { createFileRoute } from "@tanstack/react-router";
 import { getLiveChannels } from "~/lib/db/repositories";
 import type { AppEnv } from "~/lib/env";
-import { getAppAccessToken, searchTwitchChannels } from "~/lib/twitch/api";
+import {
+  getAppAccessToken,
+  getLiveStreams,
+  getTwitchUsersByLogins,
+  searchTwitchChannels,
+} from "~/lib/twitch/api";
+import { ROCKSMITH_DEMO_LOGINS } from "~/lib/twitch/rocksmith-demo-logins";
 import { json } from "~/lib/utils";
 
 const FEATURED_DEMO_LOGIN = "younggun";
-const ROCKSMITH_TAG = "rocksmith";
-const ROCKSMITH_SEARCH_LIMIT = 24;
+const ROCKSMITH_TAGS = new Set(["rocksmith", "rocksmith2014"]);
+const ROCKSMITH_SEARCH_LIMIT = 100;
 const ROCKSMITH_DEMO_RESULTS_LIMIT = 6;
 
 export const Route = createFileRoute("/api/channels/live")({
@@ -21,22 +27,24 @@ export const Route = createFileRoute("/api/channels/live")({
         if (url.searchParams.get("source") === "rocksmith") {
           try {
             const appToken = await getAppAccessToken(runtimeEnv);
-            const twitchChannels = await searchTwitchChannels({
-              env: runtimeEnv,
-              accessToken: appToken.access_token,
-              query: "Rocksmith",
-              first: ROCKSMITH_SEARCH_LIMIT,
-              liveOnly: true,
-            });
-            const featuredChannel = await getFeaturedRocksmithDemoChannel({
-              env: runtimeEnv,
-              accessToken: appToken.access_token,
-            });
+            const [curatedChannels, twitchChannels] = await Promise.all([
+              getCuratedRocksmithDemoChannels({
+                env: runtimeEnv,
+                accessToken: appToken.access_token,
+              }),
+              searchTwitchChannels({
+                env: runtimeEnv,
+                accessToken: appToken.access_token,
+                query: "Rocksmith",
+                first: ROCKSMITH_SEARCH_LIMIT,
+                liveOnly: true,
+              }),
+            ]);
 
             return json({
               channels: toRocksmithDemoChannels(
-                twitchChannels,
-                featuredChannel
+                curatedChannels,
+                twitchChannels
               ),
             });
           } catch (error) {
@@ -59,20 +67,17 @@ export const Route = createFileRoute("/api/channels/live")({
 });
 
 function toRocksmithDemoChannels(
-  channels: Awaited<ReturnType<typeof searchTwitchChannels>>,
-  featuredChannel?: HomeLiveChannel | null
+  curatedChannels: HomeLiveChannel[],
+  channels: Awaited<ReturnType<typeof searchTwitchChannels>>
 ) {
   const seenLogins = new Set<string>();
-  const orderedChannels = [
-    ...(featuredChannel ? [featuredChannel] : []),
+  const dedupedChannels = [
+    ...curatedChannels,
     ...channels
       .filter((channel) => hasRocksmithTag(channel))
-      .slice(0, ROCKSMITH_DEMO_RESULTS_LIMIT)
       .map((channel) => toRocksmithDemoChannel(channel)),
-  ];
-
-  return orderedChannels.filter((channel) => {
-    const login = channel.login.trim().toLowerCase();
+  ].filter((channel) => {
+    const login = normalizeLogin(channel.login);
     if (!login || seenLogins.has(login)) {
       return false;
     }
@@ -80,6 +85,17 @@ function toRocksmithDemoChannels(
     seenLogins.add(login);
     return true;
   });
+
+  const featuredIndex = dedupedChannels.findIndex(
+    (channel) => normalizeLogin(channel.login) === FEATURED_DEMO_LOGIN
+  );
+
+  if (featuredIndex > 0) {
+    const [featuredChannel] = dedupedChannels.splice(featuredIndex, 1);
+    dedupedChannels.unshift(featuredChannel);
+  }
+
+  return dedupedChannels.slice(0, ROCKSMITH_DEMO_RESULTS_LIMIT);
 }
 
 type HomeLiveChannel = {
@@ -104,7 +120,7 @@ type HomeLiveChannel = {
 function toRocksmithDemoChannel(
   channel: Awaited<ReturnType<typeof searchTwitchChannels>>[number]
 ): HomeLiveChannel {
-  const login = channel.broadcaster_login.trim().toLowerCase();
+  const login = normalizeLogin(channel.broadcaster_login);
 
   return {
     id: `rocksmith-${channel.id}`,
@@ -118,49 +134,56 @@ function toRocksmithDemoChannel(
   };
 }
 
-async function getFeaturedRocksmithDemoChannel(input: {
+async function getCuratedRocksmithDemoChannels(input: {
   env: AppEnv;
   accessToken: string;
 }) {
-  const channels = await searchTwitchChannels({
+  const users = await getTwitchUsersByLogins({
     env: input.env,
     accessToken: input.accessToken,
-    query: FEATURED_DEMO_LOGIN,
-    first: 20,
+    logins: [...ROCKSMITH_DEMO_LOGINS],
   });
-
-  const featuredChannel = channels.find((channel) => {
-    const login = channel.broadcaster_login.trim().toLowerCase();
-
-    return (
-      login === FEATURED_DEMO_LOGIN &&
-      channel.is_live === true &&
-      hasRocksmithTag(channel)
-    );
+  const liveStreams = await getLiveStreams({
+    env: input.env,
+    appAccessToken: input.accessToken,
+    broadcasterUserIds: users.map((user) => user.id),
   });
+  const liveStreamsByLogin = new Map(
+    liveStreams.map((stream) => [normalizeLogin(stream.user_login), stream])
+  );
 
-  if (!featuredChannel) {
-    return null;
-  }
+  return ROCKSMITH_DEMO_LOGINS.map((login) => liveStreamsByLogin.get(login))
+    .filter((stream) => stream != null)
+    .map((stream) => toRocksmithDemoChannelFromLiveStream(stream));
+}
 
-  const login = featuredChannel.broadcaster_login.trim().toLowerCase();
+function toRocksmithDemoChannelFromLiveStream(
+  stream: Awaited<ReturnType<typeof getLiveStreams>>[number]
+): HomeLiveChannel {
+  const login = normalizeLogin(stream.user_login);
 
   return {
-    id: `rocksmith-${featuredChannel.id}`,
+    id: `rocksmith-${stream.user_id}`,
     slug: login,
-    displayName: featuredChannel.display_name,
+    displayName: stream.user_name,
     login,
-    streamTitle: featuredChannel.title || featuredChannel.game_name || null,
-    streamThumbnailUrl: `https://static-cdn.jtvnw.net/previews-ttv/live_user_${login}-640x360.jpg`,
+    streamTitle: stream.title ?? null,
+    streamThumbnailUrl: stream.thumbnail_url
+      .replace("{width}", "640")
+      .replace("{height}", "360"),
     currentItem: null,
     nextItem: null,
-  } satisfies HomeLiveChannel;
+  };
 }
 
 function hasRocksmithTag(
   channel: Awaited<ReturnType<typeof searchTwitchChannels>>[number]
 ) {
-  return (channel.tags ?? []).some(
-    (tag) => tag.trim().toLowerCase() === ROCKSMITH_TAG
+  return (channel.tags ?? []).some((tag) =>
+    ROCKSMITH_TAGS.has(tag.trim().toLowerCase())
   );
+}
+
+function normalizeLogin(login: string) {
+  return login.trim().toLowerCase();
 }

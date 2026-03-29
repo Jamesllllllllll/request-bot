@@ -253,9 +253,6 @@ function DashboardSettingsPage() {
   const savedSettings = settingsQuery.data?.settings
     ? normalizeSettingsFormData(settingsQuery.data.settings)
     : null;
-  const ownedOfficialDlcCount =
-    settingsQuery.data?.ownedOfficialDlcImport?.count ?? 0;
-  const hasOwnedOfficialDlcSelections = ownedOfficialDlcCount > 0;
   const hasUnsavedChanges = savedSettings
     ? getSettingsComparisonSnapshot(form) !==
       getSettingsComparisonSnapshot(savedSettings)
@@ -605,39 +602,37 @@ function DashboardSettingsPage() {
               <CardContent className="grid gap-4">
                 <div className="grid gap-4 border border-(--border) bg-(--panel-soft) p-4">
                   <div className="grid gap-3">
-                    <div className="flex flex-wrap items-center justify-between gap-3">
+                    <div className="grid gap-3">
                       <div className="grid gap-1">
                         <p className="font-medium text-(--text)">
                           Official DLC
                         </p>
                         <p className="text-sm leading-6 text-(--muted)">
-                          Keep official-only search and request rules together
-                          here.
+                          Limit search results and requests to official DLC.
                         </p>
                       </div>
-                      <div className="min-w-[220px]">
+                      <div className="grid gap-3 border border-(--border) bg-(--panel-muted) p-3">
                         <PermissionRow
                           label="Only include official DLC"
                           checked={form.onlyOfficialDlc}
                           onChange={(value) =>
                             setBoolean("onlyOfficialDlc", value)
                           }
+                          disabled
+                        />
+                        <PermissionRow
+                          label="Only include official DLC that I own"
+                          checked={false}
+                          onChange={() => {}}
+                          disabled
                         />
                       </div>
                     </div>
 
-                    <PermissionRow
-                      label="Only include official DLC that I own"
-                      checked={false}
-                      onChange={() => {}}
-                      disabled
-                    />
-
-                    {!hasOwnedOfficialDlcSelections ? (
-                      <div className="border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-sm text-amber-200">
-                        Choose which DLC you own.
-                      </div>
-                    ) : null}
+                    <div className="border border-sky-500/30 bg-sky-500/10 px-3 py-2 text-sm text-sky-200">
+                      Official DLC filters are not available yet. This section
+                      previews settings that appear here in a future update.
+                    </div>
 
                     <div className="grid gap-3 border border-(--border) bg-(--panel-muted) p-3">
                       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -796,7 +791,7 @@ function DashboardSettingsPage() {
                             }))
                           }
                           aria-pressed={isSelected}
-                          className={`border px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.18em] transition-colors ${
+                          className={`border px-2.5 py-1 text-xs font-semibold uppercase tracking-[0.16em] transition-colors ${
                             isSelected
                               ? getPathBadgeTone(option)
                               : "border-(--border) bg-(--panel-muted) text-(--muted)"
@@ -1239,14 +1234,14 @@ function formatPathOptionLabel(value: string) {
 function getPathBadgeTone(value: string) {
   switch (value.toLowerCase()) {
     case "lead":
-      return "border-emerald-400/30 bg-emerald-500/10 text-emerald-300";
+      return "border-emerald-700/50 bg-emerald-950 text-emerald-100";
     case "rhythm":
-      return "border-sky-400/30 bg-sky-500/10 text-sky-300";
+      return "border-sky-700/50 bg-sky-950 text-sky-100";
     case "bass":
-      return "border-orange-400/30 bg-orange-500/10 text-orange-300";
+      return "border-orange-700/50 bg-orange-950 text-orange-100";
     case "voice":
     case "vocals":
-      return "border-violet-400/30 bg-violet-500/10 text-violet-300";
+      return "border-violet-700/50 bg-violet-950 text-violet-100";
     default:
       return "border-(--border-strong) bg-(--panel) text-(--text)";
   }

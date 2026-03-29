@@ -121,7 +121,7 @@ function AppShell() {
                 <Headphones className="h-[18px] w-[18px]" />
               </div>
               <div className="min-w-0">
-                <p className="truncate text-3xl font-semibold tracking-tight text-(--text) max-[960px]:hidden">
+                <p className="truncate text-3xl font-semibold [font-family:var(--font-accent)] tracking-tight text-(--text) max-[960px]:hidden">
                   RockList.Live
                 </p>
               </div>
@@ -217,12 +217,7 @@ function AppShell() {
                 </Button>
               </div>
             ) : (
-              <Button
-                asChild
-                variant="outline"
-                size="sm"
-                className="h-[34px] px-4"
-              >
+              <Button asChild variant="default" size="sm" className="px-4">
                 <a href="/auth/twitch/start" className="no-underline">
                   Sign in with Twitch
                 </a>

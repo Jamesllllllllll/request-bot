@@ -97,13 +97,12 @@ function DashboardOverviewPage() {
         title="Account"
         description="Channel access and owner settings."
         meta={
-          <div className="flex flex-wrap items-center gap-3">
+          <div className="grid gap-3 md:grid-cols-2">
             {publicSlug ? (
               <ExternalCard
                 href={`/${publicSlug}`}
                 icon={Radio}
                 title="Open your playlist"
-                description="Playlist and request page"
               />
             ) : null}
             {data?.session?.viewer?.channel ? (
@@ -111,10 +110,13 @@ function DashboardOverviewPage() {
                 href="/dashboard/settings"
                 icon={Settings2}
                 title="Manage channel settings"
-                description="Permissions, bot, policy, and overlay"
               />
             ) : null}
-            <StatusPill
+          </div>
+        }
+        aside={
+          <div className="grid min-w-[14rem] gap-2">
+            <StatusIndicator
               label="Bot"
               value={getBotStatusLabel(botStatus)}
               tone={
@@ -125,7 +127,7 @@ function DashboardOverviewPage() {
                     : "neutral"
               }
             />
-            <StatusPill
+            <StatusIndicator
               label="Requests"
               value={settings?.requestsEnabled ? "Enabled" : "Paused"}
               tone={settings?.requestsEnabled ? "good" : "warn"}
@@ -279,24 +281,26 @@ function getOverviewNotes(input: {
   ];
 }
 
-function StatusPill(props: {
+function StatusIndicator(props: {
   label: string;
   value: string;
   tone: "good" | "warn" | "neutral";
 }) {
   const toneClass =
     props.tone === "good"
-      ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-200"
+      ? "text-emerald-200"
       : props.tone === "warn"
-        ? "border-amber-500/30 bg-amber-500/10 text-amber-200"
-        : "border-(--border) bg-(--panel-soft) text-(--text)";
+        ? "text-amber-200"
+        : "text-(--text)";
 
   return (
-    <div className={`border px-4 py-3 ${toneClass}`}>
-      <p className="text-xs font-semibold uppercase tracking-[0.2em]">
-        {props.label}
-      </p>
-      <p className="mt-1 text-base font-semibold capitalize">{props.value}</p>
+    <div className="border border-(--border) bg-(--panel-soft) px-4 py-3">
+      <div className="flex items-center justify-between gap-4">
+        <p className="text-xs font-semibold uppercase tracking-[0.2em] text-(--muted)">
+          {props.label}
+        </p>
+        <p className={`text-sm font-semibold ${toneClass}`}>{props.value}</p>
+      </div>
     </div>
   );
 }

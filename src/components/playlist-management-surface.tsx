@@ -766,13 +766,13 @@ export function PlaylistManagementSurface(
 
       {props.embedCurrentPlaylist ? (
         <section className="grid gap-3">
-          <div className="flex flex-wrap items-start justify-between gap-4">
+          <div className="flex flex-wrap items-start justify-between gap-4 max-[960px]:px-4">
             {props.currentPlaylistTitle ? (
               <h2 className="text-2xl font-semibold text-(--text)">
                 {props.currentPlaylistTitle}
               </h2>
             ) : null}
-            <div className="dashboard-playlist__actions flex flex-wrap gap-3">
+            <div className="dashboard-playlist__actions dashboard-playlist__actions--public flex flex-wrap items-center gap-3">
               <Button
                 variant="outline"
                 onClick={() => mutation.mutate({ action: "shufflePlaylist" })}
@@ -1390,7 +1390,7 @@ function CurrentPlaylistRows(props: {
         ))}
       </AnimatePresence>
       {props.items.length === 0 ? (
-        <p className="text-sm leading-7 text-(--muted)">
+        <p className="px-4 text-sm leading-7 text-(--muted)">
           No songs in the playlist yet.
         </p>
       ) : null}

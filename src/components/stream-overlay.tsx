@@ -188,21 +188,38 @@ function OverlayCard(props: {
           >
             {titleLine}
           </p>
-          <p
-            className="mt-1 truncate font-medium text-(--overlay-muted)"
-            style={{ fontSize: "calc(var(--overlay-meta-size) + 2px)" }}
-          >
-            {requesterName}
-          </p>
-          {detailLines.map((detailLine) => (
+          {detailLines.length === 0 ? (
             <p
-              key={detailLine}
-              className="mt-1 truncate text-(--overlay-muted)"
-              style={{ fontSize: "var(--overlay-meta-size)" }}
+              className="mt-1 truncate font-medium text-(--overlay-muted)"
+              style={{ fontSize: "calc(var(--overlay-meta-size) + 2px)" }}
             >
-              {detailLine}
+              {requesterName}
             </p>
-          ))}
+          ) : (
+            <>
+              <p
+                className="mt-1 truncate font-medium text-(--overlay-muted)"
+                style={{ fontSize: "calc(var(--overlay-meta-size) + 2px)" }}
+              >
+                {detailLines[0]}
+              </p>
+              {detailLines.slice(1).map((detailLine) => (
+                <p
+                  key={detailLine}
+                  className="mt-1 truncate text-(--overlay-muted)"
+                  style={{ fontSize: "var(--overlay-meta-size)" }}
+                >
+                  {detailLine}
+                </p>
+              ))}
+              <p
+                className="mt-1 truncate text-(--overlay-muted)"
+                style={{ fontSize: "var(--overlay-meta-size)" }}
+              >
+                {requesterName}
+              </p>
+            </>
+          )}
           <div className="mt-2 flex flex-wrap items-center gap-2">
             {props.item.pickNumber && props.item.pickNumber <= 3 ? (
               <PickBadge pickNumber={props.item.pickNumber} />

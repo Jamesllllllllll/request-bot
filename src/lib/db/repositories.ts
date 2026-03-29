@@ -1,4 +1,5 @@
 import { and, asc, desc, eq, inArray, sql } from "drizzle-orm";
+import { tuningOptions } from "~/lib/channel-options";
 import type { AppEnv } from "~/lib/env";
 import {
   getAppAccessToken,
@@ -35,7 +36,9 @@ import {
   blacklistedSongs,
   blockedUsers,
   type CatalogSongInsert,
+  type ChannelOwnedOfficialDlcInsert,
   catalogSongs,
+  channelOwnedOfficialDlcs,
   channelSettings,
   channels,
   type EventSubDeliveryInsert,
@@ -273,7 +276,18 @@ export async function upsertUserAndChannel(
 
   await db
     .insert(channelSettings)
-    .values({ channelId: channel.id })
+    .values({
+      channelId: channel.id,
+      moderatorCanManageRequests: true,
+      moderatorCanManageBlacklist: true,
+      moderatorCanManageSetlist: true,
+      moderatorCanManageBlockedChatters: true,
+      moderatorCanViewVipTokens: true,
+      moderatorCanManageVipTokens: true,
+      moderatorCanManageTags: true,
+      allowedTuningsJson: JSON.stringify(Array.from(tuningOptions)),
+      maxQueueSize: 50,
+    })
     .onConflictDoNothing();
   await db
     .insert(playlists)
@@ -382,6 +396,7 @@ export async function getDashboardState(env: AppEnv, ownerUserId: string) {
 
   const [
     settings,
+    ownedOfficialDlcRows,
     playlist,
     items,
     blocks,
@@ -397,6 +412,13 @@ export async function getDashboardState(env: AppEnv, ownerUserId: string) {
   ] = await Promise.all([
     db.query.channelSettings.findFirst({
       where: eq(channelSettings.channelId, channel.id),
+    }),
+    db.query.channelOwnedOfficialDlcs.findMany({
+      where: eq(channelOwnedOfficialDlcs.channelId, channel.id),
+      columns: {
+        id: true,
+        updatedAt: true,
+      },
     }),
     db.query.playlists.findFirst({
       where: eq(playlists.channelId, channel.id),
@@ -459,6 +481,14 @@ export async function getDashboardState(env: AppEnv, ownerUserId: string) {
   return {
     channel,
     settings,
+    ownedOfficialDlcImport: {
+      count: ownedOfficialDlcRows.length,
+      importedAt: ownedOfficialDlcRows.reduce<number | null>(
+        (latest, row) =>
+          latest == null || row.updatedAt > latest ? row.updatedAt : latest,
+        null
+      ),
+    },
     playlist,
     items: items.filter(
       (item) => item.status === "queued" || item.status === "current"
@@ -473,6 +503,109 @@ export async function getDashboardState(env: AppEnv, ownerUserId: string) {
     setlistArtists: setlistArtistRows,
     vipTokens: vipTokenRows,
     playedSongs: playedRows,
+  };
+}
+
+export async function getAdminDashboardBaseState(env: AppEnv, userId: string) {
+  const user = await getUserById(env, userId);
+  if (!user?.isAdmin) {
+    return null;
+  }
+
+  const db = getDb(env);
+  const channel = await db.query.channels.findFirst({
+    where: eq(channels.ownerUserId, userId),
+  });
+
+  if (!channel) {
+    return null;
+  }
+
+  const settings = await db.query.channelSettings.findFirst({
+    where: eq(channelSettings.channelId, channel.id),
+  });
+
+  return {
+    channel,
+    settings,
+  };
+}
+
+export async function getRequestLogsPageForChannel(
+  env: AppEnv,
+  input: {
+    channelId: string;
+    offset: number;
+    limit: number;
+  }
+) {
+  const db = getDb(env);
+  const [rows, totalResult, issueCountResult] = await Promise.all([
+    db.query.requestLogs.findMany({
+      where: eq(requestLogs.channelId, input.channelId),
+      orderBy: [desc(requestLogs.createdAt)],
+      offset: input.offset,
+      limit: input.limit,
+    }),
+    db.all<{ count: number }>(sql`
+      SELECT count(*) AS count
+      FROM request_logs
+      WHERE channel_id = ${input.channelId}
+    `),
+    db.all<{ count: number }>(sql`
+      SELECT count(*) AS count
+      FROM request_logs
+      WHERE channel_id = ${input.channelId}
+        AND outcome <> 'accepted'
+    `),
+  ]);
+
+  const total = unwrapD1Rows(totalResult)[0]?.count ?? 0;
+  const issueCount = unwrapD1Rows(issueCountResult)[0]?.count ?? 0;
+
+  return {
+    rows,
+    total,
+    issueCount,
+    offset: input.offset,
+    limit: input.limit,
+    hasPrevious: input.offset > 0,
+    hasNext: input.offset + rows.length < total,
+  };
+}
+
+export async function getAuditLogsPageForChannel(
+  env: AppEnv,
+  input: {
+    channelId: string;
+    offset: number;
+    limit: number;
+  }
+) {
+  const db = getDb(env);
+  const [rows, totalResult] = await Promise.all([
+    db.query.auditLogs.findMany({
+      where: eq(auditLogs.channelId, input.channelId),
+      orderBy: [desc(auditLogs.createdAt)],
+      offset: input.offset,
+      limit: input.limit,
+    }),
+    db.all<{ count: number }>(sql`
+      SELECT count(*) AS count
+      FROM audit_logs
+      WHERE channel_id = ${input.channelId}
+    `),
+  ]);
+
+  const total = unwrapD1Rows(totalResult)[0]?.count ?? 0;
+
+  return {
+    rows,
+    total,
+    offset: input.offset,
+    limit: input.limit,
+    hasPrevious: input.offset > 0,
+    hasNext: input.offset + rows.length < total,
   };
 }
 
@@ -2362,8 +2495,7 @@ export async function updateSettings(
     commandPrefix: string;
   }
 ) {
-  const moderatorCanViewVipTokens =
-    input.moderatorCanViewVipTokens || input.moderatorCanManageVipTokens;
+  const moderatorCanViewVipTokens = true;
 
   await getDb(env)
     .update(channelSettings)
@@ -2413,6 +2545,47 @@ export async function updateSettings(
       updatedAt: Date.now(),
     })
     .where(eq(channelSettings.channelId, channelId));
+}
+
+export async function replaceChannelOwnedOfficialDlcs(
+  env: AppEnv,
+  channelId: string,
+  entries: Array<
+    Pick<
+      ChannelOwnedOfficialDlcInsert,
+      | "sourceKey"
+      | "sourceAppId"
+      | "artistName"
+      | "title"
+      | "albumName"
+      | "filePath"
+      | "arrangementsJson"
+      | "tuningsJson"
+    >
+  >
+) {
+  const db = getDb(env);
+  const now = Date.now();
+
+  await db.transaction(async (tx) => {
+    await tx
+      .delete(channelOwnedOfficialDlcs)
+      .where(eq(channelOwnedOfficialDlcs.channelId, channelId));
+
+    if (!entries.length) {
+      return;
+    }
+
+    await tx.insert(channelOwnedOfficialDlcs).values(
+      entries.map((entry) => ({
+        id: createId("odlc"),
+        channelId,
+        ...entry,
+        createdAt: now,
+        updatedAt: now,
+      }))
+    );
+  });
 }
 
 export async function updateAdminBotOfflineTesting(

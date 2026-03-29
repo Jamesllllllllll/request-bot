@@ -190,6 +190,51 @@ export async function getTwitchUserByLogin(input: {
   return payload.data[0] ?? null;
 }
 
+export async function getTwitchUsersByLogins(input: {
+  env: AppEnv;
+  accessToken: string;
+  logins: string[];
+}) {
+  const users: TwitchUserResponse["data"] = [];
+
+  for (const loginBatch of chunkArray(
+    [
+      ...new Set(input.logins.map((login) => login.trim().toLowerCase())),
+    ].filter(Boolean),
+    100
+  )) {
+    if (!loginBatch.length) {
+      continue;
+    }
+
+    const url = new URL(`${twitchBaseUrl}/users`);
+    for (const login of loginBatch) {
+      url.searchParams.append("login", login);
+    }
+
+    const response = await fetchWithRetry({
+      url,
+      init: {
+        headers: authHeaders(input.env, input.accessToken),
+      },
+    });
+
+    if (!response.ok) {
+      const errorBody = await response.text().catch(() => "");
+      throw new TwitchApiError(
+        `Failed to fetch Twitch users by login: ${response.status}`,
+        response.status,
+        errorBody
+      );
+    }
+
+    const payload = (await response.json()) as TwitchUserResponse;
+    users.push(...payload.data);
+  }
+
+  return users;
+}
+
 export async function getTwitchUserById(input: {
   env: AppEnv;
   accessToken: string;

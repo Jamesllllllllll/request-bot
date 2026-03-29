@@ -957,7 +957,7 @@ export function SongSearchPanel(props: {
                                 {song.title}
                               </p>
                               {isDisabled ? (
-                                <span className="inline-flex items-center border border-amber-400/35 bg-amber-500/12 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.16em] text-amber-100">
+                                <span className="inline-flex items-center border border-amber-700/50 bg-amber-950 px-2 py-[3px] text-xs font-semibold uppercase tracking-[0.16em] text-amber-100">
                                   {disabledReason}
                                 </span>
                               ) : null}
@@ -979,21 +979,21 @@ export function SongSearchPanel(props: {
                                 <PathBadge
                                   label="Lead"
                                   shortLabel="L"
-                                  className="border-emerald-400/30 bg-emerald-500/10 text-emerald-300 hover:bg-emerald-500/10"
+                                  className="border-emerald-700/50 bg-emerald-950 text-emerald-100 hover:bg-emerald-950"
                                 />
                               ) : null}
                               {song.parts?.includes("rhythm") ? (
                                 <PathBadge
                                   label="Rhythm"
                                   shortLabel="R"
-                                  className="border-sky-400/30 bg-sky-500/10 text-sky-300 hover:bg-sky-500/10"
+                                  className="border-sky-700/50 bg-sky-950 text-sky-100 hover:bg-sky-950"
                                 />
                               ) : null}
                               {song.parts?.includes("bass") ? (
                                 <PathBadge
                                   label="Bass"
                                   shortLabel="B"
-                                  className="border-orange-400/30 bg-orange-500/10 text-orange-300 hover:bg-orange-500/10"
+                                  className="border-orange-700/50 bg-orange-950 text-orange-100 hover:bg-orange-950"
                                 />
                               ) : null}
                               {song.parts?.includes("voice") ||
@@ -1001,7 +1001,7 @@ export function SongSearchPanel(props: {
                                 <PathBadge
                                   label="Lyrics"
                                   shortLabel="V"
-                                  className="border-violet-400/30 bg-violet-500/10 text-violet-300 hover:bg-violet-500/10"
+                                  className="border-violet-700/50 bg-violet-950 text-violet-100 hover:bg-violet-950"
                                 />
                               ) : null}
                             </div>
@@ -1029,7 +1029,7 @@ export function SongSearchPanel(props: {
                                 {song.title}
                               </p>
                               {isDisabled ? (
-                                <span className="inline-flex items-center border border-amber-400/35 bg-amber-500/12 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.16em] text-amber-100">
+                                <span className="inline-flex items-center border border-amber-700/50 bg-amber-950 px-2 py-[3px] text-xs font-semibold uppercase tracking-[0.16em] text-amber-100">
                                   {disabledReason}
                                 </span>
                               ) : null}
@@ -1051,21 +1051,21 @@ export function SongSearchPanel(props: {
                                 <PathBadge
                                   label="Lead"
                                   shortLabel="L"
-                                  className="border-emerald-400/30 bg-emerald-500/10 text-emerald-300 hover:bg-emerald-500/10"
+                                  className="border-emerald-700/50 bg-emerald-950 text-emerald-100 hover:bg-emerald-950"
                                 />
                               ) : null}
                               {song.parts?.includes("rhythm") ? (
                                 <PathBadge
                                   label="Rhythm"
                                   shortLabel="R"
-                                  className="border-sky-400/30 bg-sky-500/10 text-sky-300 hover:bg-sky-500/10"
+                                  className="border-sky-700/50 bg-sky-950 text-sky-100 hover:bg-sky-950"
                                 />
                               ) : null}
                               {song.parts?.includes("bass") ? (
                                 <PathBadge
                                   label="Bass"
                                   shortLabel="B"
-                                  className="border-orange-400/30 bg-orange-500/10 text-orange-300 hover:bg-orange-500/10"
+                                  className="border-orange-700/50 bg-orange-950 text-orange-100 hover:bg-orange-950"
                                 />
                               ) : null}
                               {song.parts?.includes("voice") ||
@@ -1073,7 +1073,7 @@ export function SongSearchPanel(props: {
                                 <PathBadge
                                   label="Lyrics"
                                   shortLabel="V"
-                                  className="border-violet-400/30 bg-violet-500/10 text-violet-300 hover:bg-violet-500/10"
+                                  className="border-violet-700/50 bg-violet-950 text-violet-100 hover:bg-violet-950"
                                 />
                               ) : null}
                             </div>
@@ -1152,14 +1152,14 @@ function PathBadge(props: {
 function getPathToneByValue(value: string) {
   switch (value.toLowerCase()) {
     case "lead":
-      return "border-emerald-400/30 bg-emerald-500/10 text-emerald-300";
+      return "border-emerald-700/50 bg-emerald-950 text-emerald-100";
     case "rhythm":
-      return "border-sky-400/30 bg-sky-500/10 text-sky-300";
+      return "border-sky-700/50 bg-sky-950 text-sky-100";
     case "bass":
-      return "border-orange-400/30 bg-orange-500/10 text-orange-300";
+      return "border-orange-700/50 bg-orange-950 text-orange-100";
     case "voice":
     case "vocals":
-      return "border-violet-400/30 bg-violet-500/10 text-violet-300";
+      return "border-violet-700/50 bg-violet-950 text-violet-100";
     default:
       return "border-(--border-strong) bg-(--panel) text-(--text)";
   }

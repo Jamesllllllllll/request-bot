@@ -57,6 +57,10 @@ export type DashboardSettingsData = {
     botReadyState: string;
   };
   settings: DashboardSettingsFormData | null;
+  ownedOfficialDlcImport: {
+    count: number;
+    importedAt: number | null;
+  };
   bot: {
     connected: boolean;
     configuredUsername: string;
@@ -84,6 +88,7 @@ export const getDashboardSettings = createServerFn({ method: "GET" }).handler(
             ),
           }
         : null,
+      ownedOfficialDlcImport: state.ownedOfficialDlcImport,
       playedSongs: state.playedSongs,
       bot: {
         connected: !!botAuthorization,

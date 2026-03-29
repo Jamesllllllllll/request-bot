@@ -1,10 +1,10 @@
-// Route: Returns request and moderation log data for the active dashboard channel.
+// Route: Returns paginated audit log data for the active admin dashboard channel.
 import { env } from "cloudflare:workers";
 import { createFileRoute } from "@tanstack/react-router";
 import { getSessionUserId } from "~/lib/auth/session.server";
 import {
   getAdminDashboardBaseState,
-  getRequestLogsPageForChannel,
+  getAuditLogsPageForChannel,
 } from "~/lib/db/repositories";
 import { assertDatabaseSchemaCurrent } from "~/lib/db/schema-version";
 import type { AppEnv } from "~/lib/env";
@@ -31,7 +31,7 @@ function parsePaginationParam(
     : Math.max(1, Math.min(max, normalizedValue));
 }
 
-export const Route = createFileRoute("/api/dashboard/logs")({
+export const Route = createFileRoute("/api/dashboard/audits")({
   server: {
     handlers: {
       GET: async ({ request }) => {
@@ -55,7 +55,7 @@ export const Route = createFileRoute("/api/dashboard/logs")({
           1000
         );
         const limit = parsePaginationParam(url.searchParams, "limit", 10, 100);
-        const logsPage = await getRequestLogsPageForChannel(runtimeEnv, {
+        const auditsPage = await getAuditLogsPageForChannel(runtimeEnv, {
           channelId: state.channel.id,
           offset,
           limit,
@@ -67,13 +67,12 @@ export const Route = createFileRoute("/api/dashboard/logs")({
             login: state.channel.login,
             displayName: state.channel.displayName,
           },
-          logs: logsPage.rows,
-          total: logsPage.total,
-          issueCount: logsPage.issueCount,
-          offset: logsPage.offset,
-          limit: logsPage.limit,
-          hasPrevious: logsPage.hasPrevious,
-          hasNext: logsPage.hasNext,
+          audits: auditsPage.rows,
+          total: auditsPage.total,
+          offset: auditsPage.offset,
+          limit: auditsPage.limit,
+          hasPrevious: auditsPage.hasPrevious,
+          hasNext: auditsPage.hasNext,
         });
       },
     },

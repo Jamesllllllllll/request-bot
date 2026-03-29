@@ -574,7 +574,6 @@ function PublicChannelPage() {
       }
     : null;
   const viewerRequestState = viewerRequestStateQuery.data?.viewer ?? null;
-  const viewerCanSubmitRequests = !!viewerRequestState?.access.allowed;
   const viewerActiveRequests = useMemo(
     () =>
       currentViewer
@@ -722,11 +721,7 @@ function PublicChannelPage() {
             : undefined
         }
         actionsLabel={
-          canManagePlaylist
-            ? "Add"
-            : signedInViewer && viewerCanSubmitRequests
-              ? "Request"
-              : "Actions"
+          canManagePlaylist ? "Add" : signedInViewer ? "Request" : "Actions"
         }
         summaryContent={
           canManagePlaylist ? null : (
@@ -764,32 +759,30 @@ function PublicChannelPage() {
                 />
               )
             : signedInViewer
-              ? viewerCanSubmitRequests
-                ? ({ song, resultState }: SearchSongActionRenderArgs) => (
-                    <ViewerSearchSongActions
-                      song={song}
-                      resultState={resultState}
-                      viewerState={viewerRequestState}
-                      viewerStateLoading={viewerRequestStateQuery.isLoading}
-                      viewerStateError={getErrorMessage(
-                        viewerRequestStateQuery.error,
-                        ""
-                      )}
-                      activeRequests={viewerActiveRequests}
-                      replaceExisting={effectiveReplaceExisting}
-                      mutationIsPending={viewerRequestMutation.isPending}
-                      pendingViewerRequest={pendingViewerRequest}
-                      onSubmit={(requestKind) =>
-                        viewerRequestMutation.mutate({
-                          action: "submit",
-                          song,
-                          requestKind,
-                          replaceExisting: effectiveReplaceExisting,
-                        })
-                      }
-                    />
-                  )
-                : undefined
+              ? ({ song, resultState }: SearchSongActionRenderArgs) => (
+                  <ViewerSearchSongActions
+                    song={song}
+                    resultState={resultState}
+                    viewerState={viewerRequestState}
+                    viewerStateLoading={viewerRequestStateQuery.isLoading}
+                    viewerStateError={getErrorMessage(
+                      viewerRequestStateQuery.error,
+                      ""
+                    )}
+                    activeRequests={viewerActiveRequests}
+                    replaceExisting={effectiveReplaceExisting}
+                    mutationIsPending={viewerRequestMutation.isPending}
+                    pendingViewerRequest={pendingViewerRequest}
+                    onSubmit={(requestKind) =>
+                      viewerRequestMutation.mutate({
+                        action: "submit",
+                        song,
+                        requestKind,
+                        replaceExisting: effectiveReplaceExisting,
+                      })
+                    }
+                  />
+                )
               : undefined
         }
         advancedFiltersContent={
@@ -823,6 +816,7 @@ function PublicChannelPage() {
 
       <ChannelRulesPanel
         slug={slug}
+        channelDisplayName={channelDisplayName}
         blacklistEnabled={!!data?.settings?.blacklistEnabled}
         setlistEnabled={!!data?.settings?.setlistEnabled}
         letSetlistBypassBlacklist={!!data?.settings?.letSetlistBypassBlacklist}
@@ -847,7 +841,10 @@ function PublicChannelPage() {
         vipTokens={data?.vipTokens ?? []}
       />
 
-      <PublicPlayedHistoryCard slug={slug} />
+      <PublicPlayedHistoryCard
+        slug={slug}
+        channelDisplayName={channelDisplayName}
+      />
     </section>
   );
 }

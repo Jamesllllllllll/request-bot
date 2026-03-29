@@ -6,7 +6,7 @@ import { callBackend } from "~/lib/backend";
 import {
   createAuditLog,
   deleteBotAuthorization,
-  getAdminDashboardState,
+  getAdminDashboardBaseState,
   getBotAuthorization,
   updateAdminBotOfflineTesting,
 } from "~/lib/db/repositories";
@@ -15,7 +15,7 @@ import { getAppAccessToken, getTwitchUserById } from "~/lib/twitch/api";
 import { disconnectBotAuthFromReplies } from "~/lib/twitch/bot";
 import { json } from "~/lib/utils";
 
-async function requireAdminDashboardState(
+async function requireAdminDashboardBaseState(
   request: Request,
   runtimeEnv: AppEnv
 ) {
@@ -24,7 +24,7 @@ async function requireAdminDashboardState(
     return null;
   }
 
-  return getAdminDashboardState(runtimeEnv, userId);
+  return getAdminDashboardBaseState(runtimeEnv, userId);
 }
 
 export const Route = createFileRoute("/api/dashboard/admin")({
@@ -32,7 +32,7 @@ export const Route = createFileRoute("/api/dashboard/admin")({
     handlers: {
       GET: async ({ request }) => {
         const runtimeEnv = env as AppEnv;
-        const state = await requireAdminDashboardState(request, runtimeEnv);
+        const state = await requireAdminDashboardBaseState(request, runtimeEnv);
         if (!state) {
           return json({ error: "Forbidden" }, { status: 403 });
         }
@@ -69,8 +69,6 @@ export const Route = createFileRoute("/api/dashboard/admin")({
                   state.settings.adminForceBotWhileOffline,
               }
             : null,
-          logs: state.logs,
-          audits: state.audits,
           bot: {
             connected: !!botAuthorization,
             configuredUsername: runtimeEnv.TWITCH_BOT_USERNAME,
@@ -82,7 +80,7 @@ export const Route = createFileRoute("/api/dashboard/admin")({
       },
       POST: async ({ request }) => {
         const runtimeEnv = env as AppEnv;
-        const state = await requireAdminDashboardState(request, runtimeEnv);
+        const state = await requireAdminDashboardBaseState(request, runtimeEnv);
         if (!state) {
           return json(
             { error: "Forbidden", message: "Forbidden" },

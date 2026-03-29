@@ -33,6 +33,7 @@ type SearchResponse = {
 
 export function ChannelRulesPanel(props: {
   slug: string;
+  channelDisplayName?: string | null;
   blacklistEnabled: boolean;
   setlistEnabled: boolean;
   letSetlistBypassBlacklist: boolean;
@@ -232,9 +233,11 @@ export function ChannelRulesPanel(props: {
 
   return (
     <section className="grid gap-6 max-[960px]:gap-4 max-[960px]:border-t max-[960px]:border-(--border) max-[960px]:pt-4">
-      <div className="grid gap-2">
+      <div className="grid gap-2 px-8 max-[960px]:px-6">
         <h2 className="text-2xl font-semibold tracking-tight text-(--text)">
-          Channel rules
+          {props.channelDisplayName
+            ? `${props.channelDisplayName}'s channel rules`
+            : "Channel rules"}
         </h2>
       </div>
 

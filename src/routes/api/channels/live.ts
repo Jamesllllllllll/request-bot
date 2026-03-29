@@ -6,12 +6,16 @@ import type { AppEnv } from "~/lib/env";
 import {
   getAppAccessToken,
   getLiveStreams,
-  getTwitchUserByLogin,
+  getTwitchUsersByLogins,
   searchTwitchChannels,
 } from "~/lib/twitch/api";
+import { ROCKSMITH_DEMO_LOGINS } from "~/lib/twitch/rocksmith-demo-logins";
 import { json } from "~/lib/utils";
 
 const FEATURED_DEMO_LOGIN = "younggun";
+const ROCKSMITH_TAGS = new Set(["rocksmith", "rocksmith2014"]);
+const ROCKSMITH_SEARCH_LIMIT = 100;
+const ROCKSMITH_DEMO_RESULTS_LIMIT = 6;
 
 export const Route = createFileRoute("/api/channels/live")({
   server: {
@@ -23,22 +27,24 @@ export const Route = createFileRoute("/api/channels/live")({
         if (url.searchParams.get("source") === "rocksmith") {
           try {
             const appToken = await getAppAccessToken(runtimeEnv);
-            const twitchChannels = await searchTwitchChannels({
-              env: runtimeEnv,
-              accessToken: appToken.access_token,
-              query: "Rocksmith",
-              first: 6,
-              liveOnly: true,
-            });
-            const featuredChannel = await getFeaturedRocksmithDemoChannel({
-              env: runtimeEnv,
-              accessToken: appToken.access_token,
-            });
+            const [curatedChannels, twitchChannels] = await Promise.all([
+              getCuratedRocksmithDemoChannels({
+                env: runtimeEnv,
+                accessToken: appToken.access_token,
+              }),
+              searchTwitchChannels({
+                env: runtimeEnv,
+                accessToken: appToken.access_token,
+                query: "Rocksmith",
+                first: ROCKSMITH_SEARCH_LIMIT,
+                liveOnly: true,
+              }),
+            ]);
 
             return json({
               channels: toRocksmithDemoChannels(
-                twitchChannels,
-                featuredChannel
+                curatedChannels,
+                twitchChannels
               ),
             });
           } catch (error) {
@@ -61,17 +67,17 @@ export const Route = createFileRoute("/api/channels/live")({
 });
 
 function toRocksmithDemoChannels(
-  channels: Awaited<ReturnType<typeof searchTwitchChannels>>,
-  featuredChannel?: HomeLiveChannel | null
+  curatedChannels: HomeLiveChannel[],
+  channels: Awaited<ReturnType<typeof searchTwitchChannels>>
 ) {
   const seenLogins = new Set<string>();
-  const orderedChannels = [
-    ...(featuredChannel ? [featuredChannel] : []),
-    ...channels.map((channel) => toRocksmithDemoChannel(channel)),
-  ];
-
-  return orderedChannels.filter((channel) => {
-    const login = channel.login.trim().toLowerCase();
+  const dedupedChannels = [
+    ...curatedChannels,
+    ...channels
+      .filter((channel) => hasRocksmithTag(channel))
+      .map((channel) => toRocksmithDemoChannel(channel)),
+  ].filter((channel) => {
+    const login = normalizeLogin(channel.login);
     if (!login || seenLogins.has(login)) {
       return false;
     }
@@ -79,6 +85,17 @@ function toRocksmithDemoChannels(
     seenLogins.add(login);
     return true;
   });
+
+  const featuredIndex = dedupedChannels.findIndex(
+    (channel) => normalizeLogin(channel.login) === FEATURED_DEMO_LOGIN
+  );
+
+  if (featuredIndex > 0) {
+    const [featuredChannel] = dedupedChannels.splice(featuredIndex, 1);
+    dedupedChannels.unshift(featuredChannel);
+  }
+
+  return dedupedChannels.slice(0, ROCKSMITH_DEMO_RESULTS_LIMIT);
 }
 
 type HomeLiveChannel = {
@@ -103,7 +120,7 @@ type HomeLiveChannel = {
 function toRocksmithDemoChannel(
   channel: Awaited<ReturnType<typeof searchTwitchChannels>>[number]
 ): HomeLiveChannel {
-  const login = channel.broadcaster_login.trim().toLowerCase();
+  const login = normalizeLogin(channel.broadcaster_login);
 
   return {
     id: `rocksmith-${channel.id}`,
@@ -117,44 +134,56 @@ function toRocksmithDemoChannel(
   };
 }
 
-async function getFeaturedRocksmithDemoChannel(input: {
+async function getCuratedRocksmithDemoChannels(input: {
   env: AppEnv;
   accessToken: string;
 }) {
-  const user = await getTwitchUserByLogin({
+  const users = await getTwitchUsersByLogins({
     env: input.env,
     accessToken: input.accessToken,
-    login: FEATURED_DEMO_LOGIN,
+    logins: [...ROCKSMITH_DEMO_LOGINS],
   });
-
-  if (!user) {
-    return null;
-  }
-
-  const [stream] = await getLiveStreams({
+  const liveStreams = await getLiveStreams({
     env: input.env,
     appAccessToken: input.accessToken,
-    broadcasterUserIds: [user.id],
+    broadcasterUserIds: users.map((user) => user.id),
   });
+  const liveStreamsByLogin = new Map(
+    liveStreams.map((stream) => [normalizeLogin(stream.user_login), stream])
+  );
 
-  if (!stream) {
-    return null;
-  }
+  return ROCKSMITH_DEMO_LOGINS.map((login) => liveStreamsByLogin.get(login))
+    .filter((stream) => stream != null)
+    .map((stream) => toRocksmithDemoChannelFromLiveStream(stream));
+}
 
-  const login = user.login.trim().toLowerCase();
+function toRocksmithDemoChannelFromLiveStream(
+  stream: Awaited<ReturnType<typeof getLiveStreams>>[number]
+): HomeLiveChannel {
+  const login = normalizeLogin(stream.user_login);
 
   return {
-    id: `rocksmith-${user.id}`,
+    id: `rocksmith-${stream.user_id}`,
     slug: login,
-    displayName: user.display_name || user.login,
+    displayName: stream.user_name,
     login,
-    streamTitle: stream.title || null,
+    streamTitle: stream.title ?? null,
     streamThumbnailUrl: stream.thumbnail_url
-      ? stream.thumbnail_url
-          .replace("{width}", "640")
-          .replace("{height}", "360")
-      : `https://static-cdn.jtvnw.net/previews-ttv/live_user_${login}-640x360.jpg`,
+      .replace("{width}", "640")
+      .replace("{height}", "360"),
     currentItem: null,
     nextItem: null,
-  } satisfies HomeLiveChannel;
+  };
+}
+
+function hasRocksmithTag(
+  channel: Awaited<ReturnType<typeof searchTwitchChannels>>[number]
+) {
+  return (channel.tags ?? []).some((tag) =>
+    ROCKSMITH_TAGS.has(tag.trim().toLowerCase())
+  );
+}
+
+function normalizeLogin(login: string) {
+  return login.trim().toLowerCase();
 }

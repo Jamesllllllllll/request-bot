@@ -1,5 +1,6 @@
 import { callBackend } from "~/lib/backend";
 import {
+  type CatalogSearchInput,
   consumeVipToken,
   countAcceptedRequestsInPeriod,
   countActiveRequestsForUser,
@@ -17,13 +18,20 @@ import {
 import type { AppEnv } from "~/lib/env";
 import type { PlaylistMutationResult } from "~/lib/playlist/types";
 import {
+  parseRequestModifiers,
+  STREAMER_CHOICE_TITLE,
+  STREAMER_CHOICE_WARNING_CODE,
+} from "~/lib/request-modes";
+import {
   buildBlacklistMessage,
   buildChannelPlaylistMessage,
   buildHowMessage,
   buildSearchMessage,
   buildSetlistMessage,
   getActiveRequestLimit,
+  getArraySetting,
   getRateLimitWindow,
+  getRequiredPathsMatchMode,
   getRequiredPathsWarning,
   isRequesterAllowed,
   isSongAllowed,
@@ -72,11 +80,15 @@ export interface EventSubChatState {
   items: Array<{
     id: string;
     songId: string | null;
+    songTitle?: string | null;
     status: string;
     requestKind: string | null;
+    requestedQuery?: string | null;
+    warningCode?: string | null;
     requestedByTwitchUserId: string | null;
     requestedByLogin: string | null;
     requestedByDisplayName: string | null;
+    position?: number | null;
   }>;
 }
 
@@ -142,6 +154,7 @@ export interface EventSubChatDependencies {
       login: string;
       displayName?: string | null;
       twitchUserId?: string | null;
+      count?: number;
       autoSubscriberGrant?: boolean;
     }
   ): Promise<unknown>;
@@ -160,8 +173,8 @@ export interface EventSubChatDependencies {
   ): Promise<SongSearchResult | null>;
   searchSongs(
     env: AppEnv,
-    input: { query: string; page: number; pageSize: number }
-  ): Promise<{ results: SongSearchResult[] }>;
+    input: CatalogSearchInput
+  ): Promise<{ results: SongSearchResult[]; total?: number }>;
   resolveTwitchUserByLogin(
     env: AppEnv,
     login: string
@@ -270,6 +283,29 @@ function getRequesterMatchingActiveItem(input: {
   );
 }
 
+function getRequesterMatchingSpecialItem(input: {
+  items: EventSubChatState["items"];
+  requesterTwitchUserId: string;
+  requestedQuery: string;
+  warningCode: string;
+}) {
+  const normalizedRequestedQuery = input.requestedQuery.trim().toLowerCase();
+  if (!normalizedRequestedQuery) {
+    return null;
+  }
+
+  return (
+    input.items.find(
+      (item) =>
+        item.requestedByTwitchUserId === input.requesterTwitchUserId &&
+        item.warningCode === input.warningCode &&
+        item.requestedQuery?.trim().toLowerCase() ===
+          normalizedRequestedQuery &&
+        (item.status === "queued" || item.status === "current")
+    ) ?? null
+  );
+}
+
 function getRejectedSongMessage(input: {
   login: string;
   reason?: string;
@@ -316,6 +352,353 @@ function parseRemoveKind(query: string | undefined) {
 
 function normalizeRequestedLogin(login: string | undefined) {
   return login?.trim().replace(/^@+/, "").toLowerCase() ?? undefined;
+}
+
+function buildCatalogSearchInput(input: {
+  query: string;
+  page: number;
+  pageSize: number;
+  state: EventSubChatState;
+  allowBlacklistOverride: boolean;
+}) {
+  const blacklistFilters =
+    input.allowBlacklistOverride || !input.state.settings.blacklistEnabled
+      ? {}
+      : {
+          excludeSongIds: input.state.blacklistSongs.map((song) => song.songId),
+          excludeGroupedProjectIds: input.state.blacklistSongGroups.map(
+            (song) => song.groupedProjectId
+          ),
+          excludeArtistIds: input.state.blacklistArtists.map(
+            (artist) => artist.artistId
+          ),
+          excludeArtistNames: input.state.blacklistArtists.map(
+            (artist) => artist.artistName
+          ),
+          excludeAuthorIds: input.state.blacklistCharters.map(
+            (charter) => charter.charterId
+          ),
+          excludeCreatorNames: input.state.blacklistCharters.map(
+            (charter) => charter.charterName
+          ),
+        };
+
+  return {
+    query: input.query,
+    page: input.page,
+    pageSize: input.pageSize,
+    restrictToOfficial: !!input.state.settings.onlyOfficialDlc,
+    allowedTuningsFilter: getArraySetting(
+      input.state.settings.allowedTuningsJson
+    ),
+    requiredPartsFilter: getArraySetting(
+      input.state.settings.requiredPathsJson
+    ),
+    requiredPartsFilterMatchMode: getRequiredPathsMatchMode(
+      input.state.settings.requiredPathsMatchMode
+    ),
+    sortBy: "relevance" as const,
+    sortDirection: "desc" as const,
+    ...blacklistFilters,
+  } satisfies CatalogSearchInput;
+}
+
+function getSongAllowance(input: {
+  song: SongSearchResult;
+  state: EventSubChatState;
+  requesterContext: Parameters<typeof isRequesterAllowed>[1];
+  allowBlacklistOverride: boolean;
+}) {
+  return isSongAllowed({
+    song: input.song,
+    settings: input.state.settings,
+    blacklistArtists: input.state.blacklistArtists,
+    blacklistCharters: input.state.blacklistCharters,
+    blacklistSongs: input.state.blacklistSongs,
+    blacklistSongGroups: input.state.blacklistSongGroups,
+    setlistArtists: input.state.setlistArtists,
+    requester: input.requesterContext,
+    allowBlacklistOverride: input.allowBlacklistOverride,
+  });
+}
+
+async function resolveChatRandomMatch(input: {
+  env: AppEnv;
+  deps: EventSubChatDependencies;
+  query: string;
+  state: EventSubChatState;
+  requesterContext: Parameters<typeof isRequesterAllowed>[1];
+  allowBlacklistOverride: boolean;
+}) {
+  const baseSearchInput = buildCatalogSearchInput({
+    query: input.query,
+    page: 1,
+    pageSize: 1,
+    state: input.state,
+    allowBlacklistOverride: input.allowBlacklistOverride,
+  });
+  const filteredSearch = await input.deps.searchSongs(
+    input.env,
+    baseSearchInput
+  );
+  const filteredTotal = Math.max(
+    0,
+    filteredSearch.total ?? filteredSearch.results.length
+  );
+  const attemptedPages = new Set<number>();
+  let firstRejectedMatch:
+    | {
+        song: SongSearchResult;
+        reason?: string;
+        reasonCode?: string;
+      }
+    | undefined;
+
+  const attemptLimit = Math.min(filteredTotal, 12);
+  while (attemptedPages.size < attemptLimit) {
+    const nextPage = Math.floor(Math.random() * filteredTotal) + 1;
+    if (attemptedPages.has(nextPage)) {
+      continue;
+    }
+
+    attemptedPages.add(nextPage);
+    const randomPage = await input.deps.searchSongs(input.env, {
+      ...baseSearchInput,
+      page: nextPage,
+      pageSize: 1,
+    });
+    const candidate = randomPage.results[0] ?? null;
+    if (!candidate) {
+      continue;
+    }
+
+    const songAllowed = getSongAllowance({
+      song: candidate,
+      state: input.state,
+      requesterContext: input.requesterContext,
+      allowBlacklistOverride: input.allowBlacklistOverride,
+    });
+    if (songAllowed.allowed) {
+      return { firstMatch: candidate, firstRejectedMatch: undefined };
+    }
+
+    if (!firstRejectedMatch) {
+      firstRejectedMatch = {
+        song: candidate,
+        reason: songAllowed.reason,
+        reasonCode:
+          "reasonCode" in songAllowed ? songAllowed.reasonCode : undefined,
+      };
+    }
+  }
+
+  if (filteredTotal > 0) {
+    const fallbackSearch = await input.deps.searchSongs(input.env, {
+      ...baseSearchInput,
+      page: 1,
+      pageSize: Math.min(filteredTotal, 25),
+    });
+    const allowedResults = fallbackSearch.results.filter(
+      (song) =>
+        getSongAllowance({
+          song,
+          state: input.state,
+          requesterContext: input.requesterContext,
+          allowBlacklistOverride: input.allowBlacklistOverride,
+        }).allowed
+    );
+
+    if (allowedResults.length > 0) {
+      const picked =
+        allowedResults[Math.floor(Math.random() * allowedResults.length)] ??
+        allowedResults[0];
+      return { firstMatch: picked, firstRejectedMatch: undefined };
+    }
+  }
+
+  const rawSearch = await input.deps.searchSongs(input.env, {
+    query: input.query,
+    page: 1,
+    pageSize: 5,
+    sortBy: "relevance",
+    sortDirection: "desc",
+  });
+
+  for (const result of rawSearch.results) {
+    const songAllowed = getSongAllowance({
+      song: result,
+      state: input.state,
+      requesterContext: input.requesterContext,
+      allowBlacklistOverride: input.allowBlacklistOverride,
+    });
+    if (!songAllowed.allowed && !firstRejectedMatch) {
+      firstRejectedMatch = {
+        song: result,
+        reason: songAllowed.reason,
+        reasonCode:
+          "reasonCode" in songAllowed ? songAllowed.reasonCode : undefined,
+      };
+    }
+  }
+
+  return {
+    firstMatch: null,
+    firstRejectedMatch,
+    hadRawMatches: rawSearch.results.length > 0,
+  };
+}
+
+async function resolveChatChoiceAvailability(input: {
+  env: AppEnv;
+  deps: EventSubChatDependencies;
+  query: string;
+  state: EventSubChatState;
+  requesterContext: Parameters<typeof isRequesterAllowed>[1];
+  allowBlacklistOverride: boolean;
+}) {
+  const filteredSearch = await input.deps.searchSongs(
+    input.env,
+    buildCatalogSearchInput({
+      query: input.query,
+      page: 1,
+      pageSize: 1,
+      state: input.state,
+      allowBlacklistOverride: input.allowBlacklistOverride,
+    })
+  );
+
+  if ((filteredSearch.total ?? filteredSearch.results.length) > 0) {
+    return {
+      allowed: true,
+      hadRawMatches: true,
+    };
+  }
+
+  const rawSearch = await input.deps.searchSongs(input.env, {
+    query: input.query,
+    page: 1,
+    pageSize: 5,
+    sortBy: "relevance",
+    sortDirection: "desc",
+  });
+
+  let firstRejectedMatch:
+    | {
+        song: SongSearchResult;
+        reason?: string;
+        reasonCode?: string;
+      }
+    | undefined;
+
+  for (const result of rawSearch.results) {
+    const songAllowed = getSongAllowance({
+      song: result,
+      state: input.state,
+      requesterContext: input.requesterContext,
+      allowBlacklistOverride: input.allowBlacklistOverride,
+    });
+
+    if (songAllowed.allowed) {
+      return {
+        allowed: true,
+        hadRawMatches: true,
+      };
+    }
+
+    if (!firstRejectedMatch) {
+      firstRejectedMatch = {
+        song: result,
+        reason: songAllowed.reason,
+        reasonCode:
+          "reasonCode" in songAllowed ? songAllowed.reasonCode : undefined,
+      };
+    }
+  }
+
+  return {
+    allowed: rawSearch.results.length === 0,
+    hadRawMatches: rawSearch.results.length > 0,
+    firstRejectedMatch,
+  };
+}
+
+function formatSpecialRequestReply(input: {
+  requestedText: string;
+  requestKind: "regular" | "vip";
+  status?: string;
+  existing?: boolean;
+}) {
+  if (input.requestKind === "vip") {
+    const nextPositionSuffix =
+      input.status === "current" ? "." : " and will play next.";
+    return input.existing
+      ? `your existing streamer choice request for "${input.requestedText}" is now a VIP request${nextPositionSuffix} 1 VIP token was used.`
+      : `your streamer choice request for "${input.requestedText}" has been added as a VIP request${nextPositionSuffix}`;
+  }
+
+  return input.existing
+    ? `your existing VIP streamer choice request for "${input.requestedText}" is now a regular request again. 1 VIP token was refunded.`
+    : `your streamer choice request for "${input.requestedText}" has been added to the playlist.`;
+}
+
+function buildStreamerChoiceSong(requestedText: string): PlaylistAddSong {
+  return {
+    id: createId("rqm"),
+    title: STREAMER_CHOICE_TITLE,
+    source: "choice",
+    requestedQuery: requestedText,
+    warningCode: STREAMER_CHOICE_WARNING_CODE,
+  };
+}
+
+function getPositionReplyMessage(input: {
+  login: string;
+  items: EventSubChatState["items"];
+  requesterTwitchUserId: string;
+}) {
+  const activeRequests = input.items
+    .filter(
+      (item) =>
+        item.requestedByTwitchUserId === input.requesterTwitchUserId &&
+        (item.status === "queued" || item.status === "current")
+    )
+    .sort((left, right) => (left.position ?? 0) - (right.position ?? 0));
+
+  if (activeRequests.length === 0) {
+    return `${mention(input.login)} you do not have any active requests in this playlist.`;
+  }
+
+  const currentRequests = activeRequests.filter(
+    (item) => item.status === "current"
+  );
+  const queuedRequests = activeRequests.filter(
+    (item) => item.status === "queued"
+  );
+  const parts: string[] = [];
+
+  if (currentRequests.length > 0) {
+    const currentTitles = currentRequests
+      .map((item) => item.songTitle)
+      .filter((title): title is string => Boolean(title))
+      .join(", ");
+    parts.push(
+      currentTitles.length > 0 ? `playing now: ${currentTitles}` : "playing now"
+    );
+  }
+
+  if (queuedRequests.length > 0) {
+    const positions = queuedRequests
+      .map((item) => item.position)
+      .filter((position): position is number => position != null)
+      .map((position) => `#${position}`);
+    parts.push(
+      positions.length > 0
+        ? `queued at ${positions.join(", ")}`
+        : "queued in the playlist"
+    );
+  }
+
+  return `${mention(input.login)} your request${activeRequests.length === 1 ? " is" : "s are"} ${parts.join(" and ")}.`;
 }
 
 export async function processEventSubChatMessage(input: {
@@ -376,6 +759,7 @@ export async function processEventSubChatMessage(input: {
 
   if (parsed.command === "addvip") {
     const targetLogin = parsed.query?.trim();
+    const grantAmount = parsed.amount ?? 1;
     const canManageVipTokens =
       event.isBroadcaster ||
       (event.isModerator && state.settings.moderatorCanManageVipTokens);
@@ -415,7 +799,28 @@ export async function processEventSubChatMessage(input: {
       await deps.sendChatReply(env, {
         channelId: channel.id,
         broadcasterUserId: channel.twitchChannelId,
-        message: "Use !addvip <username> to grant a VIP token.",
+        message:
+          "Use !addvip <username> or !addvip <username> <amount> to grant VIP tokens.",
+      });
+      return { body: "Rejected", status: 202 };
+    }
+
+    if (!Number.isFinite(grantAmount) || grantAmount <= 0) {
+      await deps.createRequestLog(env, {
+        channelId: channel.id,
+        twitchMessageId: event.messageId,
+        twitchUserId: event.chatterTwitchUserId,
+        requesterLogin: event.chatterLogin,
+        requesterDisplayName: event.chatterDisplayName,
+        rawMessage: event.rawMessage,
+        normalizedQuery: parsed.query,
+        outcome: "rejected",
+        outcomeReason: "vip_token_invalid_amount",
+      });
+      await deps.sendChatReply(env, {
+        channelId: channel.id,
+        broadcasterUserId: channel.twitchChannelId,
+        message: "Use a VIP token amount greater than 0.",
       });
       return { body: "Rejected", status: 202 };
     }
@@ -428,6 +833,7 @@ export async function processEventSubChatMessage(input: {
       login: resolvedTarget?.login ?? targetLogin,
       displayName: resolvedTarget?.displayName ?? targetLogin,
       twitchUserId: resolvedTarget?.twitchUserId ?? null,
+      count: grantAmount,
     });
     await deps.createAuditLog(env, {
       channelId: channel.id,
@@ -440,6 +846,7 @@ export async function processEventSubChatMessage(input: {
         grantedBy: event.chatterLogin,
         login: resolvedTarget?.login ?? targetLogin,
         twitchUserId: resolvedTarget?.twitchUserId ?? null,
+        count: grantAmount,
       }),
     });
     await deps.createRequestLog(env, {
@@ -456,7 +863,7 @@ export async function processEventSubChatMessage(input: {
     await deps.sendChatReply(env, {
       channelId: channel.id,
       broadcasterUserId: channel.twitchChannelId,
-      message: `Granted a VIP token to ${resolvedTarget?.login ?? targetLogin}.`,
+      message: `Granted ${formatVipTokenCount(grantAmount)} VIP token${grantAmount === 1 ? "" : "s"} to ${resolvedTarget?.login ?? targetLogin}.`,
     });
     return { body: "Accepted", status: 202 };
   }
@@ -542,15 +949,6 @@ export async function processEventSubChatMessage(input: {
   const requesterContext = effectiveRequester.requester.context;
   const requesterIdentity = effectiveRequester.requester;
 
-  if (!state.settings.requestsEnabled) {
-    await deps.sendChatReply(env, {
-      channelId: channel.id,
-      broadcasterUserId: channel.twitchChannelId,
-      message: "Requests are disabled for this channel right now.",
-    });
-    return { body: "Ignored", status: 202 };
-  }
-
   if (parsed.command === "how") {
     await deps.sendChatReply(env, {
       channelId: channel.id,
@@ -558,11 +956,7 @@ export async function processEventSubChatMessage(input: {
       message: buildHowMessage({
         commandPrefix: state.settings.commandPrefix,
         appUrl: env.APP_URL,
-        blacklistArtists: state.blacklistArtists,
-        blacklistCharters: state.blacklistCharters,
-        blacklistSongs: state.blacklistSongs,
-        blacklistSongGroups: state.blacklistSongGroups,
-        setlistArtists: state.setlistArtists,
+        channelSlug: channel.slug,
       }),
     });
     return { body: "Accepted", status: 202 };
@@ -600,9 +994,46 @@ export async function processEventSubChatMessage(input: {
     return { body: "Accepted", status: 202 };
   }
 
+  if (parsed.command === "position") {
+    await deps.sendChatReply(env, {
+      channelId: channel.id,
+      broadcasterUserId: channel.twitchChannelId,
+      message: getPositionReplyMessage({
+        login: requesterIdentity.login,
+        items: state.items,
+        requesterTwitchUserId: requesterIdentity.twitchUserId,
+      }),
+    });
+    return { body: "Accepted", status: 202 };
+  }
+
+  if (!state.settings.requestsEnabled) {
+    await deps.sendChatReply(env, {
+      channelId: channel.id,
+      broadcasterUserId: channel.twitchChannelId,
+      message: "Requests are disabled for this channel right now.",
+    });
+    return { body: "Ignored", status: 202 };
+  }
+
   const isVipCommand = parsed.command === "vip";
   const isEditCommand = parsed.command === "edit";
   const allowBlacklistOverride = event.isBroadcaster || event.isModerator;
+
+  if (isVipCommand && !parsed.query) {
+    const balance = await deps.getVipTokenBalance(env, {
+      channelId: channel.id,
+      login: requesterIdentity.login,
+    });
+    const availableCount = balance?.availableCount ?? 0;
+    await deps.sendChatReply(env, {
+      channelId: channel.id,
+      broadcasterUserId: channel.twitchChannelId,
+      message: `${mention(requesterIdentity.login)} you have ${formatVipTokenCount(availableCount)} VIP token${availableCount === 1 ? "" : "s"} available.`,
+    });
+    return { body: "Accepted", status: 202 };
+  }
+
   const requesterAccess = isRequesterAllowed(state.settings, requesterContext);
   if (!requesterAccess.allowed) {
     await deps.createRequestLog(env, {
@@ -722,6 +1153,31 @@ export async function processEventSubChatMessage(input: {
     return { body: "Rejected", status: 202 };
   }
 
+  const parsedRequest = parseRequestModifiers(parsed.query?.trim() ?? "");
+  const requestMode = parsedRequest.mode;
+  const normalizedQuery = parsedRequest.query;
+  const unmatchedQuery = normalizedQuery;
+
+  if (!normalizedQuery) {
+    await deps.createRequestLog(env, {
+      channelId: channel.id,
+      twitchMessageId: event.messageId,
+      twitchUserId: requesterIdentity.twitchUserId,
+      requesterLogin: requesterIdentity.login,
+      requesterDisplayName: requesterIdentity.displayName,
+      rawMessage: event.rawMessage,
+      normalizedQuery: parsed.query,
+      outcome: "rejected",
+      outcomeReason: "missing_request_query",
+    });
+    await deps.sendChatReply(env, {
+      channelId: channel.id,
+      broadcasterUserId: channel.twitchChannelId,
+      message: `${mention(requesterIdentity.login)} include an artist or song before using request modifiers.`,
+    });
+    return { body: "Rejected", status: 202 };
+  }
+
   let firstMatch: SongSearchResult | null = null;
   let candidateMatchesJson: string | undefined;
   let firstRejectedMatch:
@@ -731,11 +1187,40 @@ export async function processEventSubChatMessage(input: {
         reasonCode?: string;
       }
     | undefined;
-  const normalizedQuery = parsed.query?.trim() ?? "";
 
   try {
-    const requestedSourceSongId = extractRequestedSourceSongId(normalizedQuery);
-    if (requestedSourceSongId != null) {
+    const requestedSourceSongId =
+      requestMode === "catalog"
+        ? extractRequestedSourceSongId(normalizedQuery)
+        : null;
+    if (requestMode === "choice") {
+      const choiceAvailability = await resolveChatChoiceAvailability({
+        env,
+        deps,
+        query: normalizedQuery,
+        state,
+        requesterContext,
+        allowBlacklistOverride,
+      });
+
+      if (
+        !choiceAvailability.allowed &&
+        choiceAvailability.firstRejectedMatch
+      ) {
+        firstRejectedMatch = choiceAvailability.firstRejectedMatch;
+      }
+    } else if (requestMode === "random") {
+      const randomMatch = await resolveChatRandomMatch({
+        env,
+        deps,
+        query: normalizedQuery,
+        state,
+        requesterContext,
+        allowBlacklistOverride,
+      });
+      firstMatch = randomMatch.firstMatch;
+      firstRejectedMatch = randomMatch.firstRejectedMatch;
+    } else if (requestedSourceSongId != null) {
       firstMatch = await deps.getCatalogSongBySourceId(
         env,
         requestedSourceSongId
@@ -800,11 +1285,10 @@ export async function processEventSubChatMessage(input: {
     return { body: "Lookup failed", status: 202 };
   }
 
-  const unmatchedQuery = parsed.query?.trim() ?? "";
   let warningCode: string | undefined;
   let warningMessage: string | undefined;
 
-  if (!firstMatch) {
+  if (requestMode === "choice") {
     if (firstRejectedMatch) {
       await deps.createRequestLog(env, {
         channelId: channel.id,
@@ -828,6 +1312,55 @@ export async function processEventSubChatMessage(input: {
           reason: firstRejectedMatch.reason,
           reasonCode: firstRejectedMatch.reasonCode,
         }),
+      });
+      return { body: "Rejected", status: 202 };
+    }
+
+    warningCode = STREAMER_CHOICE_WARNING_CODE;
+  } else if (!firstMatch) {
+    if (firstRejectedMatch) {
+      await deps.createRequestLog(env, {
+        channelId: channel.id,
+        twitchMessageId: event.messageId,
+        twitchUserId: requesterIdentity.twitchUserId,
+        requesterLogin: requesterIdentity.login,
+        requesterDisplayName: requesterIdentity.displayName,
+        rawMessage: event.rawMessage,
+        normalizedQuery: parsed.query,
+        matchedSongId: firstRejectedMatch.song.id,
+        matchedSongTitle: firstRejectedMatch.song.title,
+        matchedSongArtist: firstRejectedMatch.song.artist,
+        outcome: "rejected",
+        outcomeReason: firstRejectedMatch.reason,
+      });
+      await deps.sendChatReply(env, {
+        channelId: channel.id,
+        broadcasterUserId: channel.twitchChannelId,
+        message: getRejectedSongMessage({
+          login: requesterIdentity.login,
+          reason: firstRejectedMatch.reason,
+          reasonCode: firstRejectedMatch.reasonCode,
+        }),
+      });
+      return { body: "Rejected", status: 202 };
+    }
+
+    if (requestMode === "random") {
+      await deps.createRequestLog(env, {
+        channelId: channel.id,
+        twitchMessageId: event.messageId,
+        twitchUserId: requesterIdentity.twitchUserId,
+        requesterLogin: requesterIdentity.login,
+        requesterDisplayName: requesterIdentity.displayName,
+        rawMessage: event.rawMessage,
+        normalizedQuery: parsed.query,
+        outcome: "rejected",
+        outcomeReason: "random_match_missing",
+      });
+      await deps.sendChatReply(env, {
+        channelId: channel.id,
+        broadcasterUserId: channel.twitchChannelId,
+        message: `${mention(requesterIdentity.login)} I couldn't find an allowed random match for "${unmatchedQuery}".`,
       });
       return { body: "Rejected", status: 202 };
     }
@@ -888,11 +1421,50 @@ export async function processEventSubChatMessage(input: {
     }
   }
 
-  const existingMatchingRequest = getRequesterMatchingActiveItem({
-    items: state.items,
-    requesterTwitchUserId: requesterIdentity.twitchUserId,
-    matchedSongId: firstMatch?.id ?? null,
-  });
+  const existingMatchingRequest =
+    (requestMode === "choice"
+      ? getRequesterMatchingSpecialItem({
+          items: state.items,
+          requesterTwitchUserId: requesterIdentity.twitchUserId,
+          requestedQuery: unmatchedQuery,
+          warningCode: STREAMER_CHOICE_WARNING_CODE,
+        })
+      : getRequesterMatchingActiveItem({
+          items: state.items,
+          requesterTwitchUserId: requesterIdentity.twitchUserId,
+          matchedSongId: firstMatch?.id ?? null,
+        })) ?? null;
+
+  if (
+    existingMatchingRequest &&
+    existingMatchingRequest.requestKind ===
+      (isVipCommand ? "vip" : "regular") &&
+    !isEditCommand
+  ) {
+    await deps.createRequestLog(env, {
+      channelId: channel.id,
+      twitchMessageId: event.messageId,
+      twitchUserId: requesterIdentity.twitchUserId,
+      requesterLogin: requesterIdentity.login,
+      requesterDisplayName: requesterIdentity.displayName,
+      rawMessage: event.rawMessage,
+      normalizedQuery: parsed.query,
+      matchedSongId: firstMatch?.id ?? null,
+      matchedSongTitle: firstMatch?.title ?? null,
+      matchedSongArtist: firstMatch?.artist ?? null,
+      outcome: "rejected",
+      outcomeReason: "existing_request_same_song",
+    });
+    await deps.sendChatReply(env, {
+      channelId: channel.id,
+      broadcasterUserId: channel.twitchChannelId,
+      message:
+        requestMode === "choice"
+          ? `${mention(requesterIdentity.login)} that streamer choice request is already in your active requests.`
+          : `${mention(requesterIdentity.login)} that song is already in your active requests.`,
+    });
+    return { body: "Rejected", status: 202 };
+  }
 
   if (
     Number.isFinite(activeLimit) &&
@@ -1043,9 +1615,17 @@ export async function processEventSubChatMessage(input: {
       await deps.sendChatReply(env, {
         channelId: channel.id,
         broadcasterUserId: channel.twitchChannelId,
-        message: isVipCommand
-          ? `${mention(requesterIdentity.login)} your existing request "${firstMatch ? formatSongForReply(firstMatch) : unmatchedQuery}" is now a VIP request${existingMatchingRequest.status === "current" ? "." : " and will play next."} 1 VIP token was used.`
-          : `${mention(requesterIdentity.login)} your existing VIP request "${firstMatch ? formatSongForReply(firstMatch) : unmatchedQuery}" is now a regular request again. 1 VIP token was refunded.`,
+        message:
+          requestMode === "choice"
+            ? `${mention(requesterIdentity.login)} ${formatSpecialRequestReply({
+                requestedText: unmatchedQuery,
+                requestKind: isVipCommand ? "vip" : "regular",
+                status: existingMatchingRequest.status,
+                existing: true,
+              })}`
+            : isVipCommand
+              ? `${mention(requesterIdentity.login)} your existing request "${firstMatch ? formatSongForReply(firstMatch) : unmatchedQuery}" is now a VIP request${existingMatchingRequest.status === "current" ? "." : " and will play next."} 1 VIP token was used.`
+              : `${mention(requesterIdentity.login)} your existing VIP request "${firstMatch ? formatSongForReply(firstMatch) : unmatchedQuery}" is now a regular request again. 1 VIP token was refunded.`,
       });
       return { body: "Accepted", status: 202 };
     }
@@ -1068,24 +1648,27 @@ export async function processEventSubChatMessage(input: {
       messageId: event.messageId,
       prioritizeNext: isVipCommand,
       requestKind: isVipCommand ? "vip" : "regular",
-      song: {
-        id: firstMatch?.id ?? createId("rqm"),
-        title: firstMatch?.title ?? unmatchedQuery,
-        groupedProjectId: firstMatch?.groupedProjectId,
-        artist: firstMatch?.artist,
-        album: firstMatch?.album,
-        creator: firstMatch?.creator,
-        tuning: firstMatch?.tuning,
-        parts: firstMatch?.parts,
-        durationText: firstMatch?.durationText,
-        cdlcId: firstMatch?.sourceId,
-        source: firstMatch?.source ?? "unmatched",
-        sourceUrl: firstMatch?.sourceUrl,
-        requestedQuery: unmatchedQuery || undefined,
-        warningCode,
-        warningMessage,
-        candidateMatchesJson,
-      },
+      song:
+        requestMode === "choice"
+          ? buildStreamerChoiceSong(unmatchedQuery)
+          : {
+              id: firstMatch?.id ?? createId("rqm"),
+              title: firstMatch?.title ?? unmatchedQuery,
+              groupedProjectId: firstMatch?.groupedProjectId,
+              artist: firstMatch?.artist,
+              album: firstMatch?.album,
+              creator: firstMatch?.creator,
+              tuning: firstMatch?.tuning,
+              parts: firstMatch?.parts,
+              durationText: firstMatch?.durationText,
+              cdlcId: firstMatch?.sourceId,
+              source: firstMatch?.source ?? "unmatched",
+              sourceUrl: firstMatch?.sourceUrl,
+              requestedQuery: unmatchedQuery || undefined,
+              warningCode,
+              warningMessage,
+              candidateMatchesJson,
+            },
     });
 
     if (playlistResult.duplicate) {
@@ -1126,13 +1709,21 @@ export async function processEventSubChatMessage(input: {
         await deps.sendChatReply(env, {
           channelId: channel.id,
           broadcasterUserId: channel.twitchChannelId,
-          message: !firstMatch
-            ? `${mention(requesterIdentity.login)} there was no matching track found for "${unmatchedQuery}", but I added it anyway. ${buildChannelPlaylistMessage(env.APP_URL, channel.slug)}`
-            : warningCode === "missing_required_paths"
-              ? `${mention(requesterIdentity.login)} your song "${formatSongForReply(firstMatch)}" has been added to the playlist, but it is missing required paths: ${warningMessage?.replace("Missing required paths: ", "").replace(/\.$/, "")}.`
-              : isVipCommand
-                ? `${mention(requesterIdentity.login)} your VIP song "${formatSongForReply(firstMatch)}" will play next.`
-                : `${mention(requesterIdentity.login)} your song "${formatSongForReply(firstMatch)}" has been added to the playlist.`,
+          message:
+            requestMode === "choice"
+              ? `${mention(requesterIdentity.login)} ${formatSpecialRequestReply(
+                  {
+                    requestedText: unmatchedQuery,
+                    requestKind: isVipCommand ? "vip" : "regular",
+                  }
+                )}`
+              : !firstMatch
+                ? `${mention(requesterIdentity.login)} there was no matching track found for "${unmatchedQuery}", but I added it anyway. ${buildChannelPlaylistMessage(env.APP_URL, channel.slug)}`
+                : warningCode === "missing_required_paths"
+                  ? `${mention(requesterIdentity.login)} your song "${formatSongForReply(firstMatch)}" has been added to the playlist, but it is missing required paths: ${warningMessage?.replace("Missing required paths: ", "").replace(/\.$/, "")}.`
+                  : isVipCommand
+                    ? `${mention(requesterIdentity.login)} your VIP song "${formatSongForReply(firstMatch)}" will play next.`
+                    : `${mention(requesterIdentity.login)} your song "${formatSongForReply(firstMatch)}" has been added to the playlist.`,
         });
       }
 
@@ -1176,13 +1767,19 @@ export async function processEventSubChatMessage(input: {
     await deps.sendChatReply(env, {
       channelId: channel.id,
       broadcasterUserId: channel.twitchChannelId,
-      message: !firstMatch
-        ? `${mention(requesterIdentity.login)} there was no matching track found for "${unmatchedQuery}", but I added it anyway. ${buildChannelPlaylistMessage(env.APP_URL, channel.slug)}`
-        : warningCode === "missing_required_paths"
-          ? `${mention(requesterIdentity.login)} your song "${formatSongForReply(firstMatch)}" has been added to the playlist, but it is missing required paths: ${warningMessage?.replace("Missing required paths: ", "").replace(/\.$/, "")}.`
-          : isVipCommand
-            ? `${mention(requesterIdentity.login)} your VIP song "${formatSongForReply(firstMatch)}" will play next.`
-            : `${mention(requesterIdentity.login)} your song "${formatSongForReply(firstMatch)}" has been added to the playlist.`,
+      message:
+        requestMode === "choice"
+          ? `${mention(requesterIdentity.login)} ${formatSpecialRequestReply({
+              requestedText: unmatchedQuery,
+              requestKind: isVipCommand ? "vip" : "regular",
+            })}`
+          : !firstMatch
+            ? `${mention(requesterIdentity.login)} there was no matching track found for "${unmatchedQuery}", but I added it anyway. ${buildChannelPlaylistMessage(env.APP_URL, channel.slug)}`
+            : warningCode === "missing_required_paths"
+              ? `${mention(requesterIdentity.login)} your song "${formatSongForReply(firstMatch)}" has been added to the playlist, but it is missing required paths: ${warningMessage?.replace("Missing required paths: ", "").replace(/\.$/, "")}.`
+              : isVipCommand
+                ? `${mention(requesterIdentity.login)} your VIP song "${formatSongForReply(firstMatch)}" will play next.`
+                : `${mention(requesterIdentity.login)} your song "${formatSongForReply(firstMatch)}" has been added to the playlist.`,
     });
   } catch (error) {
     console.error("EventSub failed to add request to playlist", {
@@ -1207,9 +1804,12 @@ export async function processEventSubChatMessage(input: {
     await deps.sendChatReply(env, {
       channelId: channel.id,
       broadcasterUserId: channel.twitchChannelId,
-      message: firstMatch
-        ? `${mention(requesterIdentity.login)} I found a song match, but I couldn't add it to the playlist. Please try again.`
-        : `${mention(requesterIdentity.login)} I couldn't find a song match, and I couldn't add the warning request to the playlist. Please try again.`,
+      message:
+        requestMode === "choice"
+          ? `${mention(requesterIdentity.login)} I couldn't add your streamer choice request right now. Please try again.`
+          : firstMatch
+            ? `${mention(requesterIdentity.login)} I found a song match, but I couldn't add it to the playlist. Please try again.`
+            : `${mention(requesterIdentity.login)} I couldn't find a song match, and I couldn't add the warning request to the playlist. Please try again.`,
     });
     return { body: "Playlist add failed", status: 202 };
   }

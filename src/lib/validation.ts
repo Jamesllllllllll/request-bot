@@ -355,19 +355,34 @@ export const playlistMutationSchema = z.discriminatedUnion("action", [
   }),
 ]);
 
-export const viewerRequestMutationSchema = z.discriminatedUnion("action", [
-  z.object({
-    action: z.literal("submit"),
-    songId: z.string().trim().min(1).max(80),
-    requestKind: z.enum(["regular", "vip"]),
-    replaceExisting: z.boolean().optional().default(false),
-    itemId: z.string().trim().min(1).max(80).optional(),
-  }),
-  z.object({
-    action: z.literal("remove"),
-    kind: z.enum(["regular", "vip", "all"]).optional().default("all"),
-    itemId: z.string().trim().min(1).max(80).optional(),
-  }),
+const viewerSubmitCatalogSchema = z.object({
+  action: z.literal("submit"),
+  songId: z.string().trim().min(1).max(80),
+  requestMode: z.literal("catalog").optional(),
+  requestKind: z.enum(["regular", "vip"]),
+  replaceExisting: z.boolean().optional().default(false),
+  itemId: z.string().trim().min(1).max(80).optional(),
+});
+
+const viewerSubmitSpecialSchema = z.object({
+  action: z.literal("submit"),
+  query: z.string().trim().min(2).max(200),
+  requestMode: z.enum(["random", "choice"]),
+  requestKind: z.enum(["regular", "vip"]),
+  replaceExisting: z.boolean().optional().default(false),
+  itemId: z.string().trim().min(1).max(80).optional(),
+});
+
+const viewerRemoveRequestSchema = z.object({
+  action: z.literal("remove"),
+  kind: z.enum(["regular", "vip", "all"]).optional().default("all"),
+  itemId: z.string().trim().min(1).max(80).optional(),
+});
+
+export const viewerRequestMutationSchema = z.union([
+  viewerSubmitCatalogSchema,
+  viewerSubmitSpecialSchema,
+  viewerRemoveRequestSchema,
 ]);
 
 export const extensionSearchInputSchema = z.object({
@@ -376,11 +391,20 @@ export const extensionSearchInputSchema = z.object({
   pageSize: z.coerce.number().int().min(1).max(25).default(10),
 });
 
-export const extensionSubmitRequestSchema = z.object({
-  songId: z.string().trim().min(1).max(80),
-  requestKind: z.enum(["regular", "vip"]),
-  itemId: z.string().trim().min(1).max(80).optional(),
-});
+export const extensionSubmitRequestSchema = z.union([
+  z.object({
+    songId: z.string().trim().min(1).max(80),
+    requestMode: z.literal("catalog").optional(),
+    requestKind: z.enum(["regular", "vip"]),
+    itemId: z.string().trim().min(1).max(80).optional(),
+  }),
+  z.object({
+    query: z.string().trim().min(2).max(200),
+    requestMode: z.enum(["random", "choice"]),
+    requestKind: z.enum(["regular", "vip"]),
+    itemId: z.string().trim().min(1).max(80).optional(),
+  }),
+]);
 
 export const extensionRemoveRequestSchema = z.object({
   kind: z.enum(["regular", "vip", "all"]).optional().default("all"),

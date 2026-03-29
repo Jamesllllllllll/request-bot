@@ -55,7 +55,9 @@ export function getArraySetting(value: string | null | undefined) {
   }
 }
 
-export function getRequiredPathsMatchMode(value: string | null | undefined) {
+export function getRequiredPathsMatchMode(
+  value: string | null | undefined
+): "any" | "all" {
   return value === "all" ? "all" : "any";
 }
 
@@ -349,50 +351,17 @@ export function formatPathList(paths: string[]) {
 export function buildHowMessage(input: {
   commandPrefix: string;
   appUrl: string;
-  blacklistArtists: Array<{ artistId?: number; artistName: string }>;
-  blacklistCharters: Array<{ charterId?: number; charterName: string }>;
-  blacklistSongs: Array<{
-    songId?: number;
-    songTitle: string;
-    artistName?: string | null;
-  }>;
-  blacklistSongGroups?: Array<{
-    groupedProjectId?: number;
-    songTitle: string;
-    artistName?: string | null;
-  }>;
-  setlistArtists: Array<{ artistId?: number | null; artistName: string }>;
+  channelSlug?: string;
 }) {
   const normalized = normalizeCommandPrefix(input.commandPrefix);
-  const blacklistSongGroups = input.blacklistSongGroups ?? [];
   const parts = [
-    `Commands: ${normalized}sr artist, song; ${normalized}sr song; ${normalized}vip artist, song; ${normalized}edit artist, song; ${normalized}remove reg; ${normalized}remove vip; ${normalized}remove all.`,
+    `Commands: ${normalized}sr artist - song; ${normalized}sr artist *random; ${normalized}sr artist *choice; ${normalized}vip; ${normalized}vip artist - song; ${normalized}edit artist - song; ${normalized}remove reg|vip|all; ${normalized}position.`,
   ];
 
-  if (
-    input.blacklistArtists.length > 0 ||
-    input.blacklistSongs.length > 0 ||
-    blacklistSongGroups.length > 0 ||
-    input.blacklistCharters.length > 0
-  ) {
-    parts.push(
-      `${normalized}blacklist: ${buildBlacklistMessage(
-        input.blacklistArtists,
-        input.blacklistCharters,
-        input.blacklistSongs,
-        blacklistSongGroups
-      )}`
-    );
-  }
-
-  if (input.setlistArtists.length > 0) {
-    parts.push(
-      `${normalized}setlist: ${buildSetlistMessage(input.setlistArtists)}`
-    );
-  }
-
+  const root = input.appUrl.replace(/\/+$/, "");
+  const slug = input.channelSlug?.replace(/^\/+|\/+$/g, "") ?? "";
   parts.push(
-    `Search for songs to request: ${input.appUrl.replace(/\/+$/, "")}/search`
+    `Search for songs to request: ${slug ? `${root}/${slug}` : `${root}/search`}`
   );
   return parts.join(" ");
 }

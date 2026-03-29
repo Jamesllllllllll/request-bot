@@ -133,6 +133,16 @@ export type SearchSongActionRenderArgs = {
   resultState: SearchSongResultState;
 };
 
+type SearchPanelControlsRenderArgs = {
+  query: string;
+  debouncedQuery: string;
+  data?: SearchResponse;
+  visibleResults: SearchSong[];
+  isLoading: boolean;
+  queryTooShort: boolean;
+  hasSearchInput: boolean;
+};
+
 export function SongSearchPanel(props: {
   title: string;
   eyebrow?: string;
@@ -151,7 +161,9 @@ export function SongSearchPanel(props: {
       }) => ReactNode);
   useTotalForSummary?: boolean;
   summaryContent?: ReactNode;
-  controlsContent?: ReactNode;
+  controlsContent?:
+    | ReactNode
+    | ((args: SearchPanelControlsRenderArgs) => ReactNode);
   actionsLabel?: string;
   renderActions?: (args: SearchSongActionRenderArgs) => ReactNode;
 }) {
@@ -393,6 +405,18 @@ export function SongSearchPanel(props: {
           visibleResults,
         })
       : props.advancedFiltersContent;
+  const resolvedControlsContent =
+    typeof props.controlsContent === "function"
+      ? props.controlsContent({
+          query,
+          debouncedQuery,
+          data,
+          visibleResults,
+          isLoading,
+          queryTooShort,
+          hasSearchInput,
+        })
+      : props.controlsContent;
 
   async function copyRequest(
     song: SearchSong,
@@ -709,8 +733,8 @@ export function SongSearchPanel(props: {
               </Button>
             </div>
 
-            {props.controlsContent ? (
-              <div className="grid gap-3">{props.controlsContent}</div>
+            {resolvedControlsContent ? (
+              <div className="grid gap-3">{resolvedControlsContent}</div>
             ) : null}
 
             {showAdvanced ? (

@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { parseRequestModifiers } from "~/lib/request-modes";
 import {
   buildHowMessage,
   getActiveRequestLimit,
@@ -34,6 +35,12 @@ describe("parseChatCommand", () => {
     });
   });
 
+  it("parses bare vip commands", () => {
+    expect(parseChatCommand("!vip")).toEqual({
+      command: "vip",
+    });
+  });
+
   it("parses addvip commands", () => {
     expect(parseChatCommand("!addvip viewer_one")).toEqual({
       command: "addvip",
@@ -45,6 +52,42 @@ describe("parseChatCommand", () => {
     expect(parseChatCommand('!addvip "@Viewer_One"')).toEqual({
       command: "addvip",
       query: "viewer_one",
+    });
+  });
+
+  it("parses addvip commands with decimal amounts", () => {
+    expect(parseChatCommand("!addvip viewer_one 1.25")).toEqual({
+      command: "addvip",
+      query: "viewer_one",
+      amount: 1.25,
+    });
+  });
+
+  it("parses position commands", () => {
+    expect(parseChatCommand("!position")).toEqual({
+      command: "position",
+    });
+  });
+});
+
+describe("parseRequestModifiers", () => {
+  it("parses random request modifiers", () => {
+    expect(parseRequestModifiers("Green Day *random")).toEqual({
+      query: "Green Day",
+      mode: "random",
+      hasRandomModifier: true,
+      hasChoiceModifier: false,
+      ignoredOfficialModifier: false,
+    });
+  });
+
+  it("treats any and choice as streamer choice modifiers", () => {
+    expect(parseRequestModifiers("Tenacious D *any")).toEqual({
+      query: "Tenacious D",
+      mode: "choice",
+      hasRandomModifier: false,
+      hasChoiceModifier: true,
+      ignoredOfficialModifier: false,
     });
   });
 });
@@ -107,16 +150,16 @@ describe("request policy", () => {
     const message = buildHowMessage({
       commandPrefix: "!sr",
       appUrl: "https://example.com",
-      blacklistArtists: [],
-      blacklistCharters: [],
-      blacklistSongs: [],
-      blacklistSongGroups: [],
-      setlistArtists: [],
+      channelSlug: "streamer",
     });
 
-    expect(message).toContain("!vip artist, song");
-    expect(message).toContain("!edit artist, song");
-    expect(message).toContain("https://example.com/search");
+    expect(message).toContain("!sr artist *random");
+    expect(message).toContain("!sr artist *choice");
+    expect(message).toContain("!vip");
+    expect(message).toContain("!vip artist - song");
+    expect(message).toContain("!edit artist - song");
+    expect(message).toContain("!position");
+    expect(message).toContain("https://example.com/streamer");
   });
 
   it("rejects viewers when only subscribers or VIPs are allowed", () => {

@@ -6,7 +6,13 @@ import {
   type StreamOverlayTheme,
 } from "~/components/stream-overlay";
 import { Button } from "~/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "~/components/ui/card";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "~/components/ui/card";
 import { Input } from "~/components/ui/input";
 import { getErrorMessage, hexToRgba } from "~/lib/utils";
 import type { OverlaySettingsInputData } from "~/lib/validation";
@@ -273,264 +279,254 @@ export function OverlaySettingsPanel() {
   }
 
   return (
-    <section id="overlay" className="grid gap-6">
-      <div className="grid gap-2">
-        <h2 className="text-2xl font-semibold tracking-tight text-(--text)">
-          Stream overlay
-        </h2>
-        <p className="max-w-3xl text-sm leading-7 text-(--muted)">
+    <Card id="overlay" className="dashboard-overlay__section">
+      <CardHeader>
+        <CardTitle>Stream overlay</CardTitle>
+        <CardDescription>
           Display your playlist on your stream using a browser source.
-        </p>
-      </div>
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="grid gap-6">
+        {message ? <Banner tone="success">{message}</Banner> : null}
+        {errorMessage ? <Banner tone="danger">{errorMessage}</Banner> : null}
+        {overlayQuery.error ? (
+          <Banner tone="danger">{getErrorMessage(overlayQuery.error)}</Banner>
+        ) : null}
 
-      {message ? <Banner tone="success">{message}</Banner> : null}
-      {errorMessage ? <Banner tone="danger">{errorMessage}</Banner> : null}
-      {overlayQuery.error ? (
-        <Banner tone="danger">{getErrorMessage(overlayQuery.error)}</Banner>
-      ) : null}
-
-      <div className="grid gap-6 xl:grid-cols-[420px_minmax(0,1fr)]">
-        <div className="grid gap-6">
-          <Card className="dashboard-overlay__section">
-            <CardHeader>
-              <CardTitle>Overlay access</CardTitle>
-            </CardHeader>
-            <CardContent className="grid gap-4">
-              <div className="grid gap-2">
-                <p className="text-sm font-medium text-(--text)">Overlay URL</p>
+        <div className="grid gap-6 xl:grid-cols-[420px_minmax(0,1fr)]">
+          <div className="grid gap-6">
+            <Card className="dashboard-overlay__section">
+              <CardHeader>
+                <CardTitle>Overlay URL</CardTitle>
+              </CardHeader>
+              <CardContent className="grid gap-4">
                 <Input value={overlayUrl} readOnly />
-              </div>
-              <div className="flex flex-wrap gap-3">
-                <Button
-                  variant="outline"
-                  onClick={copyOverlayUrl}
-                  disabled={!overlayUrl}
-                >
-                  <Copy className="h-4 w-4" />
-                  Copy URL
-                </Button>
-                {overlayUrl ? (
-                  <Button asChild variant="outline">
-                    <a href={overlayUrl} target="_blank" rel="noreferrer">
-                      Open overlay
-                    </a>
+                <div className="flex flex-wrap gap-3">
+                  <Button
+                    variant="outline"
+                    onClick={copyOverlayUrl}
+                    disabled={!overlayUrl}
+                  >
+                    <Copy className="h-4 w-4" />
+                    Copy URL
                   </Button>
-                ) : null}
-              </div>
-            </CardContent>
-          </Card>
+                  {overlayUrl ? (
+                    <Button asChild variant="outline">
+                      <a href={overlayUrl} target="_blank" rel="noreferrer">
+                        Open overlay
+                      </a>
+                    </Button>
+                  ) : null}
+                </div>
+              </CardContent>
+            </Card>
 
-          <Card className="dashboard-overlay__section">
-            <CardHeader>
-              <CardTitle>Layout and behavior</CardTitle>
-            </CardHeader>
-            <CardContent className="grid gap-4">
-              <ToggleRow
-                label="Show creator"
-                description="Show creator"
-                checked={form.overlayShowCreator}
-                onChange={(value) => setBoolean("overlayShowCreator", value)}
-              />
-              <ToggleRow
-                label="Show album"
-                description="Show album"
-                checked={form.overlayShowAlbum}
-                onChange={(value) => setBoolean("overlayShowAlbum", value)}
-              />
-              <ToggleRow
-                label="Animate now playing"
-                description="Animate current song"
-                checked={form.overlayAnimateNowPlaying}
-                onChange={(value) =>
-                  setBoolean("overlayAnimateNowPlaying", value)
-                }
-              />
-            </CardContent>
-          </Card>
+            <Card className="dashboard-overlay__section">
+              <CardHeader>
+                <CardTitle>Layout and behavior</CardTitle>
+              </CardHeader>
+              <CardContent className="overflow-hidden border border-(--border) p-0">
+                <ToggleRow
+                  label="Show creator"
+                  checked={form.overlayShowCreator}
+                  onChange={(value) => setBoolean("overlayShowCreator", value)}
+                />
+                <ToggleRow
+                  label="Show album"
+                  checked={form.overlayShowAlbum}
+                  onChange={(value) => setBoolean("overlayShowAlbum", value)}
+                />
+                <ToggleRow
+                  label="Animate now playing"
+                  checked={form.overlayAnimateNowPlaying}
+                  onChange={(value) =>
+                    setBoolean("overlayAnimateNowPlaying", value)
+                  }
+                />
+              </CardContent>
+            </Card>
 
-          <Card className="dashboard-overlay__section">
-            <CardHeader>
-              <CardTitle>Theme</CardTitle>
-            </CardHeader>
-            <CardContent className="grid gap-4">
-              <ColorField
-                label="Accent"
-                value={form.overlayAccentColor}
-                onChange={(value) => setColor("overlayAccentColor", value)}
-              />
-              <ColorField
-                label="VIP badge"
-                value={form.overlayVipColor}
-                onChange={(value) => setColor("overlayVipColor", value)}
-              />
-              <ColorField
-                label="Text"
-                value={form.overlayTextColor}
-                onChange={(value) => setColor("overlayTextColor", value)}
-              />
-              <ColorField
-                label="Muted text"
-                value={form.overlayMutedTextColor}
-                onChange={(value) => setColor("overlayMutedTextColor", value)}
-              />
-              <ColorField
-                label="Request item background"
-                value={form.overlayPanelColor}
-                onChange={(value) => setColor("overlayPanelColor", value)}
-              />
-              <ColorField
-                label="Overlay background / chroma key"
-                description="Use a normal visible background, or pick a deliberate key color like bright pink or green for OBS chroma key."
-                value={form.overlayBackgroundColor}
-                onChange={(value) => setColor("overlayBackgroundColor", value)}
-              />
-              <ColorField
-                label="Border"
-                value={form.overlayBorderColor}
-                onChange={(value) => setColor("overlayBorderColor", value)}
-              />
-            </CardContent>
-          </Card>
+            <Card className="dashboard-overlay__section">
+              <CardHeader>
+                <CardTitle>Theme</CardTitle>
+              </CardHeader>
+              <CardContent className="overflow-hidden border border-(--border) p-0">
+                <ColorField
+                  label="Accent"
+                  value={form.overlayAccentColor}
+                  onChange={(value) => setColor("overlayAccentColor", value)}
+                />
+                <ColorField
+                  label="VIP badge"
+                  value={form.overlayVipColor}
+                  onChange={(value) => setColor("overlayVipColor", value)}
+                />
+                <ColorField
+                  label="Text"
+                  value={form.overlayTextColor}
+                  onChange={(value) => setColor("overlayTextColor", value)}
+                />
+                <ColorField
+                  label="Muted text"
+                  value={form.overlayMutedTextColor}
+                  onChange={(value) => setColor("overlayMutedTextColor", value)}
+                />
+                <ColorField
+                  label="Request item background"
+                  value={form.overlayPanelColor}
+                  onChange={(value) => setColor("overlayPanelColor", value)}
+                />
+                <ColorField
+                  label="Background color"
+                  description="For a transparent background, set background opacity to 0."
+                  value={form.overlayBackgroundColor}
+                  onChange={(value) =>
+                    setColor("overlayBackgroundColor", value)
+                  }
+                />
+                <ColorField
+                  label="Border"
+                  value={form.overlayBorderColor}
+                  onChange={(value) => setColor("overlayBorderColor", value)}
+                />
+              </CardContent>
+            </Card>
 
-          <Card className="dashboard-overlay__section">
-            <CardHeader>
-              <CardTitle>Density and sizing</CardTitle>
-            </CardHeader>
-            <CardContent className="grid gap-4">
-              <RangeField
-                label="Overlay background opacity"
-                description="Set this to 0 for a fully transparent page behind the playlist items."
-                min={0}
-                max={100}
-                value={form.overlayBackgroundOpacity}
-                onChange={(value) =>
-                  setNumber("overlayBackgroundOpacity", value)
-                }
-              />
-              <RangeField
-                label="Corner radius"
-                min={0}
-                max={40}
-                value={form.overlayCornerRadius}
-                onChange={(value) => setNumber("overlayCornerRadius", value)}
-              />
-              <RangeField
-                label="Item gap"
-                min={0}
-                max={32}
-                value={form.overlayItemGap}
-                onChange={(value) => setNumber("overlayItemGap", value)}
-              />
-              <RangeField
-                label="Item padding"
-                min={8}
-                max={32}
-                value={form.overlayItemPadding}
-                onChange={(value) => setNumber("overlayItemPadding", value)}
-              />
-              <RangeField
-                label="Title font size"
-                min={16}
-                max={48}
-                value={form.overlayTitleFontSize}
-                onChange={(value) => setNumber("overlayTitleFontSize", value)}
-              />
-              <RangeField
-                label="Meta font size"
-                min={10}
-                max={24}
-                value={form.overlayMetaFontSize}
-                onChange={(value) => setNumber("overlayMetaFontSize", value)}
-              />
-            </CardContent>
-          </Card>
+            <Card className="dashboard-overlay__section">
+              <CardHeader>
+                <CardTitle>Density and sizing</CardTitle>
+              </CardHeader>
+              <CardContent className="overflow-hidden border border-(--border) p-0">
+                <RangeField
+                  label="Overlay background opacity"
+                  description="Set this to 0 for a fully transparent background behind the playlist items."
+                  min={0}
+                  max={100}
+                  value={form.overlayBackgroundOpacity}
+                  onChange={(value) =>
+                    setNumber("overlayBackgroundOpacity", value)
+                  }
+                />
+                <RangeField
+                  label="Corner radius"
+                  min={0}
+                  max={40}
+                  value={form.overlayCornerRadius}
+                  onChange={(value) => setNumber("overlayCornerRadius", value)}
+                />
+                <RangeField
+                  label="Item gap"
+                  min={0}
+                  max={32}
+                  value={form.overlayItemGap}
+                  onChange={(value) => setNumber("overlayItemGap", value)}
+                />
+                <RangeField
+                  label="Item padding"
+                  min={8}
+                  max={32}
+                  value={form.overlayItemPadding}
+                  onChange={(value) => setNumber("overlayItemPadding", value)}
+                />
+                <RangeField
+                  label="Title font size"
+                  min={16}
+                  max={48}
+                  value={form.overlayTitleFontSize}
+                  onChange={(value) => setNumber("overlayTitleFontSize", value)}
+                />
+                <RangeField
+                  label="Meta font size"
+                  min={10}
+                  max={24}
+                  value={form.overlayMetaFontSize}
+                  onChange={(value) => setNumber("overlayMetaFontSize", value)}
+                />
+              </CardContent>
+            </Card>
 
-          <div className="flex justify-end">
-            <Button
-              variant="outline"
-              onClick={() => setShowRestoreDialog(true)}
-            >
-              Restore defaults
-            </Button>
+            <div className="flex justify-end">
+              <Button
+                variant="outline"
+                onClick={() => setShowRestoreDialog(true)}
+              >
+                Restore defaults
+              </Button>
+            </div>
+          </div>
+
+          <div className="self-start xl:sticky xl:top-6">
+            <Card className="dashboard-overlay__section overflow-hidden">
+              <CardHeader className="gap-4">
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <CardTitle>Preview</CardTitle>
+                  <Button
+                    variant={hasUnsavedChanges ? "default" : "outline"}
+                    onClick={() => saveMutation.mutate()}
+                    disabled={saveMutation.isPending || !hasUnsavedChanges}
+                  >
+                    {saveMutation.isPending ? "Saving..." : "Save changes"}
+                  </Button>
+                  <div className="inline-flex border border-(--border) bg-(--panel-soft) p-1">
+                    <button
+                      type="button"
+                      className={`px-3 py-1.5 text-sm transition-colors ${
+                        previewMode === "live"
+                          ? "bg-(--brand) text-white"
+                          : "text-(--muted)"
+                      }`}
+                      onClick={() => {
+                        setPreviewMode("live");
+                        setPreviewModeTouched(true);
+                      }}
+                    >
+                      Live
+                    </button>
+                    <button
+                      type="button"
+                      className={`px-3 py-1.5 text-sm transition-colors ${
+                        previewMode === "sample"
+                          ? "bg-(--brand) text-white"
+                          : "text-(--muted)"
+                      }`}
+                      onClick={() => {
+                        setPreviewMode("sample");
+                        setPreviewModeTouched(true);
+                      }}
+                    >
+                      Sample
+                    </button>
+                  </div>
+                </div>
+              </CardHeader>
+              <CardContent className="p-0">
+                <div
+                  className="border border-(--border) p-6"
+                  style={{
+                    background:
+                      form.overlayBackgroundOpacity > 0
+                        ? previewBackground
+                        : "repeating-conic-gradient(from 45deg, rgba(255,255,255,0.06) 0% 25%, rgba(255,255,255,0.015) 0% 50%) 50% / 20px 20px",
+                  }}
+                >
+                  <div className="overflow-hidden">
+                    <StreamOverlay
+                      preview
+                      channelName={`${channelName}'s Playlist`}
+                      items={previewItems}
+                      theme={previewTheme}
+                    />
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
           </div>
         </div>
-
-        <div className="self-start xl:sticky xl:top-6">
-          <Card className="dashboard-overlay__section overflow-hidden">
-            <CardHeader className="gap-4">
-              <div className="flex flex-wrap items-center justify-between gap-3">
-                <CardTitle>Preview</CardTitle>
-                <Button
-                  variant={hasUnsavedChanges ? "default" : "outline"}
-                  className={
-                    hasUnsavedChanges && !saveMutation.isPending
-                      ? "animate-pulse"
-                      : undefined
-                  }
-                  onClick={() => saveMutation.mutate()}
-                  disabled={saveMutation.isPending || !hasUnsavedChanges}
-                >
-                  {saveMutation.isPending ? "Saving..." : "Save changes"}
-                </Button>
-                <div className="inline-flex rounded-full border border-(--border) bg-(--panel-soft) p-1">
-                  <button
-                    type="button"
-                    className={`rounded-full px-3 py-1.5 text-sm transition-colors ${
-                      previewMode === "live"
-                        ? "bg-(--brand) text-white"
-                        : "text-(--muted)"
-                    }`}
-                    onClick={() => {
-                      setPreviewMode("live");
-                      setPreviewModeTouched(true);
-                    }}
-                  >
-                    Live
-                  </button>
-                  <button
-                    type="button"
-                    className={`rounded-full px-3 py-1.5 text-sm transition-colors ${
-                      previewMode === "sample"
-                        ? "bg-(--brand) text-white"
-                        : "text-(--muted)"
-                    }`}
-                    onClick={() => {
-                      setPreviewMode("sample");
-                      setPreviewModeTouched(true);
-                    }}
-                  >
-                    Sample
-                  </button>
-                </div>
-              </div>
-            </CardHeader>
-            <CardContent className="p-0">
-              <div
-                className="rounded-[28px] border border-(--border) p-6"
-                style={{
-                  background:
-                    form.overlayBackgroundOpacity > 0
-                      ? previewBackground
-                      : "repeating-conic-gradient(from 45deg, rgba(255,255,255,0.06) 0% 25%, rgba(255,255,255,0.015) 0% 50%) 50% / 20px 20px",
-                }}
-              >
-                <div className="overflow-hidden rounded-[28px]">
-                  <StreamOverlay
-                    preview
-                    channelName={`${channelName}'s Playlist`}
-                    items={previewItems}
-                    theme={previewTheme}
-                  />
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-        </div>
-      </div>
+      </CardContent>
 
       {showRestoreDialog ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4">
-          <div className="w-full max-w-md rounded-[28px] border border-(--border-strong) bg-(--panel-strong) p-6 shadow-(--shadow)">
+          <div className="w-full max-w-md border border-(--border-strong) bg-(--panel-strong) p-6 shadow-(--shadow)">
             <h2 className="text-xl font-semibold text-(--text)">
               Restore defaults?
             </h2>
@@ -552,30 +548,30 @@ export function OverlaySettingsPanel() {
           </div>
         </div>
       ) : null}
-    </section>
+    </Card>
   );
 }
 
 function ToggleRow(props: {
   label: string;
-  description: string;
+  description?: string;
   checked: boolean;
   onChange: (value: boolean) => void;
 }) {
   return (
-    <label className="flex items-start justify-between gap-4 rounded-[24px] border border-(--border) bg-(--panel-soft) p-4">
-      <div>
+    <label className="grid gap-2 px-4 py-3 odd:bg-(--panel-soft) even:bg-(--panel-muted)">
+      <div className="flex items-center justify-between gap-4">
         <p className="font-medium text-(--text)">{props.label}</p>
-        <p className="mt-1 text-sm leading-7 text-(--muted)">
-          {props.description}
-        </p>
+        <input
+          type="checkbox"
+          checked={props.checked}
+          onChange={(event) => props.onChange(event.target.checked)}
+          className="h-5 w-5 shrink-0"
+        />
       </div>
-      <input
-        type="checkbox"
-        checked={props.checked}
-        onChange={(event) => props.onChange(event.target.checked)}
-        className="mt-1 h-5 w-5"
-      />
+      {props.description ? (
+        <p className="text-sm leading-6 text-(--muted)">{props.description}</p>
+      ) : null}
     </label>
   );
 }
@@ -587,23 +583,27 @@ function ColorField(props: {
   onChange: (value: string) => void;
 }) {
   return (
-    <div className="grid gap-2 rounded-[24px] border border-(--border) bg-(--panel-soft) p-4">
-      <p className="text-sm font-medium text-(--text)">{props.label}</p>
+    <div className="grid gap-2 px-4 py-3 odd:bg-(--panel-soft) even:bg-(--panel-muted)">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <p className="text-sm font-medium text-(--text)">{props.label}</p>
+        <div className="flex min-w-0 items-center gap-3 sm:w-auto">
+          <input
+            type="color"
+            value={props.value}
+            onChange={(event) => props.onChange(event.target.value)}
+            className="h-10 w-12 shrink-0 border border-(--border) bg-transparent"
+          />
+          <div className="w-full sm:w-44">
+            <Input
+              value={props.value}
+              onChange={(event) => props.onChange(event.target.value)}
+            />
+          </div>
+        </div>
+      </div>
       {props.description ? (
         <p className="text-sm leading-6 text-(--muted)">{props.description}</p>
       ) : null}
-      <div className="flex items-center gap-3">
-        <input
-          type="color"
-          value={props.value}
-          onChange={(event) => props.onChange(event.target.value)}
-          className="h-11 w-14 rounded-xl border border-(--border) bg-transparent"
-        />
-        <Input
-          value={props.value}
-          onChange={(event) => props.onChange(event.target.value)}
-        />
-      </div>
     </div>
   );
 }
@@ -617,14 +617,16 @@ function RangeField(props: {
   onChange: (value: number) => void;
 }) {
   return (
-    <div className="grid gap-3 rounded-[24px] border border-(--border) bg-(--panel-soft) p-4">
+    <div className="grid gap-2 px-4 py-3 odd:bg-(--panel-soft) even:bg-(--panel-muted)">
       <div className="flex items-center justify-between gap-3">
         <p className="text-sm font-medium text-(--text)">{props.label}</p>
-        <span className="text-sm text-(--muted)">{props.value}</span>
+        <div className="flex items-center justify-between gap-3">
+          <span className="text-xs font-semibold uppercase tracking-[0.16em] text-(--muted)">
+            Value
+          </span>
+          <span className="text-sm text-(--text)">{props.value}</span>
+        </div>
       </div>
-      {props.description ? (
-        <p className="text-sm leading-6 text-(--muted)">{props.description}</p>
-      ) : null}
       <input
         type="range"
         min={props.min}
@@ -632,6 +634,9 @@ function RangeField(props: {
         value={props.value}
         onChange={(event) => props.onChange(Number(event.target.value))}
       />
+      {props.description ? (
+        <p className="text-sm leading-6 text-(--muted)">{props.description}</p>
+      ) : null}
     </div>
   );
 }
@@ -643,8 +648,6 @@ function Banner(props: { tone: "success" | "danger"; children: string }) {
       : "border-rose-500/30 bg-rose-500/10 text-rose-200";
 
   return (
-    <div className={`rounded-[24px] border p-4 text-sm ${classes}`}>
-      {props.children}
-    </div>
+    <div className={`border p-4 text-sm ${classes}`}>{props.children}</div>
   );
 }

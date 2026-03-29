@@ -241,6 +241,42 @@ export const channelSettings = sqliteTable("channel_settings", {
   updatedAt: integer("updated_at").notNull().default(sql`(unixepoch() * 1000)`),
 });
 
+export const channelOwnedOfficialDlcs = sqliteTable(
+  "channel_owned_official_dlcs",
+  {
+    id: text("id").primaryKey(),
+    channelId: text("channel_id")
+      .notNull()
+      .references(() => channels.id),
+    sourceKey: text("source_key").notNull(),
+    sourceAppId: text("source_app_id"),
+    artistName: text("artist_name").notNull(),
+    title: text("title").notNull(),
+    albumName: text("album_name"),
+    filePath: text("file_path"),
+    arrangementsJson: text("arrangements_json").notNull().default("[]"),
+    tuningsJson: text("tunings_json").notNull().default("[]"),
+    createdAt: integer("created_at")
+      .notNull()
+      .default(sql`(unixepoch() * 1000)`),
+    updatedAt: integer("updated_at")
+      .notNull()
+      .default(sql`(unixepoch() * 1000)`),
+  },
+  (table) => [
+    index("channel_owned_official_dlcs_channel_idx").on(table.channelId),
+    uniqueIndex("channel_owned_official_dlcs_channel_source_uidx").on(
+      table.channelId,
+      table.sourceKey
+    ),
+    index("channel_owned_official_dlcs_artist_title_idx").on(
+      table.channelId,
+      table.artistName,
+      table.title
+    ),
+  ]
+);
+
 export const playlists = sqliteTable("playlists", {
   id: text("id").primaryKey(),
   channelId: text("channel_id")
@@ -755,6 +791,8 @@ export const searchRateLimits = sqliteTable("search_rate_limits", {
 export type UserInsert = typeof users.$inferInsert;
 export type ChannelInsert = typeof channels.$inferInsert;
 export type ChannelSettingsInsert = typeof channelSettings.$inferInsert;
+export type ChannelOwnedOfficialDlcInsert =
+  typeof channelOwnedOfficialDlcs.$inferInsert;
 export type PlaylistInsert = typeof playlists.$inferInsert;
 export type PlaylistItemInsert = typeof playlistItems.$inferInsert;
 export type BlockedUserInsert = typeof blockedUsers.$inferInsert;

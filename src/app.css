@@ -5,6 +5,8 @@
 :root {
   color-scheme: dark;
   --shell-gutter: 1.5rem;
+  --font-body: "IBM Plex Sans", sans-serif;
+  --font-accent: "Space Grotesk", var(--font-body);
   --bg: #0c1219;
   --bg-elevated: #121923;
   --panel: rgba(18, 20, 26, 0.86);
@@ -28,6 +30,7 @@
   --border-strong: rgba(255, 255, 255, 0.14);
   --shadow: 0 28px 80px rgba(0, 0, 0, 0.45);
   --shadow-soft: 0 12px 32px rgba(0, 0, 0, 0.24);
+  --app-grit: url("/backgrounds/grit.svg");
   --app-background:
     linear-gradient(180deg, #121a24 0%, #0c1219 44%, #091017 100%),
     radial-gradient(circle at 7% 5%, rgba(255, 255, 255, 0.14), transparent 20%),
@@ -76,7 +79,7 @@ body {
   margin: 0;
   min-height: 100vh;
   color: var(--text);
-  font-family: "IBM Plex Sans", sans-serif;
+  font-family: var(--font-body);
   background: transparent;
   position: relative;
   isolation: isolate;
@@ -92,6 +95,22 @@ body.overlay-mode {
   background: transparent;
 }
 
+body::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  opacity: 0.42;
+  background-image: var(--app-grit), var(--app-grit);
+  background-size: 250px, 360px;
+  background-position:
+    0 0,
+    137px 89px;
+  background-repeat: repeat, repeat;
+  filter: grayscale(1) brightness(1.6) contrast(1.04);
+}
+
 html::after {
   content: "";
   position: fixed;
@@ -99,45 +118,37 @@ html::after {
   z-index: -1;
   pointer-events: none;
   opacity: 0.22;
-  background:
+  background-image:
     radial-gradient(
       circle at 10% 8%,
-      rgba(255, 255, 255, 0.035),
-      transparent 26%
+      rgba(255, 255, 255, 0.045),
+      transparent 20%
     ),
-    repeating-linear-gradient(
-      90deg,
-      rgba(255, 255, 255, 0.016) 0,
-      rgba(255, 255, 255, 0.016) 1px,
-      transparent 1px,
-      transparent 22px
-    ),
-    repeating-linear-gradient(
-      0deg,
-      rgba(255, 255, 255, 0.012) 0,
-      rgba(255, 255, 255, 0.012) 1px,
-      transparent 1px,
-      transparent 5px
+    radial-gradient(
+      circle at top right,
+      rgba(145, 159, 188, 0.03),
+      transparent 18%
     );
   background-size:
     100% 100%,
-    340px 260px,
-    340px 260px;
+    100% 100%;
   background-position:
     0 0,
-    0 0,
     0 0;
-  background-repeat: no-repeat;
-  mix-blend-mode: soft-light;
+  background-repeat: no-repeat, no-repeat;
+  mix-blend-mode: normal;
 }
 
-html.overlay-mode::after,
-html.overlay-mode::before {
+html.overlay-mode::after {
   display: none;
 }
 
-html.extension-mode::after,
-html.extension-mode::before {
+html.extension-mode::after {
+  display: none;
+}
+
+body.overlay-mode::before,
+body.extension-mode::before {
   display: none;
 }
 
@@ -156,7 +167,7 @@ h3,
 h4,
 h5,
 h6 {
-  font-family: "Space Grotesk", sans-serif;
+  font-family: var(--font-accent);
   letter-spacing: -0.03em;
 }
 
@@ -180,13 +191,19 @@ h6 {
   bottom: 0;
   left: var(--shell-gutter);
   width: 1px;
-  background: linear-gradient(
-    180deg,
-    transparent 0,
-    var(--border) 2.5rem,
-    var(--border) calc(100% - 2.5rem),
-    transparent 100%
-  );
+  background: var(--border);
+  pointer-events: none;
+  z-index: 0;
+}
+
+.app-shell::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  right: var(--shell-gutter);
+  width: 1px;
+  background: var(--border);
   pointer-events: none;
   z-index: 0;
 }

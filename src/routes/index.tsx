@@ -131,7 +131,7 @@ function HomePage() {
     : liveChannelsQuery.isLoading;
   const toggleLabel = showDemoChannels ? "Show Live" : "Show Demo";
   const sourceLabel = showDemoChannels
-    ? "This is a list of streams with the Rocksmith tag for demo purposes."
+    ? "The streamers shown here are for demo purposes only."
     : null;
   const [featuredChannel, ...secondaryChannels] = displayedChannels;
 
@@ -139,7 +139,7 @@ function HomePage() {
     <section className="page-section-stack grid gap-6 pb-6 [container-type:inline-size] xl:grid-cols-[0.72fr_1.28fr]">
       <div className="surface-grid surface-noise border border-(--border-strong) bg-(--panel) p-6 shadow-none md:p-8 max-[720px]:border-x-0 max-[720px]:border-t-0 max-[720px]:bg-transparent max-[720px]:px-0 max-[720px]:pb-4 max-[720px]:pt-0 max-[720px]:shadow-none max-[720px]:[background-image:none]">
         <p className="text-xs font-semibold uppercase tracking-[0.34em] text-(--brand-deep)">
-          Twitch Song Requests
+          Playlist Managment for Rocksmith Streamers
         </p>
         <h1 className="mt-4 max-w-3xl text-4xl font-semibold tracking-[-0.04em] text-(--text) md:text-5xl max-[960px]:text-[clamp(2.3rem,6.5vw,3.8rem)] max-[720px]:text-[clamp(2rem,9vw,2.75rem)]">
           Search songs or manage your channel.
@@ -222,27 +222,32 @@ function HomePage() {
                 Current streamers
               </h2>
             </div>
-            <div className="flex flex-wrap items-center justify-end gap-3">
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                onClick={() => setShowDemoChannels((current) => !current)}
-              >
-                {toggleLabel}
-              </Button>
-              {isDisplayedChannelsLoading ? (
-                <Skeleton className="h-8 w-24 border border-(--border) bg-(--panel-soft)" />
-              ) : (
-                <div className="border border-(--border) bg-(--panel-soft) px-3 py-1 text-xs uppercase tracking-[0.22em] text-(--muted)">
-                  {displayedChannels.length} active
-                </div>
-              )}
+            <div className="grid justify-items-end gap-2 text-right">
+              <div className="flex flex-wrap items-center justify-end gap-3">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setShowDemoChannels((current) => !current)}
+                  className="h-7 border-sky-500/30 bg-sky-500/10 px-2.5 text-[10px] tracking-[0.1em] text-sky-200 hover:border-sky-400 hover:bg-sky-500/15 hover:text-sky-100"
+                >
+                  {toggleLabel}
+                </Button>
+                {isDisplayedChannelsLoading ? (
+                  <Skeleton className="h-7 w-24 border border-(--border) bg-(--panel-soft)" />
+                ) : (
+                  <div className="border border-(--border) bg-(--panel-soft) px-3 py-1 text-xs uppercase tracking-[0.22em] text-(--muted)">
+                    {displayedChannels.length} active
+                  </div>
+                )}
+              </div>
+              {sourceLabel ? (
+                <p className="max-w-[24rem] text-xs leading-5 text-(--muted)">
+                  {sourceLabel}
+                </p>
+              ) : null}
             </div>
           </div>
-          {sourceLabel ? (
-            <p className="mt-3 text-xs text-(--muted)">{sourceLabel}</p>
-          ) : null}
 
           <div className="mt-6 grid gap-5">
             {isDisplayedChannelsLoading ? (

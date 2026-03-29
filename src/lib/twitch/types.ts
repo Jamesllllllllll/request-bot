@@ -20,10 +20,12 @@ export interface TwitchChannelSearchResponse {
   data: Array<{
     id: string;
     broadcaster_login: string;
+    broadcaster_language?: string;
     display_name: string;
     thumbnail_url: string;
     is_live?: boolean;
     game_name?: string;
+    tags?: string[];
     title?: string;
   }>;
 }

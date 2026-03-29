@@ -139,7 +139,7 @@ function HomePage() {
     <section className="page-section-stack grid gap-6 pb-6 [container-type:inline-size] xl:grid-cols-[0.72fr_1.28fr]">
       <div className="surface-grid surface-noise border border-(--border-strong) bg-(--panel) p-6 shadow-none md:p-8 max-[720px]:border-x-0 max-[720px]:border-t-0 max-[720px]:bg-transparent max-[720px]:px-0 max-[720px]:pb-4 max-[720px]:pt-0 max-[720px]:shadow-none max-[720px]:[background-image:none]">
         <p className="text-xs font-semibold uppercase tracking-[0.34em] text-(--brand-deep)">
-          Twitch Song Requests
+          Playlist Managment for Rocksmith Streamers
         </p>
         <h1 className="mt-4 max-w-3xl text-4xl font-semibold tracking-[-0.04em] text-(--text) md:text-5xl max-[960px]:text-[clamp(2.3rem,6.5vw,3.8rem)] max-[720px]:text-[clamp(2rem,9vw,2.75rem)]">
           Search songs or manage your channel.

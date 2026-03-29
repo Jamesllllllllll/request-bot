@@ -41,7 +41,10 @@ type PlayedHistoryRequesterResponse = {
   results: PlayedHistoryRequester[];
 };
 
-export function PublicPlayedHistoryCard(props: { slug: string }) {
+export function PublicPlayedHistoryCard(props: {
+  slug: string;
+  channelDisplayName?: string | null;
+}) {
   const [historyOpen, setHistoryOpen] = useState(false);
   const [historyPage, setHistoryPage] = useState(1);
   const [searchQuery, setSearchQuery] = useState("");
@@ -153,7 +156,11 @@ export function PublicPlayedHistoryCard(props: { slug: string }) {
             <History className="h-4 w-4" />
           </div>
           <div>
-            <CardTitle>Played history</CardTitle>
+            <CardTitle>
+              {props.channelDisplayName
+                ? `${props.channelDisplayName}'s played history`
+                : "Played history"}
+            </CardTitle>
           </div>
         </div>
         <Button

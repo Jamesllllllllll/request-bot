@@ -18,6 +18,12 @@ import {
   Settings2,
 } from "lucide-react";
 import { Button } from "~/components/ui/button";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "~/components/ui/tooltip";
 import "~/app.css";
 import type { AppRouterContext } from "~/router";
 
@@ -115,10 +121,7 @@ function AppShell() {
                 <Headphones className="h-[18px] w-[18px]" />
               </div>
               <div className="min-w-0">
-                <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-(--brand-deep) max-[960px]:hidden">
-                  Twitch Song Requests
-                </p>
-                <p className="truncate text-xl font-semibold tracking-tight text-(--text) max-[960px]:hidden">
+                <p className="truncate text-3xl font-semibold tracking-tight text-(--text) max-[960px]:hidden">
                   RockList.Live
                 </p>
               </div>
@@ -148,50 +151,59 @@ function AppShell() {
 
             {viewer ? (
               <div className="flex min-w-0 items-center border border-(--border) bg-(--panel-soft) p-0.5 max-[960px]:p-0 max-[960px]:w-auto max-[960px]:max-w-full max-[960px]:self-start">
-                <Link
-                  to={viewer.channel ? "/$slug" : "/dashboard"}
-                  params={
-                    viewer.channel ? { slug: viewer.channel.slug } : undefined
-                  }
-                  className="flex min-w-0 flex-1 items-center gap-2 no-underline px-0"
-                >
-                  {viewer.user.profileImageUrl ? (
-                    <span
-                      className="block shrink-0 overflow-hidden border border-(--border-strong) max-[960px]:border-0"
-                      style={{
-                        width: 34,
-                        height: 34,
-                        minWidth: 34,
-                        minHeight: 34,
-                        maxWidth: 34,
-                        maxHeight: 34,
-                      }}
-                    >
-                      <img
-                        src={viewer.user.profileImageUrl}
-                        alt={viewer.user.displayName}
-                        className="block object-cover"
-                        style={{
-                          width: "100%",
-                          height: "100%",
-                          minWidth: "100%",
-                          minHeight: "100%",
-                          maxWidth: "100%",
-                          maxHeight: "100%",
-                        }}
-                      />
-                    </span>
-                  ) : (
-                    <div className="flex h-[34px] w-[34px] min-h-[34px] min-w-[34px] shrink-0 items-center justify-center border border-(--border-strong) bg-(--brand) text-xs font-semibold uppercase text-white pr-2">
-                      {viewer.user.displayName.slice(0, 2)}
-                    </div>
-                  )}
-                  <div className="min-w-0">
-                    <p className="max-w-[14rem] truncate text-sm font-medium text-(--text) max-[960px]:hidden pr-2">
-                      {viewer.user.displayName}
-                    </p>
-                  </div>
-                </Link>
+                <TooltipProvider>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Link
+                        to={viewer.channel ? "/$slug" : "/dashboard"}
+                        params={
+                          viewer.channel
+                            ? { slug: viewer.channel.slug }
+                            : undefined
+                        }
+                        className="flex min-w-0 flex-1 items-center gap-2 no-underline px-0"
+                      >
+                        {viewer.user.profileImageUrl ? (
+                          <span
+                            className="block shrink-0 overflow-hidden border border-(--border-strong) max-[960px]:border-0"
+                            style={{
+                              width: 34,
+                              height: 34,
+                              minWidth: 34,
+                              minHeight: 34,
+                              maxWidth: 34,
+                              maxHeight: 34,
+                            }}
+                          >
+                            <img
+                              src={viewer.user.profileImageUrl}
+                              alt={viewer.user.displayName}
+                              className="block object-cover"
+                              style={{
+                                width: "100%",
+                                height: "100%",
+                                minWidth: "100%",
+                                minHeight: "100%",
+                                maxWidth: "100%",
+                                maxHeight: "100%",
+                              }}
+                            />
+                          </span>
+                        ) : (
+                          <div className="flex h-[34px] w-[34px] min-h-[34px] min-w-[34px] shrink-0 items-center justify-center border border-(--border-strong) bg-(--brand) pr-2 text-xs font-semibold uppercase text-white">
+                            {viewer.user.displayName.slice(0, 2)}
+                          </div>
+                        )}
+                        <div className="min-w-0">
+                          <p className="max-w-[14rem] truncate pr-2 text-sm font-medium text-(--text) max-[960px]:hidden">
+                            {viewer.user.displayName}
+                          </p>
+                        </div>
+                      </Link>
+                    </TooltipTrigger>
+                    <TooltipContent>Go to your playlist.</TooltipContent>
+                  </Tooltip>
+                </TooltipProvider>
                 <Button
                   asChild
                   variant="outline"

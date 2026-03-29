@@ -35,6 +35,10 @@ type DashboardSettingsData = {
     botReadyState: string;
   };
   settings: DashboardSettingsFormData | null;
+  ownedOfficialDlcImport: {
+    count: number;
+    importedAt: number | null;
+  };
   bot: {
     connected: boolean;
     configuredUsername: string;
@@ -59,24 +63,31 @@ type ViewerSessionData = {
   };
 };
 
+const allTuningOptions = Array.from(tuningOptions);
+const mockOwnedOfficialDlcRows = [
+  ["Symphony No. 40", "Wolfgang Amadeus Mozart", false],
+  ["Even Flow", "Pearl Jam", true],
+  ["Cold Shot", "Stevie Ray Vaughan & Double Trouble", false],
+] as const;
+
 const defaultForm: DashboardSettingsFormData = {
   botChannelEnabled: false,
-  moderatorCanManageRequests: false,
-  moderatorCanManageBlacklist: false,
-  moderatorCanManageSetlist: false,
-  moderatorCanManageBlockedChatters: false,
-  moderatorCanViewVipTokens: false,
-  moderatorCanManageVipTokens: false,
-  moderatorCanManageTags: false,
+  moderatorCanManageRequests: true,
+  moderatorCanManageBlacklist: true,
+  moderatorCanManageSetlist: true,
+  moderatorCanManageBlockedChatters: true,
+  moderatorCanViewVipTokens: true,
+  moderatorCanManageVipTokens: true,
+  moderatorCanManageTags: true,
   requestsEnabled: true,
   allowAnyoneToRequest: true,
   allowSubscribersToRequest: true,
   allowVipsToRequest: true,
   onlyOfficialDlc: false,
-  allowedTunings: [],
+  allowedTunings: allTuningOptions,
   requiredPaths: [],
   requiredPathsMatchMode: "any",
-  maxQueueSize: 250,
+  maxQueueSize: 50,
   maxViewerRequestsAtOnce: 1,
   maxSubscriberRequestsAtOnce: 1,
   maxVipViewerRequestsAtOnce: 1,
@@ -105,10 +116,10 @@ const defaultForm: DashboardSettingsFormData = {
 const twitchExtensionInstallUrl =
   "https://dashboard.twitch.tv/extensions/gojrfj73vbfx7fww479a77kpvyrz91-0.0.1";
 const twitchExtensionBetaUserIds = new Set([
-  "152539019", // xEmmy98x
-  "26914244", // Unleashed2k
-  "44932690", // YoungGun
-  "49572641", // Gamut
+  "152539019",
+  "26914244",
+  "44932690",
+  "49572641",
 ]);
 
 export const Route = createFileRoute("/dashboard/settings")({
@@ -163,27 +174,25 @@ function DashboardSettingsPage() {
 
   useEffect(() => {
     if (settingsQuery.data?.settings) {
-      setForm({
-        ...settingsQuery.data.settings,
-        autoGrantVipTokenToSubscribers: false,
-      });
+      setForm(normalizeSettingsFormData(settingsQuery.data.settings));
     }
   }, [settingsQuery.data]);
 
   const mutation = useMutation({
     mutationFn: async () => {
+      const payload = {
+        ...form,
+        moderatorCanViewVipTokens: true,
+      } as SettingsInputData;
       const response = await fetch("/api/dashboard/settings", {
         method: "POST",
         headers: {
           "content-type": "application/json",
         },
-        body: JSON.stringify(form as SettingsInputData),
+        body: JSON.stringify(payload),
       });
       const body = (await response.json().catch(() => null)) as
-        | {
-            message?: string;
-            warning?: string | null;
-          }
+        | { message?: string; warning?: string | null }
         | { message?: string }
         | null;
 
@@ -195,17 +204,31 @@ function DashboardSettingsPage() {
         );
       }
 
-      return body as {
-        message?: string;
-        warning?: string | null;
-      };
+      return body as { message?: string; warning?: string | null };
     },
     onMutate: () => {
       setSaveMessage(null);
       setSaveWarning(null);
       setSaveError(null);
+
+      return {
+        submittedForm: normalizeSettingsFormData(form),
+      };
     },
-    onSuccess: async (payload) => {
+    onSuccess: async (payload, _variables, context) => {
+      if (context?.submittedForm) {
+        queryClient.setQueryData<DashboardSettingsData | undefined>(
+          ["dashboard-settings"],
+          (current) =>
+            current
+              ? {
+                  ...current,
+                  settings: context.submittedForm,
+                }
+              : current
+        );
+      }
+
       setSaveMessage(payload?.message ?? "Settings saved.");
       setSaveWarning(payload?.warning ?? null);
       await Promise.all([
@@ -227,11 +250,38 @@ function DashboardSettingsPage() {
           Number(right.isLive) - Number(left.isLive) ||
           left.displayName.localeCompare(right.displayName)
       ) ?? [];
+  const savedSettings = settingsQuery.data?.settings
+    ? normalizeSettingsFormData(settingsQuery.data.settings)
+    : null;
+  const ownedOfficialDlcCount =
+    settingsQuery.data?.ownedOfficialDlcImport?.count ?? 0;
+  const hasOwnedOfficialDlcSelections = ownedOfficialDlcCount > 0;
+  const hasUnsavedChanges = savedSettings
+    ? getSettingsComparisonSnapshot(form) !==
+      getSettingsComparisonSnapshot(savedSettings)
+    : false;
+  const canSaveSettings =
+    hasOwnerChannel &&
+    !settingsQuery.isLoading &&
+    !settingsQuery.error &&
+    hasUnsavedChanges &&
+    !mutation.isPending;
+  const pathSummary = buildRequiredPathsSummary(
+    form.requiredPaths,
+    form.requiredPathsMatchMode
+  );
 
   function toggleArrayValue(list: string[], value: string) {
     return list.includes(value)
       ? list.filter((entry) => entry !== value)
       : [...list, value];
+  }
+
+  function toggleAllowedTuning(tuning: string) {
+    setForm((current) => ({
+      ...current,
+      allowedTunings: toggleArrayValue(current.allowedTunings, tuning),
+    }));
   }
 
   function setBoolean<K extends keyof DashboardSettingsFormData>(
@@ -244,14 +294,6 @@ function DashboardSettingsPage() {
       if (key === "allowAnyoneToRequest" && value) {
         next.allowSubscribersToRequest = true;
         next.allowVipsToRequest = true;
-      }
-
-      if (key === "moderatorCanManageVipTokens" && value) {
-        next.moderatorCanViewVipTokens = true;
-      }
-
-      if (key === "moderatorCanViewVipTokens" && !value) {
-        next.moderatorCanManageVipTokens = false;
       }
 
       return next;
@@ -269,7 +311,7 @@ function DashboardSettingsPage() {
     <div className="page-section-stack dashboard-settings grid gap-6">
       <DashboardPageHeader
         title="Settings"
-        description="Owner-only channel configuration. Moderators use the channel page for playlist and moderation actions."
+        description="Owner-only channel configuration for requests, moderators, and the stream overlay."
         meta={
           canSeeTwitchExtensionInstall ? (
             <p className="max-w-2xl text-sm leading-7 text-(--muted)">
@@ -308,12 +350,6 @@ function DashboardSettingsPage() {
               <Badge variant={status === "active" ? "default" : "outline"}>
                 {getBotStatusLabel(status)}
               </Badge>
-              <Button
-                onClick={() => mutation.mutate()}
-                disabled={mutation.isPending}
-              >
-                {mutation.isPending ? "Saving..." : "Save settings"}
-              </Button>
             </div>
           ) : null
         }
@@ -341,7 +377,7 @@ function DashboardSettingsPage() {
               manageableChannels.map((channel) => (
                 <div
                   key={channel.slug}
-                  className="flex flex-wrap items-center justify-between gap-3 rounded-[24px] border border-(--border) bg-(--panel-soft) px-4 py-4"
+                  className="flex flex-wrap items-center justify-between gap-3 border border-(--border) bg-(--panel-soft) px-4 py-4"
                 >
                   <div className="min-w-0">
                     <p className="font-semibold text-(--text)">
@@ -378,260 +414,336 @@ function DashboardSettingsPage() {
       !hasOwnerChannel ||
       settingsQuery.error ? null : (
         <>
-          <SectionHeading
-            eyebrow="Bot and access"
-            title="Channel controls"
-            description="Request settings and mod access rules for your channel."
-          />
-
-          {saveMessage ? <Banner tone="success">{saveMessage}</Banner> : null}
-          {saveWarning ? <Banner tone="warning">{saveWarning}</Banner> : null}
-          {saveError ? <Banner tone="danger">{saveError}</Banner> : null}
-          {status === "broadcaster_auth_required" ? (
-            <div className="rounded-[24px] border border-amber-500/30 bg-amber-500/10 p-4 text-sm text-amber-200">
-              Twitch permissions need to be refreshed before the bot can run.{" "}
-              <a
-                href="/auth/twitch/start?redirectTo=%2Fdashboard%2Fsettings"
-                className="font-semibold underline"
-              >
-                Reconnect Twitch
-              </a>
-              .
-            </div>
-          ) : null}
-
-          <Card className="dashboard-settings__section">
-            <CardHeader>
-              <CardTitle>Primary controls</CardTitle>
-            </CardHeader>
-            <CardContent className="grid gap-4">
-              <PermissionRow
-                label="Enable playlist on your channel"
-                checked={form.botChannelEnabled}
-                onChange={(value) => setBoolean("botChannelEnabled", value)}
-              />
-              <PermissionRow
-                label="Enable requests"
-                checked={form.requestsEnabled}
-                onChange={(value) => setBoolean("requestsEnabled", value)}
-              />
-              <PermissionRow
-                label="Auto grant one VIP token to subscribers"
-                checked={false}
-                onChange={(value) =>
-                  setBoolean("autoGrantVipTokenToSubscribers", value)
-                }
-                disabled
-              />
-              <p className="text-sm leading-7 text-amber-200">
-                Not implemented yet.
-              </p>
-              <div className="grid gap-2">
-                <p className="font-medium text-(--text)">Command prefix</p>
-                <p className="text-sm leading-7 text-(--muted)">Usually !sr</p>
-                <div className="max-w-32">
-                  <Input
-                    value={form.commandPrefix}
-                    onChange={(event) =>
-                      setForm((current) => ({
-                        ...current,
-                        commandPrefix: event.target.value,
-                      }))
-                    }
-                  />
-                </div>
-              </div>
-              <div className="grid gap-2">
-                <p className="font-medium text-(--text)">
-                  Duplicate cooldown (minutes)
-                </p>
-                <p className="text-sm leading-7 text-(--muted)">
-                  Time before the same song can be requested again.
-                </p>
-                <div className="max-w-40">
-                  <Input
-                    type="number"
-                    min={0}
-                    max={1440}
-                    value={Math.floor(form.duplicateWindowSeconds / 60)}
-                    onChange={(event) =>
-                      setNumber(
-                        "duplicateWindowSeconds",
-                        (Number(event.target.value) || 0) * 60
-                      )
-                    }
-                  />
-                </div>
-              </div>
-              <PermissionRow
-                label="Show playlist positions"
-                checked={form.showPlaylistPositions}
-                onChange={(value) => setBoolean("showPlaylistPositions", value)}
-              />
-            </CardContent>
-          </Card>
-
-          <SectionHeading
-            eyebrow="Requests"
-            title="Policy and queue rules"
-            description="Control who can request, what songs are allowed, and how aggressively the queue is throttled."
-          />
-
-          <Card className="dashboard-settings__section">
-            <CardHeader>
-              <CardTitle>VIP token automation</CardTitle>
-              <CardDescription>
-                Automatically reward VIP tokens for gifted subs and cheers.
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="grid gap-6">
-              <div className="grid gap-3 rounded-[24px] border border-(--border) bg-(--panel-soft) p-4">
-                <p className="text-sm font-semibold text-(--text)">
-                  Gifted subs
-                </p>
-                <PermissionRow
-                  label="Give 1 VIP token to the gifter for each gifted sub"
-                  checked={form.autoGrantVipTokensToSubGifters}
-                  onChange={(value) =>
-                    setBoolean("autoGrantVipTokensToSubGifters", value)
-                  }
-                />
-                <PermissionRow
-                  label="Give 1 VIP token to each gifted sub recipient"
-                  checked={form.autoGrantVipTokensToGiftRecipients}
-                  onChange={(value) =>
-                    setBoolean("autoGrantVipTokensToGiftRecipients", value)
-                  }
-                />
-              </div>
-
+          <div className="grid gap-6">
+            <div className="sticky top-3 z-20">
               <div
-                className={`grid gap-4 rounded-[24px] border p-4 ${
-                  form.autoGrantVipTokensForCheers
-                    ? "border-(--border-strong) bg-(--panel-soft)"
-                    : "border-(--border) bg-(--panel-muted)/40"
+                className={`surface-grid surface-noise flex flex-wrap items-center justify-between gap-3 border px-4 py-3 backdrop-blur-sm transition-colors ${
+                  saveError
+                    ? "border-red-500/40 bg-red-500/10"
+                    : mutation.isPending || hasUnsavedChanges
+                      ? "border-(--brand) bg-(--panel) shadow-(--glow)"
+                      : "border-(--border-strong) bg-(--panel-soft)"
                 }`}
               >
-                <PermissionRow
-                  label="Give VIP tokens for cheers"
-                  checked={form.autoGrantVipTokensForCheers}
-                  onChange={(value) =>
-                    setBoolean("autoGrantVipTokensForCheers", value)
-                  }
-                />
-                <div className="grid gap-4 md:grid-cols-2">
-                  <CompactNumberRow
-                    label="Bits per 1 VIP token"
-                    value={form.cheerBitsPerVipToken}
-                    onChange={(value) =>
-                      setNumber("cheerBitsPerVipToken", value)
-                    }
-                    disabled={!form.autoGrantVipTokensForCheers}
-                  />
-                  <div
-                    className={`grid gap-2 ${!form.autoGrantVipTokensForCheers ? "opacity-60" : ""}`}
+                <div className="grid gap-1">
+                  <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-(--muted)">
+                    Settings
+                  </p>
+                  <p
+                    className={`text-sm font-medium ${
+                      saveError
+                        ? "text-red-200"
+                        : mutation.isPending || hasUnsavedChanges
+                          ? "text-(--text)"
+                          : "text-(--muted)"
+                    }`}
                   >
-                    <p className="text-sm font-medium text-(--text)">
-                      Minimum cheer to earn a partial token
-                    </p>
-                    <div className="flex flex-wrap gap-2">
-                      {[25, 50, 75, 100].map((percent) => (
-                        <button
-                          key={percent}
-                          type="button"
-                          disabled={!form.autoGrantVipTokensForCheers}
-                          onClick={() =>
-                            setNumber(
-                              "cheerMinimumTokenPercent",
-                              percent as DashboardSettingsFormData["cheerMinimumTokenPercent"]
-                            )
-                          }
-                          className={`rounded-full border px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.18em] transition-colors disabled:cursor-not-allowed ${
-                            form.cheerMinimumTokenPercent === percent
-                              ? "border-(--brand) bg-(--brand) text-white"
-                              : "border-(--border) bg-(--panel-muted) text-(--muted)"
-                          }`}
-                        >
-                          {percent}%
-                        </button>
-                      ))}
+                    {settingsQuery.isLoading
+                      ? "Loading settings..."
+                      : saveError
+                        ? "Save failed. Review the message below and try again."
+                        : mutation.isPending
+                          ? "Saving settings..."
+                          : hasUnsavedChanges
+                            ? "You have unsaved changes."
+                            : "All changes are saved."}
+                  </p>
+                </div>
+
+                <Button
+                  onClick={() => mutation.mutate()}
+                  disabled={!canSaveSettings}
+                  variant={
+                    hasUnsavedChanges || mutation.isPending
+                      ? "default"
+                      : "outline"
+                  }
+                >
+                  {mutation.isPending ? "Saving..." : "Save settings"}
+                </Button>
+              </div>
+            </div>
+
+            {saveMessage && !hasUnsavedChanges ? (
+              <Banner tone="success">{saveMessage}</Banner>
+            ) : null}
+            {saveWarning ? <Banner tone="warning">{saveWarning}</Banner> : null}
+            {saveError ? <Banner tone="danger">{saveError}</Banner> : null}
+
+            <Card className="dashboard-settings__section">
+              <CardHeader>
+                <CardTitle>Channel setup</CardTitle>
+                <CardDescription>
+                  Turn requests on, set the command prefix, and control the
+                  basic playlist behavior viewers see.
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="grid gap-4 lg:grid-cols-[minmax(0,1.1fr)_minmax(0,0.9fr)]">
+                <div className="grid gap-4">
+                  {status === "broadcaster_auth_required" ? (
+                    <div className="border border-amber-500/30 bg-amber-500/10 p-4 text-sm text-amber-200">
+                      Twitch permissions need to be refreshed before the bot can
+                      run.{" "}
+                      <a
+                        href="/auth/twitch/start?redirectTo=%2Fdashboard%2Fsettings"
+                        className="font-semibold underline"
+                      >
+                        Reconnect Twitch
+                      </a>
+                      .
                     </div>
-                    <p className="text-xs leading-6 text-(--muted)">
-                      Example: if 200 bits = 1 token and the minimum is 25%,
-                      viewers need to cheer at least 50 bits to earn 0.25
-                      tokens.
-                    </p>
+                  ) : null}
+                  <div className="grid gap-3 border border-(--border) bg-(--panel-soft) p-4">
+                    <PermissionRow
+                      label="Enable playlist on your channel"
+                      checked={form.botChannelEnabled}
+                      onChange={(value) =>
+                        setBoolean("botChannelEnabled", value)
+                      }
+                    />
+                    <PermissionRow
+                      label="Enable requests"
+                      checked={form.requestsEnabled}
+                      onChange={(value) => setBoolean("requestsEnabled", value)}
+                    />
+                    <PermissionRow
+                      label="Show playlist positions"
+                      checked={form.showPlaylistPositions}
+                      onChange={(value) =>
+                        setBoolean("showPlaylistPositions", value)
+                      }
+                    />
                   </div>
                 </div>
-              </div>
-            </CardContent>
-          </Card>
 
-          <Card className="dashboard-settings__section">
-            <CardHeader>
-              <CardTitle>Who can request</CardTitle>
-            </CardHeader>
-            <CardContent className="grid gap-3">
-              <PermissionRow
-                label="Allow anyone to request"
-                checked={form.allowAnyoneToRequest}
-                onChange={(value) => setBoolean("allowAnyoneToRequest", value)}
-              />
-              <PermissionRow
-                label="Allow subscribers to request"
-                checked={
-                  form.allowAnyoneToRequest
-                    ? true
-                    : form.allowSubscribersToRequest
-                }
-                onChange={(value) =>
-                  setBoolean("allowSubscribersToRequest", value)
-                }
-                disabled={form.allowAnyoneToRequest}
-              />
-              <PermissionRow
-                label="Allow channel VIPs to request"
-                checked={
-                  form.allowAnyoneToRequest ? true : form.allowVipsToRequest
-                }
-                onChange={(value) => setBoolean("allowVipsToRequest", value)}
-                disabled={form.allowAnyoneToRequest}
-              />
-            </CardContent>
-          </Card>
+                <div className="grid gap-4">
+                  <FieldBlock
+                    label="Command prefix"
+                    description="Use the command viewers type in chat."
+                  >
+                    <div className="max-w-32">
+                      <Input
+                        value={form.commandPrefix}
+                        onChange={(event) =>
+                          setForm((current) => ({
+                            ...current,
+                            commandPrefix: event.target.value,
+                          }))
+                        }
+                      />
+                    </div>
+                  </FieldBlock>
+                  <FieldBlock
+                    label="Duplicate cooldown (minutes)"
+                    description="Set how long the same song waits before it can be requested again."
+                  >
+                    <div className="max-w-40">
+                      <Input
+                        type="number"
+                        min={0}
+                        max={1440}
+                        value={Math.floor(form.duplicateWindowSeconds / 60)}
+                        onChange={(event) =>
+                          setNumber(
+                            "duplicateWindowSeconds",
+                            (Number(event.target.value) || 0) * 60
+                          )
+                        }
+                      />
+                    </div>
+                  </FieldBlock>
+                </div>
+              </CardContent>
+            </Card>
 
-          <Card className="dashboard-settings__section">
-            <CardHeader>
-              <CardTitle>DLC restrictions</CardTitle>
-            </CardHeader>
-            <CardContent className="grid gap-5">
-              <PermissionRow
-                label="Only allow official DLC"
-                checked={form.onlyOfficialDlc}
-                onChange={(value) => setBoolean("onlyOfficialDlc", value)}
-              />
-              <MultiSelectGrid
-                title="Allowed tunings"
-                groups={groupTuningOptions(tuningOptions)}
-                selected={form.allowedTunings}
-                onToggle={(value) =>
-                  setForm((current) => ({
-                    ...current,
-                    allowedTunings: toggleArrayValue(
-                      current.allowedTunings,
-                      value
-                    ),
-                  }))
-                }
-              />
-              <MultiSelectGrid
-                title="Required paths"
-                options={pathOptions}
-                selected={form.requiredPaths}
-                useBadges
-                formatLabel={formatPathOptionLabel}
-                toneByValue={getPathBadgeTone}
-                leadingControl={
+            <Card className="dashboard-settings__section">
+              <CardHeader>
+                <CardTitle>Who can request</CardTitle>
+                <CardDescription>
+                  Choose which viewers can add songs to your playlist.
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="grid gap-3">
+                <PermissionRow
+                  label="Anyone can request"
+                  checked={form.allowAnyoneToRequest}
+                  onChange={(value) =>
+                    setBoolean("allowAnyoneToRequest", value)
+                  }
+                />
+                <PermissionRow
+                  label="Subscribers can request"
+                  checked={
+                    form.allowAnyoneToRequest
+                      ? true
+                      : form.allowSubscribersToRequest
+                  }
+                  onChange={(value) =>
+                    setBoolean("allowSubscribersToRequest", value)
+                  }
+                  disabled={form.allowAnyoneToRequest}
+                />
+                <PermissionRow
+                  label="Channel VIPs can request"
+                  checked={
+                    form.allowAnyoneToRequest ? true : form.allowVipsToRequest
+                  }
+                  onChange={(value) => setBoolean("allowVipsToRequest", value)}
+                  disabled={form.allowAnyoneToRequest}
+                />
+              </CardContent>
+            </Card>
+
+            <Card className="dashboard-settings__section">
+              <CardHeader>
+                <CardTitle>Search and request filters</CardTitle>
+                <CardDescription>
+                  These rules limit what appears in search and what viewers can
+                  request on your channel page.
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="grid gap-4">
+                <div className="grid gap-4 border border-(--border) bg-(--panel-soft) p-4">
+                  <div className="grid gap-3">
+                    <div className="flex flex-wrap items-center justify-between gap-3">
+                      <div className="grid gap-1">
+                        <p className="font-medium text-(--text)">
+                          Official DLC
+                        </p>
+                        <p className="text-sm leading-6 text-(--muted)">
+                          Keep official-only search and request rules together
+                          here.
+                        </p>
+                      </div>
+                      <div className="min-w-[220px]">
+                        <PermissionRow
+                          label="Only include official DLC"
+                          checked={form.onlyOfficialDlc}
+                          onChange={(value) =>
+                            setBoolean("onlyOfficialDlc", value)
+                          }
+                        />
+                      </div>
+                    </div>
+
+                    <PermissionRow
+                      label="Only include official DLC that I own"
+                      checked={false}
+                      onChange={() => {}}
+                      disabled
+                    />
+
+                    {!hasOwnedOfficialDlcSelections ? (
+                      <div className="border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-sm text-amber-200">
+                        Choose which DLC you own.
+                      </div>
+                    ) : null}
+
+                    <div className="grid gap-3 border border-(--border) bg-(--panel-muted) p-3">
+                      <div className="flex flex-wrap items-center justify-between gap-3">
+                        <p className="text-sm font-medium text-(--text)">
+                          Owned official DLC
+                        </p>
+                        <Button type="button" variant="outline" disabled>
+                          Import from CustomsForge Song Manager
+                        </Button>
+                      </div>
+                      <div className="divide-y divide-(--border) border border-(--border)">
+                        {mockOwnedOfficialDlcRows.map(
+                          ([title, artist, owned]) => (
+                            <div
+                              key={`${artist}-${title}`}
+                              className="flex items-center justify-between gap-3 px-3 py-2"
+                            >
+                              <div className="min-w-0">
+                                <p className="truncate text-sm font-medium text-(--text)">
+                                  {title}
+                                </p>
+                                <p className="truncate text-xs text-(--muted)">
+                                  {artist}
+                                </p>
+                              </div>
+                              <span
+                                className={`border px-2 py-1 text-[11px] font-semibold uppercase tracking-[0.16em] ${
+                                  owned
+                                    ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-300"
+                                    : "border-(--border) bg-(--panel) text-(--muted)"
+                                }`}
+                              >
+                                {owned ? "Owned" : "Not owned"}
+                              </span>
+                            </div>
+                          )
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="grid gap-4 border border-(--border) bg-(--panel-soft) p-4">
+                  <div className="flex flex-wrap items-center justify-between gap-3">
+                    <div className="grid gap-1">
+                      <p className="font-medium text-(--text)">
+                        Allowed tunings
+                      </p>
+                      <p className="text-sm leading-6 text-(--muted)">
+                        Click any tuning to allow or block it.
+                      </p>
+                    </div>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={() =>
+                        setForm((current) => ({
+                          ...current,
+                          allowedTunings: allTuningOptions,
+                        }))
+                      }
+                    >
+                      Allow all
+                    </Button>
+                  </div>
+                  <div className="grid gap-4">
+                    {groupTuningOptions(tuningOptions).map((group) => (
+                      <div key={group.label} className="grid gap-2">
+                        <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-(--muted)">
+                          {group.label}
+                        </p>
+                        <div className="flex flex-wrap gap-2">
+                          {group.options.map((option) => {
+                            const isSelected =
+                              form.allowedTunings.includes(option);
+
+                            return (
+                              <button
+                                key={option}
+                                type="button"
+                                onClick={() => toggleAllowedTuning(option)}
+                                aria-pressed={isSelected}
+                                className={`border px-2.5 py-1.5 text-xs font-medium transition-colors ${
+                                  isSelected
+                                    ? "border-(--brand) bg-(--brand) text-white"
+                                    : "border-(--border) bg-(--panel-muted) text-(--muted)"
+                                }`}
+                              >
+                                {option}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="grid gap-4 border border-(--border) bg-(--panel-soft) p-4">
+                  <div className="grid gap-1">
+                    <p className="font-medium text-(--text)">Required paths</p>
+                    <p className="text-sm leading-6 text-(--muted)">
+                      Choose the paths a song needs before it appears in search
+                      or can be requested.
+                    </p>
+                  </div>
                   <div className="flex flex-wrap gap-2">
                     <button
                       type="button"
@@ -641,7 +753,7 @@ function DashboardSettingsPage() {
                           requiredPathsMatchMode: "any",
                         }))
                       }
-                      className={`rounded-full border px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.18em] transition-colors ${
+                      className={`border px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.18em] transition-colors ${
                         form.requiredPathsMatchMode === "any"
                           ? "border-(--brand) bg-(--brand) text-white"
                           : "border-(--border) bg-(--panel-muted) text-(--muted)"
@@ -657,7 +769,7 @@ function DashboardSettingsPage() {
                           requiredPathsMatchMode: "all",
                         }))
                       }
-                      className={`rounded-full border px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.18em] transition-colors ${
+                      className={`border px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.18em] transition-colors ${
                         form.requiredPathsMatchMode === "all"
                           ? "border-(--brand) bg-(--brand) text-white"
                           : "border-(--border) bg-(--panel-muted) text-(--muted)"
@@ -666,74 +778,106 @@ function DashboardSettingsPage() {
                       Match all selected paths
                     </button>
                   </div>
-                }
-                onToggle={(value) =>
-                  setForm((current) => ({
-                    ...current,
-                    requiredPaths: toggleArrayValue(
-                      current.requiredPaths,
-                      value
-                    ),
-                  }))
-                }
-              />
-            </CardContent>
-          </Card>
+                  <div className="flex flex-wrap gap-2">
+                    {pathOptions.map((option) => {
+                      const isSelected = form.requiredPaths.includes(option);
 
-          <Card className="dashboard-settings__section">
-            <CardHeader>
-              <CardTitle>Queue and rate limits</CardTitle>
-            </CardHeader>
-            <CardContent className="grid gap-6 lg:grid-cols-2">
-              <div className="grid content-start gap-3 lg:pr-6 lg:border-r lg:border-(--border)">
-                <p className="text-sm font-semibold text-(--text)">
-                  Queue limits
-                </p>
-                <div className="divide-y divide-(--border)">
-                  <CompactNumberRow
-                    label="Maximum playlist size"
-                    value={form.maxQueueSize}
-                    onChange={(value) => setNumber("maxQueueSize", value)}
-                  />
-                  <CompactNumberRow
-                    label="Max requests per viewer"
-                    value={form.maxViewerRequestsAtOnce}
-                    onChange={(value) =>
-                      setNumber("maxViewerRequestsAtOnce", value)
-                    }
-                  />
-                  <CompactNumberRow
-                    label="Max requests per subscriber"
-                    value={form.maxSubscriberRequestsAtOnce}
-                    onChange={(value) =>
-                      setNumber("maxSubscriberRequestsAtOnce", value)
-                    }
-                  />
-                  <CompactNumberRow
-                    label="Max VIP requests per viewer"
-                    value={form.maxVipViewerRequestsAtOnce}
-                    onChange={(value) =>
-                      setNumber("maxVipViewerRequestsAtOnce", value)
-                    }
-                  />
-                  <CompactNumberRow
-                    label="Max VIP requests per subscriber"
-                    value={form.maxVipSubscriberRequestsAtOnce}
-                    onChange={(value) =>
-                      setNumber("maxVipSubscriberRequestsAtOnce", value)
-                    }
-                  />
+                      return (
+                        <button
+                          key={option}
+                          type="button"
+                          onClick={() =>
+                            setForm((current) => ({
+                              ...current,
+                              requiredPaths: toggleArrayValue(
+                                current.requiredPaths,
+                                option
+                              ),
+                            }))
+                          }
+                          aria-pressed={isSelected}
+                          className={`border px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.18em] transition-colors ${
+                            isSelected
+                              ? getPathBadgeTone(option)
+                              : "border-(--border) bg-(--panel-muted) text-(--muted)"
+                          }`}
+                        >
+                          {formatPathOptionLabel(option)}
+                        </button>
+                      );
+                    })}
+                  </div>
+                  <div className="grid gap-2 border border-(--border) bg-(--panel-muted) p-3">
+                    <p className="text-sm font-medium text-(--text)">
+                      {pathSummary.summary}
+                    </p>
+                    {pathSummary.example ? (
+                      <p className="text-sm leading-6 text-(--muted)">
+                        {pathSummary.example}
+                      </p>
+                    ) : null}
+                  </div>
                 </div>
-              </div>
+              </CardContent>
+            </Card>
 
-              <div className="grid content-start gap-4 lg:pl-6">
-                <div className="grid gap-3">
+            <Card className="dashboard-settings__section">
+              <CardHeader>
+                <CardTitle>Queue and rate limits</CardTitle>
+                <CardDescription>
+                  Set the playlist size and decide how often regular or VIP
+                  requests can be added.
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="grid gap-6 lg:grid-cols-2">
+                <div className="grid content-start gap-3 lg:border-r lg:border-(--border) lg:pr-6">
+                  <p className="text-sm font-semibold text-(--text)">
+                    Queue limits
+                  </p>
+                  <div className="divide-y divide-(--border)">
+                    <CompactNumberRow
+                      label="Maximum playlist size"
+                      value={form.maxQueueSize}
+                      onChange={(value) => setNumber("maxQueueSize", value)}
+                    />
+                    <CompactNumberRow
+                      label="Max requests per viewer"
+                      value={form.maxViewerRequestsAtOnce}
+                      onChange={(value) =>
+                        setNumber("maxViewerRequestsAtOnce", value)
+                      }
+                    />
+                    <CompactNumberRow
+                      label="Max requests per subscriber"
+                      value={form.maxSubscriberRequestsAtOnce}
+                      onChange={(value) =>
+                        setNumber("maxSubscriberRequestsAtOnce", value)
+                      }
+                    />
+                    <CompactNumberRow
+                      label="Max VIP requests per viewer"
+                      value={form.maxVipViewerRequestsAtOnce}
+                      onChange={(value) =>
+                        setNumber("maxVipViewerRequestsAtOnce", value)
+                      }
+                    />
+                    <CompactNumberRow
+                      label="Max VIP requests per subscriber"
+                      value={form.maxVipSubscriberRequestsAtOnce}
+                      onChange={(value) =>
+                        setNumber("maxVipSubscriberRequestsAtOnce", value)
+                      }
+                    />
+                  </div>
+                </div>
+
+                <div className="grid content-start gap-4 lg:pl-6">
                   <p className="text-sm font-semibold text-(--text)">
                     Request rate limits
                   </p>
 
                   <div
-                    className={`rounded-[20px] border p-4 ${
+                    className={`border p-4 ${
                       form.limitRegularRequestsEnabled
                         ? "border-(--border-strong) bg-(--panel-soft)"
                         : "border-(--border) bg-(--panel-muted)/40 opacity-70"
@@ -767,7 +911,7 @@ function DashboardSettingsPage() {
                   </div>
 
                   <div
-                    className={`rounded-[20px] border p-4 ${
+                    className={`border p-4 ${
                       form.limitVipRequestsEnabled
                         ? "border-(--border-strong) bg-(--panel-soft)"
                         : "border-(--border) bg-(--panel-muted)/40 opacity-70"
@@ -800,133 +944,188 @@ function DashboardSettingsPage() {
                     </div>
                   </div>
                 </div>
-              </div>
-            </CardContent>
-          </Card>
+              </CardContent>
+            </Card>
 
-          <SectionHeading
-            eyebrow="Moderation"
-            title="Channel rules and moderator permissions"
-            description="Blacklist, setlist, and moderator capabilities determine what appears editable on the channel page."
-          />
+            <Card className="dashboard-settings__section">
+              <CardHeader>
+                <CardTitle>VIP token automation</CardTitle>
+                <CardDescription>
+                  Automatically reward VIP tokens for gifted subs and cheers.
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="grid gap-6">
+                <div className="grid gap-3 border border-(--border) bg-(--panel-soft) p-4">
+                  <p className="text-sm font-semibold text-(--text)">
+                    Gifted subs
+                  </p>
+                  <PermissionRow
+                    label="Give 1 VIP token to the gifter for each gifted sub"
+                    checked={form.autoGrantVipTokensToSubGifters}
+                    onChange={(value) =>
+                      setBoolean("autoGrantVipTokensToSubGifters", value)
+                    }
+                  />
+                  <PermissionRow
+                    label="Give 1 VIP token to each gifted sub recipient"
+                    checked={form.autoGrantVipTokensToGiftRecipients}
+                    onChange={(value) =>
+                      setBoolean("autoGrantVipTokensToGiftRecipients", value)
+                    }
+                  />
+                </div>
 
-          <Card className="dashboard-settings__section">
-            <CardHeader>
-              <CardTitle>Filtering</CardTitle>
-              <CardDescription>
-                Blacklist and setlist entries are managed on the channel page.
-                These toggles control how those rules are enforced.
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="grid gap-3">
-              <PermissionRow
-                label="Enable blacklist"
-                checked={form.blacklistEnabled}
-                onChange={(value) => setBoolean("blacklistEnabled", value)}
-              />
-              <PermissionRow
-                label="Let setlist bypass blacklist"
-                checked={form.letSetlistBypassBlacklist}
-                onChange={(value) =>
-                  setBoolean("letSetlistBypassBlacklist", value)
-                }
-              />
-              <PermissionRow
-                label="Enable setlist"
-                checked={form.setlistEnabled}
-                onChange={(value) => setBoolean("setlistEnabled", value)}
-              />
-              <PermissionRow
-                label="Subscribers must follow setlist (non-subscribers must always follow setlist)"
-                checked={form.subscribersMustFollowSetlist}
-                onChange={(value) =>
-                  setBoolean("subscribersMustFollowSetlist", value)
-                }
-              />
-            </CardContent>
-          </Card>
+                <div
+                  className={`grid gap-4 border p-4 ${
+                    form.autoGrantVipTokensForCheers
+                      ? "border-(--border-strong) bg-(--panel-soft)"
+                      : "border-(--border) bg-(--panel-muted)/40"
+                  }`}
+                >
+                  <PermissionRow
+                    label="Give VIP tokens for cheers"
+                    checked={form.autoGrantVipTokensForCheers}
+                    onChange={(value) =>
+                      setBoolean("autoGrantVipTokensForCheers", value)
+                    }
+                  />
+                  <div className="grid gap-4 md:grid-cols-2">
+                    <CompactNumberRow
+                      label="Bits per 1 VIP token"
+                      value={form.cheerBitsPerVipToken}
+                      onChange={(value) =>
+                        setNumber("cheerBitsPerVipToken", value)
+                      }
+                      disabled={!form.autoGrantVipTokensForCheers}
+                    />
+                    <div
+                      className={`grid gap-2 ${!form.autoGrantVipTokensForCheers ? "opacity-60" : ""}`}
+                    >
+                      <p className="text-sm font-medium text-(--text)">
+                        Minimum cheer to earn a partial token
+                      </p>
+                      <div className="flex flex-wrap gap-2">
+                        {[25, 50, 75, 100].map((percent) => (
+                          <button
+                            key={percent}
+                            type="button"
+                            disabled={!form.autoGrantVipTokensForCheers}
+                            onClick={() =>
+                              setNumber(
+                                "cheerMinimumTokenPercent",
+                                percent as DashboardSettingsFormData["cheerMinimumTokenPercent"]
+                              )
+                            }
+                            className={`border px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.18em] transition-colors disabled:cursor-not-allowed ${
+                              form.cheerMinimumTokenPercent === percent
+                                ? "border-(--brand) bg-(--brand) text-white"
+                                : "border-(--border) bg-(--panel-muted) text-(--muted)"
+                            }`}
+                          >
+                            {percent}%
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
 
-          <Card className="dashboard-settings__section">
-            <CardHeader>
-              <CardTitle>Moderator permissions</CardTitle>
-            </CardHeader>
-            <CardContent className="grid gap-3">
-              <PermissionRow
-                label="Manage requests"
-                checked={form.moderatorCanManageRequests}
-                onChange={(value) =>
-                  setBoolean("moderatorCanManageRequests", value)
-                }
-              />
-              <PermissionRow
-                label="Manage blacklist"
-                checked={form.moderatorCanManageBlacklist}
-                onChange={(value) =>
-                  setBoolean("moderatorCanManageBlacklist", value)
-                }
-              />
-              <PermissionRow
-                label="Manage setlist"
-                checked={form.moderatorCanManageSetlist}
-                onChange={(value) =>
-                  setBoolean("moderatorCanManageSetlist", value)
-                }
-              />
-              <PermissionRow
-                label="Manage blocked viewers"
-                checked={form.moderatorCanManageBlockedChatters}
-                onChange={(value) =>
-                  setBoolean("moderatorCanManageBlockedChatters", value)
-                }
-              />
-              <PermissionRow
-                label="View VIP tokens"
-                checked={form.moderatorCanViewVipTokens}
-                onChange={(value) =>
-                  setBoolean("moderatorCanViewVipTokens", value)
-                }
-              />
-              <PermissionRow
-                label="Manage VIP tokens"
-                checked={form.moderatorCanManageVipTokens}
-                onChange={(value) =>
-                  setBoolean("moderatorCanManageVipTokens", value)
-                }
-                disabled={!form.moderatorCanViewVipTokens}
-              />
-              <PermissionRow
-                label="Manage tags"
-                checked={form.moderatorCanManageTags}
-                onChange={(value) =>
-                  setBoolean("moderatorCanManageTags", value)
-                }
-              />
-            </CardContent>
-          </Card>
+            <Card className="dashboard-settings__section">
+              <CardHeader>
+                <CardTitle>Blacklist and setlist rules</CardTitle>
+                <CardDescription>
+                  Blacklist and setlist entries are managed on the channel page.
+                  These toggles control how those rules are enforced.
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="grid gap-3">
+                <PermissionRow
+                  label="Enable blacklist"
+                  checked={form.blacklistEnabled}
+                  onChange={(value) => setBoolean("blacklistEnabled", value)}
+                />
+                <PermissionRow
+                  label="Let setlist bypass blacklist"
+                  checked={form.letSetlistBypassBlacklist}
+                  onChange={(value) =>
+                    setBoolean("letSetlistBypassBlacklist", value)
+                  }
+                />
+                <PermissionRow
+                  label="Enable setlist"
+                  checked={form.setlistEnabled}
+                  onChange={(value) => setBoolean("setlistEnabled", value)}
+                />
+                <PermissionRow
+                  label="Subscribers must follow setlist"
+                  checked={form.subscribersMustFollowSetlist}
+                  onChange={(value) =>
+                    setBoolean("subscribersMustFollowSetlist", value)
+                  }
+                />
+              </CardContent>
+            </Card>
+
+            <Card className="dashboard-settings__section">
+              <CardHeader>
+                <CardTitle>Moderator permissions</CardTitle>
+                <CardDescription>
+                  Moderators always see VIP tokens. Turn other
+                  channel-management actions on or off here.
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="grid gap-3">
+                <PermissionRow
+                  label="Manage requests"
+                  checked={form.moderatorCanManageRequests}
+                  onChange={(value) =>
+                    setBoolean("moderatorCanManageRequests", value)
+                  }
+                />
+                <PermissionRow
+                  label="Manage blacklist"
+                  checked={form.moderatorCanManageBlacklist}
+                  onChange={(value) =>
+                    setBoolean("moderatorCanManageBlacklist", value)
+                  }
+                />
+                <PermissionRow
+                  label="Manage setlist"
+                  checked={form.moderatorCanManageSetlist}
+                  onChange={(value) =>
+                    setBoolean("moderatorCanManageSetlist", value)
+                  }
+                />
+                <PermissionRow
+                  label="Manage blocked viewers"
+                  checked={form.moderatorCanManageBlockedChatters}
+                  onChange={(value) =>
+                    setBoolean("moderatorCanManageBlockedChatters", value)
+                  }
+                />
+                <PermissionRow
+                  label="Manage VIP tokens"
+                  checked={form.moderatorCanManageVipTokens}
+                  onChange={(value) =>
+                    setBoolean("moderatorCanManageVipTokens", value)
+                  }
+                />
+                <PermissionRow
+                  label="Manage tags"
+                  checked={form.moderatorCanManageTags}
+                  onChange={(value) =>
+                    setBoolean("moderatorCanManageTags", value)
+                  }
+                />
+              </CardContent>
+            </Card>
+          </div>
 
           <OverlaySettingsPanel />
         </>
       )}
-    </div>
-  );
-}
-
-function SectionHeading(props: {
-  eyebrow: string;
-  title: string;
-  description: string;
-}) {
-  return (
-    <div className="grid gap-2">
-      <p className="text-xs font-semibold uppercase tracking-[0.22em] text-(--brand-deep)">
-        {props.eyebrow}
-      </p>
-      <h2 className="text-2xl font-semibold tracking-tight text-(--text)">
-        {props.title}
-      </h2>
-      <p className="max-w-3xl text-sm leading-7 text-(--muted)">
-        {props.description}
-      </p>
     </div>
   );
 }
@@ -943,110 +1142,22 @@ function Banner(props: {
         : "border-rose-500/30 bg-rose-500/10 text-rose-200";
 
   return (
-    <div className={`rounded-[24px] border p-4 text-sm ${toneClass}`}>
-      {props.children}
-    </div>
+    <div className={`border p-4 text-sm ${toneClass}`}>{props.children}</div>
   );
 }
 
-function MultiSelectGrid(props: {
-  title: string;
-  options?: readonly string[];
-  groups?: Array<{
-    label: string;
-    options: readonly string[];
-  }>;
-  selected: string[];
-  onToggle: (value: string) => void;
-  useBadges?: boolean;
-  formatLabel?: (value: string) => string;
-  toneByValue?: (value: string) => string;
-  leadingControl?: ReactNode;
+function FieldBlock(props: {
+  label: string;
+  description?: string;
+  children: ReactNode;
 }) {
   return (
-    <div className="rounded-[24px] border border-(--border) bg-(--panel-soft) p-4">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <p className="font-medium text-(--text)">{props.title}</p>
-        {props.leadingControl}
-      </div>
-      {props.groups ? (
-        <div className="mt-4 grid gap-4 lg:grid-cols-3">
-          {props.groups.map((group) => (
-            <div key={group.label} className="grid content-start gap-2">
-              <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-(--muted)">
-                {group.label}
-              </p>
-              <div className="grid gap-1.5">
-                {group.options.map((option) => {
-                  const isSelected = props.selected.includes(option);
-                  const label = props.formatLabel?.(option) ?? option;
-
-                  return (
-                    <label
-                      key={option}
-                      className={`flex items-center gap-2 rounded-[14px] px-2.5 py-1.5 transition-colors ${
-                        isSelected
-                          ? "bg-(--panel) text-(--text)"
-                          : "text-(--muted)"
-                      }`}
-                    >
-                      <input
-                        type="checkbox"
-                        checked={isSelected}
-                        onChange={() => props.onToggle(option)}
-                        className="h-4 w-4 shrink-0"
-                      />
-                      <span className="text-sm leading-6">{label}</span>
-                    </label>
-                  );
-                })}
-              </div>
-            </div>
-          ))}
-        </div>
-      ) : (
-        <div
-          className={
-            props.useBadges
-              ? "mt-4 flex flex-wrap gap-3"
-              : "mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-3"
-          }
-        >
-          {props.options?.map((option) => {
-            const isSelected = props.selected.includes(option);
-            const label = props.formatLabel?.(option) ?? option;
-
-            return props.useBadges ? (
-              <button
-                key={option}
-                type="button"
-                onClick={() => props.onToggle(option)}
-                aria-pressed={isSelected}
-                className={`cursor-pointer rounded-full border px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.18em] transition-[opacity,filter,transform,border-color,background-color,color] ${
-                  isSelected
-                    ? (props.toneByValue?.(option) ??
-                      "border-(--brand) bg-(--brand) text-white")
-                    : "border-(--border) bg-(--panel-muted) text-(--muted) opacity-45 saturate-50"
-                }`}
-              >
-                {label}
-              </button>
-            ) : (
-              <label
-                key={option}
-                className="flex items-center gap-3 rounded-[20px] border border-(--border) bg-(--panel-muted) px-4 py-3"
-              >
-                <input
-                  type="checkbox"
-                  checked={isSelected}
-                  onChange={() => props.onToggle(option)}
-                />
-                <span className="text-sm text-(--text)">{label}</span>
-              </label>
-            );
-          })}
-        </div>
-      )}
+    <div className="grid gap-2 border border-(--border) bg-(--panel-soft) p-4">
+      <p className="font-medium text-(--text)">{props.label}</p>
+      {props.description ? (
+        <p className="text-sm leading-6 text-(--muted)">{props.description}</p>
+      ) : null}
+      {props.children}
     </div>
   );
 }
@@ -1099,6 +1210,28 @@ function CompactNumberRow(props: {
   );
 }
 
+function normalizeSettingsFormData(
+  settings: DashboardSettingsFormData
+): DashboardSettingsFormData {
+  return {
+    ...settings,
+    allowedTunings: settings.allowedTunings.length
+      ? settings.allowedTunings
+      : allTuningOptions,
+    moderatorCanViewVipTokens: true,
+  };
+}
+
+function getSettingsComparisonSnapshot(settings: DashboardSettingsFormData) {
+  const normalized = normalizeSettingsFormData(settings);
+
+  return JSON.stringify({
+    ...normalized,
+    allowedTunings: [...normalized.allowedTunings].sort(),
+    requiredPaths: [...normalized.requiredPaths].sort(),
+  });
+}
+
 function formatPathOptionLabel(value: string) {
   return value === "voice" ? "Lyrics" : value;
 }
@@ -1117,6 +1250,163 @@ function getPathBadgeTone(value: string) {
     default:
       return "border-(--border-strong) bg-(--panel) text-(--text)";
   }
+}
+
+function getPathExampleTone(value: string) {
+  switch (value.toLowerCase()) {
+    case "lead":
+      return "text-emerald-300";
+    case "rhythm":
+      return "text-sky-300";
+    case "bass":
+      return "text-orange-300";
+    case "voice":
+    case "vocals":
+      return "text-violet-300";
+    default:
+      return "text-(--text)";
+  }
+}
+
+function buildRequiredPathsSummary(
+  requiredPaths: string[],
+  matchMode: "any" | "all"
+) {
+  const extraPath = getExampleExtraPath(requiredPaths);
+
+  if (requiredPaths.length === 0) {
+    return {
+      summary:
+        "No path filter is active. Songs can match with any path combination.",
+      example: null,
+    };
+  }
+
+  if (requiredPaths.length === 1) {
+    return {
+      summary: (
+        <>
+          Songs must include {renderPathLabel(requiredPaths[0])}. They can still
+          include any other paths.
+        </>
+      ),
+      example: (
+        <>
+          Example: a song with{" "}
+          {renderPathExampleSequence(
+            extraPath ? [requiredPaths[0], extraPath] : [requiredPaths[0]]
+          )}{" "}
+          still matches.
+        </>
+      ),
+    };
+  }
+
+  if (matchMode === "any") {
+    const selectedPath = requiredPaths[1] ?? requiredPaths[0];
+    return {
+      summary: (
+        <>
+          Songs match if they include at least one of{" "}
+          {renderPathSummaryList(requiredPaths)}. They can still include any
+          other paths.
+        </>
+      ),
+      example: (
+        <>
+          Example: a song with{" "}
+          {renderPathExampleSequence(
+            extraPath ? [selectedPath, extraPath] : [selectedPath]
+          )}{" "}
+          still matches because it includes one selected path.
+        </>
+      ),
+    };
+  }
+
+  return {
+    summary: (
+      <>
+        Songs match only if they include all of{" "}
+        {renderPathSummaryList(requiredPaths)}. They can still include any other
+        paths.
+      </>
+    ),
+    example: (
+      <>
+        Example: a song with{" "}
+        {renderPathExampleSequence(
+          extraPath ? [...requiredPaths, extraPath] : requiredPaths
+        )}{" "}
+        still matches because it includes every selected path.
+      </>
+    ),
+  };
+}
+
+function renderPathExampleSequence(values: string[]) {
+  const content: ReactNode[] = [];
+
+  values.forEach((value, index) => {
+    if (index > 0) {
+      content.push(
+        <span key={`separator-${index}`} className="text-(--muted)">
+          {" + "}
+        </span>
+      );
+    }
+
+    content.push(renderPathExampleLabel(value, "", `${value}-${index}`));
+  });
+
+  return content;
+}
+
+function renderPathSummaryList(values: string[]) {
+  const content: ReactNode[] = [];
+
+  values.forEach((value, index) => {
+    if (index > 0) {
+      const separator =
+        index === values.length - 1
+          ? values.length === 2
+            ? " and "
+            : ", and "
+          : ", ";
+
+      content.push(
+        <span key={`summary-separator-${index}`} className="text-(--muted)">
+          {separator}
+        </span>
+      );
+    }
+
+    content.push(renderPathLabel(value, "", `summary-${value}-${index}`));
+  });
+
+  return content;
+}
+
+function renderPathLabel(value: string, suffix = "", key?: string) {
+  return (
+    <span
+      key={key}
+      className={`font-semibold uppercase tracking-[0.18em] ${getPathExampleTone(
+        value
+      )}`}
+    >
+      {formatPathOptionLabel(value).toUpperCase()}
+      {suffix}
+    </span>
+  );
+}
+
+function renderPathExampleLabel(value: string, suffix = "", key?: string) {
+  return renderPathLabel(value, suffix, key);
+}
+
+function getExampleExtraPath(requiredPaths: string[]) {
+  return pathOptions.find((option) => !requiredPaths.includes(option));
 }
 
 function groupTuningOptions(options: readonly string[]) {

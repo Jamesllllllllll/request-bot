@@ -49,6 +49,7 @@ type SharedCatalogSearchResponse = {
 
 type ExtensionPlaylistMutationInput =
   | { action: "setCurrent"; itemId: string }
+  | { action: "returnToQueue"; itemId: string }
   | { action: "markPlayed"; itemId: string }
   | { action: "deleteItem"; itemId: string }
   | {
@@ -77,6 +78,9 @@ type ExtensionPanelManagement = {
 };
 
 type ExtensionPanelLiveState = {
+  settings: {
+    showPlaylistPositions: boolean;
+  };
   playlist: {
     currentItemId: string | null;
     items: Array<Record<string, unknown>>;
@@ -159,6 +163,9 @@ export async function getExtensionBootstrapState(input: {
       const result = {
         connected: false,
         channel: null,
+        settings: {
+          showPlaylistPositions: false,
+        },
         playlist: {
           currentItemId: null,
           items: [],
@@ -242,6 +249,7 @@ export async function getExtensionBootstrapState(input: {
         displayName: channel.displayName,
         twitchChannelId: channel.twitchChannelId,
       },
+      settings: liveState.settings,
       playlist: liveState.playlist,
       viewer: {
         isLinked: input.auth.isLinked,
@@ -523,10 +531,10 @@ async function getExtensionPanelLiveState(input: {
   channel: NonNullable<Awaited<ReturnType<typeof getChannelByTwitchChannelId>>>;
   linkedViewer: ViewerIdentity | null;
 }): Promise<ExtensionPanelLiveState> {
-  const playlist = await getExtensionPanelPlaylistByChannelId(
-    input.env,
-    input.channel.id
-  );
+  const [playlist, settings] = await Promise.all([
+    getExtensionPanelPlaylistByChannelId(input.env, input.channel.id),
+    getChannelSettingsByChannelId(input.env, input.channel.id),
+  ]);
   const items = (playlist?.items ?? []) as Array<Record<string, unknown>>;
   const activeRequests = input.linkedViewer
     ? items.filter(
@@ -535,6 +543,9 @@ async function getExtensionPanelLiveState(input: {
           (item.status === "queued" || item.status === "current")
       )
     : [];
+  const queuedActiveRequests = activeRequests.filter(
+    (item) => item.status === "queued"
+  );
   const vipTokenBalance = input.linkedViewer
     ? await getVipTokenBalance(input.env, {
         channelId: input.channel.id,
@@ -549,6 +560,9 @@ async function getExtensionPanelLiveState(input: {
       : (playlist?.playlist.currentItemId ?? null);
 
   return {
+    settings: {
+      showPlaylistPositions: !!settings?.showPlaylistPositions,
+    },
     playlist: {
       currentItemId,
       items,
@@ -565,8 +579,8 @@ async function getExtensionPanelLiveState(input: {
         : null,
       activeRequests,
       canVipRequest: vipTokensAvailable >= 1,
-      canEditOwnRequest: activeRequests.length === 1,
-      canRemoveOwnRequest: activeRequests.length > 0,
+      canEditOwnRequest: queuedActiveRequests.length > 0,
+      canRemoveOwnRequest: queuedActiveRequests.length > 0,
     },
   };
 }

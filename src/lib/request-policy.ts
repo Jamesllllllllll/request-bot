@@ -402,6 +402,15 @@ export function buildSearchMessage(appUrl: string) {
   return `Search the song database here: ${root}/search`;
 }
 
+export function buildChannelPlaylistMessage(
+  appUrl: string,
+  channelSlug: string
+) {
+  const root = appUrl.replace(/\/+$/, "");
+  const slug = channelSlug.replace(/^\/+|\/+$/g, "");
+  return `You can edit or search the song database here: ${root}/${slug}`;
+}
+
 export function buildBlacklistMessage(
   artists: Array<{ artistId?: number; artistName: string }>,
   charters: Array<{ charterId?: number; charterName: string }>,

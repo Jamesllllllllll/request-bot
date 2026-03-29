@@ -24,6 +24,16 @@ import { AnimatePresence, motion } from "motion/react";
 import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import { BlacklistPanel } from "~/components/blacklist-panel";
 import { DashboardPageHeader } from "~/components/dashboard-page-header";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "~/components/ui/alert-dialog";
 import { Badge } from "~/components/ui/badge";
 import { Button } from "~/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "~/components/ui/card";
@@ -35,6 +45,11 @@ import {
   PopoverTitle,
   PopoverTrigger,
 } from "~/components/ui/popover";
+import {
+  getQueuedPositionsFromRegularOrder,
+  getUpdatedPositionsAfterSetCurrent,
+  getUpdatedQueuedPositionsAfterKindChange,
+} from "~/lib/playlist/order";
 import { formatPathLabel } from "~/lib/request-policy";
 import { getErrorMessage, normalizeSongSourceUrl } from "~/lib/utils";
 import {
@@ -70,6 +85,7 @@ type PlaylistItem = {
   candidateMatchesJson?: string;
   createdAt: number;
   position: number;
+  regularPosition?: number | null;
   status: string;
   requestKind?: "regular" | "vip";
 };
@@ -181,6 +197,11 @@ export function PlaylistManagementSurface(
   const [playlistActionError, setPlaylistActionError] = useState<string | null>(
     null
   );
+  const [deleteDialogItem, setDeleteDialogItem] = useState<{
+    id: string;
+    songTitle: string;
+    songArtist?: string;
+  } | null>(null);
   const [pendingRowAction, setPendingRowAction] = useState<{
     action: string;
     itemId?: string;
@@ -386,32 +407,16 @@ export function PlaylistManagementSurface(
       }
 
       if (itemId && action === "setCurrent") {
-        const targetItem =
-          previous.items.find((item) => item.id === itemId) ?? null;
-        const reorderedItems = targetItem
-          ? [
-              {
-                ...targetItem,
-                status: "current",
-              },
-              ...previous.items
-                .filter((item) => item.id !== itemId)
-                .map((item) => ({
-                  ...item,
-                  status: "queued",
-                })),
-            ].map((item, index) => ({
-              ...item,
-              position: index + 1,
-            }))
-          : previous.items.map((item) => ({
-              ...item,
-              status: item.id === itemId ? "current" : "queued",
-            }));
-
         queryClient.setQueryData(playlistQueryKey, {
           ...previous,
-          items: reorderedItems,
+          items: getReorderedItemsAfterSetCurrent(previous.items, itemId),
+        });
+      }
+
+      if (itemId && action === "returnToQueue") {
+        queryClient.setQueryData(playlistQueryKey, {
+          ...previous,
+          items: getReorderedItemsAfterReturnToQueue(previous.items),
         });
       }
 
@@ -567,6 +572,18 @@ export function PlaylistManagementSurface(
     mutation.isPending &&
     pendingRowAction?.action === "restorePlayed" &&
     pendingRowAction.songId === playedSongId;
+  const confirmDeleteItem = () => {
+    if (!deleteDialogItem) {
+      return;
+    }
+
+    const itemId = deleteDialogItem.id;
+    setDeleteDialogItem(null);
+    mutation.mutate({
+      action: "deleteItem",
+      itemId,
+    });
+  };
   const reorderPlaylist = (
     sourceItemId: string,
     targetItemId: string,
@@ -629,12 +646,12 @@ export function PlaylistManagementSurface(
               </p>
             ) : null}
             {manualAddError ? (
-              <div className="rounded-[20px] border border-rose-500/40 bg-rose-500/10 px-4 py-3 text-sm text-rose-200">
+              <div className="border border-rose-500/40 bg-rose-500/10 px-4 py-3 text-sm text-rose-200">
                 {manualAddError}
               </div>
             ) : null}
             {manualQuery.trim().length >= 3 ? (
-              <div className="dashboard-playlist__manual-results overflow-hidden rounded-[24px] border border-(--border)">
+              <div className="dashboard-playlist__manual-results overflow-hidden border border-(--border)">
                 <div className="dashboard-playlist__manual-head grid grid-cols-[minmax(0,2.1fr)_minmax(0,1.3fr)_minmax(0,1fr)_96px] gap-4 bg-(--panel-muted) px-5 py-3 text-xs font-semibold uppercase tracking-[0.2em] text-(--muted)">
                   <div>Track</div>
                   <div>Album / Creator</div>
@@ -834,24 +851,25 @@ export function PlaylistManagementSurface(
                 itemId,
               })
             }
+            onReturnToQueue={(itemId) =>
+              mutation.mutate({
+                action: "returnToQueue",
+                itemId,
+              })
+            }
             onMarkPlayed={(itemId) =>
               mutation.mutate({
                 action: "markPlayed",
                 itemId,
               })
             }
-            onDelete={(itemId) => {
-              const confirmed = window.confirm(
-                "Delete this song from the playlist? This cannot be undone."
-              );
-              if (!confirmed) {
-                return;
-              }
-              mutation.mutate({
-                action: "deleteItem",
-                itemId,
-              });
-            }}
+            onDelete={(item) =>
+              setDeleteDialogItem({
+                id: item.id,
+                songTitle: item.songTitle,
+                songArtist: item.songArtist,
+              })
+            }
             onChangeRequestKind={(itemId, requestKind) =>
               mutation.mutate({
                 action: "changeRequestKind",
@@ -1027,24 +1045,25 @@ export function PlaylistManagementSurface(
                   itemId,
                 })
               }
+              onReturnToQueue={(itemId) =>
+                mutation.mutate({
+                  action: "returnToQueue",
+                  itemId,
+                })
+              }
               onMarkPlayed={(itemId) =>
                 mutation.mutate({
                   action: "markPlayed",
                   itemId,
                 })
               }
-              onDelete={(itemId) => {
-                const confirmed = window.confirm(
-                  "Delete this song from the playlist? This cannot be undone."
-                );
-                if (!confirmed) {
-                  return;
-                }
-                mutation.mutate({
-                  action: "deleteItem",
-                  itemId,
-                });
-              }}
+              onDelete={(item) =>
+                setDeleteDialogItem({
+                  id: item.id,
+                  songTitle: item.songTitle,
+                  songArtist: item.songArtist,
+                })
+              }
               onChangeRequestKind={(itemId, requestKind) =>
                 mutation.mutate({
                   action: "changeRequestKind",
@@ -1155,7 +1174,7 @@ export function PlaylistManagementSurface(
               {playedSongs.map((song, index) => (
                 <div
                   key={song.id}
-                  className={`rounded-[22px] border px-4 py-3 ${
+                  className={`border px-4 py-3 ${
                     index % 2 === 0
                       ? "border-(--border) bg-(--panel-soft)"
                       : "border-(--border) bg-(--panel-muted)"
@@ -1217,6 +1236,46 @@ export function PlaylistManagementSurface(
           </Card>
         </>
       ) : null}
+
+      <AlertDialog
+        open={deleteDialogItem != null}
+        onOpenChange={(open) => {
+          if (!open) {
+            setDeleteDialogItem(null);
+          }
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete this request?</AlertDialogTitle>
+            <AlertDialogDescription>
+              {deleteDialogItem
+                ? `This removes "${deleteDialogItem.songTitle}"${deleteDialogItem.songArtist ? ` by ${deleteDialogItem.songArtist}` : ""} from the playlist. This cannot be undone.`
+                : "This removes the selected request from the playlist. This cannot be undone."}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={mutation.isPending}>
+              Keep request
+            </AlertDialogCancel>
+            <AlertDialogAction
+              onClick={confirmDeleteItem}
+              disabled={
+                mutation.isPending &&
+                deleteDialogItem != null &&
+                isDeletingItem(deleteDialogItem.id)
+              }
+              className="border-transparent bg-rose-600 text-white shadow-none hover:bg-rose-700"
+            >
+              {mutation.isPending &&
+              deleteDialogItem != null &&
+              isDeletingItem(deleteDialogItem.id)
+                ? "Deleting..."
+                : "Delete request"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
@@ -1245,8 +1304,9 @@ function CurrentPlaylistRows(props: {
   onDragLeaveForItem: (itemId: string) => void;
   onReorder: (sourceItemId: string, targetItemId: string, edge: Edge) => void;
   onSetCurrent: (itemId: string) => void;
+  onReturnToQueue: (itemId: string) => void;
   onMarkPlayed: (itemId: string) => void;
-  onDelete: (itemId: string) => void;
+  onDelete: (item: PlaylistItem) => void;
   onChangeRequestKind: (itemId: string, requestKind: "regular" | "vip") => void;
   onBlacklistSong: (item: PlaylistItem) => void;
   onBlacklistCandidateSong: (candidate: PlaylistCandidate) => void;
@@ -1257,7 +1317,7 @@ function CurrentPlaylistRows(props: {
   return (
     <>
       {props.playlistActionError ? (
-        <div className="rounded-[20px] border border-rose-500/40 bg-rose-500/10 px-4 py-3 text-sm text-rose-200">
+        <div className="border border-rose-500/40 bg-rose-500/10 px-4 py-3 text-sm text-rose-200">
           {props.playlistActionError}
         </div>
       ) : null}
@@ -1272,6 +1332,10 @@ function CurrentPlaylistRows(props: {
             currentItemId={props.currentItemId}
             isDeletingItem={props.isDeletingItem(item.id)}
             isSetCurrentPending={props.isRowPending("setCurrent", item.id)}
+            isReturnToQueuePending={props.isRowPending(
+              "returnToQueue",
+              item.id
+            )}
             isMarkPlayedPending={props.isRowPending("markPlayed", item.id)}
             isChangeRequestKindPending={props.isRowPending(
               "changeRequestKind",
@@ -1311,8 +1375,9 @@ function CurrentPlaylistRows(props: {
             }}
             onReorder={props.onReorder}
             onSetCurrent={() => props.onSetCurrent(item.id)}
+            onReturnToQueue={() => props.onReturnToQueue(item.id)}
             onMarkPlayed={() => props.onMarkPlayed(item.id)}
-            onDelete={() => props.onDelete(item.id)}
+            onDelete={() => props.onDelete(item)}
             onChangeRequestKind={(requestKind) =>
               props.onChangeRequestKind(item.id, requestKind)
             }
@@ -1438,32 +1503,59 @@ function getReorderedItemsAfterRequestKindChange(
   itemId: string,
   requestKind: "regular" | "vip"
 ) {
-  const targetItem = items.find((item) => item.id === itemId);
-
-  if (!targetItem || targetItem.status === "current") {
-    return items.map((item, index) => ({
-      ...item,
-      position: index + 1,
-    }));
-  }
-
-  const remainingItems = items.filter((item) => item.id !== itemId);
-  const currentItem = remainingItems.find((item) => item.status === "current");
-  const queuedItems = remainingItems.filter(
-    (item) => item.status !== "current"
+  const nextPositions = getUpdatedQueuedPositionsAfterKindChange({
+    items,
+    playlistCurrentItemId:
+      items.find((item) => item.status === "current")?.id ?? null,
+    targetItemId: itemId,
+    requestKind,
+  });
+  const nextPositionById = new Map(
+    nextPositions.map((item) => [item.id, item.position])
   );
-  const reorderedQueuedItems =
-    requestKind === "vip"
-      ? [targetItem, ...queuedItems]
-      : [...queuedItems, targetItem];
-  const reorderedItems = currentItem
-    ? [currentItem, ...reorderedQueuedItems]
-    : reorderedQueuedItems;
 
-  return reorderedItems.map((item, index) => ({
-    ...item,
-    position: index + 1,
-  }));
+  return items
+    .map((item) => ({
+      ...item,
+      position: nextPositionById.get(item.id) ?? item.position,
+    }))
+    .sort((left, right) => left.position - right.position);
+}
+
+function getReorderedItemsAfterSetCurrent(
+  items: PlaylistItem[],
+  itemId: string
+) {
+  const nextPositions = getUpdatedPositionsAfterSetCurrent({
+    items,
+    targetItemId: itemId,
+  });
+  const nextPositionById = new Map(
+    nextPositions.map((item) => [item.id, item.position])
+  );
+
+  return items
+    .map((item) => ({
+      ...item,
+      position: nextPositionById.get(item.id) ?? item.position,
+      status: item.id === itemId ? "current" : "queued",
+    }))
+    .sort((left, right) => left.position - right.position);
+}
+
+function getReorderedItemsAfterReturnToQueue(items: PlaylistItem[]) {
+  const nextPositions = getQueuedPositionsFromRegularOrder(items);
+  const nextPositionById = new Map(
+    nextPositions.map((item) => [item.id, item.position])
+  );
+
+  return items
+    .map((item) => ({
+      ...item,
+      position: nextPositionById.get(item.id) ?? item.position,
+      status: "queued",
+    }))
+    .sort((left, right) => left.position - right.position);
 }
 
 function updateVipTokenBalancesAfterRequestKindChange(input: {
@@ -1564,6 +1656,7 @@ function PlaylistQueueItem(props: {
   currentItemId: string | null;
   isDeletingItem: boolean;
   isSetCurrentPending: boolean;
+  isReturnToQueuePending: boolean;
   isMarkPlayedPending: boolean;
   isChangeRequestKindPending: boolean;
   canManageBlacklist: boolean;
@@ -1583,6 +1676,7 @@ function PlaylistQueueItem(props: {
   onDragLeave: () => void;
   onReorder: (sourceItemId: string, targetItemId: string, edge: Edge) => void;
   onSetCurrent: () => void;
+  onReturnToQueue: () => void;
   onMarkPlayed: () => void;
   onDelete: () => void;
   onChangeRequestKind: (requestKind: "regular" | "vip") => void;
@@ -1599,9 +1693,11 @@ function PlaylistQueueItem(props: {
   const isVipRequest = props.item.requestKind === "vip";
   const requesterLogin = props.item.requestedByLogin?.trim() ?? "";
   const hasRequester = requesterLogin.length > 0;
+  const hasCurrentItem = props.currentItemId != null;
   const showVipTokenBalance =
     hasRequester && (isVipRequest || props.availableVipTokenCount > 0);
   const canUpgradeToVip =
+    !isCurrentItem &&
     !isVipRequest &&
     hasRequester &&
     hasRedeemableVipToken(props.availableVipTokenCount);
@@ -1701,7 +1797,7 @@ function PlaylistQueueItem(props: {
       animate={{ opacity: isDragging ? 0.72 : 1, y: 0, scale: 1 }}
       exit={{ opacity: 0, y: -10, scale: 0.985 }}
       transition={playlistItemTransition}
-      className={`dashboard-playlist__item group relative rounded-[24px] border ${
+      className={`dashboard-playlist__item group relative border ${
         isVipRequest
           ? "border-violet-400/45 bg-(--panel-soft) shadow-[0_0_0_1px_rgba(168,85,247,0.08),0_0_28px_rgba(168,85,247,0.12)]"
           : props.index % 2 === 0
@@ -1710,10 +1806,10 @@ function PlaylistQueueItem(props: {
       }`}
     >
       {dropEdge === "top" ? (
-        <div className="pointer-events-none absolute inset-x-4 top-0 h-0.5 rounded-full bg-(--brand)" />
+        <div className="pointer-events-none absolute inset-x-4 top-0 h-0.5 bg-(--brand)" />
       ) : null}
       {dropEdge === "bottom" ? (
-        <div className="pointer-events-none absolute inset-x-4 bottom-0 h-0.5 rounded-full bg-(--brand)" />
+        <div className="pointer-events-none absolute inset-x-4 bottom-0 h-0.5 bg-(--brand)" />
       ) : null}
 
       <div className="flex items-stretch">
@@ -1725,7 +1821,7 @@ function PlaylistQueueItem(props: {
             isCurrentItem
               ? "cursor-not-allowed opacity-30"
               : "cursor-grab group-hover:opacity-100 hover:bg-(--panel) hover:text-(--text) active:cursor-grabbing"
-          } w-11 rounded-l-[24px]`}
+          } w-11`}
           disabled={isCurrentItem}
         >
           <span
@@ -1741,7 +1837,7 @@ function PlaylistQueueItem(props: {
           <div className="flex flex-wrap items-start justify-between gap-4">
             <div className="flex flex-wrap items-center gap-3">
               <span
-                className={`rounded-full border px-3 py-1 text-xs font-semibold uppercase tracking-[0.18em] ${
+                className={`border px-3 py-1 text-xs font-semibold uppercase tracking-[0.18em] ${
                   isVipRequest
                     ? "border-violet-400/30 bg-violet-500/15 text-violet-100"
                     : "border-(--border) bg-(--panel) text-(--muted)"
@@ -1794,7 +1890,7 @@ function PlaylistQueueItem(props: {
             </div>
 
             <div className="dashboard-playlist__item-actions flex max-w-full flex-wrap justify-end gap-2">
-              {isVipRequest && hasRequester ? (
+              {isVipRequest && hasRequester && !isCurrentItem ? (
                 <Button
                   size="sm"
                   variant="outline"
@@ -1806,7 +1902,7 @@ function PlaylistQueueItem(props: {
                     : "Make regular"}
                 </Button>
               ) : null}
-              {canUpgradeToVip ? (
+              {canUpgradeToVip && !isCurrentItem ? (
                 <Button
                   size="sm"
                   variant="outline"
@@ -1816,36 +1912,47 @@ function PlaylistQueueItem(props: {
                   {props.isChangeRequestKindPending ? "Saving..." : "Make VIP"}
                 </Button>
               ) : null}
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={props.onSetCurrent}
-                disabled={
-                  props.currentItemId === props.item.id ||
-                  props.isSetCurrentPending
-                }
-              >
-                Play now
-              </Button>
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={props.onMarkPlayed}
-                disabled={
-                  props.currentItemId !== props.item.id ||
-                  props.isMarkPlayedPending
-                }
-              >
-                Mark played
-              </Button>
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={props.onDelete}
-                disabled={props.isDeletingItem}
-              >
-                Delete
-              </Button>
+              {isCurrentItem ? (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={props.onReturnToQueue}
+                  disabled={props.isReturnToQueuePending}
+                >
+                  {props.isReturnToQueuePending
+                    ? "Saving..."
+                    : "Return to queue"}
+                </Button>
+              ) : (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={props.onSetCurrent}
+                  disabled={hasCurrentItem || props.isSetCurrentPending}
+                >
+                  Play now
+                </Button>
+              )}
+              {isCurrentItem ? (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={props.onMarkPlayed}
+                  disabled={props.isMarkPlayedPending}
+                >
+                  Mark played
+                </Button>
+              ) : null}
+              {!isCurrentItem ? (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={props.onDelete}
+                  disabled={props.isDeletingItem}
+                >
+                  Delete
+                </Button>
+              ) : null}
               {props.canManageBlacklist ? (
                 <BlacklistActionsPopover
                   item={props.item}
@@ -1911,7 +2018,7 @@ function PlaylistQueueItem(props: {
               View {resolvedCandidates.length} version
               {resolvedCandidates.length === 1 ? "" : "s"}
             </summary>
-            <div className="mt-3 overflow-hidden rounded-[16px] border border-(--border)">
+            <div className="mt-3 overflow-hidden border border-(--border)">
               <div className="grid">
                 {resolvedCandidates.map((candidate, candidateIndex) => {
                   const isBlacklistedCandidateSong =
@@ -2051,7 +2158,7 @@ function StatusPill(props: {
 
   return (
     <span
-      className={`inline-flex items-center gap-2 rounded-full px-3 py-1 text-xs font-semibold uppercase tracking-[0.18em] ${props.className ?? ""}`}
+      className={`inline-flex items-center gap-2 border border-transparent px-3 py-1 text-xs font-semibold uppercase tracking-[0.18em] ${props.className ?? ""}`}
     >
       <Icon className="h-3.5 w-3.5" />
       {props.children}
@@ -2098,14 +2205,14 @@ function BlacklistActionsPopover(props: {
           size="icon"
           variant="ghost"
           aria-label={`Open blacklist actions for ${props.item.songTitle}`}
-          className="h-9 w-9 rounded-full"
+          className="h-9 w-9"
         >
           <MoreHorizontal className="h-4 w-4" />
         </Button>
       </PopoverTrigger>
       <PopoverContent
         align="end"
-        className="w-80 max-w-[calc(100vw-2rem)] rounded-[20px] border-(--border) bg-(--panel-strong) p-3 text-(--text)"
+        className="w-80 max-w-[calc(100vw-2rem)] border-(--border) bg-(--panel-strong) p-3 text-(--text)"
       >
         <PopoverHeader className="gap-0">
           <PopoverTitle className="truncate text-sm">
@@ -2123,7 +2230,7 @@ function BlacklistActionsPopover(props: {
           <Button
             type="button"
             variant="outline"
-            className="h-auto w-full items-start justify-start gap-3 whitespace-normal rounded-2xl px-3 py-2.5 text-left"
+            className="h-auto w-full items-start justify-start gap-3 whitespace-normal px-3 py-2.5 text-left"
             disabled={
               props.isBlacklistedSong ||
               props.item.songCatalogSourceId == null ||
@@ -2148,7 +2255,7 @@ function BlacklistActionsPopover(props: {
           <Button
             type="button"
             variant="outline"
-            className="h-auto w-full items-start justify-start gap-3 whitespace-normal rounded-2xl px-3 py-2.5 text-left"
+            className="h-auto w-full items-start justify-start gap-3 whitespace-normal px-3 py-2.5 text-left"
             disabled={
               props.isBlacklistedSongGroup ||
               props.item.songGroupedProjectId == null ||
@@ -2171,7 +2278,7 @@ function BlacklistActionsPopover(props: {
           <Button
             type="button"
             variant="outline"
-            className="h-auto w-full items-start justify-start gap-3 whitespace-normal rounded-2xl px-3 py-2.5 text-left"
+            className="h-auto w-full items-start justify-start gap-3 whitespace-normal px-3 py-2.5 text-left"
             disabled={
               props.isBlacklistedArtist ||
               props.item.songArtistId == null ||
@@ -2201,7 +2308,7 @@ function BlacklistActionsPopover(props: {
                 key={`${props.item.id}-${candidate.id}-${candidate.authorId}`}
                 type="button"
                 variant="outline"
-                className="h-auto w-full items-start justify-start gap-3 whitespace-normal rounded-2xl px-3 py-2.5 text-left"
+                className="h-auto w-full items-start justify-start gap-3 whitespace-normal px-3 py-2.5 text-left"
                 disabled={
                   isBlacklistedCharter || props.isBlacklistCharterPending
                 }
@@ -2222,7 +2329,7 @@ function BlacklistActionsPopover(props: {
             );
           })}
           {!charterCandidates.length ? (
-            <div className="rounded-2xl border border-dashed border-(--border) px-3 py-2 text-xs text-(--muted)">
+            <div className="border border-dashed border-(--border) px-3 py-2 text-xs text-(--muted)">
               No charter IDs available for these versions.
             </div>
           ) : null}

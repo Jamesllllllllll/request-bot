@@ -20,7 +20,7 @@ function Command({
     <CommandPrimitive
       data-slot="command"
       className={cn(
-        "flex h-full w-full flex-col overflow-hidden rounded-md bg-oklch(1 0 0) text-oklch(0.147 0.004 49.25) dark:bg-oklch(0.216 0.006 56.043) dark:text-oklch(0.985 0.001 106.423)",
+        "flex h-full w-full flex-col overflow-hidden rounded-none bg-oklch(1 0 0) text-oklch(0.147 0.004 49.25) dark:bg-oklch(0.216 0.006 56.043) dark:text-oklch(0.985 0.001 106.423)",
         className
       )}
       {...props}
@@ -72,7 +72,7 @@ function CommandInput({
       <CommandPrimitive.Input
         data-slot="command-input"
         className={cn(
-          "flex h-10 w-full rounded-md bg-transparent py-3 text-sm outline-hidden placeholder:text-oklch(0.553 0.013 58.071) disabled:cursor-not-allowed disabled:opacity-50 dark:placeholder:text-oklch(0.709 0.01 56.259)",
+          "flex h-10 w-full rounded-none bg-transparent py-3 text-sm outline-hidden placeholder:text-oklch(0.553 0.013 58.071) disabled:cursor-not-allowed disabled:opacity-50 dark:placeholder:text-oklch(0.709 0.01 56.259)",
           className
         )}
         {...props}
@@ -149,7 +149,7 @@ function CommandItem({
     <CommandPrimitive.Item
       data-slot="command-item"
       className={cn(
-        "relative flex cursor-default items-center gap-2 rounded-sm px-2 py-1.5 text-sm outline-hidden select-none data-[disabled=true]:pointer-events-none data-[disabled=true]:opacity-50 data-[selected=true]:bg-oklch(0.97 0.001 106.424) data-[selected=true]:text-oklch(0.216 0.006 56.043) [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4 [&_svg:not([class*='text-'])]:text-oklch(0.553 0.013 58.071) dark:data-[selected=true]:bg-oklch(0.268 0.007 34.298) dark:data-[selected=true]:text-oklch(0.985 0.001 106.423) dark:[&_svg:not([class*='text-'])]:text-oklch(0.709 0.01 56.259)",
+        "relative flex cursor-default items-center gap-2 rounded-none px-2 py-1.5 text-sm outline-hidden select-none data-[disabled=true]:pointer-events-none data-[disabled=true]:opacity-50 data-[selected=true]:bg-oklch(0.97 0.001 106.424) data-[selected=true]:text-oklch(0.216 0.006 56.043) [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4 [&_svg:not([class*='text-'])]:text-oklch(0.553 0.013 58.071) dark:data-[selected=true]:bg-oklch(0.268 0.007 34.298) dark:data-[selected=true]:text-oklch(0.985 0.001 106.423) dark:[&_svg:not([class*='text-'])]:text-oklch(0.709 0.01 56.259)",
         className
       )}
       {...props}

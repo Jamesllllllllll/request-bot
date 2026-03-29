@@ -95,4 +95,75 @@ describe("extension panel demo state", () => {
       )
     ).toBe(false);
   });
+
+  it("edits the targeted demo viewer request without removing the others", () => {
+    const playlist = {
+      currentItemId: "preview-current",
+      items: [
+        ...createMockModeratorPlaylistItems(),
+        {
+          id: "viewer-request-1",
+          songId: "song-old",
+          songTitle: "Old Song",
+          songArtist: "Old Artist",
+          requestedByTwitchUserId: mockModeratorViewerProfile.twitchUserId,
+          requestedByLogin: mockModeratorViewerProfile.login,
+          requestedByDisplayName: mockModeratorViewerProfile.displayName,
+          requestKind: "regular",
+          createdAt: 100,
+          updatedAt: 100,
+          status: "queued",
+          position: 5,
+        },
+        {
+          id: "viewer-request-2",
+          songId: "song-keep",
+          songTitle: "Keep Song",
+          songArtist: "Keep Artist",
+          requestedByTwitchUserId: mockModeratorViewerProfile.twitchUserId,
+          requestedByLogin: mockModeratorViewerProfile.login,
+          requestedByDisplayName: mockModeratorViewerProfile.displayName,
+          requestKind: "vip",
+          createdAt: 110,
+          updatedAt: 110,
+          status: "queued",
+          position: 6,
+        },
+      ],
+    };
+
+    const next = applyDemoViewerRequestMutation({
+      playlist,
+      viewerProfile: mockModeratorViewerProfile,
+      song: {
+        id: "song-new",
+        title: "New Song",
+        artist: "New Artist",
+      },
+      requestKind: "regular",
+      replaceExisting: false,
+      replaceItemId: "viewer-request-1",
+      now: 1_700_000_000_100,
+    });
+
+    expect(
+      getDemoViewerActiveRequests(next, mockModeratorViewerProfile.twitchUserId)
+    ).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: "viewer-request-1",
+          songId: "song-new",
+          songTitle: "New Song",
+          requestKind: "regular",
+          createdAt: 100,
+          updatedAt: 1_700_000_000_100,
+        }),
+        expect.objectContaining({
+          id: "viewer-request-2",
+          songId: "song-keep",
+          requestKind: "vip",
+        }),
+      ])
+    );
+  });
 });

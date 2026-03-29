@@ -43,6 +43,7 @@ export function createMockModeratorPlaylistItems(): PanelDemoPlaylistItem[] {
       updatedAt: now - 12 * 60_000,
       status: "current",
       position: 1,
+      regularPosition: 1,
     },
     {
       id: "preview-queued-1",
@@ -56,6 +57,7 @@ export function createMockModeratorPlaylistItems(): PanelDemoPlaylistItem[] {
       updatedAt: now - 6 * 60_000,
       status: "queued",
       position: 2,
+      regularPosition: 2,
     },
     {
       id: "preview-queued-2",
@@ -69,6 +71,7 @@ export function createMockModeratorPlaylistItems(): PanelDemoPlaylistItem[] {
       updatedAt: now - 5 * 60_000,
       status: "queued",
       position: 3,
+      regularPosition: 3,
     },
     {
       id: "preview-queued-3",
@@ -82,6 +85,7 @@ export function createMockModeratorPlaylistItems(): PanelDemoPlaylistItem[] {
       updatedAt: now - 3 * 60_000,
       status: "queued",
       position: 4,
+      regularPosition: 4,
     },
   ];
 }
@@ -104,12 +108,24 @@ export function applyDemoViewerRequestMutation(input: {
   song: Record<string, unknown>;
   requestKind: "regular" | "vip";
   replaceExisting: boolean;
+  replaceItemId?: string;
   now?: number;
   nextId?: string;
 }): PanelDemoPlaylist {
   const now = input.now ?? Date.now();
   const songId = getString(input.song, "id") ?? `preview-song-${now}`;
   const nextId = input.nextId ?? `preview-request-${songId}-${now}`;
+  const replaceTarget =
+    input.replaceItemId != null
+      ? (input.playlist.items.find(
+          (item) =>
+            getString(item, "id") === input.replaceItemId &&
+            getString(item, "requestedByTwitchUserId") ===
+              input.viewerProfile.twitchUserId &&
+            (getString(item, "status") === "queued" ||
+              getString(item, "status") === "current")
+        ) ?? null)
+      : null;
   const activeViewerRequestIds = new Set(
     getDemoViewerActiveRequests(
       input.playlist,
@@ -118,6 +134,45 @@ export function applyDemoViewerRequestMutation(input: {
       .map((item) => getString(item, "id"))
       .filter((itemId): itemId is string => Boolean(itemId))
   );
+  if (replaceTarget) {
+    return {
+      currentItemId: input.playlist.currentItemId,
+      items: input.playlist.items.map((item, index) =>
+        getString(item, "id") === replaceTarget.id
+          ? {
+              ...item,
+              songId,
+              songTitle: getString(input.song, "title") ?? "Unknown song",
+              songArtist: getString(input.song, "artist"),
+              songAlbum: getString(input.song, "album"),
+              songCreator: getString(input.song, "creator"),
+              songCatalogSourceId: getNumber(input.song, "sourceId"),
+              songGroupedProjectId: getNumber(input.song, "groupedProjectId"),
+              songArtistId: getNumber(input.song, "artistId"),
+              songCharterId: getNumber(input.song, "authorId"),
+              requestKind: input.requestKind,
+              editedAt: now,
+              updatedAt: now,
+              position: index + 1,
+              regularPosition: getNumber(item, "regularPosition") ?? index + 1,
+              status:
+                getString(item, "id") === input.playlist.currentItemId
+                  ? "current"
+                  : "queued",
+            }
+          : {
+              ...item,
+              position: index + 1,
+              regularPosition: getNumber(item, "regularPosition") ?? index + 1,
+              status:
+                getString(item, "id") === input.playlist.currentItemId
+                  ? "current"
+                  : "queued",
+            }
+      ),
+    };
+  }
+
   const baseItems = input.replaceExisting
     ? input.playlist.items.filter((item) => {
         const itemId = getString(item, "id");
@@ -144,6 +199,7 @@ export function applyDemoViewerRequestMutation(input: {
     updatedAt: now,
     status: "queued",
     position: baseItems.length + 1,
+    regularPosition: baseItems.length + 1,
   };
 
   return {
@@ -151,6 +207,7 @@ export function applyDemoViewerRequestMutation(input: {
     items: [...baseItems, nextItem].map((item, index) => ({
       ...item,
       position: index + 1,
+      regularPosition: getNumber(item, "regularPosition") ?? index + 1,
       status:
         getString(item, "id") === input.playlist.currentItemId
           ? "current"

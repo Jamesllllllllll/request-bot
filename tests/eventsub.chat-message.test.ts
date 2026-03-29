@@ -107,6 +107,7 @@ function createDeps(
       id: "channel-1",
       ownerUserId: "owner-1",
       twitchChannelId: "broadcaster-1",
+      slug: "streamer",
     }),
     getRequestLogByMessageId: vi.fn().mockResolvedValue(null),
     getDashboardState: vi.fn().mockResolvedValue(createState()),
@@ -862,8 +863,45 @@ describe("processEventSubChatMessage", () => {
       env,
       expect.objectContaining({
         message: expect.stringContaining(
-          'no matching track was found for "smashing pumpkins zro"'
+          'there was no matching track found for "smashing pumpkins zro", but I added it anyway. You can edit or search the song database here: https://example.com/streamer'
         ),
+      })
+    );
+  });
+
+  it("uses the channel slug in the unmatched request reply link", async () => {
+    const deps = createDeps({
+      getChannelByLogin: vi.fn().mockResolvedValue({
+        id: "channel-1",
+        ownerUserId: "owner-1",
+        twitchChannelId: "broadcaster-1",
+        slug: "streamer-name",
+      }),
+      searchSongs: vi.fn().mockResolvedValue({
+        results: [],
+      }),
+    });
+
+    const result = await processEventSubChatMessage({
+      env,
+      event: createEvent({
+        broadcasterLogin: "streamer_name",
+        rawMessage: "!sr smashing pumpkins zro",
+      }),
+      parsed: createParsed({
+        query: "smashing pumpkins zro",
+      }),
+      deps,
+    });
+
+    expect(result).toEqual({
+      body: "Accepted",
+      status: 202,
+    });
+    expect(deps.sendChatReply).toHaveBeenCalledWith(
+      env,
+      expect.objectContaining({
+        message: expect.stringContaining("https://example.com/streamer-name"),
       })
     );
   });

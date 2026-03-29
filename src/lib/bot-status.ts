@@ -3,7 +3,7 @@ export function getBotStatusLabel(status: string) {
     case "active":
       return "Active";
     case "active_offline_testing":
-      return "Offline testing";
+      return "Offline testing enabled";
     case "waiting_for_live":
       return "Waiting to go live";
     case "bot_auth_required":

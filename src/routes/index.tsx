@@ -136,8 +136,8 @@ function HomePage() {
   const [featuredChannel, ...secondaryChannels] = displayedChannels;
 
   return (
-    <section className="grid gap-6 px-4 pt-4 pb-6 [container-type:inline-size] sm:px-5 sm:pt-5 md:px-6 md:pt-6 xl:grid-cols-[0.72fr_1.28fr]">
-      <div className="surface-grid surface-noise rounded-[32px] border border-(--border-strong) bg-(--panel) p-6 shadow-(--shadow) md:p-8 max-[720px]:rounded-none max-[720px]:border-x-0 max-[720px]:border-t-0 max-[720px]:bg-transparent max-[720px]:px-0 max-[720px]:pb-4 max-[720px]:pt-0 max-[720px]:shadow-none max-[720px]:[background-image:none]">
+    <section className="page-section-stack grid gap-6 pb-6 [container-type:inline-size] xl:grid-cols-[0.72fr_1.28fr]">
+      <div className="surface-grid surface-noise border border-(--border-strong) bg-(--panel) p-6 shadow-none md:p-8 max-[720px]:border-x-0 max-[720px]:border-t-0 max-[720px]:bg-transparent max-[720px]:px-0 max-[720px]:pb-4 max-[720px]:pt-0 max-[720px]:shadow-none max-[720px]:[background-image:none]">
         <p className="text-xs font-semibold uppercase tracking-[0.34em] text-(--brand-deep)">
           Twitch Song Requests
         </p>
@@ -148,10 +148,9 @@ function HomePage() {
         <div className="mt-8 grid gap-4 md:grid-cols-2 xl:grid-cols-1">
           <FeatureBlock
             icon={Search}
-            title="Find a song"
-            body="Search songs and copy the request command."
+            title="Find a song to request"
             action={
-              <Button asChild size="sm">
+              <Button asChild size="lg">
                 <Link to="/search" className="no-underline">
                   Search songs
                 </Link>
@@ -160,10 +159,9 @@ function HomePage() {
           />
           <FeatureBlock
             icon={Settings2}
-            title="Channel settings"
-            body="Owner controls, permissions, bot settings, and overlay options."
+            title="Manage your channel"
             action={
-              <Button asChild size="sm">
+              <Button asChild size="lg">
                 {defaultManageableChannel ? (
                   <Link to="/dashboard/settings" className="no-underline">
                     Open settings
@@ -177,10 +175,44 @@ function HomePage() {
             }
           />
         </div>
+
+        <div className="mt-8 grid gap-4 border-t border-(--border) pt-6">
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-[0.24em] text-(--brand-deep)">
+              What Is RockList.Live?
+            </p>
+            <p className="mt-3 text-lg leading-8 text-(--text)">
+              RockList.Live helps Rocksmith streamers take requests, manage the
+              playlist, and keep the show moving.
+            </p>
+          </div>
+          <div className="overflow-hidden border border-(--border)">
+            <FeatureListRow
+              icon={Search}
+              title="Requests from every surface"
+              description="Viewers add songs on the playlist page, in chat, or from the Twitch panel."
+            />
+            <FeatureListRow
+              icon={Radio}
+              title="Moderator support"
+              description="Moderators manage requests and handle VIP bumps while the stream is live."
+            />
+            <FeatureListRow
+              icon={ListMusic}
+              title="Keep the queue moving"
+              description="Edit, sort, and track requests without losing the next song."
+            />
+            <FeatureListRow
+              icon={Settings2}
+              title="Set the rules"
+              description="Control blacklists, setlists, moderation, and request settings for your channel."
+            />
+          </div>
+        </div>
       </div>
 
       <div className="grid gap-6">
-        <section className="rounded-[34px] border border-(--border) bg-(--panel-strong) p-6 shadow-(--shadow-soft) md:p-8">
+        <section className="border border-(--border) bg-(--panel-strong) p-6 shadow-none md:p-8">
           <div className="flex items-start justify-between gap-4">
             <div>
               <p className="text-xs font-semibold uppercase tracking-[0.24em] text-(--brand-deep)">
@@ -200,9 +232,9 @@ function HomePage() {
                 {toggleLabel}
               </Button>
               {isDisplayedChannelsLoading ? (
-                <Skeleton className="h-8 w-24 rounded-full border border-(--border) bg-(--panel-soft)" />
+                <Skeleton className="h-8 w-24 border border-(--border) bg-(--panel-soft)" />
               ) : (
-                <div className="rounded-full border border-(--border) bg-(--panel-soft) px-3 py-1 text-xs uppercase tracking-[0.22em] text-(--muted)">
+                <div className="border border-(--border) bg-(--panel-soft) px-3 py-1 text-xs uppercase tracking-[0.22em] text-(--muted)">
                   {displayedChannels.length} active
                 </div>
               )}
@@ -230,7 +262,7 @@ function HomePage() {
                 ) : null}
               </>
             ) : (
-              <div className="rounded-[24px] border border-dashed border-(--border) bg-(--panel-soft) px-4 py-5 text-sm leading-7 text-(--muted)">
+              <div className="border border-dashed border-(--border) bg-(--panel-soft) px-4 py-5 text-sm leading-7 text-(--muted)">
                 No streamers are live with the bot active yet.
               </div>
             )}
@@ -249,7 +281,7 @@ function FeaturedLiveChannelCard(props: { channel: HomeLiveChannel }) {
       : channel.playlistHref;
 
   return (
-    <div className="overflow-hidden rounded-[30px] border border-(--border-strong) bg-(--panel-soft)">
+    <div className="overflow-hidden border border-(--border-strong) bg-(--panel-soft)">
       {channel.streamThumbnailUrl ? (
         <div className="border-b border-(--border)">
           <img
@@ -268,22 +300,19 @@ function FeaturedLiveChannelCard(props: { channel: HomeLiveChannel }) {
             <p className="truncate text-3xl font-semibold text-(--text)">
               {channel.displayName}
             </p>
-            <p className="mt-1 truncate text-base text-(--brand-deep)">
-              @{channel.login}
-            </p>
             {channel.streamTitle ? (
               <p className="mt-4 line-clamp-2 text-base leading-7 text-(--muted)">
                 {channel.streamTitle}
               </p>
             ) : null}
           </div>
-          <div className="mt-1 inline-flex items-center gap-2 rounded-full border border-emerald-500/30 bg-emerald-500/10 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.2em] text-emerald-200">
+          <div className="mt-1 inline-flex items-center gap-2 border border-emerald-500/30 bg-emerald-500/10 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.2em] text-emerald-200">
             <Radio className="h-3.5 w-3.5" />
             Live
           </div>
         </div>
         {channel.currentItem || channel.nextItem ? (
-          <div className="mt-6 grid gap-3 rounded-[24px] border border-(--border) bg-(--panel) p-5">
+          <div className="mt-6 grid gap-3 border border-(--border) bg-(--panel) p-5">
             {channel.currentItem ? (
               <QueueSnippet
                 icon={Radio}
@@ -342,9 +371,9 @@ function CompactLiveChannelCard(props: { channel: HomeLiveChannel }) {
       : channel.playlistHref;
 
   return (
-    <div className="rounded-[26px] border border-(--border) bg-(--panel-muted) p-5">
+    <div className="border border-(--border) bg-(--panel-muted) p-5">
       {channel.streamThumbnailUrl ? (
-        <div className="mb-5 overflow-hidden rounded-[20px] border border-(--border)">
+        <div className="mb-5 overflow-hidden border border-(--border)">
           <img
             src={channel.streamThumbnailUrl
               .replace("640x360", "480x270")
@@ -362,9 +391,6 @@ function CompactLiveChannelCard(props: { channel: HomeLiveChannel }) {
           <p className="truncate text-xl font-semibold text-(--text)">
             {channel.displayName}
           </p>
-          <p className="mt-1 truncate text-base text-(--brand-deep)">
-            @{channel.login}
-          </p>
           {channel.streamTitle ? (
             <p className="mt-3 line-clamp-2 text-sm leading-6 text-(--muted)">
               {channel.streamTitle}
@@ -374,7 +400,7 @@ function CompactLiveChannelCard(props: { channel: HomeLiveChannel }) {
         <Radio className="mt-1 h-4 w-4 shrink-0 text-(--accent-strong)" />
       </div>
       {channel.currentItem || channel.nextItem ? (
-        <div className="mt-5 grid gap-2 rounded-[20px] border border-(--border) bg-(--panel) p-4">
+        <div className="mt-5 grid gap-2 border border-(--border) bg-(--panel) p-4">
           <QueueSnippet
             icon={channel.currentItem ? Radio : ListMusic}
             label={channel.currentItem ? "Now playing" : "Next request"}
@@ -424,7 +450,7 @@ function QueueSnippet(props: {
 
   return (
     <div className="flex items-start gap-3">
-      <div className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-(--border) bg-(--panel-soft) text-(--brand)">
+      <div className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center border border-(--border) bg-(--panel-soft) text-(--brand)">
         <Icon className="h-4 w-4" />
       </div>
       <div className="min-w-0">
@@ -445,25 +471,25 @@ function QueueSnippet(props: {
 function LiveChannelsSectionSkeleton() {
   return (
     <>
-      <div className="overflow-hidden rounded-[30px] border border-(--border-strong) bg-(--panel-soft)">
+      <div className="overflow-hidden border border-(--border-strong) bg-(--panel-soft)">
         <Skeleton className="aspect-video w-full rounded-none bg-(--panel-muted)" />
         <div className="p-6 md:p-7">
           <div className="flex items-start justify-between gap-4">
             <div className="min-w-0 flex-1">
-              <Skeleton className="h-8 w-52 rounded-full bg-(--panel-muted)" />
-              <Skeleton className="mt-2 h-5 w-32 rounded-full bg-(--panel-muted)" />
-              <Skeleton className="mt-5 h-4 w-full rounded-full bg-(--panel-muted)" />
-              <Skeleton className="mt-2 h-4 w-3/4 rounded-full bg-(--panel-muted)" />
+              <Skeleton className="h-8 w-52 bg-(--panel-muted)" />
+              <Skeleton className="mt-2 h-5 w-32 bg-(--panel-muted)" />
+              <Skeleton className="mt-5 h-4 w-full bg-(--panel-muted)" />
+              <Skeleton className="mt-2 h-4 w-3/4 bg-(--panel-muted)" />
             </div>
-            <Skeleton className="h-7 w-16 rounded-full bg-(--panel-muted)" />
+            <Skeleton className="h-7 w-16 bg-(--panel-muted)" />
           </div>
-          <div className="mt-6 grid gap-3 rounded-[24px] border border-(--border) bg-(--panel) p-5">
+          <div className="mt-6 grid gap-3 border border-(--border) bg-(--panel) p-5">
             <LiveQueueSnippetSkeleton />
             <LiveQueueSnippetSkeleton />
           </div>
           <div className="mt-6 flex flex-wrap gap-4">
-            <Skeleton className="h-9 w-32 rounded-full bg-(--panel-muted)" />
-            <Skeleton className="h-9 w-36 rounded-full bg-(--panel-muted)" />
+            <Skeleton className="h-9 w-32 bg-(--panel-muted)" />
+            <Skeleton className="h-9 w-36 bg-(--panel-muted)" />
           </div>
         </div>
       </div>
@@ -477,23 +503,23 @@ function LiveChannelsSectionSkeleton() {
 
 function CompactLiveChannelCardSkeleton() {
   return (
-    <div className="rounded-[26px] border border-(--border) bg-(--panel-muted) p-5">
-      <Skeleton className="mb-5 aspect-video w-full rounded-[20px] bg-(--panel)" />
+    <div className="border border-(--border) bg-(--panel-muted) p-5">
+      <Skeleton className="mb-5 aspect-video w-full bg-(--panel)" />
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0 flex-1">
-          <Skeleton className="h-6 w-36 rounded-full bg-(--panel)" />
-          <Skeleton className="mt-2 h-4 w-24 rounded-full bg-(--panel)" />
-          <Skeleton className="mt-3 h-4 w-full rounded-full bg-(--panel)" />
-          <Skeleton className="mt-2 h-4 w-4/5 rounded-full bg-(--panel)" />
+          <Skeleton className="h-6 w-36 bg-(--panel)" />
+          <Skeleton className="mt-2 h-4 w-24 bg-(--panel)" />
+          <Skeleton className="mt-3 h-4 w-full bg-(--panel)" />
+          <Skeleton className="mt-2 h-4 w-4/5 bg-(--panel)" />
         </div>
-        <Skeleton className="mt-1 h-4 w-4 rounded-full bg-(--panel)" />
+        <Skeleton className="mt-1 h-4 w-4 bg-(--panel)" />
       </div>
-      <div className="mt-5 grid gap-2 rounded-[20px] border border-(--border) bg-(--panel) p-4">
+      <div className="mt-5 grid gap-2 border border-(--border) bg-(--panel) p-4">
         <LiveQueueSnippetSkeleton />
       </div>
       <div className="mt-5 flex flex-wrap gap-4">
-        <Skeleton className="h-9 w-28 rounded-full bg-(--panel)" />
-        <Skeleton className="h-9 w-32 rounded-full bg-(--panel)" />
+        <Skeleton className="h-9 w-28 bg-(--panel)" />
+        <Skeleton className="h-9 w-32 bg-(--panel)" />
       </div>
     </div>
   );
@@ -502,11 +528,11 @@ function CompactLiveChannelCardSkeleton() {
 function LiveQueueSnippetSkeleton() {
   return (
     <div className="flex items-start gap-3">
-      <Skeleton className="h-9 w-9 shrink-0 rounded-full bg-(--panel-soft)" />
+      <Skeleton className="h-9 w-9 shrink-0 bg-(--panel-soft)" />
       <div className="min-w-0 flex-1">
-        <Skeleton className="h-3 w-24 rounded-full bg-(--panel-soft)" />
-        <Skeleton className="mt-2 h-4 w-40 rounded-full bg-(--panel-soft)" />
-        <Skeleton className="mt-2 h-3 w-28 rounded-full bg-(--panel-soft)" />
+        <Skeleton className="h-3 w-24 bg-(--panel-soft)" />
+        <Skeleton className="mt-2 h-4 w-40 bg-(--panel-soft)" />
+        <Skeleton className="mt-2 h-3 w-28 bg-(--panel-soft)" />
       </div>
     </div>
   );
@@ -515,23 +541,45 @@ function LiveQueueSnippetSkeleton() {
 function FeatureBlock(props: {
   icon: React.ComponentType<{ className?: string }>;
   title: string;
-  body: string;
   action: React.ReactNode;
 }) {
   const Icon = props.icon;
 
   return (
-    <div className="rounded-[24px] border border-(--border) bg-(--panel-soft) p-4">
-      <div className="flex items-start justify-between gap-3">
-        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-[16px] border border-(--border) bg-(--panel-muted) text-(--brand)">
-          <Icon className="h-[18px] w-[18px]" />
+    <div className="border border-(--border) bg-(--panel-soft) p-4">
+      <div className="flex items-center justify-between gap-3">
+        <div className="flex min-w-0 items-center gap-3">
+          <div className="flex h-10 w-10 shrink-0 items-center justify-center border border-(--border) bg-(--panel-muted) text-(--brand)">
+            <Icon className="h-[18px] w-[18px]" />
+          </div>
+          <p className="text-base font-semibold text-(--text)">{props.title}</p>
         </div>
         {props.action}
       </div>
-      <p className="mt-4 text-base font-semibold text-(--text)">
-        {props.title}
-      </p>
-      <p className="mt-2 text-sm leading-6 text-(--muted)">{props.body}</p>
+    </div>
+  );
+}
+
+function FeatureListRow(props: {
+  icon: React.ComponentType<{ className?: string }>;
+  title: string;
+  description: string;
+}) {
+  const Icon = props.icon;
+
+  return (
+    <div className="grid grid-cols-[auto_1fr] items-start gap-4 border-t border-(--border) px-4 py-4 first:border-t-0 odd:bg-(--panel-soft) even:bg-(--panel-muted) md:px-5 md:py-5">
+      <div className="flex h-11 w-11 shrink-0 items-center justify-center border border-(--border) bg-(--panel) text-(--brand)">
+        <Icon className="h-5 w-5" />
+      </div>
+      <div className="min-w-0">
+        <p className="text-base font-semibold leading-6 text-(--text) md:text-[1.05rem]">
+          {props.title}
+        </p>
+        <p className="mt-1 text-sm leading-6 text-(--muted) md:text-[0.97rem]">
+          {props.description}
+        </p>
+      </div>
     </div>
   );
 }

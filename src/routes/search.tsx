@@ -13,8 +13,7 @@ export const Route = createFileRoute("/search")({
 function SearchPage() {
   return (
     <SongSearchPanel
-      eyebrow="Search"
-      title="Songs"
+      title="Search"
       infoNote="This demo only contains {count} songs."
       placeholder="Search by song title, artist or album"
       useTotalForSummary

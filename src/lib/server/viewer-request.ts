@@ -45,6 +45,7 @@ export type ViewerRequestMutationInput =
       songId: string;
       requestKind: ViewerRequestKind;
       replaceExisting: boolean;
+      itemId?: string;
     }
   | {
       action: "remove";
@@ -424,6 +425,13 @@ async function removeViewerRequests(
     itemId?: string;
   }
 ) {
+  const queuedRequests = context.state.playlist.items.filter(
+    (item) =>
+      item.requestedByTwitchUserId === context.viewer.twitchUserId &&
+      item.status === "queued" &&
+      (input.kind === "all" || item.requestKind === input.kind)
+  );
+
   if (input.itemId) {
     const target = context.state.playlist.items.find(
       (item) =>
@@ -438,6 +446,18 @@ async function removeViewerRequests(
         "That request is no longer in the playlist."
       );
     }
+
+    if (target.status === "current") {
+      throw new ViewerRequestError(
+        409,
+        "That request is already playing and cannot be removed."
+      );
+    }
+  } else if (queuedRequests.length === 0) {
+    return {
+      ok: true,
+      message: "You do not have any matching queued requests in this playlist.",
+    };
   }
 
   const result = await removeRequestsFromPlaylist(env, {
@@ -453,7 +473,7 @@ async function removeViewerRequests(
     ok: true,
     message:
       result.message === "No matching requests found"
-        ? "You do not have any matching active requests in this playlist."
+        ? "You do not have any matching queued requests in this playlist."
         : input.itemId
           ? "Removed your request from the playlist."
           : `${result.message} from the playlist.`,
@@ -497,10 +517,44 @@ async function submitViewerRequest(
       item.requestedByTwitchUserId === context.viewer.twitchUserId &&
       (item.status === "queued" || item.status === "current")
   );
-  const editableExistingRequest =
-    mutation.replaceExisting && existingActiveCount === 1
-      ? (existingActiveRequests[0] ?? null)
-      : null;
+  const existingQueuedRequests = existingActiveRequests.filter(
+    (item) => item.status === "queued"
+  );
+  const existingCurrentRequests = existingActiveRequests.filter(
+    (item) => item.status === "current"
+  );
+  let editableExistingRequest: (typeof existingActiveRequests)[number] | null =
+    null;
+
+  if (mutation.replaceExisting && mutation.itemId) {
+    const requestedItem =
+      existingActiveRequests.find((item) => item.id === mutation.itemId) ??
+      null;
+
+    if (requestedItem?.status === "current") {
+      throw new ViewerRequestError(
+        409,
+        "That request is already playing and cannot be edited."
+      );
+    }
+
+    editableExistingRequest =
+      existingQueuedRequests.find((item) => item.id === mutation.itemId) ??
+      null;
+
+    if (!editableExistingRequest) {
+      throw new ViewerRequestError(
+        404,
+        "That request is no longer in the playlist."
+      );
+    }
+  } else if (
+    mutation.replaceExisting &&
+    existingActiveCount === 1 &&
+    existingQueuedRequests.length === 1
+  ) {
+    editableExistingRequest = existingQueuedRequests[0] ?? null;
+  }
 
   const existingMatchingRequest =
     context.state.playlist.items.find(
@@ -514,11 +568,20 @@ async function submitViewerRequest(
     existingMatchingRequest != null &&
     existingMatchingRequest.requestKind !== mutation.requestKind &&
     !mutation.replaceExisting;
-  const editInPlace = editableExistingRequest != null;
-  const editingSameSong =
-    editInPlace && editableExistingRequest.songId === song.id;
-  const previousRequestKind = editInPlace
-    ? editableExistingRequest.requestKind
+  const editTarget = editableExistingRequest;
+  const editInPlace = editTarget != null;
+  const matchingDifferentExistingRequest = editTarget
+    ? (context.state.playlist.items.find(
+        (item) =>
+          item.songId === song.id &&
+          item.requestedByTwitchUserId === context.viewer.twitchUserId &&
+          item.id !== editTarget.id &&
+          (item.status === "queued" || item.status === "current")
+      ) ?? null)
+    : null;
+  const editingSameSong = editTarget != null && editTarget.songId === song.id;
+  const previousRequestKind = editTarget
+    ? editTarget.requestKind
     : kindChangeOnly && existingMatchingRequest
       ? existingMatchingRequest.requestKind
       : null;
@@ -526,6 +589,22 @@ async function submitViewerRequest(
     previousRequestKind,
     mutation.requestKind
   );
+
+  if (matchingDifferentExistingRequest) {
+    await createViewerRequestLog(env, {
+      context,
+      rawMessage,
+      normalizedQuery,
+      song,
+      outcome: "rejected",
+      outcomeReason: "existing_request_same_song",
+    });
+
+    throw new ViewerRequestError(
+      409,
+      "That song is already in your active requests."
+    );
+  }
 
   if (
     existingMatchingRequest &&
@@ -548,9 +627,20 @@ async function submitViewerRequest(
   }
 
   if (
-    editInPlace &&
+    kindChangeOnly &&
+    existingMatchingRequest &&
+    existingMatchingRequest.status === "current"
+  ) {
+    throw new ViewerRequestError(
+      409,
+      "That request is already playing and cannot be changed."
+    );
+  }
+
+  if (
+    editTarget &&
     editingSameSong &&
-    editableExistingRequest.requestKind === mutation.requestKind
+    editTarget.requestKind === mutation.requestKind
   ) {
     await createViewerRequestLog(env, {
       context,
@@ -571,7 +661,7 @@ async function submitViewerRequest(
   const effectiveActiveCount = editInPlace
     ? 0
     : mutation.replaceExisting
-      ? 0
+      ? existingCurrentRequests.length
       : existingActiveCount;
 
   if (
@@ -881,7 +971,7 @@ async function submitViewerRequest(
     };
   }
 
-  if (mutation.replaceExisting && existingActiveCount > 0) {
+  if (mutation.replaceExisting && existingQueuedRequests.length > 0) {
     await removeRequestsFromPlaylist(env, {
       channelId: context.state.channel.id,
       requesterTwitchUserId: context.viewer.twitchUserId,

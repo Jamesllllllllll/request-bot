@@ -19,6 +19,13 @@ import {
 } from "~/lib/db/schema";
 import { assertDatabaseSchemaCurrent } from "~/lib/db/schema-version";
 import type { BackendEnv } from "~/lib/env";
+import {
+  getCompactedRegularPositionAssignments,
+  getNextRegularPosition,
+  getQueuedPositionsFromRegularOrder,
+  getUpdatedPositionsAfterSetCurrent,
+  getUpdatedQueuedPositionsAfterKindChange,
+} from "~/lib/playlist/order";
 import type {
   AddRequestInput,
   ChangeRequestKindInput,
@@ -34,6 +41,7 @@ import type {
   ReorderItemsInput,
   ResetSessionInput,
   RestorePlayedInput,
+  ReturnToQueueInput,
   SetCurrentInput,
   ShuffleNextInput,
   ShufflePlaylistInput,
@@ -133,6 +141,12 @@ function logPlaylistWorkerStep(
   });
 }
 
+function toRegularPositionMap(
+  assignments: Array<{ id: string; regularPosition: number }>
+) {
+  return new Map(assignments.map((item) => [item.id, item.regularPosition]));
+}
+
 class D1PlaylistCoordinator implements PlaylistCoordinator {
   constructor(
     private state: DurableObjectState,
@@ -205,75 +219,37 @@ class D1PlaylistCoordinator implements PlaylistCoordinator {
   }
 
   private async reindexPlaylistItems(
-    items: Array<{ id: string; position: number }>
+    items: Array<{ id: string; position: number; regularPosition?: number }>
   ) {
     const db = getDb(this.env);
 
     for (const item of items) {
+      const nextUpdate = {
+        position: item.position + 1000,
+        updatedAt: Date.now(),
+        ...(item.regularPosition != null
+          ? { regularPosition: item.regularPosition + 1000 }
+          : {}),
+      };
       await db
         .update(playlistItems)
-        .set({
-          position: item.position + 1000,
-          updatedAt: Date.now(),
-        })
+        .set(nextUpdate)
         .where(eq(playlistItems.id, item.id));
     }
 
-    for (const [index, item] of items.entries()) {
-      await db
-        .update(playlistItems)
-        .set({
-          position: index + 1,
-          updatedAt: Date.now(),
-        })
-        .where(eq(playlistItems.id, item.id));
-    }
-  }
-
-  private async getUpdatedQueuedPositionsAfterKindChange(input: {
-    items: Array<{
-      id: string;
-      position: number;
-      status: string;
-    }>;
-    playlistCurrentItemId?: string | null;
-    targetItemId: string;
-    requestKind: "regular" | "vip";
-  }) {
-    const sortedItems = [...input.items].sort(
-      (a, b) => a.position - b.position
-    );
-    const target = sortedItems.find((item) => item.id === input.targetItemId);
-    if (!target) {
-      throw new Error("Playlist item not found");
-    }
-
-    if (target.status === "current") {
-      return sortedItems.map((item) => ({
-        id: item.id,
+    for (const item of items) {
+      const nextUpdate = {
         position: item.position,
-      }));
+        updatedAt: Date.now(),
+        ...(item.regularPosition != null
+          ? { regularPosition: item.regularPosition }
+          : {}),
+      };
+      await db
+        .update(playlistItems)
+        .set(nextUpdate)
+        .where(eq(playlistItems.id, item.id));
     }
-
-    const queued = sortedItems.filter((item) => item.status === "queued");
-    const remainingQueued = queued.filter(
-      (item) => item.id !== input.targetItemId
-    );
-    const currentItem = input.playlistCurrentItemId
-      ? (sortedItems.find((item) => item.id === input.playlistCurrentItemId) ??
-        null)
-      : null;
-
-    const reorderedQueued =
-      input.requestKind === "vip"
-        ? [target, ...remainingQueued]
-        : [...remainingQueued, target];
-    const queuedStartPosition = currentItem ? currentItem.position + 1 : 1;
-
-    return reorderedQueued.map((item, index) => ({
-      id: item.id,
-      position: queuedStartPosition + index,
-    }));
   }
 
   async addRequest(input: AddRequestInput): Promise<PlaylistMutationResult> {
@@ -319,6 +295,7 @@ class D1PlaylistCoordinator implements PlaylistCoordinator {
     let nextPosition = items.length
       ? Math.max(...items.map((item) => item.position)) + 1
       : 1;
+    const nextRegularPosition = getNextRegularPosition(items);
 
     if (input.prioritizeNext && playlist.currentItemId) {
       const currentItem =
@@ -380,6 +357,7 @@ class D1PlaylistCoordinator implements PlaylistCoordinator {
         requestMessageId: input.messageId ?? null,
         requestKind: input.requestKind ?? "regular",
         position: nextPosition,
+        regularPosition: nextRegularPosition,
       });
     } catch (error) {
       if (!input.messageId) {
@@ -459,13 +437,12 @@ class D1PlaylistCoordinator implements PlaylistCoordinator {
       };
     }
 
-    const nextQueuedPositions =
-      await this.getUpdatedQueuedPositionsAfterKindChange({
-        items,
-        playlistCurrentItemId: playlist.currentItemId,
-        targetItemId: input.itemId,
-        requestKind: input.requestKind,
-      });
+    const nextQueuedPositions = getUpdatedQueuedPositionsAfterKindChange({
+      items,
+      playlistCurrentItemId: playlist.currentItemId,
+      targetItemId: input.itemId,
+      requestKind: input.requestKind,
+    });
 
     await db
       .update(playlistItems)
@@ -514,7 +491,7 @@ class D1PlaylistCoordinator implements PlaylistCoordinator {
     const nextQueuedPositions =
       target.requestKind === input.requestKind
         ? null
-        : await this.getUpdatedQueuedPositionsAfterKindChange({
+        : getUpdatedQueuedPositionsAfterKindChange({
             items,
             playlistCurrentItemId: playlist.currentItemId,
             targetItemId: input.itemId,
@@ -545,6 +522,7 @@ class D1PlaylistCoordinator implements PlaylistCoordinator {
         warningMessage: input.song.warningMessage ?? null,
         candidateMatchesJson: input.song.candidateMatchesJson ?? null,
         requestKind: input.requestKind,
+        editedAt: Date.now(),
         updatedAt: Date.now(),
       })
       .where(eq(playlistItems.id, input.itemId));
@@ -698,11 +676,13 @@ class D1PlaylistCoordinator implements PlaylistCoordinator {
     });
     const db = getDb(this.env);
     const { playlist, items } = await this.getPlaylist(input.channelId);
+    const canRemoveCurrent = input.actorUserId != null;
     const removable = items
       .filter(
         (item) =>
           item.requestedByTwitchUserId === input.requesterTwitchUserId &&
-          (item.status === "queued" || item.status === "current") &&
+          (item.status === "queued" ||
+            (canRemoveCurrent && item.status === "current")) &&
           (!input.itemId || item.id === input.itemId) &&
           (input.kind === "all" || item.requestKind === input.kind)
       )
@@ -730,7 +710,16 @@ class D1PlaylistCoordinator implements PlaylistCoordinator {
     const remaining = items
       .filter((item) => !removedIds.has(item.id))
       .sort((a, b) => a.position - b.position);
-    await this.reindexPlaylistItems(remaining);
+    const regularPositionMap = toRegularPositionMap(
+      getCompactedRegularPositionAssignments(remaining)
+    );
+    await this.reindexPlaylistItems(
+      remaining.map((item, index) => ({
+        id: item.id,
+        position: index + 1,
+        regularPosition: regularPositionMap.get(item.id) ?? index + 1,
+      }))
+    );
 
     const removedSongIds = new Set(
       removable
@@ -822,6 +811,7 @@ class D1PlaylistCoordinator implements PlaylistCoordinator {
     const nextPosition = items.length
       ? Math.max(...items.map((item) => item.position)) + 1
       : 1;
+    const nextRegularPosition = getNextRegularPosition(items);
     const itemId = createId("pli");
     const createdAt = playedSong.requestedAt ?? Date.now();
 
@@ -846,6 +836,7 @@ class D1PlaylistCoordinator implements PlaylistCoordinator {
       requestedByDisplayName: playedSong.requestedByDisplayName,
       requestKind: playedSong.requestKind,
       position: nextPosition,
+      regularPosition: nextRegularPosition,
       createdAt,
       updatedAt: Date.now(),
     });
@@ -919,7 +910,16 @@ class D1PlaylistCoordinator implements PlaylistCoordinator {
     });
 
     const remaining = sorted.filter((item) => item.id !== itemId);
-    await this.reindexPlaylistItems(remaining);
+    const regularPositionMap = toRegularPositionMap(
+      getCompactedRegularPositionAssignments(remaining)
+    );
+    await this.reindexPlaylistItems(
+      remaining.map((item, index) => ({
+        id: item.id,
+        position: index + 1,
+        regularPosition: regularPositionMap.get(item.id) ?? index + 1,
+      }))
+    );
 
     await db
       .update(playlists)
@@ -949,11 +949,35 @@ class D1PlaylistCoordinator implements PlaylistCoordinator {
     const db = getDb(this.env);
     const { playlist, items } = await this.getPlaylist(input.channelId);
     const target = items.find((item) => item.id === input.itemId);
-    const sortedItems = [...items].sort((a, b) => a.position - b.position);
 
     if (!target) {
       throw new Error("Playlist item not found");
     }
+
+    if (
+      playlist.currentItemId === input.itemId &&
+      target.status === "current"
+    ) {
+      return {
+        ok: true,
+        playlistId: playlist.id,
+        currentItemId: input.itemId,
+        changedItemId: input.itemId,
+        message: "Current song updated",
+      };
+    }
+
+    const regularPositionById = new Map(
+      items.map((item) => [item.id, item.regularPosition ?? item.position])
+    );
+    const reorderedItems = getUpdatedPositionsAfterSetCurrent({
+      items,
+      targetItemId: input.itemId,
+    }).map((item) => ({
+      id: item.id,
+      position: item.position,
+      regularPosition: regularPositionById.get(item.id) ?? item.position,
+    }));
 
     if (playlist.currentItemId && playlist.currentItemId !== input.itemId) {
       await db
@@ -981,13 +1005,6 @@ class D1PlaylistCoordinator implements PlaylistCoordinator {
       })
       .where(eq(playlists.id, playlist.id));
 
-    const reorderedItems = [
-      target,
-      ...sortedItems.filter((item) => item.id !== input.itemId),
-    ].map((item, index) => ({
-      id: item.id,
-      position: index + 1,
-    }));
     await this.reindexPlaylistItems(reorderedItems);
 
     await this.audit(
@@ -1008,8 +1025,76 @@ class D1PlaylistCoordinator implements PlaylistCoordinator {
     };
   }
 
-  async shuffleNext(input: ShuffleNextInput): Promise<PlaylistMutationResult> {
+  async returnToQueue(
+    input: ReturnToQueueInput
+  ): Promise<PlaylistMutationResult> {
     const db = getDb(this.env);
+    const { playlist, items } = await this.getPlaylist(input.channelId);
+    const target = items.find((item) => item.id === input.itemId);
+
+    if (!target) {
+      throw new Error("Playlist item not found");
+    }
+
+    if (
+      playlist.currentItemId !== input.itemId ||
+      target.status !== "current"
+    ) {
+      return {
+        ok: true,
+        playlistId: playlist.id,
+        currentItemId: playlist.currentItemId,
+        changedItemId: input.itemId,
+        message: "Song is already queued",
+      };
+    }
+
+    await db
+      .update(playlistItems)
+      .set({
+        status: "queued",
+        updatedAt: Date.now(),
+      })
+      .where(eq(playlistItems.id, input.itemId));
+
+    await db
+      .update(playlists)
+      .set({
+        currentItemId: null,
+        updatedAt: Date.now(),
+      })
+      .where(eq(playlists.id, playlist.id));
+
+    const regularPositionById = new Map(
+      items.map((item) => [item.id, item.regularPosition ?? item.position])
+    );
+    await this.reindexPlaylistItems(
+      getQueuedPositionsFromRegularOrder(items).map((item) => ({
+        id: item.id,
+        position: item.position,
+        regularPosition: regularPositionById.get(item.id) ?? item.position,
+      }))
+    );
+
+    await this.audit(
+      input.channelId,
+      input.actorUserId,
+      "return_to_queue",
+      input.itemId,
+      {}
+    );
+    await this.notify(input.channelId);
+
+    return {
+      ok: true,
+      playlistId: playlist.id,
+      currentItemId: null,
+      changedItemId: input.itemId,
+      message: "Song returned to queue",
+    };
+  }
+
+  async shuffleNext(input: ShuffleNextInput): Promise<PlaylistMutationResult> {
     const { playlist, items } = await this.getPlaylist(input.channelId);
     const queued = items.filter((item) => item.status === "queued");
     if (queued.length < 2) {
@@ -1022,25 +1107,31 @@ class D1PlaylistCoordinator implements PlaylistCoordinator {
     }
 
     const selected = queued[Math.floor(Math.random() * queued.length)];
-    const currentMin = Math.min(...queued.map((item) => item.position));
-    const displaced = queued.find((item) => item.position === currentMin);
+    const orderedQueued = [...queued].sort((a, b) => a.position - b.position);
+    const selectedIndex = orderedQueued.findIndex(
+      (item) => item.id === selected.id
+    );
+    const displaced = orderedQueued[0];
 
-    if (!displaced) {
+    if (!displaced || selectedIndex === -1) {
       throw new Error("Queued item not found");
     }
 
-    await db
-      .update(playlistItems)
-      .set({ position: -1, updatedAt: Date.now() })
-      .where(eq(playlistItems.id, selected.id));
-    await db
-      .update(playlistItems)
-      .set({ position: selected.position, updatedAt: Date.now() })
-      .where(eq(playlistItems.id, displaced.id));
-    await db
-      .update(playlistItems)
-      .set({ position: displaced.position, updatedAt: Date.now() })
-      .where(eq(playlistItems.id, selected.id));
+    [orderedQueued[0], orderedQueued[selectedIndex]] = [
+      orderedQueued[selectedIndex],
+      orderedQueued[0],
+    ];
+    const currentItem = playlist.currentItemId
+      ? (items.find((item) => item.id === playlist.currentItemId) ?? null)
+      : null;
+    const reorderedItems = (
+      currentItem ? [currentItem, ...orderedQueued] : orderedQueued
+    ).map((item, index) => ({
+      id: item.id,
+      position: index + 1,
+      regularPosition: index + 1,
+    }));
+    await this.reindexPlaylistItems(reorderedItems);
     await this.audit(
       input.channelId,
       input.actorUserId,
@@ -1062,7 +1153,6 @@ class D1PlaylistCoordinator implements PlaylistCoordinator {
   async shufflePlaylist(
     input: ShufflePlaylistInput
   ): Promise<PlaylistMutationResult> {
-    const db = getDb(this.env);
     const { playlist, items } = await this.getPlaylist(input.channelId);
     const current =
       items.find((item) => item.id === playlist.currentItemId) ?? null;
@@ -1079,26 +1169,13 @@ class D1PlaylistCoordinator implements PlaylistCoordinator {
 
     const ordered = current ? [current, ...shuffled] : shuffled;
 
-    for (const item of ordered) {
-      await db
-        .update(playlistItems)
-        .set({
-          position: item.position + 1000,
-          updatedAt: Date.now(),
-        })
-        .where(eq(playlistItems.id, item.id));
-    }
-
-    for (const [index, item] of ordered.entries()) {
-      await db
-        .update(playlistItems)
-        .set({
-          position: index + 1,
-          status: current && item.id === current.id ? "current" : "queued",
-          updatedAt: Date.now(),
-        })
-        .where(eq(playlistItems.id, item.id));
-    }
+    await this.reindexPlaylistItems(
+      ordered.map((item, index) => ({
+        id: item.id,
+        position: index + 1,
+        regularPosition: index + 1,
+      }))
+    );
 
     await this.audit(
       input.channelId,
@@ -1120,21 +1197,10 @@ class D1PlaylistCoordinator implements PlaylistCoordinator {
   async reorderItems(
     input: ReorderItemsInput
   ): Promise<PlaylistMutationResult> {
-    const db = getDb(this.env);
     const { playlist, items } = await this.getPlaylist(input.channelId);
     const currentItem = playlist.currentItemId
       ? (items.find((item) => item.id === playlist.currentItemId) ?? null)
       : null;
-
-    for (const item of items) {
-      await db
-        .update(playlistItems)
-        .set({
-          position: item.position + 1000,
-          updatedAt: Date.now(),
-        })
-        .where(eq(playlistItems.id, item.id));
-    }
 
     const orderedItemIds = currentItem
       ? [
@@ -1142,16 +1208,20 @@ class D1PlaylistCoordinator implements PlaylistCoordinator {
           ...input.orderedItemIds.filter((itemId) => itemId !== currentItem.id),
         ]
       : input.orderedItemIds;
-
-    for (const [index, itemId] of orderedItemIds.entries()) {
-      await db
-        .update(playlistItems)
-        .set({
-          position: index + 1,
-          updatedAt: Date.now(),
-        })
-        .where(eq(playlistItems.id, itemId));
-    }
+    const itemById = new Map(items.map((item) => [item.id, item]));
+    const orderedItems = orderedItemIds
+      .map((itemId) => itemById.get(itemId))
+      .filter((item): item is (typeof items)[number] => Boolean(item));
+    const missingItems = items.filter(
+      (item) => !orderedItemIds.includes(item.id)
+    );
+    await this.reindexPlaylistItems(
+      [...orderedItems, ...missingItems].map((item, index) => ({
+        id: item.id,
+        position: index + 1,
+        regularPosition: index + 1,
+      }))
+    );
 
     await this.audit(
       input.channelId,
@@ -1184,7 +1254,16 @@ class D1PlaylistCoordinator implements PlaylistCoordinator {
     const remaining = items
       .filter((item) => item.id !== input.itemId)
       .sort((a, b) => a.position - b.position);
-    await this.reindexPlaylistItems(remaining);
+    const regularPositionMap = toRegularPositionMap(
+      getCompactedRegularPositionAssignments(remaining)
+    );
+    await this.reindexPlaylistItems(
+      remaining.map((item, index) => ({
+        id: item.id,
+        position: index + 1,
+        regularPosition: regularPositionMap.get(item.id) ?? index + 1,
+      }))
+    );
 
     const nextCurrent =
       playlist.currentItemId === input.itemId ? null : playlist.currentItemId;
@@ -1613,6 +1692,10 @@ async function handleMutation(
       case "setCurrent":
         return await coordinator.setCurrent(
           payload as unknown as SetCurrentInput
+        );
+      case "returnToQueue":
+        return await coordinator.returnToQueue(
+          payload as unknown as ReturnToQueueInput
         );
       case "shuffleNext":
         return await coordinator.shuffleNext(

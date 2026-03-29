@@ -18,6 +18,7 @@ import type { AppEnv } from "~/lib/env";
 import type { PlaylistMutationResult } from "~/lib/playlist/types";
 import {
   buildBlacklistMessage,
+  buildChannelPlaylistMessage,
   buildHowMessage,
   buildSearchMessage,
   buildSetlistMessage,
@@ -36,6 +37,7 @@ export interface EventSubChatChannel {
   id: string;
   ownerUserId: string;
   twitchChannelId: string;
+  slug: string;
 }
 
 export interface EventSubChatSettings {
@@ -1125,7 +1127,7 @@ export async function processEventSubChatMessage(input: {
           channelId: channel.id,
           broadcasterUserId: channel.twitchChannelId,
           message: !firstMatch
-            ? `${mention(requesterIdentity.login)} no matching track was found for "${unmatchedQuery}", but I added your request to the playlist with a warning. ${buildSearchMessage(env.APP_URL)}`
+            ? `${mention(requesterIdentity.login)} there was no matching track found for "${unmatchedQuery}", but I added it anyway. ${buildChannelPlaylistMessage(env.APP_URL, channel.slug)}`
             : warningCode === "missing_required_paths"
               ? `${mention(requesterIdentity.login)} your song "${formatSongForReply(firstMatch)}" has been added to the playlist, but it is missing required paths: ${warningMessage?.replace("Missing required paths: ", "").replace(/\.$/, "")}.`
               : isVipCommand
@@ -1175,7 +1177,7 @@ export async function processEventSubChatMessage(input: {
       channelId: channel.id,
       broadcasterUserId: channel.twitchChannelId,
       message: !firstMatch
-        ? `${mention(requesterIdentity.login)} no matching track was found for "${unmatchedQuery}", but I added your request to the playlist with a warning. ${buildSearchMessage(env.APP_URL)}`
+        ? `${mention(requesterIdentity.login)} there was no matching track found for "${unmatchedQuery}", but I added it anyway. ${buildChannelPlaylistMessage(env.APP_URL, channel.slug)}`
         : warningCode === "missing_required_paths"
           ? `${mention(requesterIdentity.login)} your song "${formatSongForReply(firstMatch)}" has been added to the playlist, but it is missing required paths: ${warningMessage?.replace("Missing required paths: ", "").replace(/\.$/, "")}.`
           : isVipCommand

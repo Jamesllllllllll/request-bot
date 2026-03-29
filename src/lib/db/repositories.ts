@@ -666,7 +666,9 @@ export async function getExtensionPanelPlaylistByChannelId(
       requestKind: true,
       createdAt: true,
       updatedAt: true,
+      editedAt: true,
       position: true,
+      regularPosition: true,
       status: true,
     },
   });
@@ -2356,6 +2358,7 @@ export async function updateSettings(
     cheerBitsPerVipToken: number;
     cheerMinimumTokenPercent: 25 | 50 | 75 | 100;
     duplicateWindowSeconds: number;
+    showPlaylistPositions: boolean;
     commandPrefix: string;
   }
 ) {
@@ -2405,6 +2408,7 @@ export async function updateSettings(
       cheerBitsPerVipToken: input.cheerBitsPerVipToken,
       cheerMinimumTokenPercent: input.cheerMinimumTokenPercent,
       duplicateWindowSeconds: input.duplicateWindowSeconds,
+      showPlaylistPositions: input.showPlaylistPositions,
       commandPrefix: input.commandPrefix,
       updatedAt: Date.now(),
     })

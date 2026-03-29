@@ -84,6 +84,7 @@ function createState(overrides: Record<string, unknown> = {}) {
       setlistEnabled: false,
       subscribersMustFollowSetlist: false,
       autoGrantVipTokenToSubscribers: false,
+      allowRequestPathModifiers: false,
       commandPrefix: "!",
       moderatorCanManageVipTokens: false,
       duplicateWindowSeconds: 900,
@@ -586,7 +587,46 @@ describe("processEventSubChatMessage", () => {
       env,
       expect.objectContaining({
         message:
-          "Commands: !sr artist - song; !sr artist *random; !sr artist *choice; !vip; !vip artist - song; !edit artist - song; !remove reg|vip|all; !position. Search for songs to request: https://example.com/streamer",
+          "Commands: !sr artist - song; !sr artist *random; !sr artist *choice; !vip; !vip artist - song; !edit artist - song; !remove reg|vip|all; !position. Browse the track list and request songs here: https://example.com/streamer",
+      })
+    );
+  });
+
+  it("includes arrangement modifier help when enabled", async () => {
+    const deps = createDeps({
+      getDashboardState: vi.fn().mockResolvedValue(
+        createState({
+          allowRequestPathModifiers: true,
+        })
+      ),
+    });
+
+    const result = await processEventSubChatMessage({
+      env,
+      event: createEvent({
+        rawMessage: "!how",
+      }),
+      parsed: createParsed({
+        command: "how",
+        query: undefined,
+      }),
+      deps,
+    });
+
+    expect(result).toEqual({
+      body: "Accepted",
+      status: 202,
+    });
+    expect(deps.sendChatReply).toHaveBeenCalledWith(
+      env,
+      expect.objectContaining({
+        message: expect.stringContaining("*bass"),
+      })
+    );
+    expect(deps.sendChatReply).toHaveBeenCalledWith(
+      env,
+      expect.objectContaining({
+        message: expect.not.stringContaining("*lyrics"),
       })
     );
   });
@@ -1087,6 +1127,55 @@ describe("processEventSubChatMessage", () => {
         message: expect.stringContaining(
           "has been added to the playlist, but it is missing required paths: Lead."
         ),
+      })
+    );
+  });
+
+  it("filters requests to the requested arrangement when path modifiers are enabled", async () => {
+    const deps = createDeps({
+      getDashboardState: vi.fn().mockResolvedValue(
+        createState({
+          allowRequestPathModifiers: true,
+        })
+      ),
+      searchSongs: vi.fn().mockResolvedValue({
+        results: [
+          createSong({
+            id: "song-lead",
+            parts: ["lead"],
+            sourceId: 11111,
+          }),
+          createSong({
+            id: "song-bass",
+            parts: ["bass"],
+            sourceId: 22222,
+          }),
+        ],
+      }),
+    });
+
+    const result = await processEventSubChatMessage({
+      env,
+      event: createEvent({
+        rawMessage: "!sr cherub rock *bass",
+      }),
+      parsed: createParsed({
+        query: "cherub rock *bass",
+      }),
+      deps,
+    });
+
+    expect(result).toEqual({
+      body: "Accepted",
+      status: 202,
+    });
+    expect(deps.addRequestToPlaylist).toHaveBeenCalledWith(
+      env,
+      expect.objectContaining({
+        song: expect.objectContaining({
+          id: "song-bass",
+          cdlcId: 22222,
+        }),
       })
     );
   });

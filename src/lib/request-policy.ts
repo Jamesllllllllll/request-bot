@@ -36,6 +36,7 @@ export interface ChannelRequestSettings {
   setlistEnabled: boolean;
   subscribersMustFollowSetlist: boolean;
   autoGrantVipTokenToSubscribers: boolean;
+  allowRequestPathModifiers: boolean;
   commandPrefix: string;
 }
 
@@ -328,6 +329,20 @@ export function getRequiredPathsWarning(input: {
   return `Missing required paths: ${formatPathList(missingRequiredPaths)}.`;
 }
 
+export function songMatchesRequestedPaths(input: {
+  song: SongSearchResult | { parts?: string[] | null };
+  requestedPaths: string[];
+}) {
+  if (input.requestedPaths.length === 0) {
+    return true;
+  }
+
+  const songParts = (input.song.parts ?? []).map((part) => normalize(part));
+  return input.requestedPaths.every((path) =>
+    songParts.includes(normalize(path))
+  );
+}
+
 export function formatPathLabel(path: string) {
   switch (normalize(path)) {
     case "lead":
@@ -352,16 +367,22 @@ export function buildHowMessage(input: {
   commandPrefix: string;
   appUrl: string;
   channelSlug?: string;
+  allowRequestPathModifiers?: boolean;
 }) {
   const normalized = normalizeCommandPrefix(input.commandPrefix);
   const parts = [
     `Commands: ${normalized}sr artist - song; ${normalized}sr artist *random; ${normalized}sr artist *choice; ${normalized}vip; ${normalized}vip artist - song; ${normalized}edit artist - song; ${normalized}remove reg|vip|all; ${normalized}position.`,
   ];
+  if (input.allowRequestPathModifiers) {
+    parts.push(
+      `Bass requests: add *bass to ${normalized}sr, ${normalized}vip, or ${normalized}edit.`
+    );
+  }
 
   const root = input.appUrl.replace(/\/+$/, "");
   const slug = input.channelSlug?.replace(/^\/+|\/+$/g, "") ?? "";
   parts.push(
-    `Search for songs to request: ${slug ? `${root}/${slug}` : `${root}/search`}`
+    `Browse the track list and request songs here: ${slug ? `${root}/${slug}` : `${root}/search`}`
   );
   return parts.join(" ");
 }

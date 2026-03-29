@@ -28,6 +28,7 @@ import {
   buildHowMessage,
   buildSearchMessage,
   buildSetlistMessage,
+  formatPathList,
   getActiveRequestLimit,
   getArraySetting,
   getRateLimitWindow,
@@ -35,6 +36,7 @@ import {
   getRequiredPathsWarning,
   isRequesterAllowed,
   isSongAllowed,
+  songMatchesRequestedPaths,
 } from "~/lib/request-policy";
 import type { NormalizedChatEvent, ParsedChatCommand } from "~/lib/requests";
 import type { SongSearchResult } from "~/lib/song-search/types";
@@ -324,6 +326,11 @@ function getRejectedSongMessage(input: {
   }`;
 }
 
+function getRequestedPathMismatchMessage(requestedPaths: string[]) {
+  const formattedPaths = formatPathList(requestedPaths);
+  return `That song does not include the requested path${requestedPaths.length === 1 ? "" : "s"}: ${formattedPaths}.`;
+}
+
 function extractRequestedSourceSongId(query: string | undefined) {
   const match = /^song:(\d+)$/i.exec((query ?? "").trim());
   if (!match) {
@@ -408,8 +415,9 @@ function getSongAllowance(input: {
   state: EventSubChatState;
   requesterContext: Parameters<typeof isRequesterAllowed>[1];
   allowBlacklistOverride: boolean;
+  requestedPaths: string[];
 }) {
-  return isSongAllowed({
+  const policyAllowance = isSongAllowed({
     song: input.song,
     settings: input.state.settings,
     blacklistArtists: input.state.blacklistArtists,
@@ -420,6 +428,26 @@ function getSongAllowance(input: {
     requester: input.requesterContext,
     allowBlacklistOverride: input.allowBlacklistOverride,
   });
+
+  if (!policyAllowance.allowed) {
+    return policyAllowance;
+  }
+
+  if (
+    input.requestedPaths.length > 0 &&
+    !songMatchesRequestedPaths({
+      song: input.song,
+      requestedPaths: input.requestedPaths,
+    })
+  ) {
+    return {
+      allowed: false,
+      reason: getRequestedPathMismatchMessage(input.requestedPaths),
+      reasonCode: "requested_paths_not_matched",
+    };
+  }
+
+  return policyAllowance;
 }
 
 async function resolveChatRandomMatch(input: {
@@ -429,6 +457,7 @@ async function resolveChatRandomMatch(input: {
   state: EventSubChatState;
   requesterContext: Parameters<typeof isRequesterAllowed>[1];
   allowBlacklistOverride: boolean;
+  requestedPaths: string[];
 }) {
   const baseSearchInput = buildCatalogSearchInput({
     query: input.query,
@@ -477,6 +506,7 @@ async function resolveChatRandomMatch(input: {
       state: input.state,
       requesterContext: input.requesterContext,
       allowBlacklistOverride: input.allowBlacklistOverride,
+      requestedPaths: input.requestedPaths,
     });
     if (songAllowed.allowed) {
       return { firstMatch: candidate, firstRejectedMatch: undefined };
@@ -505,6 +535,7 @@ async function resolveChatRandomMatch(input: {
           state: input.state,
           requesterContext: input.requesterContext,
           allowBlacklistOverride: input.allowBlacklistOverride,
+          requestedPaths: input.requestedPaths,
         }).allowed
     );
 
@@ -530,6 +561,7 @@ async function resolveChatRandomMatch(input: {
       state: input.state,
       requesterContext: input.requesterContext,
       allowBlacklistOverride: input.allowBlacklistOverride,
+      requestedPaths: input.requestedPaths,
     });
     if (!songAllowed.allowed && !firstRejectedMatch) {
       firstRejectedMatch = {
@@ -555,6 +587,7 @@ async function resolveChatChoiceAvailability(input: {
   state: EventSubChatState;
   requesterContext: Parameters<typeof isRequesterAllowed>[1];
   allowBlacklistOverride: boolean;
+  requestedPaths: string[];
 }) {
   const filteredSearch = await input.deps.searchSongs(
     input.env,
@@ -596,6 +629,7 @@ async function resolveChatChoiceAvailability(input: {
       state: input.state,
       requesterContext: input.requesterContext,
       allowBlacklistOverride: input.allowBlacklistOverride,
+      requestedPaths: input.requestedPaths,
     });
 
     if (songAllowed.allowed) {
@@ -957,6 +991,7 @@ export async function processEventSubChatMessage(input: {
         commandPrefix: state.settings.commandPrefix,
         appUrl: env.APP_URL,
         channelSlug: channel.slug,
+        allowRequestPathModifiers: state.settings.allowRequestPathModifiers,
       }),
     });
     return { body: "Accepted", status: 202 };
@@ -1153,10 +1188,13 @@ export async function processEventSubChatMessage(input: {
     return { body: "Rejected", status: 202 };
   }
 
-  const parsedRequest = parseRequestModifiers(parsed.query?.trim() ?? "");
+  const parsedRequest = parseRequestModifiers(parsed.query?.trim() ?? "", {
+    allowPathModifiers: state.settings.allowRequestPathModifiers,
+  });
   const requestMode = parsedRequest.mode;
   const normalizedQuery = parsedRequest.query;
   const unmatchedQuery = normalizedQuery;
+  const requestedPaths = parsedRequest.requestedPaths;
 
   if (!normalizedQuery) {
     await deps.createRequestLog(env, {
@@ -1201,6 +1239,7 @@ export async function processEventSubChatMessage(input: {
         state,
         requesterContext,
         allowBlacklistOverride,
+        requestedPaths,
       });
 
       if (
@@ -1217,6 +1256,7 @@ export async function processEventSubChatMessage(input: {
         state,
         requesterContext,
         allowBlacklistOverride,
+        requestedPaths,
       });
       firstMatch = randomMatch.firstMatch;
       firstRejectedMatch = randomMatch.firstRejectedMatch;
@@ -1233,19 +1273,15 @@ export async function processEventSubChatMessage(input: {
       });
       candidateMatchesJson = buildCandidateMatchesJson(search.results);
       for (const result of search.results) {
-        const songAllowed = isSongAllowed({
+        const effectiveSongAllowance = getSongAllowance({
           song: result,
-          settings: state.settings,
-          blacklistArtists: state.blacklistArtists,
-          blacklistCharters: state.blacklistCharters,
-          blacklistSongs: state.blacklistSongs,
-          blacklistSongGroups: state.blacklistSongGroups,
-          setlistArtists: state.setlistArtists,
-          requester: requesterContext,
+          state,
+          requesterContext,
           allowBlacklistOverride,
+          requestedPaths,
         });
 
-        if (songAllowed.allowed) {
+        if (effectiveSongAllowance.allowed) {
           firstMatch = result;
           break;
         }
@@ -1253,9 +1289,11 @@ export async function processEventSubChatMessage(input: {
         if (!firstRejectedMatch) {
           firstRejectedMatch = {
             song: result,
-            reason: songAllowed.reason,
+            reason: effectiveSongAllowance.reason,
             reasonCode:
-              "reasonCode" in songAllowed ? songAllowed.reasonCode : undefined,
+              "reasonCode" in effectiveSongAllowance
+                ? effectiveSongAllowance.reasonCode
+                : undefined,
           };
         }
       }
@@ -1283,6 +1321,28 @@ export async function processEventSubChatMessage(input: {
       message: `${mention(requesterIdentity.login)} I ran into a problem searching for that song. Please try again.`,
     });
     return { body: "Lookup failed", status: 202 };
+  }
+
+  if (firstMatch) {
+    const firstMatchAllowance = getSongAllowance({
+      song: firstMatch,
+      state,
+      requesterContext,
+      allowBlacklistOverride,
+      requestedPaths,
+    });
+
+    if (!firstMatchAllowance.allowed) {
+      firstRejectedMatch ??= {
+        song: firstMatch,
+        reason: firstMatchAllowance.reason,
+        reasonCode:
+          "reasonCode" in firstMatchAllowance
+            ? firstMatchAllowance.reasonCode
+            : undefined,
+      };
+      firstMatch = null;
+    }
   }
 
   let warningCode: string | undefined;
@@ -1370,16 +1430,12 @@ export async function processEventSubChatMessage(input: {
   }
 
   if (firstMatch) {
-    const songAllowed = isSongAllowed({
+    const songAllowed = getSongAllowance({
       song: firstMatch,
-      settings: state.settings,
-      blacklistArtists: state.blacklistArtists,
-      blacklistCharters: state.blacklistCharters,
-      blacklistSongs: state.blacklistSongs,
-      blacklistSongGroups: state.blacklistSongGroups,
-      setlistArtists: state.setlistArtists,
-      requester: requesterContext,
+      state,
+      requesterContext,
       allowBlacklistOverride,
+      requestedPaths,
     });
 
     if (!songAllowed.allowed) {

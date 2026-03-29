@@ -1,1 +1,1 @@
-export const LATEST_MIGRATION_NAME = "0016_channel_owned_official_dlcs.sql";
+export const LATEST_MIGRATION_NAME = "0018_request_path_modifiers.sql";

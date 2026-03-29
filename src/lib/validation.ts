@@ -206,6 +206,8 @@ export const settingsInputSchema = z
     autoGrantVipTokensToSubGifters: z.boolean(),
     autoGrantVipTokensToGiftRecipients: z.boolean(),
     autoGrantVipTokensForCheers: z.boolean(),
+    autoGrantVipTokensForStreamElementsTips: z.boolean(),
+    allowRequestPathModifiers: z.boolean(),
     cheerBitsPerVipToken: z.number().int().min(1).max(100_000),
     cheerMinimumTokenPercent: z.union([
       z.literal(25),
@@ -213,6 +215,7 @@ export const settingsInputSchema = z
       z.literal(75),
       z.literal(100),
     ]),
+    streamElementsTipAmountPerVipToken: z.number().min(0.01).max(100_000),
     duplicateWindowSeconds: z.number().int().min(0).max(86400),
     showPlaylistPositions: z.boolean(),
     commandPrefix: z.string().trim().min(2).max(12),

@@ -853,6 +853,10 @@ function nextOverlayToken() {
   return createId("ovl");
 }
 
+function nextStreamElementsTipWebhookToken() {
+  return createId("setip");
+}
+
 export async function ensureOverlayAccessToken(env: AppEnv, channelId: string) {
   const existing = await getChannelSettingsByChannelId(env, channelId);
 
@@ -881,6 +885,28 @@ export async function regenerateOverlayAccessToken(
     .update(channelSettings)
     .set({
       overlayAccessToken: token,
+      updatedAt: Date.now(),
+    })
+    .where(eq(channelSettings.channelId, channelId));
+
+  return token;
+}
+
+export async function ensureStreamElementsTipWebhookToken(
+  env: AppEnv,
+  channelId: string
+) {
+  const existing = await getChannelSettingsByChannelId(env, channelId);
+
+  if (existing?.streamElementsTipWebhookToken) {
+    return existing.streamElementsTipWebhookToken;
+  }
+
+  const token = nextStreamElementsTipWebhookToken();
+  await getDb(env)
+    .update(channelSettings)
+    .set({
+      streamElementsTipWebhookToken: token,
       updatedAt: Date.now(),
     })
     .where(eq(channelSettings.channelId, channelId));
@@ -2488,8 +2514,11 @@ export async function updateSettings(
     autoGrantVipTokensToSubGifters: boolean;
     autoGrantVipTokensToGiftRecipients: boolean;
     autoGrantVipTokensForCheers: boolean;
+    autoGrantVipTokensForStreamElementsTips: boolean;
+    allowRequestPathModifiers: boolean;
     cheerBitsPerVipToken: number;
     cheerMinimumTokenPercent: 25 | 50 | 75 | 100;
+    streamElementsTipAmountPerVipToken: number;
     duplicateWindowSeconds: number;
     showPlaylistPositions: boolean;
     commandPrefix: string;
@@ -2537,8 +2566,13 @@ export async function updateSettings(
       autoGrantVipTokensToGiftRecipients:
         input.autoGrantVipTokensToGiftRecipients,
       autoGrantVipTokensForCheers: input.autoGrantVipTokensForCheers,
+      autoGrantVipTokensForStreamElementsTips:
+        input.autoGrantVipTokensForStreamElementsTips,
+      allowRequestPathModifiers: input.allowRequestPathModifiers,
       cheerBitsPerVipToken: input.cheerBitsPerVipToken,
       cheerMinimumTokenPercent: input.cheerMinimumTokenPercent,
+      streamElementsTipAmountPerVipToken:
+        input.streamElementsTipAmountPerVipToken,
       duplicateWindowSeconds: input.duplicateWindowSeconds,
       showPlaylistPositions: input.showPlaylistPositions,
       commandPrefix: input.commandPrefix,

@@ -34,6 +34,7 @@ import { formatVipTokenCount, hasRedeemableVipToken } from "~/lib/vip-tokens";
 
 type PublicPlaylistItem = {
   id: string;
+  position?: number | null;
   songId?: string | null;
   songTitle: string;
   songArtist?: string | null;
@@ -50,7 +51,7 @@ type PublicPlaylistItem = {
   requestKind?: "regular" | "vip" | null;
   status: string;
   createdAt?: number | null;
-  updatedAt?: number | null;
+  editedAt?: number | null;
   pickNumber?: number | null;
 };
 
@@ -126,6 +127,7 @@ type PublicChannelPageData = {
     autoGrantVipTokensToGiftRecipients?: boolean;
     autoGrantVipTokensForCheers?: boolean;
     cheerBitsPerVipToken?: number;
+    showPlaylistPositions?: boolean;
   };
   items?: EnrichedPublicPlaylistItem[];
   playedSongs?: PlayedSongRow[];
@@ -269,9 +271,18 @@ function PublicChannelPage() {
 
   const channelDisplayName = data?.channel?.displayName ?? slug;
   const vipAutomationSummary = getVipAutomationSummary(data?.settings ?? {});
+  const blacklistEnabled = !!data?.settings?.blacklistEnabled;
+  const showPlaylistPositions = !!data?.settings?.showPlaylistPositions;
   const publicSearchResultState = useMemo(
     () =>
       (song: SearchSong): SearchSongResultState => {
+        if (!blacklistEnabled) {
+          return {
+            disabled: false,
+            reasons: [],
+          };
+        }
+
         const reasons = getBlacklistReasonCodes(
           {
             songCatalogSourceId: song.sourceId ?? null,
@@ -295,6 +306,7 @@ function PublicChannelPage() {
         };
       },
     [
+      blacklistEnabled,
       data?.blacklistArtists,
       data?.blacklistCharters,
       data?.blacklistSongGroups,
@@ -493,6 +505,7 @@ function PublicChannelPage() {
       }
     : null;
   const viewerRequestState = viewerRequestStateQuery.data?.viewer ?? null;
+  const viewerCanSubmitRequests = !!viewerRequestState?.access.allowed;
   const viewerActiveRequests = useMemo(
     () =>
       currentViewer
@@ -504,16 +517,20 @@ function PublicChannelPage() {
         : [],
     [currentViewer, playlistItems]
   );
+  const viewerQueuedRequests = useMemo(
+    () => viewerActiveRequests.filter((item) => item.status === "queued"),
+    [viewerActiveRequests]
+  );
   const viewerActiveRequestLimitReached =
     viewerRequestState?.activeRequestLimit != null &&
     viewerActiveRequests.length >= viewerRequestState.activeRequestLimit;
   const effectiveReplaceExisting =
-    viewerActiveRequests.length > 0 && viewerActiveRequestLimitReached;
+    viewerQueuedRequests.length > 0 && viewerActiveRequestLimitReached;
 
   return (
-    <section className="grid gap-6">
-      <div className="rounded-[32px] border border-(--border) bg-(--panel-strong) py-8 shadow-(--shadow)">
-        <div className="px-8">
+    <section className="page-section-stack grid gap-6">
+      <div className="border border-(--border) bg-(--panel-strong) py-8 shadow-none max-[960px]:border-x-0 max-[960px]:bg-transparent max-[960px]:py-6 max-[960px]:[background-image:none]">
+        <div className="px-8 max-[960px]:px-6">
           <div className="flex flex-wrap items-start justify-between gap-4">
             <div>
               <h1 className="text-3xl font-semibold">
@@ -523,18 +540,20 @@ function PublicChannelPage() {
           </div>
         </div>
         {vipAutomationSummary ? (
-          <div className="mt-5 px-8">
-            <div className="inline-flex max-w-full flex-wrap items-center gap-2 rounded-[22px] border border-violet-400/30 bg-violet-500/10 px-4 py-3 text-sm text-violet-100">
-              <span className="rounded-full border border-violet-300/30 bg-violet-500/20 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.18em] text-violet-100">
+          <div className="mt-5 px-8 max-[960px]:px-6">
+            <div className="inline-flex max-w-full flex-wrap items-center gap-2 border border-violet-400/30 bg-violet-500/10 px-4 py-3 text-sm text-violet-100">
+              <span className="border border-violet-300/30 bg-violet-500/20 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.18em] text-violet-100">
                 VIP tokens
               </span>
               <span>{vipAutomationSummary}</span>
             </div>
           </div>
         ) : null}
-        {isLoading ? <p className="mt-4 px-8">Loading playlist...</p> : null}
+        {isLoading ? (
+          <p className="mt-4 px-8 max-[960px]:px-6">Loading playlist...</p>
+        ) : null}
         {canManagePlaylist ? (
-          <div className="mt-6 px-8">
+          <div className="mt-6 px-8 max-[960px]:px-0 max-[960px]:[&_.dashboard-playlist__drag-handle]:rounded-none max-[960px]:[&_.dashboard-playlist__item]:rounded-none max-[960px]:[&_.dashboard-playlist__item]:border-x-0 max-[960px]:[&_.dashboard-playlist__item]:shadow-none">
             <PlaylistManagementSurface
               apiPath={`/api/channel/${slug}/playlist`}
               queryKeyBase={`channel-playlist-management-${slug}`}
@@ -546,12 +565,14 @@ function PublicChannelPage() {
             />
           </div>
         ) : (
-          <div className="mt-6 grid gap-3 px-8">
+          <div className="mt-6 overflow-hidden border border-(--border) mx-8 max-[960px]:mx-0 max-[960px]:border-x-0">
             <AnimatePresence initial={false} mode="popLayout">
-              {filteredItems.map((item) => (
+              {filteredItems.map((item, index) => (
                 <PublicPlaylistRow
                   key={item.id}
                   item={item}
+                  index={index}
+                  showPlaylistPositions={showPlaylistPositions}
                   isViewerRequest={
                     currentViewer != null &&
                     item.requestedByTwitchUserId === currentViewer.id
@@ -560,7 +581,7 @@ function PublicChannelPage() {
               ))}
             </AnimatePresence>
             {!isLoading && !filteredItems.length ? (
-              <p className="text-sm text-(--muted)">
+              <p className="px-5 py-4 text-sm text-(--muted) max-[960px]:px-6">
                 This playlist is empty right now.
               </p>
             ) : null}
@@ -599,12 +620,16 @@ function PublicChannelPage() {
         placeholder={`Search songs for ${channelDisplayName}`}
         extraSearchParams={{
           channelSlug: slug,
-          showBlacklisted,
+          showBlacklisted: blacklistEnabled ? showBlacklisted : undefined,
         }}
         resultState={publicSearchResultState}
         useTotalForSummary
         actionsLabel={
-          canManagePlaylist ? "Add" : signedInViewer ? "Request" : "Actions"
+          canManagePlaylist
+            ? "Add"
+            : signedInViewer && viewerCanSubmitRequests
+              ? "Request"
+              : "Actions"
         }
         summaryContent={
           canManagePlaylist ? null : (
@@ -615,6 +640,7 @@ function PublicChannelPage() {
               viewerStateLoading={viewerRequestStateQuery.isLoading}
               viewerStateError={viewerRequestStateQuery.error}
               activeRequests={viewerActiveRequests}
+              queuedRequests={viewerQueuedRequests}
               removePending={removeViewerRequestsMutation.isPending}
               onRemoveRequests={() => removeViewerRequestsMutation.mutate()}
             />
@@ -641,55 +667,61 @@ function PublicChannelPage() {
                 />
               )
             : signedInViewer
-              ? ({ song, resultState }: SearchSongActionRenderArgs) => (
-                  <ViewerSearchSongActions
-                    song={song}
-                    resultState={resultState}
-                    viewerState={viewerRequestState}
-                    viewerStateLoading={viewerRequestStateQuery.isLoading}
-                    viewerStateError={getErrorMessage(
-                      viewerRequestStateQuery.error,
-                      ""
-                    )}
-                    activeRequests={viewerActiveRequests}
-                    replaceExisting={effectiveReplaceExisting}
-                    mutationIsPending={viewerRequestMutation.isPending}
-                    pendingViewerRequest={pendingViewerRequest}
-                    onSubmit={(requestKind) =>
-                      viewerRequestMutation.mutate({
-                        action: "submit",
-                        song,
-                        requestKind,
-                        replaceExisting: effectiveReplaceExisting,
-                      })
-                    }
-                  />
-                )
+              ? viewerCanSubmitRequests
+                ? ({ song, resultState }: SearchSongActionRenderArgs) => (
+                    <ViewerSearchSongActions
+                      song={song}
+                      resultState={resultState}
+                      viewerState={viewerRequestState}
+                      viewerStateLoading={viewerRequestStateQuery.isLoading}
+                      viewerStateError={getErrorMessage(
+                        viewerRequestStateQuery.error,
+                        ""
+                      )}
+                      activeRequests={viewerActiveRequests}
+                      replaceExisting={effectiveReplaceExisting}
+                      mutationIsPending={viewerRequestMutation.isPending}
+                      pendingViewerRequest={pendingViewerRequest}
+                      onSubmit={(requestKind) =>
+                        viewerRequestMutation.mutate({
+                          action: "submit",
+                          song,
+                          requestKind,
+                          replaceExisting: effectiveReplaceExisting,
+                        })
+                      }
+                    />
+                  )
+                : undefined
               : undefined
         }
-        advancedFiltersContent={({ data: searchData }) => (
-          <div className="inline-flex w-fit self-start flex-wrap items-center gap-3 rounded-full border border-(--border) bg-(--panel) px-4 py-2.5">
-            <Checkbox
-              id="show-blacklisted-public-playlist"
-              checked={showBlacklisted}
-              onCheckedChange={(checked) =>
-                setShowBlacklisted(checked === true)
-              }
-            />
-            <Label
-              htmlFor="show-blacklisted-public-playlist"
-              className="cursor-pointer text-sm font-medium text-(--text)"
-            >
-              Show blacklisted songs
-            </Label>
-            {!showBlacklisted &&
-            (searchData?.hiddenBlacklistedCount ?? 0) > 0 ? (
-              <span className="inline-flex items-center text-xs text-(--muted)">
-                Hiding {searchData?.hiddenBlacklistedCount ?? 0}
-              </span>
-            ) : null}
-          </div>
-        )}
+        advancedFiltersContent={
+          blacklistEnabled
+            ? ({ data: searchData }) => (
+                <div className="inline-flex w-fit self-start flex-wrap items-center gap-3 border border-(--border) bg-(--panel) px-4 py-2.5">
+                  <Checkbox
+                    id="show-blacklisted-public-playlist"
+                    checked={showBlacklisted}
+                    onCheckedChange={(checked) =>
+                      setShowBlacklisted(checked === true)
+                    }
+                  />
+                  <Label
+                    htmlFor="show-blacklisted-public-playlist"
+                    className="cursor-pointer text-sm font-medium text-(--text)"
+                  >
+                    Show blacklisted songs
+                  </Label>
+                  {!showBlacklisted &&
+                  (searchData?.hiddenBlacklistedCount ?? 0) > 0 ? (
+                    <span className="inline-flex items-center text-xs text-(--muted)">
+                      Hiding {searchData?.hiddenBlacklistedCount ?? 0}
+                    </span>
+                  ) : null}
+                </div>
+              )
+            : undefined
+        }
       />
 
       <ChannelRulesPanel
@@ -730,12 +762,13 @@ function ViewerRequestSummaryWidget(props: {
   viewerStateLoading: boolean;
   viewerStateError: unknown;
   activeRequests: EnrichedPublicPlaylistItem[];
+  queuedRequests: EnrichedPublicPlaylistItem[];
   removePending: boolean;
   onRemoveRequests: () => void;
 }) {
   if (!props.signedInViewer) {
     return (
-      <Button asChild variant="outline" className="rounded-[24px] px-4 py-3">
+      <Button asChild variant="outline" className="px-4 py-3">
         <a
           href={`/auth/twitch/start?redirectTo=${encodeURIComponent(`/${props.slug}`)}`}
         >
@@ -765,21 +798,21 @@ function ViewerRequestSummaryWidget(props: {
       <PopoverTrigger asChild>
         <button
           type="button"
-          className="inline-flex max-w-full items-center justify-between gap-3 rounded-[24px] border border-(--border) bg-(--panel-soft) px-4 py-2.5 text-left transition-colors hover:bg-(--panel)"
+          className="inline-flex max-w-full items-center justify-between gap-3 border border-(--border) bg-(--panel-soft) px-4 py-2.5 text-left transition-colors hover:bg-(--panel)"
         >
           {viewer.profileImageUrl ? (
             <span
-              className="block shrink-0 overflow-hidden rounded-full border border-(--border-strong)"
+              className="block shrink-0 overflow-hidden border border-(--border-strong)"
               style={{ width: 40, height: 40, minWidth: 40 }}
             >
               <img
                 src={viewer.profileImageUrl}
                 alt={viewer.displayName}
-                className="block h-full w-full rounded-full object-cover"
+                className="block h-full w-full object-cover"
               />
             </span>
           ) : (
-            <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-(--border-strong) bg-(--panel-strong) text-sm font-semibold text-(--text)">
+            <span className="flex h-10 w-10 shrink-0 items-center justify-center border border-(--border-strong) bg-(--panel-strong) text-sm font-semibold text-(--text)">
               {viewer.displayName.slice(0, 1).toUpperCase()}
             </span>
           )}
@@ -798,7 +831,7 @@ function ViewerRequestSummaryWidget(props: {
       </PopoverTrigger>
       <PopoverContent
         align="start"
-        className="w-[320px] rounded-2xl border-(--border) bg-(--panel-strong) p-4 text-(--text)"
+        className="w-[320px] border-(--border) bg-(--panel-strong) p-4 text-(--text)"
       >
         <div className="grid gap-3">
           <div className="min-w-0">
@@ -819,17 +852,19 @@ function ViewerRequestSummaryWidget(props: {
               )}
             </p>
           ) : null}
-          {limitReached && props.activeRequests.length > 0 ? (
+          {limitReached && props.queuedRequests.length > 0 ? (
             <p className="text-sm text-(--muted)">
-              New adds replace your current requests.
+              New adds replace your queued requests.
             </p>
           ) : null}
           {props.activeRequests.length > 0 ? (
-            <div className="grid gap-2">
-              {props.activeRequests.map((item) => (
+            <div className="overflow-hidden border border-(--border)">
+              {props.activeRequests.map((item, index) => (
                 <div
                   key={item.id}
-                  className="flex flex-wrap items-center justify-between gap-3 rounded-[18px] border border-(--border) bg-(--panel) px-4 py-3"
+                  className={`flex flex-wrap items-center justify-between gap-3 px-4 py-3 ${
+                    index % 2 === 0 ? "bg-(--panel)" : "bg-(--panel-soft)"
+                  } ${index > 0 ? "border-t border-(--border)" : ""}`}
                 >
                   <div className="min-w-0">
                     <p className="truncate font-medium text-(--text)">
@@ -861,14 +896,14 @@ function ViewerRequestSummaryWidget(props: {
               No requests in the playlist.
             </p>
           )}
-          {props.activeRequests.length > 0 ? (
+          {props.queuedRequests.length > 0 ? (
             <Button
               type="button"
               variant="outline"
               onClick={props.onRemoveRequests}
               disabled={props.removePending}
             >
-              {props.removePending ? "Removing..." : "Remove my requests"}
+              {props.removePending ? "Removing..." : "Remove queued requests"}
             </Button>
           ) : null}
         </div>
@@ -1038,7 +1073,7 @@ function InlineStatusBanner(props: {
   return (
     <div
       className={cn(
-        "rounded-[20px] border px-4 py-3 text-sm",
+        "border px-4 py-3 text-sm",
         props.tone === "success"
           ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-200"
           : "border-rose-500/30 bg-rose-500/10 text-rose-200"
@@ -1125,7 +1160,7 @@ function ManageSearchSongActions(props: {
           </PopoverTrigger>
           <PopoverContent
             align="start"
-            className="w-[200px] rounded-2xl border-(--border) bg-(--panel-strong) p-3 text-(--text)"
+            className="w-[200px] border-(--border) bg-(--panel-strong) p-3 text-(--text)"
           >
             <div className="grid gap-2">
               <Input
@@ -1139,7 +1174,7 @@ function ManageSearchSongActions(props: {
                 </p>
               ) : null}
               {lookupQuery.data?.needsChatterScopeReconnect ? (
-                <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-amber-500/30 bg-amber-500/10 px-3 py-2">
+                <div className="flex flex-wrap items-center justify-between gap-3 border border-amber-500/30 bg-amber-500/10 px-3 py-2">
                   <p className="text-sm text-amber-100">
                     Reconnect Twitch to search viewers currently in chat.
                   </p>
@@ -1158,8 +1193,8 @@ function ManageSearchSongActions(props: {
                     Searching current viewers...
                   </p>
                 ) : (lookupQuery.data?.users?.length ?? 0) > 0 ? (
-                  <div className="grid gap-1">
-                    {lookupQuery.data?.users.map((user) => (
+                  <div className="overflow-hidden border border-(--border)">
+                    {lookupQuery.data?.users.map((user, index) => (
                       <button
                         key={user.id}
                         type="button"
@@ -1169,7 +1204,11 @@ function ManageSearchSongActions(props: {
                           setQuery("");
                           setDebouncedQuery("");
                         }}
-                        className="flex items-center justify-between gap-3 rounded-xl px-3 py-3 text-left transition-colors hover:bg-(--panel-soft)"
+                        className={`flex items-center justify-between gap-3 px-3 py-3 text-left transition-colors hover:bg-(--panel-soft) ${
+                          index % 2 === 0
+                            ? "bg-(--panel-soft)"
+                            : "bg-(--panel-muted)"
+                        } ${index > 0 ? "border-t border-(--border)" : ""}`}
                       >
                         <div>
                           <p className="font-medium text-(--text)">
@@ -1228,6 +1267,8 @@ function getVipAutomationSummary(input: {
 
 function PublicPlaylistRow(props: {
   item: EnrichedPublicPlaylistItem;
+  index: number;
+  showPlaylistPositions: boolean;
   isViewerRequest: boolean;
 }) {
   const requesterName =
@@ -1246,7 +1287,7 @@ function PublicPlaylistRow(props: {
   const addedLabel = props.item.createdAt
     ? formatCompactPlaylistRelativeTime(props.item.createdAt)
     : null;
-  const editedTimestamp = props.item.updatedAt ?? null;
+  const editedTimestamp = props.item.editedAt ?? null;
   const editedLabel = editedTimestamp
     ? formatCompactPlaylistRelativeTime(editedTimestamp)
     : null;
@@ -1269,7 +1310,11 @@ function PublicPlaylistRow(props: {
       animate={{ opacity: 1, y: 0, scale: 1 }}
       exit={{ opacity: 0, y: -12, scale: 0.985 }}
       transition={publicPlaylistItemTransition}
-      className="rounded-[24px] border border-(--border) bg-(--panel-soft) px-5 py-4"
+      className={cn(
+        "border-(--border) px-5 py-4 max-[960px]:px-6",
+        props.index > 0 ? "border-t" : "",
+        props.index % 2 === 0 ? "bg-(--panel-soft)" : "bg-(--panel-muted)"
+      )}
       style={
         props.isViewerRequest
           ? {
@@ -1281,6 +1326,7 @@ function PublicPlaylistRow(props: {
     >
       <div className="flex items-start gap-4">
         <StatusColumn
+          position={props.showPlaylistPositions ? props.item.position : null}
           isCurrent={props.item.status === "current"}
           isVip={props.item.requestKind === "vip"}
         />
@@ -1328,18 +1374,33 @@ function formatCompactPlaylistRelativeTime(timestamp: number) {
   return `${days}d`;
 }
 
-function StatusColumn(props: { isCurrent: boolean; isVip: boolean }) {
-  if (!props.isCurrent && !props.isVip) {
+function StatusColumn(props: {
+  position: number | null | undefined;
+  isCurrent: boolean;
+  isVip: boolean;
+}) {
+  if (!props.isCurrent && !props.isVip && props.position == null) {
     return null;
   }
 
   return (
     <div className="mt-0.5 flex w-[72px] shrink-0 flex-col items-center gap-2">
+      {props.position != null ? (
+        <PlaylistPositionBadge position={props.position} />
+      ) : null}
       {props.isCurrent ? (
         <RecordBadge spinning={props.isCurrent} active={props.isCurrent} />
       ) : null}
       {props.isVip ? <VipTag /> : null}
     </div>
+  );
+}
+
+function PlaylistPositionBadge(props: { position: number }) {
+  return (
+    <span className="inline-flex min-h-7 min-w-7 items-center justify-center border border-(--border-strong) bg-(--panel) px-2 text-xs font-semibold text-(--text)">
+      {props.position}
+    </span>
   );
 }
 
@@ -1377,7 +1438,7 @@ function RecordBadge(props: { spinning: boolean; active: boolean }) {
 
 function VipTag() {
   return (
-    <div className="inline-flex min-h-7 items-center rounded-full border border-white/15 bg-[#a855f7] px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.24em] text-white">
+    <div className="inline-flex min-h-7 items-center border border-white/15 bg-[#a855f7] px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.24em] text-white">
       VIP
     </div>
   );
@@ -1393,7 +1454,7 @@ function PickBadge(props: { pickNumber: number }) {
 
   return (
     <span
-      className="inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.16em] text-white"
+      className="inline-flex items-center gap-1 border border-transparent px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.16em] text-white"
       style={{ background: tone.background }}
     >
       <span>{tone.icon}</span>

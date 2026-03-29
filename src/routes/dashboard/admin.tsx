@@ -176,7 +176,7 @@ function DashboardAdminPage() {
       configuredBotUsername.toLowerCase();
 
   return (
-    <div className="dashboard-admin grid gap-6">
+    <div className="page-section-stack dashboard-admin grid gap-6">
       <DashboardPageHeader
         title="Admin"
         description="Manage shared bot access and offline testing controls."

@@ -316,4 +316,39 @@ describe("request policy", () => {
       reasonCode: "charter_blacklist",
     });
   });
+
+  it("allows blacklist matches when a moderator or broadcaster override is used", () => {
+    expect(
+      isSongAllowed({
+        song: {
+          id: "song-4",
+          sourceId: 24680,
+          artistId: 999,
+          authorId: 555,
+          title: "Song",
+          artist: "Artist",
+          creator: "Charter Name",
+          source: "library",
+        },
+        settings: {
+          ...baseSettings,
+          blacklistEnabled: true,
+        },
+        blacklistArtists: [],
+        blacklistCharters: [{ charterId: 555, charterName: "Charter Name" }],
+        blacklistSongs: [],
+        blacklistSongGroups: [],
+        setlistArtists: [],
+        requester: {
+          isBroadcaster: false,
+          isModerator: false,
+          isVip: false,
+          isSubscriber: false,
+        },
+        allowBlacklistOverride: true,
+      })
+    ).toEqual({
+      allowed: true,
+    });
+  });
 });

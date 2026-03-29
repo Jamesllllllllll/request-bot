@@ -7,6 +7,7 @@ import {
   getCachedSearchResult,
   getChannelBlacklistByChannelId,
   getChannelBySlug,
+  getChannelSettingsByChannelId,
   searchCatalogSongs as searchCatalogSongsInDb,
   upsertCachedSearchResult,
 } from "~/lib/db/repositories";
@@ -151,31 +152,33 @@ export const Route = createFileRoute("/api/search")({
             );
 
             if (channel) {
-              const blacklist = await getChannelBlacklistByChannelId(
-                runtimeEnv,
-                channel.id
-              );
+              const [settings, blacklist] = await Promise.all([
+                getChannelSettingsByChannelId(runtimeEnv, channel.id),
+                getChannelBlacklistByChannelId(runtimeEnv, channel.id),
+              ]);
 
-              blacklistFilterInput = {
-                excludeSongIds: blacklist.blacklistSongs.map(
-                  (song) => song.songId
-                ),
-                excludeGroupedProjectIds: blacklist.blacklistSongGroups.map(
-                  (song) => song.groupedProjectId
-                ),
-                excludeArtistIds: blacklist.blacklistArtists.map(
-                  (artist) => artist.artistId
-                ),
-                excludeArtistNames: blacklist.blacklistArtists.map(
-                  (artist) => artist.artistName
-                ),
-                excludeAuthorIds: blacklist.blacklistCharters.map(
-                  (charter) => charter.charterId
-                ),
-                excludeCreatorNames: blacklist.blacklistCharters.map(
-                  (charter) => charter.charterName
-                ),
-              };
+              if (settings?.blacklistEnabled) {
+                blacklistFilterInput = {
+                  excludeSongIds: blacklist.blacklistSongs.map(
+                    (song) => song.songId
+                  ),
+                  excludeGroupedProjectIds: blacklist.blacklistSongGroups.map(
+                    (song) => song.groupedProjectId
+                  ),
+                  excludeArtistIds: blacklist.blacklistArtists.map(
+                    (artist) => artist.artistId
+                  ),
+                  excludeArtistNames: blacklist.blacklistArtists.map(
+                    (artist) => artist.artistName
+                  ),
+                  excludeAuthorIds: blacklist.blacklistCharters.map(
+                    (charter) => charter.charterId
+                  ),
+                  excludeCreatorNames: blacklist.blacklistCharters.map(
+                    (charter) => charter.charterName
+                  ),
+                };
+              }
             }
           }
 

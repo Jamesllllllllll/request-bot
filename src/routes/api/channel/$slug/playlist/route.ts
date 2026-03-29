@@ -86,6 +86,8 @@ export const Route = createFileRoute("/api/channel/$slug/playlist")({
                   false,
                 cheerBitsPerVipToken:
                   managementState.settings?.cheerBitsPerVipToken ?? 200,
+                showPlaylistPositions:
+                  managementState.settings?.showPlaylistPositions ?? false,
               },
               items: await enrichPlaylistItems(
                 runtimeEnv,
@@ -134,6 +136,7 @@ export const Route = createFileRoute("/api/channel/$slug/playlist")({
               autoGrantVipTokensForCheers:
                 settings?.autoGrantVipTokensForCheers ?? false,
               cheerBitsPerVipToken: settings?.cheerBitsPerVipToken ?? 200,
+              showPlaylistPositions: settings?.showPlaylistPositions ?? false,
             },
             items: await enrichPlaylistItems(runtimeEnv, playlist?.items ?? []),
             playedSongs: playedRows,

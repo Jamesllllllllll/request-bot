@@ -110,8 +110,6 @@ function toRocksmithDemoChannel(
     slug: login,
     displayName: channel.display_name,
     login,
-    playlistHref: `https://rsplaylist.com/playlist/${encodeURIComponent(channel.display_name || login)}/`,
-    playlistExternal: true,
     streamTitle: channel.title ?? channel.game_name ?? null,
     streamThumbnailUrl: `https://static-cdn.jtvnw.net/previews-ttv/live_user_${login}-640x360.jpg`,
     currentItem: null,
@@ -150,8 +148,6 @@ async function getFeaturedRocksmithDemoChannel(input: {
     slug: login,
     displayName: user.display_name || user.login,
     login,
-    playlistHref: `https://rsplaylist.com/playlist/${encodeURIComponent(user.display_name || login)}/`,
-    playlistExternal: true,
     streamTitle: stream.title || null,
     streamThumbnailUrl: stream.thumbnail_url
       ? stream.thumbnail_url

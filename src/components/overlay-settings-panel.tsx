@@ -279,9 +279,7 @@ export function OverlaySettingsPanel() {
           Stream overlay
         </h2>
         <p className="max-w-3xl text-sm leading-7 text-(--muted)">
-          Keep browser-source configuration with the rest of your channel
-          settings. The preview still reflects your live playlist when it is
-          available.
+          Display your playlist on your stream using a browser source.
         </p>
       </div>
 

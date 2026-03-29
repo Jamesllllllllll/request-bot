@@ -35,6 +35,7 @@ export const Route = createFileRoute("/api/extension/request/edit")({
                   songId: body.songId,
                   requestKind: body.requestKind,
                   replaceExisting: true,
+                  itemId: body.itemId,
                 },
               })
             )

@@ -11,6 +11,7 @@ import {
   PaginationNext,
   PaginationPrevious,
 } from "~/components/ui/pagination";
+import { usePaginatedContentTransition } from "~/lib/paginated-content-transition";
 import { decodeHtmlEntities } from "~/lib/utils";
 
 type PublicPlayedSong = {
@@ -134,12 +135,21 @@ export function PublicPlayedHistoryCard(props: { slug: string }) {
       selectedRequester,
     ]
   );
+  const {
+    goToPage: goToHistoryPage,
+    isTransitioning: isHistoryTransitioning,
+    transitionClassName: historyTransitionClassName,
+  } = usePaginatedContentTransition({
+    currentPage: historyPage,
+    isFetching: playedHistoryQuery.isFetching,
+    onPageChange: (nextPage) => setHistoryPage(nextPage),
+  });
 
   return (
-    <Card>
-      <CardHeader className="flex flex-row items-center justify-between gap-4">
+    <Card className="max-[960px]:rounded-none max-[960px]:border-x-0 max-[960px]:bg-transparent max-[960px]:shadow-none max-[960px]:[background-image:none]">
+      <CardHeader className="flex flex-row items-center justify-between gap-4 max-[960px]:px-0">
         <div className="flex items-center gap-3">
-          <div className="rounded-full border border-(--border) bg-(--panel-soft) p-2 text-(--brand)">
+          <div className="border border-(--border) bg-(--panel-soft) p-2 text-(--brand)">
             <History className="h-4 w-4" />
           </div>
           <div>
@@ -164,7 +174,7 @@ export function PublicPlayedHistoryCard(props: { slug: string }) {
         </Button>
       </CardHeader>
       {historyOpen ? (
-        <CardContent className="grid gap-4">
+        <CardContent className="grid gap-4 max-[960px]:px-0">
           <div className="grid gap-4 lg:grid-cols-[minmax(0,1.35fr)_minmax(0,1fr)]">
             <div className="grid gap-2">
               <label
@@ -227,7 +237,7 @@ export function PublicPlayedHistoryCard(props: { slug: string }) {
                 ) : null}
               </div>
               {selectedRequester ? (
-                <div className="inline-flex w-fit items-center gap-2 rounded-full border border-(--border) bg-(--panel-soft) px-3 py-1.5 text-sm text-(--text)">
+                <div className="inline-flex w-fit items-center gap-2 border border-(--border) bg-(--panel-soft) px-3 py-1.5 text-sm text-(--text)">
                   <span>
                     {formatRequesterLabel(selectedRequester)}
                     {selectedRequester.requestCount
@@ -248,7 +258,7 @@ export function PublicPlayedHistoryCard(props: { slug: string }) {
                 </div>
               ) : null}
               {showRequesterResults ? (
-                <div className="max-h-60 overflow-y-auto rounded-[20px] border border-(--border) bg-(--panel-soft)">
+                <div className="max-h-60 overflow-y-auto border border-(--border)">
                   {requesterResults.map((requester, index) => (
                     <button
                       key={requester.requesterId}
@@ -279,42 +289,54 @@ export function PublicPlayedHistoryCard(props: { slug: string }) {
             </div>
           </div>
 
-          {playedHistoryQuery.isLoading ? (
-            <p className="text-sm text-(--muted)">Loading played history...</p>
-          ) : null}
-
-          {!playedHistoryQuery.isLoading &&
-          (playedHistoryQuery.data?.results.length ?? 0) === 0 ? (
-            <p className="text-sm text-(--muted)">
-              {hasFilters
-                ? "No played songs matched those filters."
-                : "No songs have been marked played yet."}
-            </p>
-          ) : null}
-
-          {playedHistoryQuery.data?.results.map((song, index) => (
+          <div className="overflow-hidden">
             <div
-              key={song.id}
-              className={`rounded-[22px] border px-4 py-3 ${
-                index % 2 === 0
-                  ? "border-(--border) bg-(--panel-soft)"
-                  : "border-(--border) bg-(--panel-muted)"
-              }`}
+              className={`paginated-transition-frame ${historyTransitionClassName}`.trim()}
             >
-              <p className="font-medium text-(--text)">
-                {decodeHtmlEntities(song.songTitle)}
-                {song.songArtist
-                  ? ` by ${decodeHtmlEntities(song.songArtist)}`
-                  : ""}
-              </p>
-              <p className="mt-1 text-sm text-(--muted)">
-                {(song.requestedByDisplayName ?? song.requestedByLogin)
-                  ? `Requested by ${song.requestedByDisplayName ?? song.requestedByLogin} · `
-                  : ""}
-                {new Date(song.playedAt).toLocaleString()}
-              </p>
+              {playedHistoryQuery.isLoading ? (
+                <p className="text-sm text-(--muted)">
+                  Loading played history...
+                </p>
+              ) : null}
+
+              {!playedHistoryQuery.isLoading &&
+              (playedHistoryQuery.data?.results.length ?? 0) === 0 ? (
+                <p className="text-sm text-(--muted)">
+                  {hasFilters
+                    ? "No played songs matched those filters."
+                    : "No songs have been marked played yet."}
+                </p>
+              ) : null}
+
+              {playedHistoryQuery.data?.results.length ? (
+                <div className="overflow-hidden border border-(--border)">
+                  {playedHistoryQuery.data.results.map((song, index) => (
+                    <div
+                      key={song.id}
+                      className={`px-4 py-3 ${
+                        index % 2 === 0
+                          ? "bg-(--panel-soft)"
+                          : "bg-(--panel-muted)"
+                      } ${index > 0 ? "border-t border-(--border)" : ""}`}
+                    >
+                      <p className="font-medium text-(--text)">
+                        {decodeHtmlEntities(song.songTitle)}
+                        {song.songArtist
+                          ? ` by ${decodeHtmlEntities(song.songArtist)}`
+                          : ""}
+                      </p>
+                      <p className="mt-1 text-sm text-(--muted)">
+                        {(song.requestedByDisplayName ?? song.requestedByLogin)
+                          ? `Requested by ${song.requestedByDisplayName ?? song.requestedByLogin} · `
+                          : ""}
+                        {new Date(song.playedAt).toLocaleString()}
+                      </p>
+                    </div>
+                  ))}
+                </div>
+              ) : null}
             </div>
-          ))}
+          </div>
 
           {playedHistoryQuery.data &&
           ((playedHistoryQuery.data.page ?? 1) > 1 ||
@@ -328,15 +350,27 @@ export function PublicPlayedHistoryCard(props: { slug: string }) {
                   <PaginationItem>
                     <PaginationPrevious
                       onClick={() =>
-                        setHistoryPage((current) => Math.max(1, current - 1))
+                        goToHistoryPage(
+                          Math.max(1, (playedHistoryQuery.data?.page ?? 1) - 1)
+                        )
                       }
-                      disabled={(playedHistoryQuery.data.page ?? 1) <= 1}
+                      disabled={
+                        (playedHistoryQuery.data.page ?? 1) <= 1 ||
+                        isHistoryTransitioning
+                      }
                     />
                   </PaginationItem>
                   <PaginationItem>
                     <PaginationNext
-                      onClick={() => setHistoryPage((current) => current + 1)}
-                      disabled={!playedHistoryQuery.data.hasNextPage}
+                      onClick={() =>
+                        goToHistoryPage(
+                          (playedHistoryQuery.data?.page ?? 1) + 1
+                        )
+                      }
+                      disabled={
+                        !playedHistoryQuery.data.hasNextPage ||
+                        isHistoryTransitioning
+                      }
                     />
                   </PaginationItem>
                 </PaginationContent>

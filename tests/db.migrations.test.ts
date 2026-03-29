@@ -40,8 +40,8 @@ insert into playlist_items (
   song_creator, song_tuning, song_parts_json, song_duration_text,
   song_catalog_source_id, song_source, song_url, status,
   requested_by_twitch_user_id, requested_by_login, requested_by_display_name,
-  request_message_id, request_kind, position, created_at, updated_at
-) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, (unixepoch() * 1000), (unixepoch() * 1000))
+  request_message_id, request_kind, position, regular_position, created_at, updated_at
+) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, (unixepoch() * 1000), (unixepoch() * 1000))
 """, (
     "pli_test",
     "pl_test",
@@ -63,6 +63,7 @@ insert into playlist_items (
     "Channel Owner",
     None,
     "regular",
+    1,
     1
 ))
 

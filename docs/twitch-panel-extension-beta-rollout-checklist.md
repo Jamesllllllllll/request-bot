@@ -95,6 +95,8 @@ When you build the Hosted Test artifact, make sure the shell sets the final app 
 VITE_TWITCH_EXTENSION_API_BASE_URL=https://your-app-host npm run build:extension:panel
 ```
 
+The build requires `VITE_TWITCH_EXTENSION_API_BASE_URL` or `APP_URL`. If neither is set, it fails instead of falling back to the Twitch asset host.
+
 Upload the contents of:
 
 ```text

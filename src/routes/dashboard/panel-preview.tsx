@@ -15,7 +15,7 @@ function DashboardPanelPreviewPage() {
     <div className="grid gap-6">
       <DashboardPageHeader
         title="Panel preview"
-        description="Mock moderator view of the Twitch panel."
+        description="Interactive Twitch panel demo with in-memory requests."
       />
 
       <div className="flex justify-center">

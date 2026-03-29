@@ -11,12 +11,12 @@ import {
 import { getReorderDestinationIndex } from "@atlaskit/pragmatic-drag-and-drop-hitbox/util/get-reorder-destination-index";
 import {
   Check,
-  ChevronDown,
-  ChevronUp,
   CircleAlert,
   Disc3,
   GripVertical,
   LoaderCircle,
+  MoreHorizontal,
+  PencilLine,
   Play,
   Search,
   Shuffle,
@@ -49,7 +49,19 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "~/components/ui/tooltip";
-import { toExtensionApiUrl } from "./config";
+import {
+  getQueuedPositionsFromRegularOrder,
+  getUpdatedPositionsAfterSetCurrent,
+  getUpdatedQueuedPositionsAfterKindChange,
+} from "~/lib/playlist/order";
+import { toExtensionApiUrl, toExtensionAppUrl } from "./config";
+import {
+  applyDemoViewerRequestMutation,
+  createMockModeratorPlaylistItems,
+  getDemoViewerActiveRequests,
+  mockModeratorViewerProfile,
+  type PanelDemoPlaylist,
+} from "./demo";
 import {
   getTwitchExtensionHelper,
   loadTwitchExtensionHelper,
@@ -64,6 +76,9 @@ type PanelBootstrapResponse = {
     login: string;
     displayName: string;
     twitchChannelId: string;
+  };
+  settings: {
+    showPlaylistPositions: boolean;
   };
   playlist: {
     currentItemId: string | null;
@@ -122,6 +137,7 @@ type PanelSearchResponse = {
 };
 
 type PanelStateResponse = {
+  settings: PanelBootstrapResponse["settings"];
   playlist: PanelBootstrapResponse["playlist"];
   viewer: Pick<
     PanelBootstrapResponse["viewer"],
@@ -133,8 +149,18 @@ type PanelStateResponse = {
   >;
 };
 
+type PreviewCatalogSearchResponse = {
+  results: Array<Record<string, unknown>>;
+  total?: number;
+  page?: number;
+  pageSize?: number;
+  hiddenBlacklistedCount?: number;
+  error?: string;
+};
+
 type PanelPlaylistMutation =
   | { action: "setCurrent"; itemId: string }
+  | { action: "returnToQueue"; itemId: string }
   | { action: "markPlayed"; itemId: string }
   | { action: "deleteItem"; itemId: string }
   | {
@@ -167,78 +193,6 @@ type TransientPanelNotice = {
 
 const PANEL_VISIBLE_REFRESH_INTERVAL_MS = 5000;
 
-const mockModeratorViewerProfile: NonNullable<
-  PanelBootstrapResponse["viewer"]["profile"]
-> = {
-  twitchUserId: "mod-preview-user",
-  login: "modmark",
-  displayName: "ModMark",
-  profileImageUrl: null,
-  isSubscriber: true,
-  subscriptionVerified: true,
-  vipTokensAvailable: 2,
-  activeRequestLimit: 5,
-};
-
-function createMockModeratorPlaylistItems(): PanelPlaylistItem[] {
-  const now = Date.now();
-
-  return [
-    {
-      id: "preview-current",
-      songTitle: "On My Soul",
-      songArtist: "Bruno Mars",
-      requestedByTwitchUserId: "viewer-alpha",
-      requestedByLogin: "riffpilot",
-      requestedByDisplayName: "RiffPilot",
-      requestKind: "regular",
-      createdAt: now - 12 * 60_000,
-      updatedAt: now - 12 * 60_000,
-      status: "current",
-      position: 1,
-    },
-    {
-      id: "preview-queued-1",
-      songTitle: "Black Cat",
-      songArtist: "Janet Jackson",
-      requestedByTwitchUserId: "viewer-beta",
-      requestedByLogin: "duhstructo",
-      requestedByDisplayName: "Duhstructo",
-      requestKind: "vip",
-      createdAt: now - 8 * 60_000,
-      updatedAt: now - 6 * 60_000,
-      status: "queued",
-      position: 2,
-    },
-    {
-      id: "preview-queued-2",
-      songTitle: "The Trooper",
-      songArtist: "Iron Maiden",
-      requestedByTwitchUserId: "viewer-gamma",
-      requestedByLogin: "younggun",
-      requestedByDisplayName: "YoungGun",
-      requestKind: "regular",
-      createdAt: now - 5 * 60_000,
-      updatedAt: now - 5 * 60_000,
-      status: "queued",
-      position: 3,
-    },
-    {
-      id: "preview-queued-3",
-      songTitle: "Barracuda",
-      songArtist: "Heart",
-      requestedByTwitchUserId: "viewer-delta",
-      requestedByLogin: "riffqueen",
-      requestedByDisplayName: "RiffQueen",
-      requestKind: "regular",
-      createdAt: now - 3 * 60_000,
-      updatedAt: now - 3 * 60_000,
-      status: "queued",
-      position: 4,
-    },
-  ];
-}
-
 export function ExtensionPanelApp(props: { apiBaseUrl?: string }) {
   const [helperState, setHelperState] = useState<"loading" | "ready" | "error">(
     "loading"
@@ -260,14 +214,16 @@ export function ExtensionPanelApp(props: { apiBaseUrl?: string }) {
   const [searchError, setSearchError] = useState<string | null>(null);
   const [searching, setSearching] = useState(false);
   const [activeTab, setActiveTab] = useState<"playlist" | "search">("playlist");
-  const [replaceExisting, setReplaceExisting] = useState(false);
   const [transientNotice, setTransientNotice] =
     useState<TransientPanelNotice | null>(null);
   const [pendingAction, setPendingAction] = useState<string | null>(null);
   const [confirmingRemoveItemId, setConfirmingRemoveItemId] = useState<
     string | null
   >(null);
-  const [expandedModeratorItemId, setExpandedModeratorItemId] = useState<
+  const [expandedActionItemId, setExpandedActionItemId] = useState<
+    string | null
+  >(null);
+  const [editingRequestItemId, setEditingRequestItemId] = useState<
     string | null
   >(null);
   const [draggingItemId, setDraggingItemId] = useState<string | null>(null);
@@ -281,14 +237,17 @@ export function ExtensionPanelApp(props: { apiBaseUrl?: string }) {
   const activeRequestCount = bootstrap?.viewer.activeRequests.length ?? 0;
   const activeRequestLimit =
     bootstrap?.viewer.profile?.activeRequestLimit ?? null;
-  const editModeAvailable = bootstrap?.viewer.canEditOwnRequest ?? false;
-  const effectiveReplaceExisting = editModeAvailable && replaceExisting;
   const queueCount = bootstrap?.playlist.items.length ?? 0;
+  const showPlaylistPositions =
+    bootstrap?.settings.showPlaylistPositions ?? false;
   const managementPermissions = bootstrap?.management.permissions;
   const canManagePlaylist = managementPermissions?.canManageRequests ?? false;
   const canManageVipRequests =
     !!managementPermissions?.canManageRequests &&
     !!managementPermissions?.canManageVipTokens;
+  const showViewerSearchActions =
+    !!bootstrap?.viewer.canRequest || !!bootstrap?.viewer.canVipRequest;
+  const viewerProfile = bootstrap?.viewer.profile ?? null;
   const playlistItems = bootstrap?.playlist.items ?? [];
   const currentPlaylistItemId = bootstrap?.playlist.currentItemId ?? null;
   const queuedPlaylistItems = playlistItems.filter(
@@ -303,8 +262,6 @@ export function ExtensionPanelApp(props: { apiBaseUrl?: string }) {
     : "Shuffle the queue.";
   const canReorderPlaylist =
     canManagePlaylist && queuedPlaylistItems.length > 1;
-  const showEditToggle =
-    bootstrap?.viewer.isLinked && (bootstrap?.viewer.canRequest ?? false);
   const waitingForAuthorization =
     helperState === "loading" ||
     (helperState === "ready" && !auth && !helperTimedOut);
@@ -313,6 +270,12 @@ export function ExtensionPanelApp(props: { apiBaseUrl?: string }) {
     waitingForAuthorization ||
     waitingForBootstrap ||
     (!!auth?.token && !bootstrap && !bootstrapError);
+  const editingRequest = getViewerEditablePanelItem(
+    playlistItems,
+    viewerProfile,
+    editingRequestItemId
+  );
+  const isEditingRequest = editingRequest != null;
 
   useEffect(() => {
     document.documentElement.classList.add("extension-mode");
@@ -323,15 +286,6 @@ export function ExtensionPanelApp(props: { apiBaseUrl?: string }) {
       document.body.classList.remove("extension-mode");
     };
   }, []);
-
-  useEffect(() => {
-    if (editModeAvailable && activeRequestCount === 1) {
-      setReplaceExisting(true);
-      return;
-    }
-
-    setReplaceExisting(false);
-  }, [activeRequestCount, editModeAvailable]);
 
   useEffect(() => {
     const timeout = window.setTimeout(() => {
@@ -383,6 +337,12 @@ export function ExtensionPanelApp(props: { apiBaseUrl?: string }) {
       document.removeEventListener("touchstart", handlePointerDown);
     };
   }, [confirmingRemoveItemId]);
+
+  useEffect(() => {
+    if (editingRequestItemId && !editingRequest) {
+      setEditingRequestItemId(null);
+    }
+  }, [editingRequest, editingRequestItemId]);
 
   useEffect(() => {
     let cancelled = false;
@@ -502,8 +462,6 @@ export function ExtensionPanelApp(props: { apiBaseUrl?: string }) {
     };
   }, [auth?.token, props.apiBaseUrl]);
 
-  const viewerProfile = bootstrap?.viewer.profile ?? null;
-
   function showTransientNotice(
     tone: TransientPanelNotice["tone"],
     message: string
@@ -537,6 +495,7 @@ export function ExtensionPanelApp(props: { apiBaseUrl?: string }) {
           current
             ? {
                 ...current,
+                settings: data.settings,
                 playlist: data.playlist,
                 viewer: {
                   ...current.viewer,
@@ -722,7 +681,7 @@ export function ExtensionPanelApp(props: { apiBaseUrl?: string }) {
     setTransientNotice(null);
 
     try {
-      const endpoint = effectiveReplaceExisting
+      const endpoint = isEditingRequest
         ? "/api/extension/request/edit"
         : "/api/extension/request";
       const result = await fetchExtensionJson<{ message?: string }>(
@@ -734,7 +693,10 @@ export function ExtensionPanelApp(props: { apiBaseUrl?: string }) {
           headers: {
             "content-type": "application/json",
           },
-          body: JSON.stringify(input),
+          body: JSON.stringify({
+            ...input,
+            itemId: editingRequestItemId ?? undefined,
+          }),
         }
       );
 
@@ -743,6 +705,7 @@ export function ExtensionPanelApp(props: { apiBaseUrl?: string }) {
         token: auth.token,
       });
       startTransition(() => {
+        setEditingRequestItemId(null);
         setActiveTab("playlist");
       });
     } catch (error) {
@@ -757,6 +720,15 @@ export function ExtensionPanelApp(props: { apiBaseUrl?: string }) {
     } finally {
       setPendingAction(null);
     }
+  }
+
+  function handleEditRequest(itemId: string) {
+    setExpandedActionItemId(null);
+    setConfirmingRemoveItemId(null);
+    setEditingRequestItemId(itemId);
+    startTransition(() => {
+      setActiveTab("search");
+    });
   }
 
   async function handleRemoveRequest(itemId: string) {
@@ -785,6 +757,12 @@ export function ExtensionPanelApp(props: { apiBaseUrl?: string }) {
 
       showTransientNotice("success", result.message ?? "Request removed.");
       setConfirmingRemoveItemId(null);
+      setExpandedActionItemId((current) =>
+        current === itemId ? null : current
+      );
+      setEditingRequestItemId((current) =>
+        current === itemId ? null : current
+      );
       await refreshPanelState({
         token: auth.token,
       });
@@ -925,10 +903,25 @@ export function ExtensionPanelApp(props: { apiBaseUrl?: string }) {
   const channelTitle = bootstrap?.channel?.displayName
     ? `${bootstrap.channel.displayName}'s Request Playlist`
     : "Request Playlist";
+  const footerPlaylistHref = bootstrap?.channel?.slug
+    ? toExtensionAppUrl(`/${bootstrap.channel.slug}`, props.apiBaseUrl)
+    : null;
+  const footerPlaylistLabel = getPanelPlaylistFooterLabel(
+    bootstrap?.channel?.displayName
+  );
+  const showStandaloneDemo =
+    !auth &&
+    typeof window !== "undefined" &&
+    window.self === window.top &&
+    (helperTimedOut || helperState === "error");
+
+  if (showStandaloneDemo) {
+    return <ExtensionPanelModeratorPreview />;
+  }
 
   return (
     <TooltipProvider>
-      <div className="mx-auto flex min-h-screen w-full max-w-[320px] flex-col bg-(--panel)">
+      <div className="mx-auto flex h-screen min-h-0 w-full max-w-[320px] flex-col overflow-hidden bg-(--panel)">
         <section className="border-b border-(--border-strong) px-3 py-2">
           {showLoadingSkeleton ? (
             <PanelHeaderSkeleton />
@@ -1037,11 +1030,11 @@ export function ExtensionPanelApp(props: { apiBaseUrl?: string }) {
                 setActiveTab(value);
               }
             }}
-            className="flex min-h-0 flex-1 flex-col gap-0 border-b border-(--border-strong)"
+            className="flex min-h-0 flex-1 flex-col gap-0 overflow-hidden border-b border-(--border-strong)"
           >
             <TabsList
               variant="line"
-              className="grid h-auto w-full grid-cols-2 gap-0 rounded-none border-b border-(--border-strong) bg-(--panel) p-0"
+              className="grid h-auto w-full shrink-0 grid-cols-2 gap-0 rounded-none border-b border-(--border-strong) bg-(--panel) p-0"
             >
               <TabsTrigger
                 value="playlist"
@@ -1066,9 +1059,9 @@ export function ExtensionPanelApp(props: { apiBaseUrl?: string }) {
 
             <TabsContent
               value="playlist"
-              className="mt-0 flex-1 overflow-y-auto"
+              className="mt-0 min-h-0 flex-1 overflow-hidden"
             >
-              <div>
+              <div className="h-full overflow-y-auto">
                 {canManagePlaylist ? (
                   <div className="flex items-center justify-between border-t border-(--border) px-3 py-1.5">
                     <span className="text-[10px] font-semibold uppercase tracking-[0.16em] text-(--muted)">
@@ -1115,6 +1108,7 @@ export function ExtensionPanelApp(props: { apiBaseUrl?: string }) {
                         item={item}
                         itemId={itemId}
                         currentItemId={currentPlaylistItemId}
+                        showPlaylistPositions={showPlaylistPositions}
                         viewerProfile={viewerProfile}
                         canManagePlaylist={canManagePlaylist}
                         canManageVipRequests={canManageVipRequests}
@@ -1122,10 +1116,8 @@ export function ExtensionPanelApp(props: { apiBaseUrl?: string }) {
                         pendingAction={pendingAction}
                         confirmingRemoveItemId={confirmingRemoveItemId}
                         onConfirmRemoveChange={setConfirmingRemoveItemId}
-                        expandedModeratorItemId={expandedModeratorItemId}
-                        onExpandedModeratorItemChange={
-                          setExpandedModeratorItemId
-                        }
+                        expandedActionItemId={expandedActionItemId}
+                        onExpandedActionItemChange={setExpandedActionItemId}
                         removeConfirmRef={removeConfirmRef}
                         draggingItemId={draggingItemId}
                         dropTargetState={dropTargetState}
@@ -1142,6 +1134,8 @@ export function ExtensionPanelApp(props: { apiBaseUrl?: string }) {
                         }}
                         onDragLeave={() => setDropTargetState(null)}
                         onReorder={handleReorderPlaylist}
+                        editingRequestItemId={editingRequestItemId}
+                        onEditRequest={handleEditRequest}
                         onRemoveRequest={handleRemoveRequest}
                         onPlaylistMutation={handlePlaylistMutation}
                       />
@@ -1155,153 +1149,166 @@ export function ExtensionPanelApp(props: { apiBaseUrl?: string }) {
               </div>
             </TabsContent>
 
-            <TabsContent value="search" className="mt-0 flex-1 overflow-y-auto">
-              <div className="border-b border-(--border) px-3 py-2">
-                <form className="flex gap-1" onSubmit={handleSearchSubmit}>
-                  <Input
-                    value={searchQuery}
-                    onChange={(event) => setSearchQuery(event.target.value)}
-                    placeholder="Search title, artist, or album"
-                    className="h-8 rounded-none border-(--border-strong) px-2 py-1 text-[12px] shadow-none focus-visible:ring-1 focus-visible:ring-(--brand) focus-visible:ring-offset-0"
-                  />
-                  <Button
-                    type="submit"
-                    size="sm"
-                    className="h-8 rounded-none px-2 shadow-none"
-                    disabled={
-                      searching || !auth?.token || searchQuery.trim().length < 3
-                    }
-                  >
-                    {searching ? (
-                      <LoaderCircle className="h-4 w-4 animate-spin" />
-                    ) : (
-                      <Search className="h-4 w-4" />
-                    )}
-                  </Button>
-                </form>
-
-                {showEditToggle ? (
-                  <label className="mt-2 flex items-center gap-2 text-[11px] text-(--muted)">
-                    <input
-                      type="checkbox"
-                      checked={replaceExisting}
-                      onChange={(event) =>
-                        setReplaceExisting(event.target.checked)
-                      }
-                      className="h-3.5 w-3.5 rounded-none border-(--border)"
-                      disabled={!editModeAvailable}
+            <TabsContent
+              value="search"
+              className="mt-0 min-h-0 flex-1 overflow-hidden"
+            >
+              <div className="h-full overflow-y-auto">
+                <div className="border-b border-(--border) px-3 py-2">
+                  {editingRequest ? (
+                    <PanelSearchEditBanner
+                      item={editingRequest}
+                      onCancel={() => {
+                        setEditingRequestItemId(null);
+                        setActiveTab("playlist");
+                      }}
                     />
-                    Edit current request
-                  </label>
-                ) : null}
+                  ) : null}
+                  <form className="flex gap-1" onSubmit={handleSearchSubmit}>
+                    <Input
+                      value={searchQuery}
+                      onChange={(event) => setSearchQuery(event.target.value)}
+                      placeholder={
+                        editingRequest
+                          ? "Search for a song to edit your request"
+                          : "Search title, artist, or album"
+                      }
+                      className="h-8 rounded-none border-(--border-strong) px-2 py-1 text-[12px] shadow-none focus-visible:ring-1 focus-visible:ring-(--brand) focus-visible:ring-offset-0"
+                    />
+                    <Button
+                      type="submit"
+                      size="sm"
+                      className="h-8 rounded-none px-2 shadow-none"
+                      disabled={
+                        searching ||
+                        !auth?.token ||
+                        searchQuery.trim().length < 3
+                      }
+                    >
+                      {searching ? (
+                        <LoaderCircle className="h-4 w-4 animate-spin" />
+                      ) : (
+                        <Search className="h-4 w-4" />
+                      )}
+                    </Button>
+                  </form>
 
-                {searchError ? (
-                  <p className="mt-2 text-[11px] text-(--danger)">
-                    {searchError}
-                  </p>
-                ) : null}
-              </div>
+                  {searchError ? (
+                    <p className="mt-2 text-[11px] text-(--danger)">
+                      {searchError}
+                    </p>
+                  ) : null}
+                </div>
 
-              <div>
-                {searchResults?.items?.length ? (
-                  <div>
-                    {searchResults.items.map((item, index) => {
-                      const songId = getString(item, "id");
-                      const actionKey = `${songId ?? "unknown"}:regular`;
-                      const vipActionKey = `${songId ?? "unknown"}:vip`;
+                <div>
+                  {searchResults?.items?.length ? (
+                    <div>
+                      {searchResults.items.map((item, index) => {
+                        const songId = getString(item, "id");
+                        const actionKey = `${songId ?? "unknown"}:regular`;
+                        const vipActionKey = `${songId ?? "unknown"}:vip`;
 
-                      return (
-                        <div
-                          key={songId ?? `search-result-${index}`}
-                          className="border-t border-(--border) px-3 py-2"
-                        >
-                          <div className="flex items-start justify-between gap-2">
-                            <div className="min-w-0">
-                              <p className="truncate text-[13px] leading-4 font-medium text-(--text)">
-                                {formatSearchSongLabel(item)}
-                              </p>
-                              <p className="mt-0.5 truncate text-[11px] leading-4 text-(--muted)">
-                                {formatSearchSongMeta(item)}
-                              </p>
-                            </div>
-                            <div className="flex shrink-0 items-center gap-1">
-                              <Button
-                                size="sm"
-                                variant="outline"
-                                className="h-7 rounded-none px-2 text-[11px] shadow-none"
-                                disabled={
-                                  !songId ||
-                                  !bootstrap?.viewer.canRequest ||
-                                  pendingAction === actionKey
-                                }
-                                onClick={() => {
-                                  if (!songId) {
-                                    return;
-                                  }
+                        return (
+                          <div
+                            key={songId ?? `search-result-${index}`}
+                            className="border-t border-(--border) px-3 py-2"
+                          >
+                            <div className="flex items-start justify-between gap-2">
+                              <div className="min-w-0">
+                                <p className="truncate text-[13px] leading-4 font-medium text-(--text)">
+                                  {formatSearchSongLabel(item)}
+                                </p>
+                                <p className="mt-0.5 truncate text-[11px] leading-4 text-(--muted)">
+                                  {formatSearchSongMeta(item)}
+                                </p>
+                              </div>
+                              {showViewerSearchActions ? (
+                                <div className="flex shrink-0 items-center gap-1">
+                                  <Button
+                                    size="sm"
+                                    variant="outline"
+                                    className="h-7 rounded-none px-2 text-[11px] shadow-none"
+                                    disabled={
+                                      !songId ||
+                                      !bootstrap?.viewer.canRequest ||
+                                      pendingAction === actionKey
+                                    }
+                                    onClick={() => {
+                                      if (!songId) {
+                                        return;
+                                      }
 
-                                  void handleSubmitRequest({
-                                    songId,
-                                    requestKind: "regular",
-                                  });
-                                }}
-                              >
-                                {pendingAction === actionKey
-                                  ? effectiveReplaceExisting
-                                    ? "Editing..."
-                                    : "Adding..."
-                                  : effectiveReplaceExisting
-                                    ? "Edit"
-                                    : "Add"}
-                              </Button>
-                              <Button
-                                size="sm"
-                                className="h-7 rounded-none px-2 text-[11px] shadow-none"
-                                disabled={
-                                  !songId ||
-                                  !bootstrap?.viewer.canVipRequest ||
-                                  pendingAction === vipActionKey
-                                }
-                                onClick={() => {
-                                  if (!songId) {
-                                    return;
-                                  }
+                                      void handleSubmitRequest({
+                                        songId,
+                                        requestKind: "regular",
+                                      });
+                                    }}
+                                  >
+                                    {pendingAction === actionKey
+                                      ? isEditingRequest
+                                        ? "Editing..."
+                                        : "Adding..."
+                                      : isEditingRequest
+                                        ? "Edit"
+                                        : "Add"}
+                                  </Button>
+                                  <Button
+                                    size="sm"
+                                    className="h-7 rounded-none px-2 text-[11px] shadow-none"
+                                    disabled={
+                                      !songId ||
+                                      !bootstrap?.viewer.canVipRequest ||
+                                      pendingAction === vipActionKey
+                                    }
+                                    onClick={() => {
+                                      if (!songId) {
+                                        return;
+                                      }
 
-                                  void handleSubmitRequest({
-                                    songId,
-                                    requestKind: "vip",
-                                  });
-                                }}
-                              >
-                                {pendingAction === vipActionKey
-                                  ? effectiveReplaceExisting
-                                    ? "Editing..."
-                                    : "Adding..."
-                                  : effectiveReplaceExisting
-                                    ? "Edit VIP"
-                                    : "VIP"}
-                              </Button>
+                                      void handleSubmitRequest({
+                                        songId,
+                                        requestKind: "vip",
+                                      });
+                                    }}
+                                  >
+                                    {pendingAction === vipActionKey
+                                      ? isEditingRequest
+                                        ? "Editing..."
+                                        : "Adding..."
+                                      : isEditingRequest
+                                        ? "Edit VIP"
+                                        : "VIP"}
+                                  </Button>
+                                </div>
+                              ) : null}
                             </div>
                           </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                ) : debouncedSearchQuery.trim().length >= 3 && !searching ? (
-                  <div className="border-t border-(--border) px-3 py-2 text-[11px] text-(--muted)">
-                    No songs matched that search.
-                  </div>
-                ) : null}
+                        );
+                      })}
+                    </div>
+                  ) : debouncedSearchQuery.trim().length >= 3 && !searching ? (
+                    <div className="border-t border-(--border) px-3 py-2 text-[11px] text-(--muted)">
+                      No songs matched that search.
+                    </div>
+                  ) : null}
+                </div>
               </div>
             </TabsContent>
           </Tabs>
         )}
+        {footerPlaylistHref ? (
+          <PanelPlaylistFooterLink
+            href={footerPlaylistHref}
+            label={footerPlaylistLabel}
+          />
+        ) : null}
       </div>
     </TooltipProvider>
   );
 }
 
 export function ExtensionPanelModeratorPreview() {
-  const [playlist, setPlaylist] = useState<PanelBootstrapResponse["playlist"]>({
+  const [playlist, setPlaylist] = useState<PanelDemoPlaylist>({
     currentItemId: "preview-current",
     items: createMockModeratorPlaylistItems(),
   });
@@ -1311,17 +1318,37 @@ export function ExtensionPanelModeratorPreview() {
   const [confirmingRemoveItemId, setConfirmingRemoveItemId] = useState<
     string | null
   >(null);
-  const [expandedModeratorItemId, setExpandedModeratorItemId] = useState<
+  const [expandedActionItemId, setExpandedActionItemId] = useState<
+    string | null
+  >(null);
+  const [editingRequestItemId, setEditingRequestItemId] = useState<
     string | null
   >(null);
   const [draggingItemId, setDraggingItemId] = useState<string | null>(null);
   const [dropTargetState, setDropTargetState] =
     useState<PanelDropTargetState>(null);
+  const [activeTab, setActiveTab] = useState<"playlist" | "search">("playlist");
+  const [searchQuery, setSearchQuery] = useState("");
+  const [debouncedSearchQuery, setDebouncedSearchQuery] = useState("");
+  const [searchResults, setSearchResults] =
+    useState<PanelSearchResponse | null>(null);
+  const [searchError, setSearchError] = useState<string | null>(null);
+  const [searching, setSearching] = useState(false);
   const latestTransientNoticeIdRef = useRef(0);
+  const latestSearchRequestRef = useRef(0);
   const removeConfirmRef = useRef<HTMLDivElement | null>(null);
 
+  const activeRequests = getDemoViewerActiveRequests(
+    playlist,
+    mockModeratorViewerProfile.twitchUserId
+  );
+  const activeRequestCount = activeRequests.length;
+  const activeRequestLimit = mockModeratorViewerProfile.activeRequestLimit;
   const currentPlaylistItemId = playlist.currentItemId;
   const queueCount = playlist.items.length;
+  const showPlaylistPositions = false;
+  const footerPlaylistHref = toExtensionAppUrl("/jimmy-pants");
+  const footerPlaylistLabel = getPanelPlaylistFooterLabel("Jimmy Pants_");
   const queuedPlaylistItems = playlist.items.filter(
     (item) => getString(item, "id") !== currentPlaylistItemId
   );
@@ -1332,6 +1359,22 @@ export function ExtensionPanelModeratorPreview() {
   const shufflePlaylistTooltip = currentPlaylistItemId
     ? "Mark the current song played before shuffling."
     : "Shuffle the queue.";
+  const editingRequest = getViewerEditablePanelItem(
+    playlist.items,
+    mockModeratorViewerProfile,
+    editingRequestItemId
+  );
+  const isEditingRequest = editingRequest != null;
+
+  useEffect(() => {
+    const timeout = window.setTimeout(() => {
+      setDebouncedSearchQuery(searchQuery);
+    }, 300);
+
+    return () => {
+      window.clearTimeout(timeout);
+    };
+  }, [searchQuery]);
 
   useEffect(() => {
     if (!transientNotice) {
@@ -1374,42 +1417,108 @@ export function ExtensionPanelModeratorPreview() {
     };
   }, [confirmingRemoveItemId]);
 
-  function showTransientSuccess(message: string) {
+  useEffect(() => {
+    if (editingRequestItemId && !editingRequest) {
+      setEditingRequestItemId(null);
+    }
+  }, [editingRequest, editingRequestItemId]);
+
+  function showTransientMessage(
+    tone: TransientPanelNotice["tone"],
+    message: string
+  ) {
     latestTransientNoticeIdRef.current += 1;
     setTransientNotice({
       id: latestTransientNoticeIdRef.current,
-      tone: "success",
+      tone,
       message,
     });
   }
 
   function applyPreviewPlaylistMutation(
-    current: PanelBootstrapResponse["playlist"],
+    current: PanelDemoPlaylist,
     mutation: PanelPlaylistMutation
   ) {
     switch (mutation.action) {
       case "setCurrent": {
-        const targetItem = current.items.find(
-          (item) => getString(item, "id") === mutation.itemId
+        const nextPositions = getUpdatedPositionsAfterSetCurrent({
+          items: current.items.map((item) => ({
+            id: getString(item, "id") ?? "",
+            position: getNumber(item, "position") ?? 0,
+            regularPosition: getNumber(item, "regularPosition"),
+            status: getString(item, "status") ?? "queued",
+            requestKind: getString(item, "requestKind"),
+          })),
+          targetItemId: mutation.itemId,
+        });
+        const nextPositionById = new Map(
+          nextPositions.map((item) => [item.id, item.position])
         );
-        if (!targetItem) {
+
+        if (!nextPositionById.has(mutation.itemId)) {
           return current;
         }
 
-        const orderedItems = [targetItem].concat(
-          current.items.filter(
-            (item) => getString(item, "id") !== mutation.itemId
-          )
+        return {
+          currentItemId: mutation.itemId,
+          items: current.items
+            .map((item) => {
+              const itemId = getString(item, "id");
+
+              return {
+                ...item,
+                position: itemId
+                  ? (nextPositionById.get(itemId) ??
+                    getNumber(item, "position"))
+                  : getNumber(item, "position"),
+                status: itemId === mutation.itemId ? "current" : "queued",
+              };
+            })
+            .sort(
+              (left, right) =>
+                (getNumber(left, "position") ?? 0) -
+                (getNumber(right, "position") ?? 0)
+            ),
+        };
+      }
+      case "returnToQueue": {
+        if (current.currentItemId !== mutation.itemId) {
+          return current;
+        }
+
+        const nextPositions = getQueuedPositionsFromRegularOrder(
+          current.items.map((item) => ({
+            id: getString(item, "id") ?? "",
+            position: getNumber(item, "position") ?? 0,
+            regularPosition: getNumber(item, "regularPosition"),
+            status: getString(item, "status") ?? "queued",
+            requestKind: getString(item, "requestKind"),
+          }))
+        );
+        const nextPositionById = new Map(
+          nextPositions.map((item) => [item.id, item.position])
         );
 
         return {
-          currentItemId: mutation.itemId,
-          items: orderedItems.map((item, index) => ({
-            ...item,
-            position: index + 1,
-            status:
-              getString(item, "id") === mutation.itemId ? "current" : "queued",
-          })),
+          currentItemId: null,
+          items: current.items
+            .map((item) => {
+              const itemId = getString(item, "id");
+
+              return {
+                ...item,
+                position: itemId
+                  ? (nextPositionById.get(itemId) ??
+                    getNumber(item, "position"))
+                  : getNumber(item, "position"),
+                status: "queued",
+              };
+            })
+            .sort(
+              (left, right) =>
+                (getNumber(left, "position") ?? 0) -
+                (getNumber(right, "position") ?? 0)
+            ),
         };
       }
       case "markPlayed":
@@ -1437,14 +1546,47 @@ export function ExtensionPanelModeratorPreview() {
       case "changeRequestKind":
         return {
           ...current,
-          items: current.items.map((item) =>
-            getString(item, "id") === mutation.itemId
-              ? {
+          items: (() => {
+            const nextPositions = getUpdatedQueuedPositionsAfterKindChange({
+              items: current.items.map((item) => ({
+                id: getString(item, "id") ?? "",
+                position: getNumber(item, "position") ?? 0,
+                regularPosition: getNumber(item, "regularPosition"),
+                status: getString(item, "status") ?? "queued",
+                requestKind:
+                  getString(item, "id") === mutation.itemId
+                    ? mutation.requestKind
+                    : getString(item, "requestKind"),
+              })),
+              playlistCurrentItemId: current.currentItemId,
+              targetItemId: mutation.itemId,
+              requestKind: mutation.requestKind,
+            });
+            const nextPositionById = new Map(
+              nextPositions.map((item) => [item.id, item.position])
+            );
+
+            return current.items
+              .map((item) => {
+                const itemId = getString(item, "id");
+                return {
                   ...item,
-                  requestKind: mutation.requestKind,
-                }
-              : item
-          ),
+                  position: itemId
+                    ? (nextPositionById.get(itemId) ??
+                      getNumber(item, "position"))
+                    : getNumber(item, "position"),
+                  requestKind:
+                    itemId === mutation.itemId
+                      ? mutation.requestKind
+                      : item.requestKind,
+                };
+              })
+              .sort(
+                (left, right) =>
+                  (getNumber(left, "position") ?? 0) -
+                  (getNumber(right, "position") ?? 0)
+              );
+          })(),
         };
       case "shufflePlaylist": {
         const currentItem = current.currentItemId
@@ -1501,6 +1643,134 @@ export function ExtensionPanelModeratorPreview() {
     }
   }
 
+  async function runPreviewSearch(query: string) {
+    const requestId = latestSearchRequestRef.current + 1;
+    latestSearchRequestRef.current = requestId;
+    setSearching(true);
+    setSearchError(null);
+
+    try {
+      const params = new URLSearchParams({
+        page: "1",
+        pageSize: "35",
+      });
+      if (query.trim()) {
+        params.set("query", query.trim());
+      }
+
+      const response = await fetch(`/api/search?${params.toString()}`);
+      const payload = (await response
+        .json()
+        .catch(() => null)) as PreviewCatalogSearchResponse | null;
+
+      if (!response.ok) {
+        throw new Error(payload?.error ?? "Unable to search songs.");
+      }
+
+      if (latestSearchRequestRef.current !== requestId) {
+        return;
+      }
+
+      startTransition(() => {
+        setSearchResults({
+          items: payload?.results ?? [],
+          total: payload?.total ?? 0,
+          page: payload?.page ?? 1,
+          pageSize: payload?.pageSize ?? 35,
+          totalPages:
+            payload?.pageSize && payload.total != null
+              ? Math.ceil(payload.total / payload.pageSize)
+              : 0,
+        });
+      });
+    } catch (error) {
+      if (latestSearchRequestRef.current !== requestId) {
+        return;
+      }
+
+      setSearchError(getErrorText(error, "Unable to search songs."));
+    } finally {
+      if (latestSearchRequestRef.current === requestId) {
+        setSearching(false);
+      }
+    }
+  }
+
+  useEffect(() => {
+    void runPreviewSearch(debouncedSearchQuery);
+  }, [debouncedSearchQuery]);
+
+  async function handleSearchSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+
+    if (debouncedSearchQuery !== searchQuery) {
+      setDebouncedSearchQuery(searchQuery);
+      return;
+    }
+
+    void runPreviewSearch(searchQuery);
+  }
+
+  async function handleSubmitRequest(input: {
+    songId: string;
+    requestKind: "regular" | "vip";
+  }) {
+    const song =
+      searchResults?.items.find(
+        (item) => getString(item, "id") === input.songId
+      ) ?? null;
+
+    if (!song) {
+      showTransientMessage("danger", "That song is unavailable right now.");
+      return;
+    }
+
+    if (
+      !isEditingRequest &&
+      activeRequestLimit != null &&
+      activeRequestCount >= activeRequestLimit
+    ) {
+      showTransientMessage(
+        "danger",
+        `You already have ${activeRequestLimit} active request${activeRequestLimit === 1 ? "" : "s"} in this playlist.`
+      );
+      return;
+    }
+
+    setPendingAction(`${input.songId}:${input.requestKind}`);
+    setTransientNotice(null);
+
+    startTransition(() => {
+      setPlaylist((current) =>
+        applyDemoViewerRequestMutation({
+          playlist: current,
+          viewerProfile: mockModeratorViewerProfile,
+          song,
+          requestKind: input.requestKind,
+          replaceExisting: false,
+          replaceItemId: editingRequestItemId ?? undefined,
+        })
+      );
+      setEditingRequestItemId(null);
+      setActiveTab("playlist");
+    });
+
+    showTransientMessage(
+      "success",
+      isEditingRequest ? "Request updated." : "Request added."
+    );
+    setPendingAction(null);
+  }
+
+  function handleEditRequest(itemId: string) {
+    setExpandedActionItemId(null);
+    setConfirmingRemoveItemId(null);
+    setEditingRequestItemId(itemId);
+    startTransition(() => {
+      setActiveTab("search");
+    });
+  }
+
   async function handlePlaylistMutation(mutation: PanelPlaylistMutation) {
     const actionKey =
       "itemId" in mutation
@@ -1525,7 +1795,8 @@ export function ExtensionPanelModeratorPreview() {
     });
 
     if (mutation.action !== "reorderItems") {
-      showTransientSuccess(
+      showTransientMessage(
+        "success",
         getPlaylistMutationSuccessMessage(mutation, {
           ok: true,
         })
@@ -1536,6 +1807,8 @@ export function ExtensionPanelModeratorPreview() {
   }
 
   async function handleRemoveRequest(itemId: string) {
+    setExpandedActionItemId((current) => (current === itemId ? null : current));
+    setEditingRequestItemId((current) => (current === itemId ? null : current));
     await handlePlaylistMutation({
       action: "deleteItem",
       itemId,
@@ -1583,7 +1856,7 @@ export function ExtensionPanelModeratorPreview() {
 
   return (
     <TooltipProvider>
-      <div className="mx-auto flex min-h-[560px] w-full max-w-[320px] flex-col border border-(--border-strong) bg-(--panel)">
+      <div className="mx-auto flex h-[560px] min-h-0 w-full max-w-[320px] flex-col overflow-hidden border border-(--border-strong) bg-(--panel)">
         <section className="border-b border-(--border-strong) px-3 py-2">
           <div className="flex items-start justify-between gap-2">
             <div className="min-w-0 flex-1">
@@ -1595,7 +1868,11 @@ export function ExtensionPanelModeratorPreview() {
                 {formatVipTokensCompact(
                   mockModeratorViewerProfile.vipTokensAvailable
                 )}{" "}
-                · Moderator
+                ·{" "}
+                {formatRequestLimitCompact(
+                  activeRequestCount,
+                  activeRequestLimit
+                )}
               </p>
             </div>
             <div className="mt-0.5 flex h-8 w-8 items-center justify-center rounded-full border border-(--border-strong) bg-(--panel-soft) text-[10px] font-semibold uppercase text-(--brand-deep)">
@@ -1614,91 +1891,262 @@ export function ExtensionPanelModeratorPreview() {
             </TransientNoticeBanner>
           ) : null}
         </AnimatePresence>
-
-        <div className="flex min-h-0 flex-1 flex-col border-b border-(--border-strong)">
-          <div className="grid h-auto w-full grid-cols-1 gap-0 rounded-none border-b border-(--border-strong) bg-(--panel) p-0">
-            <div
-              className="px-3 py-2 text-center text-[11px] font-semibold uppercase tracking-[0.18em] text-(--brand-deep)"
+        <Tabs
+          value={activeTab}
+          onValueChange={(value) => {
+            if (value === "playlist" || value === "search") {
+              setActiveTab(value);
+            }
+          }}
+          className="flex min-h-0 flex-1 flex-col gap-0 overflow-hidden border-b border-(--border-strong)"
+        >
+          <TabsList
+            variant="line"
+            className="grid h-auto w-full shrink-0 grid-cols-2 gap-0 rounded-none border-b border-(--border-strong) bg-(--panel) p-0"
+          >
+            <TabsTrigger
+              value="playlist"
+              className="h-auto justify-center rounded-none border-0 px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-(--muted) shadow-none after:bottom-0 after:h-px after:bg-(--brand-deep) data-[state=active]:text-(--brand-deep)"
               style={{ fontFamily: '"IBM Plex Sans", sans-serif' }}
             >
-              Playlist ({queueCount})
-            </div>
-          </div>
-
-          {showShufflePlaylistControl ? (
-            <div className="flex items-center justify-between border-t border-(--border) px-3 py-1.5">
-              <span className="text-[10px] font-semibold uppercase tracking-[0.16em] text-(--muted)">
-                Queue tools
+              <span className="inline-flex items-center gap-1">
+                <span>Playlist</span>
+                <span className="shrink-0 text-[11px] font-semibold uppercase tracking-[0.18em] text-current">
+                  ({queueCount})
+                </span>
               </span>
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <span className="inline-flex">
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      className="h-6 w-6 rounded-none px-0 text-(--muted) shadow-none hover:bg-(--panel-soft) hover:text-(--text)"
-                      onClick={handleShufflePlaylist}
-                      disabled={
-                        !canShufflePlaylist ||
-                        pendingAction === "shufflePlaylist"
-                      }
-                      aria-label={shufflePlaylistTooltip}
-                    >
-                      {pendingAction === "shufflePlaylist" ? (
-                        <LoaderCircle className="h-3.5 w-3.5 animate-spin" />
-                      ) : (
-                        <Shuffle className="h-3.5 w-3.5" />
-                      )}
-                    </Button>
+            </TabsTrigger>
+            <TabsTrigger
+              value="search"
+              className="h-auto rounded-none border-0 px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-(--muted) shadow-none after:bottom-0 after:h-px after:bg-(--brand-deep) data-[state=active]:text-(--brand-deep)"
+              style={{ fontFamily: '"IBM Plex Sans", sans-serif' }}
+            >
+              Search
+            </TabsTrigger>
+          </TabsList>
+
+          <TabsContent
+            value="playlist"
+            className="mt-0 min-h-0 flex-1 overflow-hidden"
+          >
+            <div className="h-full overflow-y-auto">
+              {showShufflePlaylistControl ? (
+                <div className="flex items-center justify-between border-t border-(--border) px-3 py-1.5">
+                  <span className="text-[10px] font-semibold uppercase tracking-[0.16em] text-(--muted)">
+                    Queue tools
                   </span>
-                </TooltipTrigger>
-                <TooltipContent>{shufflePlaylistTooltip}</TooltipContent>
-              </Tooltip>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <span className="inline-flex">
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          className="h-6 w-6 rounded-none px-0 text-(--muted) shadow-none hover:bg-(--panel-soft) hover:text-(--text)"
+                          onClick={handleShufflePlaylist}
+                          disabled={
+                            !canShufflePlaylist ||
+                            pendingAction === "shufflePlaylist"
+                          }
+                          aria-label={shufflePlaylistTooltip}
+                        >
+                          {pendingAction === "shufflePlaylist" ? (
+                            <LoaderCircle className="h-3.5 w-3.5 animate-spin" />
+                          ) : (
+                            <Shuffle className="h-3.5 w-3.5" />
+                          )}
+                        </Button>
+                      </span>
+                    </TooltipTrigger>
+                    <TooltipContent>{shufflePlaylistTooltip}</TooltipContent>
+                  </Tooltip>
+                </div>
+              ) : null}
+
+              {playlist.items.map((item, index) => {
+                const itemId = getString(item, "id") ?? `preview-item-${index}`;
+
+                return (
+                  <PanelPlaylistRow
+                    key={itemId}
+                    item={item}
+                    itemId={itemId}
+                    currentItemId={playlist.currentItemId}
+                    showPlaylistPositions={showPlaylistPositions}
+                    viewerProfile={mockModeratorViewerProfile}
+                    canManagePlaylist
+                    canManageVipRequests
+                    canReorderPlaylist={canReorderPlaylist}
+                    pendingAction={pendingAction}
+                    confirmingRemoveItemId={confirmingRemoveItemId}
+                    onConfirmRemoveChange={setConfirmingRemoveItemId}
+                    expandedActionItemId={expandedActionItemId}
+                    onExpandedActionItemChange={setExpandedActionItemId}
+                    removeConfirmRef={removeConfirmRef}
+                    draggingItemId={draggingItemId}
+                    dropTargetState={dropTargetState}
+                    onDragStart={setDraggingItemId}
+                    onDragEnd={() => {
+                      setDraggingItemId(null);
+                      setDropTargetState(null);
+                    }}
+                    onDragHover={(hoverItemId, edge) => {
+                      setDropTargetState({
+                        itemId: hoverItemId,
+                        edge,
+                      });
+                    }}
+                    onDragLeave={() => setDropTargetState(null)}
+                    onReorder={handleReorderPlaylist}
+                    editingRequestItemId={editingRequestItemId}
+                    onEditRequest={handleEditRequest}
+                    onRemoveRequest={handleRemoveRequest}
+                    onPlaylistMutation={handlePlaylistMutation}
+                  />
+                );
+              })}
             </div>
-          ) : null}
+          </TabsContent>
 
-          <div className="flex-1 overflow-y-auto">
-            {playlist.items.map((item, index) => {
-              const itemId = getString(item, "id") ?? `preview-item-${index}`;
+          <TabsContent
+            value="search"
+            className="mt-0 min-h-0 flex-1 overflow-hidden"
+          >
+            <div className="h-full overflow-y-auto">
+              <div className="border-b border-(--border) px-3 py-2">
+                {editingRequest ? (
+                  <PanelSearchEditBanner
+                    item={editingRequest}
+                    onCancel={() => {
+                      setEditingRequestItemId(null);
+                      setActiveTab("playlist");
+                    }}
+                  />
+                ) : null}
+                <form className="flex gap-1" onSubmit={handleSearchSubmit}>
+                  <Input
+                    value={searchQuery}
+                    onChange={(event) => setSearchQuery(event.target.value)}
+                    placeholder={
+                      editingRequest
+                        ? "Search for a song to edit your request"
+                        : "Search title, artist, or album"
+                    }
+                    className="h-8 rounded-none border-(--border-strong) px-2 py-1 text-[12px] shadow-none focus-visible:ring-1 focus-visible:ring-(--brand) focus-visible:ring-offset-0"
+                  />
+                  <Button
+                    type="submit"
+                    size="sm"
+                    className="h-8 rounded-none px-2 shadow-none"
+                    disabled={searching}
+                  >
+                    {searching ? (
+                      <LoaderCircle className="h-4 w-4 animate-spin" />
+                    ) : (
+                      <Search className="h-4 w-4" />
+                    )}
+                  </Button>
+                </form>
 
-              return (
-                <PanelPlaylistRow
-                  key={itemId}
-                  item={item}
-                  itemId={itemId}
-                  currentItemId={playlist.currentItemId}
-                  viewerProfile={mockModeratorViewerProfile}
-                  canManagePlaylist
-                  canManageVipRequests
-                  canReorderPlaylist={canReorderPlaylist}
-                  pendingAction={pendingAction}
-                  confirmingRemoveItemId={confirmingRemoveItemId}
-                  onConfirmRemoveChange={setConfirmingRemoveItemId}
-                  expandedModeratorItemId={expandedModeratorItemId}
-                  onExpandedModeratorItemChange={setExpandedModeratorItemId}
-                  removeConfirmRef={removeConfirmRef}
-                  draggingItemId={draggingItemId}
-                  dropTargetState={dropTargetState}
-                  onDragStart={setDraggingItemId}
-                  onDragEnd={() => {
-                    setDraggingItemId(null);
-                    setDropTargetState(null);
-                  }}
-                  onDragHover={(hoverItemId, edge) => {
-                    setDropTargetState({
-                      itemId: hoverItemId,
-                      edge,
-                    });
-                  }}
-                  onDragLeave={() => setDropTargetState(null)}
-                  onReorder={handleReorderPlaylist}
-                  onRemoveRequest={handleRemoveRequest}
-                  onPlaylistMutation={handlePlaylistMutation}
-                />
-              );
-            })}
-          </div>
-        </div>
+                {searchError ? (
+                  <p className="mt-2 text-[11px] text-(--danger)">
+                    {searchError}
+                  </p>
+                ) : null}
+              </div>
+
+              <div>
+                {searchResults?.items?.length ? (
+                  <div>
+                    {searchResults.items.map((item, index) => {
+                      const songId = getString(item, "id");
+                      const actionKey = `${songId ?? "unknown"}:regular`;
+                      const vipActionKey = `${songId ?? "unknown"}:vip`;
+
+                      return (
+                        <div
+                          key={songId ?? `preview-search-result-${index}`}
+                          className="border-t border-(--border) px-3 py-2"
+                        >
+                          <div className="flex items-start justify-between gap-2">
+                            <div className="min-w-0">
+                              <p className="truncate text-[13px] leading-4 font-medium text-(--text)">
+                                {formatSearchSongLabel(item)}
+                              </p>
+                              <p className="mt-0.5 truncate text-[11px] leading-4 text-(--muted)">
+                                {formatSearchSongMeta(item)}
+                              </p>
+                            </div>
+                            <div className="flex shrink-0 items-center gap-1">
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                className="h-7 rounded-none px-2 text-[11px] shadow-none"
+                                disabled={
+                                  !songId || pendingAction === actionKey
+                                }
+                                onClick={() => {
+                                  if (!songId) {
+                                    return;
+                                  }
+
+                                  void handleSubmitRequest({
+                                    songId,
+                                    requestKind: "regular",
+                                  });
+                                }}
+                              >
+                                {pendingAction === actionKey
+                                  ? isEditingRequest
+                                    ? "Editing..."
+                                    : "Adding..."
+                                  : isEditingRequest
+                                    ? "Edit"
+                                    : "Add"}
+                              </Button>
+                              <Button
+                                size="sm"
+                                className="h-7 rounded-none px-2 text-[11px] shadow-none"
+                                disabled={
+                                  !songId || pendingAction === vipActionKey
+                                }
+                                onClick={() => {
+                                  if (!songId) {
+                                    return;
+                                  }
+
+                                  void handleSubmitRequest({
+                                    songId,
+                                    requestKind: "vip",
+                                  });
+                                }}
+                              >
+                                {pendingAction === vipActionKey
+                                  ? isEditingRequest
+                                    ? "Editing..."
+                                    : "Adding..."
+                                  : isEditingRequest
+                                    ? "Edit VIP"
+                                    : "VIP"}
+                              </Button>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                ) : !searching ? (
+                  <div className="border-t border-(--border) px-3 py-2 text-[11px] text-(--muted)">
+                    No songs matched that search.
+                  </div>
+                ) : null}
+              </div>
+            </div>
+          </TabsContent>
+        </Tabs>
+        <PanelPlaylistFooterLink
+          href={footerPlaylistHref}
+          label={footerPlaylistLabel}
+        />
       </div>
     </TooltipProvider>
   );
@@ -1708,6 +2156,7 @@ function PanelPlaylistRow(props: {
   item: PanelPlaylistItem;
   itemId: string;
   currentItemId: string | null;
+  showPlaylistPositions: boolean;
   viewerProfile: PanelBootstrapResponse["viewer"]["profile"];
   canManagePlaylist: boolean;
   canManageVipRequests: boolean;
@@ -1715,8 +2164,8 @@ function PanelPlaylistRow(props: {
   pendingAction: string | null;
   confirmingRemoveItemId: string | null;
   onConfirmRemoveChange: (itemId: string | null) => void;
-  expandedModeratorItemId: string | null;
-  onExpandedModeratorItemChange: (itemId: string | null) => void;
+  expandedActionItemId: string | null;
+  onExpandedActionItemChange: (itemId: string | null) => void;
   removeConfirmRef: RefObject<HTMLDivElement | null>;
   draggingItemId: string | null;
   dropTargetState: PanelDropTargetState;
@@ -1725,34 +2174,55 @@ function PanelPlaylistRow(props: {
   onDragHover: (itemId: string, edge: Edge) => void;
   onDragLeave: () => void;
   onReorder: (sourceItemId: string, targetItemId: string, edge: Edge) => void;
+  editingRequestItemId: string | null;
+  onEditRequest: (itemId: string) => void;
   onRemoveRequest: (itemId: string) => Promise<void>;
   onPlaylistMutation: (mutation: PanelPlaylistMutation) => Promise<void>;
 }) {
   const itemRef = useRef<HTMLDivElement | null>(null);
   const dragHandleRef = useRef<HTMLButtonElement | null>(null);
   const isCurrent = props.itemId === props.currentItemId;
-  const isViewerRequest =
-    props.viewerProfile != null &&
-    getString(props.item, "requestedByTwitchUserId") ===
-      props.viewerProfile.twitchUserId;
-  const isQueuedViewerRequest =
-    isViewerRequest && getString(props.item, "status") === "queued";
+  const isViewerRequest = isViewerOwnedActivePanelItem(
+    props.item,
+    props.viewerProfile
+  );
+  const playlistPosition = props.showPlaylistPositions
+    ? getNumber(props.item, "position")
+    : null;
   const isVipRequest = getString(props.item, "requestKind") === "vip";
+  const isEditingRequest = props.editingRequestItemId === props.itemId;
   const removeActionKey = `remove:${props.itemId}`;
   const deleteActionKey = `deleteItem:${props.itemId}`;
   const setCurrentActionKey = `setCurrent:${props.itemId}`;
+  const returnToQueueActionKey = `returnToQueue:${props.itemId}`;
   const markPlayedActionKey = `markPlayed:${props.itemId}`;
   const nextRequestKind = isVipRequest ? "regular" : "vip";
   const changeRequestKindActionKey = `changeRequestKind:${props.itemId}:${nextRequestKind}`;
-  const canDeleteItem = props.canManagePlaylist || isQueuedViewerRequest;
-  const canSetCurrent = props.canManagePlaylist && !isCurrent;
+  const canEditOwnRequest = isViewerRequest && !isCurrent;
+  const canDeleteItem =
+    !isCurrent && (props.canManagePlaylist || isViewerRequest);
+  const canShowSetCurrent = props.canManagePlaylist && !isCurrent;
+  const isSetCurrentDisabled =
+    props.pendingAction === setCurrentActionKey || props.currentItemId != null;
+  const canReturnToQueue = props.canManagePlaylist && isCurrent;
   const canMarkPlayed = props.canManagePlaylist && isCurrent;
-  const canToggleVipRequest =
+  const hasVipToggleAccess =
     !!props.canManageVipRequests && !!getString(props.item, "requestedByLogin");
-  const canOpenManageTray =
+  const canMakeRegular = hasVipToggleAccess && isVipRequest && !isCurrent;
+  const canMakeVip = hasVipToggleAccess && !isVipRequest && !isCurrent;
+  const canToggleVipRequest = canMakeRegular || canMakeVip;
+  const canOpenModeratorActions =
     props.canManagePlaylist &&
-    (canToggleVipRequest || canSetCurrent || canMarkPlayed || canDeleteItem);
-  const isManageTrayOpen = props.expandedModeratorItemId === props.itemId;
+    (canToggleVipRequest ||
+      canShowSetCurrent ||
+      canReturnToQueue ||
+      canMarkPlayed ||
+      canDeleteItem);
+  const canOpenViewerActions = canEditOwnRequest || canDeleteItem;
+  const canOpenActionTray =
+    canOpenModeratorActions ||
+    (!props.canManagePlaylist && canOpenViewerActions);
+  const isActionTrayOpen = props.expandedActionItemId === props.itemId;
   const confirmingRemove = props.confirmingRemoveItemId === props.itemId;
   const canReorder = props.canReorderPlaylist && !isCurrent;
   const isDragging = props.draggingItemId === props.itemId;
@@ -1866,12 +2336,17 @@ function PanelPlaylistRow(props: {
       }}
       className="relative border-t border-(--border)"
       style={
-        isViewerRequest
+        isEditingRequest
           ? {
-              borderColor: "var(--viewer-highlight-border)",
-              backgroundColor: "var(--viewer-highlight-bg)",
+              borderColor: "var(--brand)",
+              backgroundColor: "var(--brand-soft)",
             }
-          : undefined
+          : isViewerRequest
+            ? {
+                borderColor: "var(--viewer-highlight-border)",
+                backgroundColor: "var(--viewer-highlight-bg)",
+              }
+            : undefined
       }
     >
       {dropEdge ? (
@@ -1904,13 +2379,13 @@ function PanelPlaylistRow(props: {
 
         <div className="min-w-0 flex-1">
           <Collapsible
-            open={canOpenManageTray && isManageTrayOpen}
+            open={canOpenActionTray && isActionTrayOpen}
             onOpenChange={(open) => {
-              if (!canOpenManageTray) {
+              if (!canOpenActionTray) {
                 return;
               }
 
-              props.onExpandedModeratorItemChange(open ? props.itemId : null);
+              props.onExpandedActionItemChange(open ? props.itemId : null);
             }}
           >
             <motion.div
@@ -1921,33 +2396,37 @@ function PanelPlaylistRow(props: {
                   ease: [0.2, 0, 0, 1],
                 },
               }}
-              className="flex items-start gap-2 px-3 py-2"
+              className="flex items-start gap-2 pl-3 pr-1 py-2"
             >
-              {isCurrent ? (
-                <div className="flex shrink-0 items-start justify-center pt-0.5">
-                  <span className="inline-flex h-5 w-5 items-center justify-center rounded-full border border-(--brand) bg-(--brand-soft) text-(--brand-deep)">
-                    <motion.span
-                      animate={{ rotate: 360 }}
-                      transition={{
-                        duration: 2.4,
-                        ease: "linear",
-                        repeat: Number.POSITIVE_INFINITY,
-                      }}
-                      className="inline-flex"
-                    >
-                      <Disc3 className="h-3.5 w-3.5" />
-                    </motion.span>
-                  </span>
-                </div>
-              ) : isVipRequest ? (
-                <div className="flex shrink-0 items-start justify-center pt-0.5">
-                  <span className="inline-flex h-5 items-center justify-center rounded-full bg-fuchsia-100 px-1.5 text-[9px] leading-none font-semibold tracking-[0.12em] text-fuchsia-700 uppercase">
-                    VIP
-                  </span>
+              {playlistPosition != null || isCurrent || isVipRequest ? (
+                <div className="flex shrink-0 items-start gap-1 pt-0.5">
+                  {playlistPosition != null ? (
+                    <PanelPlaylistPositionBadge position={playlistPosition} />
+                  ) : null}
+                  {isCurrent ? (
+                    <span className="inline-flex h-5 w-5 items-center justify-center rounded-full border border-(--brand) bg-(--brand-soft) text-(--brand-deep)">
+                      <motion.span
+                        animate={{ rotate: 360 }}
+                        transition={{
+                          duration: 2.4,
+                          ease: "linear",
+                          repeat: Number.POSITIVE_INFINITY,
+                        }}
+                        className="inline-flex"
+                      >
+                        <Disc3 className="h-3.5 w-3.5" />
+                      </motion.span>
+                    </span>
+                  ) : null}
+                  {!isCurrent && isVipRequest ? (
+                    <span className="inline-flex h-5 items-center justify-center rounded-full bg-fuchsia-100 px-1.5 text-[9px] leading-none font-semibold tracking-[0.12em] text-fuchsia-700 uppercase">
+                      VIP
+                    </span>
+                  ) : null}
                 </div>
               ) : null}
 
-              <div className="min-w-0 flex-1">
+              <div className="min-w-0 flex-1 pr-2">
                 <p className="truncate text-[13px] leading-4 font-medium text-(--text)">
                   {formatSongLabel(props.item)}
                 </p>
@@ -1956,68 +2435,25 @@ function PanelPlaylistRow(props: {
                 </p>
               </div>
 
-              <div className="ml-auto flex shrink-0 items-center gap-1">
-                {canOpenManageTray ? (
+              <div className="ml-auto flex shrink-0 self-center items-center gap-1">
+                {canOpenActionTray ? (
                   <CollapsibleTrigger asChild>
                     <Button
                       size="sm"
                       variant="ghost"
-                      className="h-6 rounded-none px-1.5 text-[10px] font-semibold uppercase tracking-[0.14em] text-(--muted) shadow-none hover:bg-(--panel-soft) hover:text-(--text)"
+                      className="h-6 w-6 rounded-none px-0 text-(--muted) shadow-none hover:bg-(--panel-soft) hover:text-(--text)"
+                      title="Request actions"
+                      aria-label="Request actions"
                     >
-                      Manage
-                      {isManageTrayOpen ? (
-                        <ChevronUp className="ml-1 h-3 w-3" />
-                      ) : (
-                        <ChevronDown className="ml-1 h-3 w-3" />
-                      )}
+                      <MoreHorizontal className="h-3.5 w-3.5" />
                     </Button>
                   </CollapsibleTrigger>
-                ) : canDeleteItem ? (
-                  confirmingRemove ? (
-                    <div
-                      className="flex items-center gap-1 text-[10px] text-(--muted)"
-                      ref={props.removeConfirmRef}
-                    >
-                      <span>Remove?</span>
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        className="h-6 w-6 rounded-none px-0 text-(--danger) shadow-none hover:bg-(--danger)/10 hover:text-(--danger)"
-                        onClick={() => {
-                          void props.onRemoveRequest(props.itemId);
-                        }}
-                        disabled={props.pendingAction === removeActionKey}
-                      >
-                        <Trash2 className="h-3.5 w-3.5" />
-                      </Button>
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        className="h-6 w-6 rounded-none px-0 text-(--muted) shadow-none hover:bg-(--panel-soft) hover:text-(--text)"
-                        onClick={() => props.onConfirmRemoveChange(null)}
-                        disabled={props.pendingAction === removeActionKey}
-                      >
-                        <X className="h-3.5 w-3.5" />
-                      </Button>
-                    </div>
-                  ) : (
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      className="h-6 w-6 rounded-none px-0 text-(--muted) shadow-none hover:bg-(--panel-soft) hover:text-(--text)"
-                      onClick={() => props.onConfirmRemoveChange(props.itemId)}
-                      title="Remove request"
-                      aria-label="Remove request"
-                    >
-                      <Trash2 className="h-3.5 w-3.5" />
-                    </Button>
-                  )
                 ) : null}
               </div>
             </motion.div>
 
             <AnimatePresence initial={false}>
-              {canOpenManageTray && isManageTrayOpen ? (
+              {canOpenActionTray && isActionTrayOpen ? (
                 <CollapsibleContent forceMount asChild>
                   <motion.div
                     key="manage-panel"
@@ -2046,6 +2482,16 @@ function PanelPlaylistRow(props: {
                       }}
                       className="flex flex-wrap items-center gap-1.5 px-3 py-2"
                     >
+                      {canEditOwnRequest ? (
+                        <PanelActionIconButton
+                          label="Edit request"
+                          className="text-(--brand-deep) hover:bg-(--brand-soft) hover:text-(--brand-deep)"
+                          onClick={() => props.onEditRequest(props.itemId)}
+                        >
+                          <PencilLine className="h-3.5 w-3.5" />
+                        </PanelActionIconButton>
+                      ) : null}
+
                       {canToggleVipRequest ? (
                         <PanelActionIconButton
                           label={isVipRequest ? "Make regular" : "Make VIP"}
@@ -2070,7 +2516,7 @@ function PanelPlaylistRow(props: {
                         </PanelActionIconButton>
                       ) : null}
 
-                      {canSetCurrent ? (
+                      {canShowSetCurrent ? (
                         <PanelActionIconButton
                           label="Play now"
                           onClick={() => {
@@ -2079,9 +2525,30 @@ function PanelPlaylistRow(props: {
                               itemId: props.itemId,
                             });
                           }}
-                          disabled={props.pendingAction === setCurrentActionKey}
+                          disabled={isSetCurrentDisabled}
                         >
                           {props.pendingAction === setCurrentActionKey ? (
+                            <LoaderCircle className="h-3.5 w-3.5 animate-spin" />
+                          ) : (
+                            <Play className="h-3.5 w-3.5" />
+                          )}
+                        </PanelActionIconButton>
+                      ) : null}
+
+                      {canReturnToQueue ? (
+                        <PanelActionIconButton
+                          label="Return to queue"
+                          onClick={() => {
+                            void props.onPlaylistMutation({
+                              action: "returnToQueue",
+                              itemId: props.itemId,
+                            });
+                          }}
+                          disabled={
+                            props.pendingAction === returnToQueueActionKey
+                          }
+                        >
+                          {props.pendingAction === returnToQueueActionKey ? (
                             <LoaderCircle className="h-3.5 w-3.5 animate-spin" />
                           ) : (
                             <Play className="h-3.5 w-3.5" />
@@ -2114,18 +2581,32 @@ function PanelPlaylistRow(props: {
                             className="flex items-center gap-1 text-[10px] text-(--muted)"
                             ref={props.removeConfirmRef}
                           >
-                            <span>Delete item?</span>
+                            <span>
+                              {props.canManagePlaylist
+                                ? "Delete item?"
+                                : "Remove request?"}
+                            </span>
                             <Button
                               size="sm"
                               variant="ghost"
                               className="h-6 w-6 rounded-none px-0 text-(--danger) shadow-none hover:bg-(--danger)/10 hover:text-(--danger)"
                               onClick={() => {
-                                void props.onPlaylistMutation({
-                                  action: "deleteItem",
-                                  itemId: props.itemId,
-                                });
+                                if (props.canManagePlaylist) {
+                                  void props.onPlaylistMutation({
+                                    action: "deleteItem",
+                                    itemId: props.itemId,
+                                  });
+                                  return;
+                                }
+
+                                void props.onRemoveRequest(props.itemId);
                               }}
-                              disabled={props.pendingAction === deleteActionKey}
+                              disabled={
+                                props.pendingAction ===
+                                (props.canManagePlaylist
+                                  ? deleteActionKey
+                                  : removeActionKey)
+                              }
                             >
                               <Trash2 className="h-3.5 w-3.5" />
                             </Button>
@@ -2134,14 +2615,23 @@ function PanelPlaylistRow(props: {
                               variant="ghost"
                               className="h-6 w-6 rounded-none px-0 text-(--muted) shadow-none hover:bg-(--panel-soft) hover:text-(--text)"
                               onClick={() => props.onConfirmRemoveChange(null)}
-                              disabled={props.pendingAction === deleteActionKey}
+                              disabled={
+                                props.pendingAction ===
+                                (props.canManagePlaylist
+                                  ? deleteActionKey
+                                  : removeActionKey)
+                              }
                             >
                               <X className="h-3.5 w-3.5" />
                             </Button>
                           </div>
                         ) : (
                           <PanelActionIconButton
-                            label="Delete item"
+                            label={
+                              props.canManagePlaylist
+                                ? "Delete item"
+                                : "Remove request"
+                            }
                             className="text-(--danger) hover:bg-(--danger)/10 hover:text-(--danger)"
                             onClick={() =>
                               props.onConfirmRemoveChange(props.itemId)
@@ -2160,6 +2650,61 @@ function PanelPlaylistRow(props: {
         </div>
       </motion.div>
     </motion.div>
+  );
+}
+
+function PanelSearchEditBanner(props: {
+  item: PanelPlaylistItem;
+  onCancel: () => void;
+}) {
+  return (
+    <div className="mb-2 border border-(--brand) bg-(--brand-soft) px-2 py-2">
+      <div className="flex items-start justify-between gap-2">
+        <div className="min-w-0">
+          <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-(--brand-deep)">
+            Editing request
+          </p>
+          <p className="mt-1 truncate text-[12px] font-medium text-(--text)">
+            {formatSongLabel(props.item)}
+          </p>
+          <p className="mt-0.5 text-[11px] leading-4 text-(--muted)">
+            Search for a song to edit your request.
+          </p>
+        </div>
+        <Button
+          type="button"
+          size="sm"
+          variant="ghost"
+          className="h-6 rounded-none px-1.5 text-[10px] font-semibold uppercase tracking-[0.14em] text-(--muted) shadow-none hover:bg-(--panel-soft) hover:text-(--text)"
+          onClick={props.onCancel}
+        >
+          Cancel
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+function PanelPlaylistFooterLink(props: { href: string; label: string }) {
+  return (
+    <div className="flex h-6 shrink-0 items-center justify-center border-t border-(--border-strong) bg-(--brand-soft) px-3 pb-1 text-center">
+      <a
+        href={props.href}
+        target="_blank"
+        rel="noreferrer"
+        className="block text-[10px] leading-3.5 font-medium text-(--brand-deep) underline decoration-(--brand-deep)/35 underline-offset-2 transition-colors hover:text-(--text)"
+      >
+        {props.label}
+      </a>
+    </div>
+  );
+}
+
+function PanelPlaylistPositionBadge(props: { position: number }) {
+  return (
+    <span className="inline-flex h-5 min-w-5 items-center justify-center rounded-full border border-(--border-strong) bg-(--panel-soft) px-1.5 text-[10px] font-semibold text-(--text)">
+      {props.position}
+    </span>
   );
 }
 
@@ -2469,6 +3014,8 @@ function getPlaylistMutationSuccessMessage(
   switch (mutation.action) {
     case "setCurrent":
       return "Song is now playing.";
+    case "returnToQueue":
+      return "Song returned to queue.";
     case "markPlayed":
       return "Song marked played.";
     case "deleteItem":
@@ -2489,6 +3036,37 @@ function getPlaylistMutationSuccessMessage(
 function getString(input: Record<string, unknown>, key: string) {
   const value = input[key];
   return typeof value === "string" && value.trim() ? value : null;
+}
+
+function isViewerOwnedActivePanelItem(
+  item: PanelPlaylistItem,
+  viewerProfile: PanelBootstrapResponse["viewer"]["profile"]
+) {
+  const status = getString(item, "status");
+  return (
+    viewerProfile != null &&
+    getString(item, "requestedByTwitchUserId") === viewerProfile.twitchUserId &&
+    (status === "queued" || status === "current")
+  );
+}
+
+function getViewerEditablePanelItem(
+  items: PanelPlaylistItem[],
+  viewerProfile: PanelBootstrapResponse["viewer"]["profile"],
+  itemId: string | null
+) {
+  if (!itemId) {
+    return null;
+  }
+
+  const item =
+    items.find((candidate) => getString(candidate, "id") === itemId) ?? null;
+
+  return item && isViewerOwnedActivePanelItem(item, viewerProfile)
+    ? getString(item, "status") === "queued"
+      ? item
+      : null
+    : null;
 }
 
 function getNumber(input: Record<string, unknown>, key: string) {
@@ -2516,7 +3094,7 @@ function formatRequesterLine(item: Record<string, unknown>) {
 }
 
 function formatEditedTimestamp(item: Record<string, unknown>) {
-  const updatedAt = getNumber(item, "updatedAt");
+  const updatedAt = getNumber(item, "editedAt");
   const createdAt = getNumber(item, "createdAt");
 
   if (updatedAt == null || createdAt == null || updatedAt <= createdAt) {
@@ -2579,4 +3157,10 @@ function formatRequestLimitCompact(count: number, limit: number | null) {
   }
 
   return `${count}/${limit} requests`;
+}
+
+function getPanelPlaylistFooterLabel(displayName: string | null | undefined) {
+  return displayName?.trim()
+    ? `Open ${displayName}'s playlist on RockList.Live`
+    : "Open playlist on RockList.Live";
 }

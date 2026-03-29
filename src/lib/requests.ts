@@ -5,6 +5,7 @@ export type SupportedChatCommand =
   | "vip"
   | "edit"
   | "remove"
+  | "position"
   | "how"
   | "blacklist"
   | "setlist"
@@ -15,6 +16,7 @@ export interface ParsedChatCommand {
   command: SupportedChatCommand;
   query?: string;
   targetLogin?: string;
+  amount?: number;
 }
 
 export interface NormalizedChatEvent {
@@ -50,12 +52,7 @@ export function parseChatCommand(
   const command = rawCommand?.toLowerCase();
   const query = rest.join(" ").trim();
 
-  if (
-    command === "sr" ||
-    command === "vip" ||
-    command === "edit" ||
-    command === "replace"
-  ) {
+  if (command === "sr" || command === "edit" || command === "replace") {
     if (!query) {
       return null;
     }
@@ -72,20 +69,40 @@ export function parseChatCommand(
     };
   }
 
+  if (command === "vip") {
+    if (!query) {
+      return {
+        command,
+      };
+    }
+
+    const requestTarget = extractTrailingTargetLogin(query);
+    if (!requestTarget.query) {
+      return null;
+    }
+
+    return {
+      command,
+      query: requestTarget.query,
+      targetLogin: requestTarget.targetLogin,
+    };
+  }
+
   if (command === "addvip" || command === "remove") {
     if (!query) {
       return null;
     }
 
     if (command === "addvip") {
-      const normalizedLogin = normalizeLoginArgument(query);
-      if (!normalizedLogin) {
+      const parsedAddVip = parseAddVipArguments(query);
+      if (!parsedAddVip) {
         return null;
       }
 
       return {
         command,
-        query: normalizedLogin,
+        query: parsedAddVip.login,
+        amount: parsedAddVip.amount,
       };
     }
 
@@ -102,6 +119,7 @@ export function parseChatCommand(
   }
 
   if (
+    command === "position" ||
     command === "how" ||
     command === "blacklist" ||
     command === "setlist" ||
@@ -150,6 +168,35 @@ function normalizeLoginArgument(value: string) {
     .replace(/^['"]+|['"]+$/g, "")
     .replace(/^@+/, "")
     .toLowerCase();
+}
+
+function parseAddVipArguments(value: string) {
+  const match =
+    /^(?:"([^"]+)"|'([^']+)'|(\S+))(?:\s+([0-9]+(?:\.[0-9]{1,2})?))?$/.exec(
+      value.trim()
+    );
+
+  if (!match) {
+    return null;
+  }
+
+  const rawLogin = match[1] ?? match[2] ?? match[3] ?? "";
+  const normalizedLogin = normalizeLoginArgument(rawLogin);
+  if (!normalizedLogin) {
+    return null;
+  }
+
+  const amount =
+    match[4] != null && match[4].trim().length > 0 ? Number(match[4]) : null;
+
+  if (amount != null && (!Number.isFinite(amount) || amount <= 0)) {
+    return null;
+  }
+
+  return {
+    login: normalizedLogin,
+    amount: amount ?? undefined,
+  };
 }
 
 export function normalizeChatEvent(

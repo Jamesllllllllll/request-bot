@@ -6,6 +6,7 @@ import {
   getViewerRequestState,
   performViewerRequestMutation,
   ViewerRequestError,
+  type ViewerRequestMutationInput,
 } from "~/lib/server/viewer-request";
 import { json } from "~/lib/utils";
 import { viewerRequestMutationSchema } from "~/lib/validation";
@@ -32,9 +33,8 @@ export const Route = createFileRoute("/api/channel/$slug/viewer-request")({
         const runtimeEnv = env as AppEnv;
 
         try {
-          const mutation = viewerRequestMutationSchema.parse(
-            await request.json()
-          );
+          const mutation: ViewerRequestMutationInput =
+            viewerRequestMutationSchema.parse(await request.json());
 
           return json(
             await performViewerRequestMutation({

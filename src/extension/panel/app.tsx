@@ -180,6 +180,18 @@ type PanelPlaylistMutationResponse = {
   ok?: boolean;
 };
 
+type PanelViewerRequestSubmitInput =
+  | {
+      songId: string;
+      requestKind: "regular" | "vip";
+      requestMode?: "catalog";
+    }
+  | {
+      query: string;
+      requestKind: "regular" | "vip";
+      requestMode: "random" | "choice";
+    };
+
 type PanelDropTargetState = {
   itemId: string;
   edge: Edge;
@@ -248,6 +260,10 @@ export function ExtensionPanelApp(props: { apiBaseUrl?: string }) {
   const showViewerSearchActions =
     !!bootstrap?.viewer.canRequest || !!bootstrap?.viewer.canVipRequest;
   const viewerProfile = bootstrap?.viewer.profile ?? null;
+  const vipSearchDisabledReason =
+    viewerProfile && viewerProfile.vipTokensAvailable < 1
+      ? "Not enough VIP tokens."
+      : null;
   const playlistItems = bootstrap?.playlist.items ?? [];
   const currentPlaylistItemId = bootstrap?.playlist.currentItemId ?? null;
   const queuedPlaylistItems = playlistItems.filter(
@@ -669,15 +685,12 @@ export function ExtensionPanelApp(props: { apiBaseUrl?: string }) {
     void runSearch(query);
   }
 
-  async function handleSubmitRequest(input: {
-    songId: string;
-    requestKind: "regular" | "vip";
-  }) {
+  async function handleSubmitRequest(input: PanelViewerRequestSubmitInput) {
     if (!auth?.token) {
       return;
     }
 
-    setPendingAction(`${input.songId}:${input.requestKind}`);
+    setPendingAction(getPanelViewerRequestActionKey(input));
     setTransientNotice(null);
 
     try {
@@ -694,7 +707,16 @@ export function ExtensionPanelApp(props: { apiBaseUrl?: string }) {
             "content-type": "application/json",
           },
           body: JSON.stringify({
-            ...input,
+            ...("songId" in input
+              ? {
+                  songId: input.songId,
+                  requestMode: "catalog",
+                }
+              : {
+                  query: input.query.trim(),
+                  requestMode: input.requestMode,
+                }),
+            requestKind: input.requestKind,
             itemId: editingRequestItemId ?? undefined,
           }),
         }
@@ -1198,6 +1220,23 @@ export function ExtensionPanelApp(props: { apiBaseUrl?: string }) {
                       {searchError}
                     </p>
                   ) : null}
+                  {showViewerSearchActions ? (
+                    <PanelSpecialRequestControls
+                      query={searchQuery}
+                      canRequest={!!bootstrap?.viewer.canRequest}
+                      canVipRequest={!!bootstrap?.viewer.canVipRequest}
+                      vipDisabledReason={vipSearchDisabledReason}
+                      pendingAction={pendingAction}
+                      isEditingRequest={isEditingRequest}
+                      onSubmit={(requestMode, requestKind) => {
+                        void handleSubmitRequest({
+                          query: searchQuery,
+                          requestMode,
+                          requestKind,
+                        });
+                      }}
+                    />
+                  ) : null}
                 </div>
 
                 <div>
@@ -1252,14 +1291,15 @@ export function ExtensionPanelApp(props: { apiBaseUrl?: string }) {
                                         ? "Edit"
                                         : "Add"}
                                   </Button>
-                                  <Button
-                                    size="sm"
-                                    className="h-7 rounded-none px-2 text-[11px] shadow-none"
+                                  <PanelSearchVipButton
+                                    disabledReason={vipSearchDisabledReason}
                                     disabled={
                                       !songId ||
                                       !bootstrap?.viewer.canVipRequest ||
                                       pendingAction === vipActionKey
                                     }
+                                    pending={pendingAction === vipActionKey}
+                                    isEditingRequest={isEditingRequest}
                                     onClick={() => {
                                       if (!songId) {
                                         return;
@@ -1270,15 +1310,7 @@ export function ExtensionPanelApp(props: { apiBaseUrl?: string }) {
                                         requestKind: "vip",
                                       });
                                     }}
-                                  >
-                                    {pendingAction === vipActionKey
-                                      ? isEditingRequest
-                                        ? "Editing..."
-                                        : "Adding..."
-                                      : isEditingRequest
-                                        ? "Edit VIP"
-                                        : "VIP"}
-                                  </Button>
+                                  />
                                 </div>
                               ) : null}
                             </div>
@@ -1359,6 +1391,10 @@ export function ExtensionPanelModeratorPreview() {
   const shufflePlaylistTooltip = currentPlaylistItemId
     ? "Mark the current song played before shuffling."
     : "Shuffle the queue.";
+  const vipSearchDisabledReason =
+    mockModeratorViewerProfile.vipTokensAvailable < 1
+      ? "Not enough VIP tokens."
+      : null;
   const editingRequest = getViewerEditablePanelItem(
     playlist.items,
     mockModeratorViewerProfile,
@@ -1711,17 +1747,24 @@ export function ExtensionPanelModeratorPreview() {
     void runPreviewSearch(searchQuery);
   }
 
-  async function handleSubmitRequest(input: {
-    songId: string;
-    requestKind: "regular" | "vip";
-  }) {
+  async function handleSubmitRequest(input: PanelViewerRequestSubmitInput) {
+    const normalizedQuery = "query" in input ? input.query.trim() : null;
     const song =
-      searchResults?.items.find(
-        (item) => getString(item, "id") === input.songId
-      ) ?? null;
+      "songId" in input
+        ? (searchResults?.items.find(
+            (item) => getString(item, "id") === input.songId
+          ) ?? null)
+        : input.requestMode === "random"
+          ? pickRandomPanelSearchItem(searchResults?.items ?? [])
+          : null;
 
-    if (!song) {
+    if (("songId" in input || input.requestMode === "random") && !song) {
       showTransientMessage("danger", "That song is unavailable right now.");
+      return;
+    }
+
+    if (input.requestMode === "choice" && !normalizedQuery) {
+      showTransientMessage("danger", "Type an artist or song first.");
       return;
     }
 
@@ -1737,7 +1780,7 @@ export function ExtensionPanelModeratorPreview() {
       return;
     }
 
-    setPendingAction(`${input.songId}:${input.requestKind}`);
+    setPendingAction(getPanelViewerRequestActionKey(input));
     setTransientNotice(null);
 
     startTransition(() => {
@@ -1745,7 +1788,15 @@ export function ExtensionPanelModeratorPreview() {
         applyDemoViewerRequestMutation({
           playlist: current,
           viewerProfile: mockModeratorViewerProfile,
-          song,
+          ...("songId" in input || input.requestMode === "random"
+            ? {
+                song: song as Record<string, unknown>,
+                requestMode: "catalog",
+              }
+            : {
+                query: normalizedQuery ?? "",
+                requestMode: input.requestMode,
+              }),
           requestKind: input.requestKind,
           replaceExisting: false,
           replaceItemId: editingRequestItemId ?? undefined,
@@ -2052,6 +2103,23 @@ export function ExtensionPanelModeratorPreview() {
                     {searchError}
                   </p>
                 ) : null}
+                <PanelSpecialRequestControls
+                  query={searchQuery}
+                  canRequest
+                  canVipRequest={
+                    mockModeratorViewerProfile.vipTokensAvailable >= 1
+                  }
+                  vipDisabledReason={vipSearchDisabledReason}
+                  pendingAction={pendingAction}
+                  isEditingRequest={isEditingRequest}
+                  onSubmit={(requestMode, requestKind) => {
+                    void handleSubmitRequest({
+                      query: searchQuery,
+                      requestMode,
+                      requestKind,
+                    });
+                  }}
+                />
               </div>
 
               <div>
@@ -2103,12 +2171,16 @@ export function ExtensionPanelModeratorPreview() {
                                     ? "Edit"
                                     : "Add"}
                               </Button>
-                              <Button
-                                size="sm"
-                                className="h-7 rounded-none px-2 text-[11px] shadow-none"
+                              <PanelSearchVipButton
+                                disabledReason={vipSearchDisabledReason}
                                 disabled={
-                                  !songId || pendingAction === vipActionKey
+                                  !songId ||
+                                  mockModeratorViewerProfile.vipTokensAvailable <
+                                    1 ||
+                                  pendingAction === vipActionKey
                                 }
+                                pending={pendingAction === vipActionKey}
+                                isEditingRequest={isEditingRequest}
                                 onClick={() => {
                                   if (!songId) {
                                     return;
@@ -2119,15 +2191,7 @@ export function ExtensionPanelModeratorPreview() {
                                     requestKind: "vip",
                                   });
                                 }}
-                              >
-                                {pendingAction === vipActionKey
-                                  ? isEditingRequest
-                                    ? "Editing..."
-                                    : "Adding..."
-                                  : isEditingRequest
-                                    ? "Edit VIP"
-                                    : "VIP"}
-                              </Button>
+                              />
                             </div>
                           </div>
                         </div>
@@ -2668,7 +2732,7 @@ function PanelSearchEditBanner(props: {
             {formatSongLabel(props.item)}
           </p>
           <p className="mt-0.5 text-[11px] leading-4 text-(--muted)">
-            Search for a song to edit your request.
+            Search for a song or use the request buttons below.
           </p>
         </div>
         <Button
@@ -2680,6 +2744,176 @@ function PanelSearchEditBanner(props: {
         >
           Cancel
         </Button>
+      </div>
+    </div>
+  );
+}
+
+function PanelSearchVipButton(props: {
+  disabled: boolean;
+  disabledReason?: string | null;
+  pending: boolean;
+  isEditingRequest: boolean;
+  onClick: () => void;
+}) {
+  const button = (
+    <Button
+      size="sm"
+      className="h-7 rounded-none px-2 text-[11px] shadow-none"
+      disabled={props.disabled}
+      onClick={props.onClick}
+    >
+      {props.pending
+        ? props.isEditingRequest
+          ? "Editing..."
+          : "Adding..."
+        : props.isEditingRequest
+          ? "Edit VIP"
+          : "VIP"}
+    </Button>
+  );
+
+  if (!props.disabledReason) {
+    return button;
+  }
+
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <span className="inline-flex">{button}</span>
+      </TooltipTrigger>
+      <TooltipContent>{props.disabledReason}</TooltipContent>
+    </Tooltip>
+  );
+}
+
+function PanelSpecialRequestControls(props: {
+  query: string;
+  canRequest: boolean;
+  canVipRequest: boolean;
+  vipDisabledReason?: string | null;
+  pendingAction: string | null;
+  isEditingRequest: boolean;
+  onSubmit: (
+    requestMode: "random" | "choice",
+    requestKind: "regular" | "vip"
+  ) => void;
+}) {
+  const normalizedQuery = props.query.trim();
+  const regularDisabledReason = getPanelSpecialRequestDisabledReason({
+    query: normalizedQuery,
+    canRequest: props.canRequest,
+  });
+  const vipDisabledReason = getPanelSpecialRequestDisabledReason({
+    query: normalizedQuery,
+    canRequest: props.canVipRequest,
+    fallbackReason:
+      props.vipDisabledReason ?? "You do not have enough VIP tokens.",
+  });
+
+  return (
+    <div className="mt-2 grid gap-2 border border-(--border) bg-(--panel-soft) px-2 py-2">
+      <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-(--brand-deep)">
+        Quick request
+      </p>
+      <div className="grid gap-2">
+        <PanelSpecialRequestRow
+          label="Random song"
+          disabledReason={regularDisabledReason}
+          vipDisabledReason={vipDisabledReason}
+          busy={props.pendingAction != null}
+          regularPending={
+            props.pendingAction ===
+            getPanelViewerRequestActionKey({
+              query: normalizedQuery,
+              requestMode: "random",
+              requestKind: "regular",
+            })
+          }
+          vipPending={
+            props.pendingAction ===
+            getPanelViewerRequestActionKey({
+              query: normalizedQuery,
+              requestMode: "random",
+              requestKind: "vip",
+            })
+          }
+          isEditingRequest={props.isEditingRequest}
+          onRegularClick={() => props.onSubmit("random", "regular")}
+          onVipClick={() => props.onSubmit("random", "vip")}
+        />
+        <PanelSpecialRequestRow
+          label="Streamer choice"
+          disabledReason={regularDisabledReason}
+          vipDisabledReason={vipDisabledReason}
+          busy={props.pendingAction != null}
+          regularPending={
+            props.pendingAction ===
+            getPanelViewerRequestActionKey({
+              query: normalizedQuery,
+              requestMode: "choice",
+              requestKind: "regular",
+            })
+          }
+          vipPending={
+            props.pendingAction ===
+            getPanelViewerRequestActionKey({
+              query: normalizedQuery,
+              requestMode: "choice",
+              requestKind: "vip",
+            })
+          }
+          isEditingRequest={props.isEditingRequest}
+          onRegularClick={() => props.onSubmit("choice", "regular")}
+          onVipClick={() => props.onSubmit("choice", "vip")}
+        />
+      </div>
+    </div>
+  );
+}
+
+function PanelSpecialRequestRow(props: {
+  label: string;
+  disabledReason: string | null;
+  vipDisabledReason: string | null;
+  busy: boolean;
+  regularPending: boolean;
+  vipPending: boolean;
+  isEditingRequest: boolean;
+  onRegularClick: () => void;
+  onVipClick: () => void;
+}) {
+  const regularDisabled = props.busy || props.disabledReason != null;
+  const vipDisabled = props.busy || props.vipDisabledReason != null;
+
+  return (
+    <div className="grid grid-cols-[1fr_auto] items-center gap-2">
+      <p className="text-[11px] text-(--muted)">{props.label}</p>
+      <div className="flex items-center gap-1">
+        <Button
+          type="button"
+          size="sm"
+          variant="outline"
+          className="h-7 rounded-none px-2 text-[11px] shadow-none"
+          disabled={regularDisabled}
+          onClick={props.onRegularClick}
+          title={props.disabledReason ?? undefined}
+        >
+          {props.regularPending
+            ? props.isEditingRequest
+              ? "Editing..."
+              : "Adding..."
+            : props.isEditingRequest
+              ? "Edit"
+              : "Add"}
+        </Button>
+        <PanelSearchVipButton
+          disabled={vipDisabled}
+          disabledReason={props.vipDisabledReason}
+          pending={props.vipPending}
+          isEditingRequest={props.isEditingRequest}
+          onClick={props.onVipClick}
+        />
       </div>
     </div>
   );
@@ -3075,6 +3309,14 @@ function getNumber(input: Record<string, unknown>, key: string) {
 }
 
 function formatSongLabel(item: Record<string, unknown>) {
+  const warningCode = getString(item, "warningCode");
+  const requestedQuery = getString(item, "requestedQuery");
+  if (warningCode === "streamer_choice") {
+    return requestedQuery
+      ? `Streamer choice: ${requestedQuery}`
+      : "Streamer choice";
+  }
+
   const artist = getString(item, "songArtist");
   const title = getString(item, "songTitle") ?? "Unknown song";
   return artist ? `${artist} - ${title}` : title;
@@ -3145,6 +3387,39 @@ function formatSearchSongMeta(item: Record<string, unknown>) {
   ]
     .filter(Boolean)
     .join(" · ");
+}
+
+function getPanelViewerRequestActionKey(input: PanelViewerRequestSubmitInput) {
+  if ("songId" in input) {
+    return `${input.songId}:${input.requestKind}`;
+  }
+
+  return `special:${input.requestMode}:${input.requestKind}:${input.query.trim().toLowerCase()}`;
+}
+
+function getPanelSpecialRequestDisabledReason(input: {
+  query: string;
+  canRequest: boolean;
+  fallbackReason?: string;
+}) {
+  if (input.query.length < 2) {
+    return "Type at least 2 characters first.";
+  }
+
+  if (!input.canRequest) {
+    return input.fallbackReason ?? "You cannot request songs right now.";
+  }
+
+  return null;
+}
+
+function pickRandomPanelSearchItem(items: Array<Record<string, unknown>>) {
+  if (items.length === 0) {
+    return null;
+  }
+
+  const index = Math.floor(Math.random() * items.length);
+  return items[index] ?? null;
 }
 
 function formatVipTokensCompact(count: number) {

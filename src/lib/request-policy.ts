@@ -171,6 +171,7 @@ export function isSongAllowed(input: {
   blacklistSongGroups: BlacklistedSongGroup[];
   setlistArtists: Array<{ artistId?: number | null; artistName: string }>;
   requester: RequesterContext;
+  allowBlacklistOverride?: boolean;
 }) {
   const allowedTunings = getArraySetting(input.settings.allowedTuningsJson);
   const setlistArtistIds = input.setlistArtists
@@ -239,7 +240,9 @@ export function isSongAllowed(input: {
             entry.charterId === input.song.authorId
         ) ?? null)
       : null;
-    const bypass = input.settings.letSetlistBypassBlacklist && inSetlist;
+    const bypass =
+      input.allowBlacklistOverride ||
+      (input.settings.letSetlistBypassBlacklist && inSetlist);
 
     if (!bypass && reasonCodes.length > 0) {
       const versionBlocked = reasonCodes.includes("version_blacklist");
@@ -397,6 +400,15 @@ export function buildHowMessage(input: {
 export function buildSearchMessage(appUrl: string) {
   const root = appUrl.replace(/\/+$/, "");
   return `Search the song database here: ${root}/search`;
+}
+
+export function buildChannelPlaylistMessage(
+  appUrl: string,
+  channelSlug: string
+) {
+  const root = appUrl.replace(/\/+$/, "");
+  const slug = channelSlug.replace(/^\/+|\/+$/g, "");
+  return `You can edit or search the song database here: ${root}/${slug}`;
 }
 
 export function buildBlacklistMessage(

@@ -238,25 +238,25 @@ export function ChannelCommunityPanel(props: {
   }
 
   return (
-    <section className="grid gap-6">
+    <section className="grid gap-6 max-[960px]:gap-4 max-[960px]:border-t max-[960px]:border-(--border) max-[960px]:pt-4">
       <div className="grid gap-2">
         <h2 className="text-2xl font-semibold tracking-tight text-(--text)">
           Community controls
         </h2>
         <p className="max-w-3xl text-sm leading-7 text-(--muted)">
-          Manage blocked chatters and VIP token balances directly on the channel
+          Manage blocked viewers and VIP token balances directly on the channel
           page when your role allows it.
         </p>
       </div>
 
       {props.canManageBlockedChatters || props.canViewVipTokens ? (
-        <div className="grid gap-6 xl:grid-cols-[minmax(0,0.95fr)_minmax(0,1.05fr)]">
+        <div className="grid gap-6 xl:grid-cols-[minmax(0,0.95fr)_minmax(0,1.05fr)] max-[960px]:gap-0">
           {props.canManageBlockedChatters ? (
-            <Card>
-              <CardHeader>
-                <CardTitle>Blocked chatters</CardTitle>
+            <Card className="max-[960px]:rounded-none max-[960px]:border-x-0 max-[960px]:bg-transparent max-[960px]:shadow-none max-[960px]:[background-image:none]">
+              <CardHeader className="max-[960px]:px-0">
+                <CardTitle>Blocked viewers</CardTitle>
               </CardHeader>
-              <CardContent className="grid gap-4">
+              <CardContent className="grid gap-4 max-[960px]:px-0">
                 <Input
                   value={blockedLookupQuery}
                   onChange={(event) => {
@@ -272,7 +272,7 @@ export function ChannelCommunityPanel(props: {
                   </p>
                 ) : null}
                 {needsBlockedChatterScopeReconnect ? (
-                  <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-amber-500/30 bg-amber-500/10 px-4 py-3">
+                  <div className="flex flex-wrap items-center justify-between gap-3 border border-amber-500/30 bg-amber-500/10 px-4 py-3">
                     <p className="text-sm text-amber-100">
                       Reconnect Twitch to prioritize viewers currently in chat.
                     </p>
@@ -286,15 +286,15 @@ export function ChannelCommunityPanel(props: {
                   </div>
                 ) : null}
                 {blockedSearchError ? (
-                  <div className="rounded-2xl border border-rose-500/30 bg-rose-500/10 px-4 py-3 text-sm text-rose-200">
+                  <div className="border border-rose-500/30 bg-rose-500/10 px-4 py-3 text-sm text-rose-200">
                     {blockedSearchError}
                   </div>
                 ) : null}
                 {debouncedBlockedLookupQuery.length >= 4 ? (
-                  <div className="rounded-2xl border border-(--border) bg-(--panel-soft) px-4 py-3">
+                  <div className="overflow-hidden border border-(--border)">
                     {blockedLookupResults.length > 0 ? (
-                      <div className="grid gap-2">
-                        <div className="flex items-center justify-between gap-3">
+                      <div>
+                        <div className="flex items-center justify-between gap-3 border-b border-(--border) bg-(--panel) px-4 py-3">
                           <p className="text-xs uppercase tracking-[0.16em] text-(--muted)">
                             {blockedPreferredSource === "chatters"
                               ? "Current chatters first"
@@ -305,7 +305,7 @@ export function ChannelCommunityPanel(props: {
                             {blockedLookupResults.length === 1 ? "" : "s"}
                           </Badge>
                         </div>
-                        {blockedLookupResults.map((user) => {
+                        {blockedLookupResults.map((user, index) => {
                           const isBlockedSelected =
                             selectedBlockedUser?.id === user.id;
 
@@ -313,11 +313,13 @@ export function ChannelCommunityPanel(props: {
                             <button
                               key={user.id}
                               type="button"
-                              className={`flex items-center justify-between gap-4 rounded-xl border px-3 py-2 text-left transition hover:border-(--brand) ${
+                              className={`flex w-full items-center justify-between gap-4 px-4 py-3 text-left transition hover:border-(--brand) ${
                                 user.isCurrentChatter
-                                  ? "border-emerald-500/40 bg-emerald-500/10"
-                                  : "border-(--border) bg-background"
-                              }`}
+                                  ? "bg-emerald-500/10"
+                                  : index % 2 === 0
+                                    ? "bg-(--panel-soft)"
+                                    : "bg-(--panel-muted)"
+                              } ${index > 0 ? "border-t border-(--border)" : ""}`}
                               onClick={() => {
                                 setBlockedLookupQuery(user.login);
                                 setSelectedBlockedUser(user);
@@ -346,7 +348,7 @@ export function ChannelCommunityPanel(props: {
                         })}
                       </div>
                     ) : (
-                      <p className="text-sm text-(--muted)">
+                      <p className="px-4 py-3 text-sm text-(--muted)">
                         No matching Twitch usernames.
                       </p>
                     )}
@@ -364,24 +366,29 @@ export function ChannelCommunityPanel(props: {
                         twitchUserId: selectedBlockedUser.id,
                         login: selectedBlockedUser.login,
                         displayName: selectedBlockedUser.displayName,
-                        reason: "Ignored bot commands from this chatter.",
+                        reason: "Blocked from making requests in this channel.",
                       });
                     }}
                     disabled={mutation.isPending || !selectedBlockedUser}
                   >
-                    Block selected chatter
+                    Block selected viewer
                   </Button>
                 </div>
                 <p className="text-sm text-(--muted)">
-                  Blocked chatters can still talk in Twitch chat, but the bot
-                  will ignore their commands.
+                  Blocked viewers can still talk in Twitch chat, but they cannot
+                  add or edit requests from chat, the website, or the extension
+                  panel.
                 </p>
                 {props.blocks.length > 0 ? (
-                  <div className="grid gap-3">
-                    {props.blocks.map((block) => (
+                  <div className="overflow-hidden border border-(--border)">
+                    {props.blocks.map((block, index) => (
                       <div
                         key={block.twitchUserId}
-                        className="flex items-start justify-between gap-4 rounded-2xl border border-(--border) bg-(--panel-soft) px-5 py-4"
+                        className={`flex items-start justify-between gap-4 px-5 py-4 ${
+                          index % 2 === 0
+                            ? "bg-(--panel-soft)"
+                            : "bg-(--panel-muted)"
+                        } ${index > 0 ? "border-t border-(--border)" : ""}`}
                       >
                         <div className="min-w-0">
                           <p className="truncate font-medium text-(--text)">
@@ -397,7 +404,7 @@ export function ChannelCommunityPanel(props: {
                           </p>
                           <p className="text-sm text-(--muted)">
                             {block.reason ??
-                              "Ignored bot commands from this chatter."}
+                              "Blocked from making requests in this channel."}
                           </p>
                         </div>
                         <Button
@@ -417,18 +424,18 @@ export function ChannelCommunityPanel(props: {
                     ))}
                   </div>
                 ) : (
-                  <p className="text-sm text-(--muted)">No blocked chatters.</p>
+                  <p className="text-sm text-(--muted)">No blocked viewers.</p>
                 )}
               </CardContent>
             </Card>
           ) : null}
 
           {props.canViewVipTokens ? (
-            <Card>
-              <CardHeader>
+            <Card className="max-[960px]:rounded-none max-[960px]:border-x-0 max-[960px]:bg-transparent max-[960px]:shadow-none max-[960px]:[background-image:none]">
+              <CardHeader className="max-[960px]:px-0">
                 <CardTitle>VIP tokens</CardTitle>
               </CardHeader>
-              <CardContent className="grid gap-4">
+              <CardContent className="grid gap-4 max-[960px]:px-0">
                 {props.canManageVipTokens ? (
                   <>
                     <Input
@@ -446,7 +453,7 @@ export function ChannelCommunityPanel(props: {
                       </p>
                     ) : null}
                     {needsVipChatterScopeReconnect ? (
-                      <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-amber-500/30 bg-amber-500/10 px-4 py-3">
+                      <div className="flex flex-wrap items-center justify-between gap-3 border border-amber-500/30 bg-amber-500/10 px-4 py-3">
                         <p className="text-sm text-amber-100">
                           Reconnect Twitch to prioritize viewers currently in
                           chat.
@@ -461,15 +468,15 @@ export function ChannelCommunityPanel(props: {
                       </div>
                     ) : null}
                     {vipSearchError ? (
-                      <div className="rounded-2xl border border-rose-500/30 bg-rose-500/10 px-4 py-3 text-sm text-rose-200">
+                      <div className="border border-rose-500/30 bg-rose-500/10 px-4 py-3 text-sm text-rose-200">
                         {vipSearchError}
                       </div>
                     ) : null}
                     {debouncedVipLookupQuery.length >= 4 ? (
-                      <div className="rounded-2xl border border-(--border) bg-(--panel-soft) px-4 py-3">
+                      <div className="overflow-hidden border border-(--border)">
                         {vipLookupResults.length > 0 ? (
-                          <div className="grid gap-2">
-                            <div className="flex items-center justify-between gap-3">
+                          <div>
+                            <div className="flex items-center justify-between gap-3 border-b border-(--border) bg-(--panel) px-4 py-3">
                               <p className="text-xs uppercase tracking-[0.16em] text-(--muted)">
                                 {vipPreferredSource === "chatters"
                                   ? "Current chatters first"
@@ -480,7 +487,7 @@ export function ChannelCommunityPanel(props: {
                                 {vipLookupResults.length === 1 ? "" : "s"}
                               </Badge>
                             </div>
-                            {vipLookupResults.map((user) => {
+                            {vipLookupResults.map((user, index) => {
                               const isVipSelected =
                                 selectedVipUser?.id === user.id;
 
@@ -488,11 +495,13 @@ export function ChannelCommunityPanel(props: {
                                 <button
                                   key={user.id}
                                   type="button"
-                                  className={`flex items-center justify-between gap-4 rounded-xl border px-3 py-2 text-left transition hover:border-(--brand) ${
+                                  className={`flex w-full items-center justify-between gap-4 px-4 py-3 text-left transition hover:border-(--brand) ${
                                     user.isCurrentChatter
-                                      ? "border-emerald-500/40 bg-emerald-500/10"
-                                      : "border-(--border) bg-background"
-                                  }`}
+                                      ? "bg-emerald-500/10"
+                                      : index % 2 === 0
+                                        ? "bg-(--panel-soft)"
+                                        : "bg-(--panel-muted)"
+                                  } ${index > 0 ? "border-t border-(--border)" : ""}`}
                                   onClick={() => {
                                     setVipLookupQuery(user.login);
                                     setSelectedVipUser(user);
@@ -521,7 +530,7 @@ export function ChannelCommunityPanel(props: {
                             })}
                           </div>
                         ) : (
-                          <p className="text-sm text-(--muted)">
+                          <p className="px-4 py-3 text-sm text-(--muted)">
                             No matching Twitch usernames.
                           </p>
                         )}
@@ -553,7 +562,7 @@ export function ChannelCommunityPanel(props: {
                     allowed moderator can change them.
                   </p>
                 )}
-                <div className="overflow-hidden rounded-2xl border border-(--border) bg-(--panel-soft)">
+                <div className="overflow-hidden border border-(--border) bg-(--panel-soft)">
                   {props.vipTokens.length > 0 ? (
                     <table className="w-full border-collapse text-sm">
                       <thead>
@@ -597,7 +606,7 @@ export function ChannelCommunityPanel(props: {
       ) : null}
 
       {mutation.error ? (
-        <div className="rounded-[24px] border border-rose-500/30 bg-rose-500/10 px-4 py-3 text-sm text-rose-200">
+        <div className="border border-rose-500/30 bg-rose-500/10 px-4 py-3 text-sm text-rose-200">
           {getErrorMessage(mutation.error)}
         </div>
       ) : null}
@@ -686,7 +695,7 @@ function VipTokenRow(props: {
         <div className="flex max-w-[200px] items-center gap-2">
           <button
             type="button"
-            className="rounded-full border border-(--border) p-2 text-(--muted) transition hover:border-(--brand) hover:text-(--text) disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:border-(--border) disabled:hover:text-(--muted)"
+            className="border border-(--border) p-2 text-(--muted) transition hover:border-(--brand) hover:text-(--text) disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:border-(--border) disabled:hover:text-(--muted)"
             onClick={() => {
               setHasLocalEdits(true);
               setDraftCount((current) =>
@@ -706,7 +715,7 @@ function VipTokenRow(props: {
             value={draftCount}
             inputMode="decimal"
             pattern="[0-9]+([.][0-9]{0,2})?"
-            className="h-10 rounded-xl bg-background px-3 py-2 text-center"
+            className="h-10 bg-background px-3 py-2 text-center"
             disabled={controlsLocked}
             readOnly={!props.canManage}
             onChange={(event) => {
@@ -741,7 +750,7 @@ function VipTokenRow(props: {
           />
           <button
             type="button"
-            className="rounded-full border border-(--border) p-2 text-(--muted) transition hover:border-(--brand) hover:text-(--text) disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:border-(--border) disabled:hover:text-(--muted)"
+            className="border border-(--border) p-2 text-(--muted) transition hover:border-(--brand) hover:text-(--text) disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:border-(--border) disabled:hover:text-(--muted)"
             onClick={() => {
               setHasLocalEdits(true);
               setDraftCount((current) =>

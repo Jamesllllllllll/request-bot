@@ -666,7 +666,9 @@ export async function getExtensionPanelPlaylistByChannelId(
       requestKind: true,
       createdAt: true,
       updatedAt: true,
+      editedAt: true,
       position: true,
+      regularPosition: true,
       status: true,
     },
   });
@@ -933,6 +935,10 @@ export interface CatalogSearchInput {
   tuning?: string[];
   parts?: string[];
   year?: number[];
+  restrictToOfficial?: boolean;
+  allowedTuningsFilter?: string[];
+  requiredPartsFilter?: string[];
+  requiredPartsFilterMatchMode?: "any" | "all";
   excludeSongIds?: number[];
   excludeGroupedProjectIds?: number[];
   excludeArtistIds?: number[];
@@ -952,6 +958,42 @@ export interface CatalogSearchInput {
     | "downloads"
     | "updated";
   sortDirection?: "asc" | "desc";
+}
+
+type CatalogPartFilter = "lead" | "rhythm" | "bass" | "vocals";
+
+function normalizeCatalogFilterValue(value: string) {
+  return value.trim().toLowerCase();
+}
+
+function normalizeCatalogPartFilter(value: string) {
+  switch (normalizeCatalogFilterValue(value)) {
+    case "lead":
+      return "lead" as const;
+    case "rhythm":
+      return "rhythm" as const;
+    case "bass":
+      return "bass" as const;
+    case "voice":
+    case "vocals":
+    case "lyrics":
+      return "vocals" as const;
+    default:
+      return null;
+  }
+}
+
+function buildCatalogPartFilterCondition(part: CatalogPartFilter) {
+  switch (part) {
+    case "lead":
+      return sql`${catalogSongs.hasLead} = 1`;
+    case "rhythm":
+      return sql`${catalogSongs.hasRhythm} = 1`;
+    case "bass":
+      return sql`${catalogSongs.hasBass} = 1`;
+    case "vocals":
+      return sql`${catalogSongs.hasVocals} = 1`;
+  }
 }
 
 function normalizeSearchPhrase(value: string) {
@@ -1236,6 +1278,51 @@ export async function searchCatalogSongs(
       : query
         ? basicCondition
         : (advancedCondition ?? sql`1 = 1`);
+  const normalizedAllowedTunings = uniqueCompact(
+    (input.allowedTuningsFilter ?? []).map((tuning) =>
+      normalizeCatalogFilterValue(tuning)
+    )
+  );
+  const requiredPartsFilter = [
+    ...new Set(
+      (input.requiredPartsFilter ?? [])
+        .map((part) => normalizeCatalogPartFilter(part))
+        .filter((part): part is CatalogPartFilter => part !== null)
+    ),
+  ];
+  const requiredPartsFilterCondition = requiredPartsFilter.length
+    ? input.requiredPartsFilterMatchMode === "all"
+      ? sql`(${sql.join(
+          requiredPartsFilter.map((part) =>
+            buildCatalogPartFilterCondition(part)
+          ),
+          sql` AND `
+        )})`
+      : sql`(${sql.join(
+          requiredPartsFilter.map((part) =>
+            buildCatalogPartFilterCondition(part)
+          ),
+          sql` OR `
+        )})`
+    : null;
+  const policyConditions = [
+    input.restrictToOfficial
+      ? sql`${catalogSongs.source} = ${"official"}`
+      : null,
+    normalizedAllowedTunings.length
+      ? sql`lower(trim(coalesce(${catalogSongs.tuningSummary}, ''))) IN ${sql`(${sql.join(
+          normalizedAllowedTunings.map((tuning) => sql`${tuning}`),
+          sql`, `
+        )})`}`
+      : null,
+    requiredPartsFilterCondition,
+  ].filter(
+    (condition): condition is ReturnType<typeof sql> => condition !== null
+  );
+  const filteredBaseWhereCondition =
+    policyConditions.length > 0
+      ? sql`(${baseWhereCondition}) AND (${sql.join(policyConditions, sql` AND `)})`
+      : baseWhereCondition;
   const normalizedExcludedArtists = uniqueCompact(
     (input.excludeArtistNames ?? []).map((name) => normalizeSearchPhrase(name))
   );
@@ -1301,8 +1388,8 @@ export async function searchCatalogSongs(
   );
   const whereCondition =
     blacklistConditions.length > 0
-      ? sql`(${baseWhereCondition}) AND (${sql.join(blacklistConditions, sql` AND `)})`
-      : baseWhereCondition;
+      ? sql`(${filteredBaseWhereCondition}) AND (${sql.join(blacklistConditions, sql` AND `)})`
+      : filteredBaseWhereCondition;
   const hasBlacklistFilters = blacklistConditions.length > 0;
 
   const titleTokenScore = buildTokenMatchScore(
@@ -1459,7 +1546,7 @@ export async function searchCatalogSongs(
           SELECT
             catalog_songs.id
           FROM catalog_songs
-          WHERE ${baseWhereCondition}
+          WHERE ${filteredBaseWhereCondition}
         )
         SELECT count(*) AS count FROM matches
       `)
@@ -2271,6 +2358,7 @@ export async function updateSettings(
     cheerBitsPerVipToken: number;
     cheerMinimumTokenPercent: 25 | 50 | 75 | 100;
     duplicateWindowSeconds: number;
+    showPlaylistPositions: boolean;
     commandPrefix: string;
   }
 ) {
@@ -2320,6 +2408,7 @@ export async function updateSettings(
       cheerBitsPerVipToken: input.cheerBitsPerVipToken,
       cheerMinimumTokenPercent: input.cheerMinimumTokenPercent,
       duplicateWindowSeconds: input.duplicateWindowSeconds,
+      showPlaylistPositions: input.showPlaylistPositions,
       commandPrefix: input.commandPrefix,
       updatedAt: Date.now(),
     })

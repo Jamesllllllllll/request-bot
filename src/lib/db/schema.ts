@@ -199,6 +199,11 @@ export const channelSettings = sqliteTable("channel_settings", {
   duplicateWindowSeconds: integer("duplicate_window_seconds")
     .notNull()
     .default(900),
+  showPlaylistPositions: integer("show_playlist_positions", {
+    mode: "boolean",
+  })
+    .notNull()
+    .default(false),
   overlayAccessToken: text("overlay_access_token").notNull().default(""),
   overlayShowCreator: integer("overlay_show_creator", { mode: "boolean" })
     .notNull()
@@ -279,6 +284,8 @@ export const playlistItems = sqliteTable(
     requestMessageId: text("request_message_id"),
     requestKind: text("request_kind").notNull().default("regular"),
     position: integer("position").notNull(),
+    regularPosition: integer("regular_position").notNull().default(1),
+    editedAt: integer("edited_at"),
     playedAt: integer("played_at"),
     createdAt: integer("created_at")
       .notNull()
@@ -291,6 +298,10 @@ export const playlistItems = sqliteTable(
     uniqueIndex("playlist_items_playlist_position_uidx").on(
       table.playlistId,
       table.position
+    ),
+    uniqueIndex("playlist_items_playlist_regular_position_uidx").on(
+      table.playlistId,
+      table.regularPosition
     ),
     uniqueIndex("playlist_items_channel_message_uidx").on(
       table.channelId,

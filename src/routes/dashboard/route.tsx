@@ -103,7 +103,7 @@ function DashboardLayout() {
 
   return (
     <section className="grid gap-6 [container-type:inline-size] min-[961px]:grid-cols-[minmax(0,320px)_minmax(0,1fr)] min-[961px]:items-start max-[960px]:gap-0">
-      <aside className="surface-grid surface-noise grid gap-6 rounded-[34px] border border-(--border-strong) bg-(--panel) p-6 shadow-(--shadow) max-[960px]:gap-0 max-[960px]:rounded-none max-[960px]:border-x-0 max-[960px]:bg-(--panel) max-[960px]:px-[0.875rem] max-[960px]:py-3 max-[960px]:shadow-none">
+      <aside className="surface-grid surface-noise grid gap-6 border border-(--border-strong) bg-(--panel) p-6 shadow-none max-[960px]:gap-0 max-[960px]:border-x-0 max-[960px]:bg-(--panel) max-[960px]:px-[0.875rem] max-[960px]:py-3 max-[960px]:shadow-none">
         <div className="mt-4 min-[961px]:hidden max-[960px]:mt-0">
           <Select
             value={activeDashboardPath}
@@ -160,7 +160,7 @@ function DashboardLayout() {
         ) : null}
       </aside>
 
-      <div className="rounded-[34px] border border-(--border-strong) bg-(--bg-elevated) p-6 shadow-(--shadow) md:p-8 max-[960px]:rounded-none max-[960px]:border-x-0 max-[960px]:bg-(--bg-elevated) max-[960px]:px-[0.875rem] max-[960px]:py-4 max-[960px]:shadow-none">
+      <div className="border border-(--border-strong) bg-(--bg-elevated) p-6 shadow-none md:p-8 max-[960px]:border-x-0 max-[960px]:bg-(--bg-elevated) max-[960px]:px-[0.875rem] max-[960px]:py-4 max-[960px]:shadow-none">
         <Outlet />
       </div>
     </section>
@@ -182,16 +182,16 @@ function DashboardNavLink(props: {} & DashboardNavItem) {
       {({ isActive }: { isActive: boolean }) => (
         <div
           className={cn(
-            "rounded-[24px] border px-4 py-4 transition-all",
+            "border px-4 py-4 transition-all",
             isActive
-              ? "border-(--brand) bg-(--panel-soft) shadow-(--shadow-soft)"
+              ? "border-(--brand) bg-(--panel-soft) shadow-none"
               : "border-(--border) bg-(--panel-muted) hover:bg-(--panel-soft)"
           )}
         >
           <div className="flex items-center gap-3">
             <div
               className={cn(
-                "flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl border",
+                "flex h-11 w-11 shrink-0 items-center justify-center border",
                 isActive
                   ? "border-(--brand) bg-(--brand) text-white"
                   : "border-(--border) bg-(--panel) text-(--brand-deep)"

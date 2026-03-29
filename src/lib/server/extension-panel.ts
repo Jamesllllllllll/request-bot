@@ -10,6 +10,10 @@ import {
   upsertUserProfile,
 } from "~/lib/db/repositories";
 import type { AppEnv } from "~/lib/env";
+import {
+  getArraySetting,
+  getRequiredPathsMatchMode,
+} from "~/lib/request-policy";
 import { getAppAccessToken, getTwitchUserById } from "~/lib/twitch/api";
 import type { ExtensionAuthContext } from "./extension-auth";
 import {
@@ -45,6 +49,7 @@ type SharedCatalogSearchResponse = {
 
 type ExtensionPlaylistMutationInput =
   | { action: "setCurrent"; itemId: string }
+  | { action: "returnToQueue"; itemId: string }
   | { action: "markPlayed"; itemId: string }
   | { action: "deleteItem"; itemId: string }
   | {
@@ -73,6 +78,9 @@ type ExtensionPanelManagement = {
 };
 
 type ExtensionPanelLiveState = {
+  settings: {
+    showPlaylistPositions: boolean;
+  };
   playlist: {
     currentItemId: string | null;
     items: Array<Record<string, unknown>>;
@@ -155,6 +163,9 @@ export async function getExtensionBootstrapState(input: {
       const result = {
         connected: false,
         channel: null,
+        settings: {
+          showPlaylistPositions: false,
+        },
         playlist: {
           currentItemId: null,
           items: [],
@@ -238,6 +249,7 @@ export async function getExtensionBootstrapState(input: {
         displayName: channel.displayName,
         twitchChannelId: channel.twitchChannelId,
       },
+      settings: liveState.settings,
       playlist: liveState.playlist,
       viewer: {
         isLinked: input.auth.isLinked,
@@ -380,7 +392,30 @@ export async function searchExtensionCatalog(input: {
     );
   }
 
-  const blacklist = await getChannelBlacklistByChannelId(input.env, channel.id);
+  const [blacklist, settings] = await Promise.all([
+    getChannelBlacklistByChannelId(input.env, channel.id),
+    getChannelSettingsByChannelId(input.env, channel.id),
+  ]);
+  const blacklistFilterInput = settings?.blacklistEnabled
+    ? {
+        excludeSongIds: blacklist.blacklistSongs.map((song) => song.songId),
+        excludeGroupedProjectIds: blacklist.blacklistSongGroups.map(
+          (song) => song.groupedProjectId
+        ),
+        excludeArtistIds: blacklist.blacklistArtists.map(
+          (artist) => artist.artistId
+        ),
+        excludeArtistNames: blacklist.blacklistArtists.map(
+          (artist) => artist.artistName
+        ),
+        excludeAuthorIds: blacklist.blacklistCharters.map(
+          (charter) => charter.charterId
+        ),
+        excludeCreatorNames: blacklist.blacklistCharters.map(
+          (charter) => charter.charterName
+        ),
+      }
+    : {};
 
   const results = (await searchCatalogSongsInDb(input.env, {
     query: input.search.query,
@@ -388,22 +423,13 @@ export async function searchExtensionCatalog(input: {
     pageSize: input.search.pageSize,
     sortBy: "updated",
     sortDirection: "desc",
-    excludeSongIds: blacklist.blacklistSongs.map((song) => song.songId),
-    excludeGroupedProjectIds: blacklist.blacklistSongGroups.map(
-      (song) => song.groupedProjectId
+    restrictToOfficial: !!settings?.onlyOfficialDlc,
+    allowedTuningsFilter: getArraySetting(settings?.allowedTuningsJson),
+    requiredPartsFilter: getArraySetting(settings?.requiredPathsJson),
+    requiredPartsFilterMatchMode: getRequiredPathsMatchMode(
+      settings?.requiredPathsMatchMode
     ),
-    excludeArtistIds: blacklist.blacklistArtists.map(
-      (artist) => artist.artistId
-    ),
-    excludeArtistNames: blacklist.blacklistArtists.map(
-      (artist) => artist.artistName
-    ),
-    excludeAuthorIds: blacklist.blacklistCharters.map(
-      (charter) => charter.charterId
-    ),
-    excludeCreatorNames: blacklist.blacklistCharters.map(
-      (charter) => charter.charterName
-    ),
+    ...blacklistFilterInput,
   })) as SharedCatalogSearchResponse;
 
   return {
@@ -505,10 +531,10 @@ async function getExtensionPanelLiveState(input: {
   channel: NonNullable<Awaited<ReturnType<typeof getChannelByTwitchChannelId>>>;
   linkedViewer: ViewerIdentity | null;
 }): Promise<ExtensionPanelLiveState> {
-  const playlist = await getExtensionPanelPlaylistByChannelId(
-    input.env,
-    input.channel.id
-  );
+  const [playlist, settings] = await Promise.all([
+    getExtensionPanelPlaylistByChannelId(input.env, input.channel.id),
+    getChannelSettingsByChannelId(input.env, input.channel.id),
+  ]);
   const items = (playlist?.items ?? []) as Array<Record<string, unknown>>;
   const activeRequests = input.linkedViewer
     ? items.filter(
@@ -517,6 +543,9 @@ async function getExtensionPanelLiveState(input: {
           (item.status === "queued" || item.status === "current")
       )
     : [];
+  const queuedActiveRequests = activeRequests.filter(
+    (item) => item.status === "queued"
+  );
   const vipTokenBalance = input.linkedViewer
     ? await getVipTokenBalance(input.env, {
         channelId: input.channel.id,
@@ -531,6 +560,9 @@ async function getExtensionPanelLiveState(input: {
       : (playlist?.playlist.currentItemId ?? null);
 
   return {
+    settings: {
+      showPlaylistPositions: !!settings?.showPlaylistPositions,
+    },
     playlist: {
       currentItemId,
       items,
@@ -547,8 +579,8 @@ async function getExtensionPanelLiveState(input: {
         : null,
       activeRequests,
       canVipRequest: vipTokensAvailable >= 1,
-      canEditOwnRequest: activeRequests.length === 1,
-      canRemoveOwnRequest: activeRequests.length > 0,
+      canEditOwnRequest: queuedActiveRequests.length > 0,
+      canRemoveOwnRequest: queuedActiveRequests.length > 0,
     },
   };
 }

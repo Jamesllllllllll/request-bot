@@ -40,7 +40,7 @@ export function BlacklistPanel(props: {
           Artists
         </p>
         {props.artists.length > 0 ? (
-          <div className="overflow-hidden rounded-[20px] border border-(--border)">
+          <div className="overflow-hidden border border-(--border)">
             {props.artists.map((artist, index) => (
               <div
                 key={artist.artistId}
@@ -64,7 +64,7 @@ export function BlacklistPanel(props: {
           Songs
         </p>
         {props.songGroups?.length ? (
-          <div className="overflow-hidden rounded-[20px] border border-(--border)">
+          <div className="overflow-hidden border border-(--border)">
             {props.songGroups.map((song, index) => (
               <div
                 key={song.groupedProjectId}
@@ -91,7 +91,7 @@ export function BlacklistPanel(props: {
           Versions
         </p>
         {props.songs.length > 0 ? (
-          <div className="overflow-hidden rounded-[20px] border border-(--border)">
+          <div className="overflow-hidden border border-(--border)">
             {props.songs.map((song, index) => (
               <div
                 key={song.songId}
@@ -118,7 +118,7 @@ export function BlacklistPanel(props: {
           Charters
         </p>
         {props.charters?.length ? (
-          <div className="overflow-hidden rounded-[20px] border border-(--border)">
+          <div className="overflow-hidden border border-(--border)">
             {props.charters.map((charter, index) => (
               <div
                 key={charter.charterId}
@@ -146,7 +146,7 @@ export function BlacklistPanel(props: {
           {...(props.defaultOpen ? { open: true } : {})}
           className="group"
         >
-          <summary className="cursor-pointer list-none rounded-[28px] p-6 [&::-webkit-details-marker]:hidden">
+          <summary className="cursor-pointer list-none p-6 [&::-webkit-details-marker]:hidden">
             <div className="flex items-start justify-between gap-4">
               <div className="min-w-0">
                 <CardTitle>{props.title ?? "Channel blacklists"}</CardTitle>

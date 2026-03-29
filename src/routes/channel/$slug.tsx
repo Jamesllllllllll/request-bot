@@ -12,6 +12,7 @@ import { cn, decodeHtmlEntities } from "~/lib/utils";
 
 type ChannelPlaylistItem = {
   id: string;
+  position?: number | null;
   songTitle: string;
   songArtist?: string | null;
   songCreator?: string | null;
@@ -45,6 +46,10 @@ type ChannelPageData = {
   playlist: {
     channel?: {
       displayName?: string;
+    };
+    settings?: {
+      blacklistEnabled?: boolean;
+      showPlaylistPositions?: boolean;
     };
     items?: EnrichedChannelPlaylistItem[];
     playedSongs?: PlayedSongRow[];
@@ -103,6 +108,7 @@ function ChannelPage() {
       const playlistResponse = await fetch(`/api/channel/${slug}/playlist`);
       const playlist = (await playlistResponse.json()) as {
         channel?: ChannelPageData["playlist"]["channel"];
+        settings?: ChannelPageData["playlist"]["settings"];
         items?: ChannelPlaylistItem[];
         playedSongs?: PlayedSongRow[];
         blacklistArtists?: ChannelPageData["playlist"]["blacklistArtists"];
@@ -156,18 +162,24 @@ function ChannelPage() {
   }, [queryClient, slug]);
 
   const playlistItems = data?.playlist?.items ?? [];
+  const blacklistEnabled = !!data?.playlist.settings?.blacklistEnabled;
+  const showPlaylistPositions =
+    !!data?.playlist.settings?.showPlaylistPositions;
   const filteredItems = useMemo(
     () =>
-      playlistItems.filter((item) => {
-        const blacklistReasons = getBlacklistReasons(item, {
-          artists: data?.playlist.blacklistArtists ?? [],
-          charters: data?.playlist.blacklistCharters ?? [],
-          songs: data?.playlist.blacklistSongs ?? [],
-          songGroups: data?.playlist.blacklistSongGroups ?? [],
-        });
-        return blacklistReasons.length === 0;
-      }),
+      blacklistEnabled
+        ? playlistItems.filter((item) => {
+            const blacklistReasons = getBlacklistReasons(item, {
+              artists: data?.playlist.blacklistArtists ?? [],
+              charters: data?.playlist.blacklistCharters ?? [],
+              songs: data?.playlist.blacklistSongs ?? [],
+              songGroups: data?.playlist.blacklistSongGroups ?? [],
+            });
+            return blacklistReasons.length === 0;
+          })
+        : playlistItems,
     [
+      blacklistEnabled,
       data?.playlist.blacklistArtists,
       data?.playlist.blacklistCharters,
       data?.playlist.blacklistSongs,
@@ -176,30 +188,36 @@ function ChannelPage() {
     ]
   );
   return (
-    <section className="grid gap-6">
-      <div className="rounded-[32px] border border-(--border) bg-(--panel-strong) p-8 shadow-(--shadow)">
+    <section className="page-section-stack grid gap-6">
+      <div className="border border-(--border) bg-(--panel-strong) p-8 shadow-none max-[960px]:border-x-0 max-[960px]:bg-transparent max-[960px]:px-0 max-[960px]:py-6">
         <h1 className="text-3xl font-semibold">
           {`${data?.playlist?.channel?.displayName ?? slug}'s Playlist`}
         </h1>
         {isLoading ? <p className="mt-4">Loading playlist...</p> : null}
-        <div className="mt-6 grid gap-3">
+        <div className="mt-6 overflow-hidden border border-(--border) max-[960px]:border-x-0">
           <AnimatePresence initial={false} mode="popLayout">
-            {filteredItems.map((item) => (
+            {filteredItems.map((item, index) => (
               <PublicPlaylistRow
                 key={item.id}
                 item={item}
-                blacklistReasons={getBlacklistReasons(item, {
-                  artists: data?.playlist.blacklistArtists ?? [],
-                  charters: data?.playlist.blacklistCharters ?? [],
-                  songs: data?.playlist.blacklistSongs ?? [],
-                  songGroups: data?.playlist.blacklistSongGroups ?? [],
-                })}
+                index={index}
+                showPlaylistPositions={showPlaylistPositions}
+                blacklistReasons={
+                  blacklistEnabled
+                    ? getBlacklistReasons(item, {
+                        artists: data?.playlist.blacklistArtists ?? [],
+                        charters: data?.playlist.blacklistCharters ?? [],
+                        songs: data?.playlist.blacklistSongs ?? [],
+                        songGroups: data?.playlist.blacklistSongGroups ?? [],
+                      })
+                    : []
+                }
               />
             ))}
           </AnimatePresence>
           {!isLoading && !filteredItems.length ? (
             <p className="text-sm text-(--muted)">
-              {playlistItems.length > 0
+              {blacklistEnabled && playlistItems.length > 0
                 ? "Only blacklisted songs are in the queue right now."
                 : "This playlist is empty right now."}
             </p>
@@ -212,7 +230,11 @@ function ChannelPage() {
         charters={data?.playlist.blacklistCharters ?? []}
         songs={data?.playlist.blacklistSongs ?? []}
         songGroups={data?.playlist.blacklistSongGroups ?? []}
-        description="Artists, charters, songs, and specific versions are blocked for requests in this channel."
+        description={
+          blacklistEnabled
+            ? "Artists, charters, songs, and specific versions are blocked for requests in this channel."
+            : "Blacklist rules are off for this channel."
+        }
       />
 
       <PublicPlayedHistoryCard slug={slug} />
@@ -222,6 +244,8 @@ function ChannelPage() {
 
 function PublicPlaylistRow(props: {
   item: EnrichedChannelPlaylistItem;
+  index: number;
+  showPlaylistPositions: boolean;
   blacklistReasons: string[];
 }) {
   const requesterName =
@@ -243,7 +267,9 @@ function PublicPlaylistRow(props: {
       exit={{ opacity: 0, y: -12, scale: 0.985 }}
       transition={publicPlaylistItemTransition}
       className={cn(
-        "rounded-[24px] border bg-(--panel-soft) px-5 py-4",
+        "px-5 py-4",
+        props.index > 0 ? "border-t" : "",
+        props.index % 2 === 0 ? "bg-(--panel-soft)" : "bg-(--panel-muted)",
         props.blacklistReasons.length > 0
           ? "border-amber-400/35 bg-amber-500/8"
           : "border-(--border)"
@@ -251,6 +277,7 @@ function PublicPlaylistRow(props: {
     >
       <div className="flex items-start gap-4">
         <StatusColumn
+          position={props.showPlaylistPositions ? props.item.position : null}
           isCurrent={props.item.status === "current"}
           isVip={props.item.requestKind === "vip"}
         />
@@ -275,18 +302,33 @@ function PublicPlaylistRow(props: {
   );
 }
 
-function StatusColumn(props: { isCurrent: boolean; isVip: boolean }) {
-  if (!props.isCurrent && !props.isVip) {
+function StatusColumn(props: {
+  position: number | null | undefined;
+  isCurrent: boolean;
+  isVip: boolean;
+}) {
+  if (!props.isCurrent && !props.isVip && props.position == null) {
     return null;
   }
 
   return (
     <div className="mt-0.5 flex w-[72px] shrink-0 flex-col items-center gap-2">
+      {props.position != null ? (
+        <PlaylistPositionBadge position={props.position} />
+      ) : null}
       {props.isCurrent ? (
         <RecordBadge spinning={props.isCurrent} active={props.isCurrent} />
       ) : null}
       {props.isVip ? <VipTag /> : null}
     </div>
+  );
+}
+
+function PlaylistPositionBadge(props: { position: number }) {
+  return (
+    <span className="inline-flex min-h-7 min-w-7 items-center justify-center border border-(--border-strong) bg-(--panel) px-2 text-xs font-semibold text-(--text)">
+      {props.position}
+    </span>
   );
 }
 
@@ -324,7 +366,7 @@ function RecordBadge(props: { spinning: boolean; active: boolean }) {
 
 function VipTag() {
   return (
-    <div className="inline-flex min-h-7 items-center rounded-full border border-white/15 bg-[#a855f7] px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.24em] text-white">
+    <div className="inline-flex min-h-7 items-center border border-white/15 bg-[#a855f7] px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.24em] text-white">
       VIP
     </div>
   );
@@ -340,7 +382,7 @@ function PickBadge(props: { pickNumber: number }) {
 
   return (
     <span
-      className="inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.16em] text-white"
+      className="inline-flex items-center gap-1 border border-transparent px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.16em] text-white"
       style={{ background: tone.background }}
     >
       <span>{tone.icon}</span>
@@ -351,7 +393,7 @@ function PickBadge(props: { pickNumber: number }) {
 
 function BlacklistReasonBadge(props: { reason: string }) {
   return (
-    <span className="inline-flex items-center rounded-full border border-amber-400/35 bg-amber-500/12 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.16em] text-amber-100">
+    <span className="inline-flex items-center border border-amber-400/35 bg-amber-500/12 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.16em] text-amber-100">
       {props.reason}
     </span>
   );

@@ -280,6 +280,33 @@ describe("viewer request service", () => {
     });
   });
 
+  it("returns blocked viewer access when the viewer is banned from requests", async () => {
+    vi.mocked(isBlockedUser).mockResolvedValue(true);
+
+    await expect(
+      getViewerRequestState({
+        env,
+        request,
+        slug: "streamer",
+      })
+    ).resolves.toEqual({
+      viewer: {
+        twitchUserId: "viewer-1",
+        login: "viewer_one",
+        displayName: "Viewer One",
+        profileImageUrl: "https://example.com/viewer.png",
+        isSubscriber: false,
+        subscriptionVerified: false,
+        vipTokensAvailable: 2,
+        activeRequestLimit: 1,
+        access: {
+          allowed: false,
+          reason: "You are blocked from requesting songs in this channel.",
+        },
+      },
+    });
+  });
+
   it("submits a regular request through the playlist backend", async () => {
     const result = await performViewerRequestMutation({
       env,
@@ -482,6 +509,121 @@ describe("viewer request service", () => {
     });
   });
 
+  it("edits the targeted request in place when replaceExisting is enabled with multiple active requests", async () => {
+    vi.mocked(getPlaylistByChannelId).mockResolvedValue({
+      playlist: {
+        id: "playlist-1",
+        currentItemId: null,
+      },
+      items: [
+        {
+          id: "item-old",
+          songId: "song-old",
+          requestedByTwitchUserId: "viewer-1",
+          status: "queued",
+          requestKind: "regular",
+        },
+        {
+          id: "item-target",
+          songId: "song-target",
+          requestedByTwitchUserId: "viewer-1",
+          status: "queued",
+          requestKind: "vip",
+        },
+      ],
+    } as never);
+    vi.mocked(countActiveRequestsForUser).mockResolvedValue(2);
+    vi.mocked(callBackend).mockResolvedValue(
+      jsonResponse({
+        ok: true,
+        playlistId: "playlist-1",
+        changedItemId: "item-target",
+        currentItemId: null,
+        message: "Request edited",
+      })
+    );
+
+    await expect(
+      performViewerRequestMutation({
+        env,
+        request,
+        slug: "streamer",
+        mutation: {
+          action: "submit",
+          songId: "song-1",
+          requestKind: "regular",
+          replaceExisting: true,
+          itemId: "item-target",
+        },
+      })
+    ).resolves.toEqual({
+      ok: true,
+      message: 'Edited your request to "The Smashing Pumpkins - Cherub Rock".',
+    });
+
+    expect(callBackend).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(callBackend).mock.calls[0]?.[1]).toBe(
+      "/internal/playlist/mutate"
+    );
+
+    const body = JSON.parse(
+      String(vi.mocked(callBackend).mock.calls[0]?.[2]?.body)
+    ) as Record<string, unknown>;
+
+    expect(body).toMatchObject({
+      action: "editRequest",
+      channelId: "channel-1",
+      itemId: "item-target",
+      actorUserId: null,
+      requestKind: "regular",
+      song: {
+        id: "song-1",
+        title: "Cherub Rock",
+        artist: "The Smashing Pumpkins",
+        requestedQuery: "song:12345",
+      },
+    });
+  });
+
+  it("rejects editing a current request in place when it is already playing", async () => {
+    vi.mocked(getPlaylistByChannelId).mockResolvedValue({
+      playlist: {
+        id: "playlist-1",
+        currentItemId: "item-current",
+      },
+      items: [
+        {
+          id: "item-current",
+          songId: "song-old",
+          requestedByTwitchUserId: "viewer-1",
+          status: "current",
+          requestKind: "regular",
+        },
+      ],
+    } as never);
+    vi.mocked(countActiveRequestsForUser).mockResolvedValue(1);
+
+    await expect(
+      performViewerRequestMutation({
+        env,
+        request,
+        slug: "streamer",
+        mutation: {
+          action: "submit",
+          songId: "song-1",
+          requestKind: "regular",
+          replaceExisting: true,
+          itemId: "item-current",
+        },
+      })
+    ).rejects.toMatchObject({
+      status: 409,
+      message: "That request is already playing and cannot be edited.",
+    });
+
+    expect(callBackend).not.toHaveBeenCalled();
+  });
+
   it("refunds a reserved VIP token when a VIP add fails after reservation", async () => {
     vi.mocked(callBackend).mockRejectedValue(new Error("backend failed"));
 
@@ -614,7 +756,73 @@ describe("viewer request service", () => {
     );
   });
 
+  it("rejects replacing the only active request when it is already playing", async () => {
+    vi.mocked(getPlaylistByChannelId).mockResolvedValue({
+      playlist: {
+        id: "playlist-1",
+        currentItemId: "item-current",
+      },
+      items: [
+        {
+          id: "item-current",
+          songId: "song-old",
+          requestedByTwitchUserId: "viewer-1",
+          status: "current",
+          requestKind: "regular",
+        },
+      ],
+    } as never);
+    vi.mocked(countActiveRequestsForUser).mockResolvedValue(1);
+    vi.mocked(getCatalogSongById).mockResolvedValue({
+      ...baseSong,
+      id: "song-2",
+      sourceId: 54321,
+      title: "Everlong",
+    } as never);
+
+    await expect(
+      performViewerRequestMutation({
+        env,
+        request,
+        slug: "streamer",
+        mutation: {
+          action: "submit",
+          songId: "song-2",
+          requestKind: "regular",
+          replaceExisting: true,
+        },
+      })
+    ).rejects.toMatchObject({
+      status: 409,
+      message: "You already have 1 active request in this playlist.",
+    });
+
+    expect(callBackend).not.toHaveBeenCalled();
+  });
+
   it("removes the viewer's active requests through the dedicated mutation", async () => {
+    vi.mocked(getPlaylistByChannelId).mockResolvedValue({
+      playlist: {
+        id: "playlist-1",
+        currentItemId: null,
+      },
+      items: [
+        {
+          id: "item-1",
+          songId: "song-1",
+          requestedByTwitchUserId: "viewer-1",
+          status: "queued",
+          requestKind: "regular",
+        },
+        {
+          id: "item-2",
+          songId: "song-2",
+          requestedByTwitchUserId: "viewer-1",
+          status: "queued",
+          requestKind: "vip",
+        },
+      ],
+    } as never);
     vi.mocked(callBackend).mockResolvedValue(
       jsonResponse({
         ok: true,
@@ -647,6 +855,77 @@ describe("viewer request service", () => {
         method: "POST",
       })
     );
+  });
+
+  it("does not remove a current viewer request through the dedicated mutation", async () => {
+    vi.mocked(getPlaylistByChannelId).mockResolvedValue({
+      playlist: {
+        id: "playlist-1",
+        currentItemId: "item-current",
+      },
+      items: [
+        {
+          id: "item-current",
+          songId: "song-1",
+          requestedByTwitchUserId: "viewer-1",
+          status: "current",
+          requestKind: "regular",
+        },
+      ],
+    } as never);
+
+    await expect(
+      performViewerRequestMutation({
+        env,
+        request,
+        slug: "streamer",
+        mutation: {
+          action: "remove",
+          kind: "all",
+          itemId: "item-current",
+        },
+      })
+    ).rejects.toMatchObject({
+      status: 409,
+      message: "That request is already playing and cannot be removed.",
+    });
+
+    expect(callBackend).not.toHaveBeenCalled();
+  });
+
+  it("does not remove the currently playing request when no queued requests match", async () => {
+    vi.mocked(getPlaylistByChannelId).mockResolvedValue({
+      playlist: {
+        id: "playlist-1",
+        currentItemId: "item-current",
+      },
+      items: [
+        {
+          id: "item-current",
+          songId: "song-1",
+          requestedByTwitchUserId: "viewer-1",
+          status: "current",
+          requestKind: "regular",
+        },
+      ],
+    } as never);
+
+    await expect(
+      performViewerRequestMutation({
+        env,
+        request,
+        slug: "streamer",
+        mutation: {
+          action: "remove",
+          kind: "all",
+        },
+      })
+    ).resolves.toEqual({
+      ok: true,
+      message: "You do not have any matching queued requests in this playlist.",
+    });
+
+    expect(callBackend).not.toHaveBeenCalled();
   });
 
   it("removes a single viewer request when an item id is provided", async () => {
@@ -741,6 +1020,29 @@ describe("viewer request service", () => {
         },
       })
     ).rejects.toBeInstanceOf(ViewerRequestError);
+
+    expect(callBackend).not.toHaveBeenCalled();
+  });
+
+  it("rejects blocked viewers before sending a playlist add mutation", async () => {
+    vi.mocked(isBlockedUser).mockResolvedValue(true);
+
+    await expect(
+      performViewerRequestMutation({
+        env,
+        request,
+        slug: "streamer",
+        mutation: {
+          action: "submit",
+          songId: "song-1",
+          requestKind: "regular",
+          replaceExisting: false,
+        },
+      })
+    ).rejects.toMatchObject({
+      status: 403,
+      message: "You are blocked from requesting songs in this channel.",
+    });
 
     expect(callBackend).not.toHaveBeenCalled();
   });

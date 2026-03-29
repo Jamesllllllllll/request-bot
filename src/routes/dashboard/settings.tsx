@@ -98,6 +98,7 @@ const defaultForm: DashboardSettingsFormData = {
   cheerBitsPerVipToken: 200,
   cheerMinimumTokenPercent: 25,
   duplicateWindowSeconds: 900,
+  showPlaylistPositions: false,
   commandPrefix: "!sr",
 };
 
@@ -265,7 +266,7 @@ function DashboardSettingsPage() {
   }
 
   return (
-    <div className="dashboard-settings grid gap-6">
+    <div className="page-section-stack dashboard-settings grid gap-6">
       <DashboardPageHeader
         title="Settings"
         description="Owner-only channel configuration. Moderators use the channel page for playlist and moderation actions."
@@ -462,6 +463,11 @@ function DashboardSettingsPage() {
                   />
                 </div>
               </div>
+              <PermissionRow
+                label="Show playlist positions"
+                checked={form.showPlaylistPositions}
+                onChange={(value) => setBoolean("showPlaylistPositions", value)}
+              />
             </CardContent>
           </Card>
 
@@ -867,7 +873,7 @@ function DashboardSettingsPage() {
                 }
               />
               <PermissionRow
-                label="Manage blocked chatters"
+                label="Manage blocked viewers"
                 checked={form.moderatorCanManageBlockedChatters}
                 onChange={(value) =>
                   setBoolean("moderatorCanManageBlockedChatters", value)

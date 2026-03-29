@@ -312,6 +312,7 @@ export function canPerformPlaylistMutationAction(
     case "markPlayed":
     case "restorePlayed":
     case "setCurrent":
+    case "returnToQueue":
     case "deleteItem":
     case "chooseVersion":
     case "clearPlaylist":
@@ -432,6 +433,36 @@ export async function performPlaylistMutation(
     body,
   });
 
+  const currentItemId =
+    state.items.find((item) => item.status === "current")?.id ?? null;
+  const currentSongLockMessage =
+    "Current songs can be marked played or returned to the queue.";
+
+  if (
+    body.action === "setCurrent" &&
+    currentItemId &&
+    currentItemId !== body.itemId
+  ) {
+    return json(
+      {
+        error: "Resolve the current song before playing another one.",
+      },
+      { status: 409 }
+    );
+  }
+
+  if (
+    (body.action === "deleteItem" || body.action === "chooseVersion") &&
+    currentItemId === body.itemId
+  ) {
+    return json(
+      {
+        error: currentSongLockMessage,
+      },
+      { status: 409 }
+    );
+  }
+
   if (body.action === "changeRequestKind") {
     const item = await getDb(runtimeEnv).query.playlistItems.findFirst({
       where: and(
@@ -442,6 +473,15 @@ export async function performPlaylistMutation(
 
     if (!item) {
       return json({ error: "Playlist item not found." }, { status: 404 });
+    }
+
+    if (item.status === "current") {
+      return json(
+        {
+          error: currentSongLockMessage,
+        },
+        { status: 409 }
+      );
     }
 
     if (item.requestKind === body.requestKind) {

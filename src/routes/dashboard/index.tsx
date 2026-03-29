@@ -92,7 +92,7 @@ function DashboardOverviewPage() {
   });
 
   return (
-    <div className="grid gap-6 [container-type:inline-size]">
+    <div className="page-section-stack grid gap-6 [container-type:inline-size]">
       <DashboardPageHeader
         title="Account"
         description="Channel access and owner settings."
@@ -102,15 +102,15 @@ function DashboardOverviewPage() {
               <ExternalCard
                 href={`/${publicSlug}`}
                 icon={Radio}
-                title="Open channel page"
-                description="Playlist and moderation surface"
+                title="Open your playlist"
+                description="Playlist and request page"
               />
             ) : null}
             {data?.session?.viewer?.channel ? (
               <ExternalCard
                 href="/dashboard/settings"
                 icon={Settings2}
-                title="Owner settings"
+                title="Manage channel settings"
                 description="Permissions, bot, policy, and overlay"
               />
             ) : null}
@@ -141,14 +141,14 @@ function DashboardOverviewPage() {
           </CardHeader>
           <CardContent className="grid gap-3">
             {needsModeratorScopeReconnect ? (
-              <div className="rounded-[24px] border border-amber-500/30 bg-amber-500/10 px-4 py-4 text-sm text-amber-100">
+              <div className="border border-amber-500/30 bg-amber-500/10 px-4 py-4 text-sm text-amber-100">
                 Reconnect Twitch to refresh your moderated channel access.
               </div>
             ) : null}
             {sortedManageableChannels.map((managedChannel) => (
               <div
                 key={managedChannel.slug}
-                className={`flex items-center justify-between gap-4 rounded-[24px] border px-4 py-4 ${
+                className={`flex items-center justify-between gap-4 border px-4 py-4 ${
                   managedChannel.isLive
                     ? "border-(--border) bg-(--panel-soft)"
                     : "border-(--border) bg-(--panel-muted)"
@@ -160,10 +160,10 @@ function DashboardOverviewPage() {
                       {managedChannel.displayName}
                     </p>
                     <span
-                      className={`rounded-full px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.16em] ${
+                      className={`border px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.16em] ${
                         managedChannel.isLive
-                          ? "bg-emerald-500/15 text-emerald-200"
-                          : "bg-(--panel) text-(--muted)"
+                          ? "border-emerald-500/30 bg-emerald-500/15 text-emerald-200"
+                          : "border-(--border) bg-(--panel) text-(--muted)"
                       }`}
                     >
                       {managedChannel.isLive ? "Live" : "Offline"}
@@ -200,7 +200,7 @@ function DashboardOverviewPage() {
             {notes.map((note, index) => (
               <div
                 key={note.title}
-                className={`rounded-[24px] border px-4 py-4 shadow-(--shadow-soft) ${
+                className={`border px-4 py-4 shadow-none ${
                   index === 0
                     ? "border-amber-300 bg-[#3a3117]"
                     : index === 1
@@ -292,7 +292,7 @@ function StatusPill(props: {
         : "border-(--border) bg-(--panel-soft) text-(--text)";
 
   return (
-    <div className={`rounded-[22px] border px-4 py-3 ${toneClass}`}>
+    <div className={`border px-4 py-3 ${toneClass}`}>
       <p className="text-xs font-semibold uppercase tracking-[0.2em]">
         {props.label}
       </p>
@@ -312,11 +312,11 @@ function ExternalCard(props: {
   return (
     <a
       href={props.href}
-      className="group rounded-[28px] border border-(--border) bg-(--panel-soft) p-4 no-underline transition-all hover:border-(--brand) hover:bg-(--panel-muted)"
+      className="group border border-(--border) bg-(--panel-soft) p-4 no-underline transition-all hover:border-(--brand) hover:bg-(--panel-muted)"
     >
       <div className="flex items-center justify-between gap-3">
         <div className="flex items-center gap-3">
-          <div className="flex h-11 w-11 items-center justify-center rounded-[16px] border border-(--border) bg-(--panel-muted) text-(--brand)">
+          <div className="flex h-11 w-11 items-center justify-center border border-(--border) bg-(--panel-muted) text-(--brand)">
             <Icon className="h-5 w-5" />
           </div>
           <p className="text-base font-semibold text-(--text)">{props.title}</p>

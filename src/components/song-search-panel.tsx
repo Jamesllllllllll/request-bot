@@ -57,6 +57,7 @@ import {
   TooltipTrigger,
 } from "~/components/ui/tooltip";
 import { pathOptions } from "~/lib/channel-options";
+import { usePaginatedContentTransition } from "~/lib/paginated-content-transition";
 import { formatPathLabel } from "~/lib/request-policy";
 import { cn, getErrorMessage } from "~/lib/utils";
 
@@ -322,7 +323,7 @@ export function SongSearchPanel(props: {
     gcTime: 60 * 60 * 1000,
   });
 
-  const { data, error, isLoading } = useQuery<SearchResponse>({
+  const searchQuery = useQuery<SearchResponse>({
     queryKey: ["song-search", searchParams.toString()],
     enabled: !queryTooShort && !requiresCoreSearchTerm,
     placeholderData: keepPreviousData,
@@ -343,6 +344,16 @@ export function SongSearchPanel(props: {
 
       return body as SearchResponse;
     },
+  });
+  const { data, error, isLoading } = searchQuery;
+  const {
+    goToPage: goToResultsPage,
+    isTransitioning: isResultsTransitioning,
+    transitionClassName: resultsTransitionClassName,
+  } = usePaginatedContentTransition({
+    currentPage: page,
+    isFetching: searchQuery.isFetching,
+    onPageChange: (nextPage) => setPage(nextPage),
   });
 
   const results =
@@ -482,8 +493,8 @@ export function SongSearchPanel(props: {
           <PaginationContent>
             <PaginationItem>
               <PaginationPrevious
-                onClick={() => setPage((current) => Math.max(1, current - 1))}
-                disabled={page <= 1}
+                onClick={() => goToResultsPage(Math.max(1, page - 1))}
+                disabled={page <= 1 || isResultsTransitioning}
               />
             </PaginationItem>
 
@@ -502,7 +513,8 @@ export function SongSearchPanel(props: {
                   <PaginationItem>
                     <PaginationLink
                       isActive={pageNumber === page}
-                      onClick={() => setPage(pageNumber)}
+                      onClick={() => goToResultsPage(pageNumber)}
+                      disabled={isResultsTransitioning}
                     >
                       {pageNumber}
                     </PaginationLink>
@@ -513,10 +525,8 @@ export function SongSearchPanel(props: {
 
             <PaginationItem>
               <PaginationNext
-                onClick={() =>
-                  setPage((current) => Math.min(totalPages, current + 1))
-                }
-                disabled={page >= totalPages}
+                onClick={() => goToResultsPage(Math.min(totalPages, page + 1))}
+                disabled={page >= totalPages || isResultsTransitioning}
               />
             </PaginationItem>
           </PaginationContent>
@@ -540,7 +550,7 @@ export function SongSearchPanel(props: {
               onClick={() => void copyRequest(song, "sr")}
               disabled={isDisabled}
               className={cn(
-                "flex h-11 min-w-[3.25rem] items-center justify-center rounded-full border border-(--border) bg-(--panel) px-3 text-[11px] font-semibold uppercase tracking-[0.16em] transition-colors",
+                "flex h-11 min-w-[3.25rem] items-center justify-center border border-(--border) bg-(--panel) px-3 text-[11px] font-semibold uppercase tracking-[0.16em] transition-colors",
                 isDisabled && "cursor-not-allowed opacity-45",
                 copiedType === "sr"
                   ? "border-emerald-400 text-emerald-400"
@@ -565,7 +575,7 @@ export function SongSearchPanel(props: {
               onClick={() => void copyRequest(song, "edit")}
               disabled={isDisabled}
               className={cn(
-                "flex h-11 min-w-[3.75rem] items-center justify-center rounded-full border border-(--border) bg-(--panel) px-3 text-[11px] font-semibold uppercase tracking-[0.16em] transition-colors",
+                "flex h-11 min-w-[3.75rem] items-center justify-center border border-(--border) bg-(--panel) px-3 text-[11px] font-semibold uppercase tracking-[0.16em] transition-colors",
                 isDisabled && "cursor-not-allowed opacity-45",
                 copiedType === "edit"
                   ? "border-emerald-400 text-emerald-400"
@@ -590,7 +600,7 @@ export function SongSearchPanel(props: {
               onClick={() => void copyRequest(song, "vip")}
               disabled={isDisabled}
               className={cn(
-                "flex h-11 min-w-[3.5rem] items-center justify-center rounded-full border border-(--border) bg-(--panel) px-3 text-[11px] font-semibold uppercase tracking-[0.16em] transition-colors",
+                "flex h-11 min-w-[3.5rem] items-center justify-center border border-(--border) bg-(--panel) px-3 text-[11px] font-semibold uppercase tracking-[0.16em] transition-colors",
                 isDisabled && "cursor-not-allowed opacity-45",
                 copiedType === "vip"
                   ? "border-emerald-400 text-emerald-400"
@@ -637,19 +647,19 @@ export function SongSearchPanel(props: {
                     {props.description}
                   </p>
                 ) : null}
-                {resolvedInfoNote ? (
-                  <div className="mt-4 rounded-[20px] border border-sky-400/30 bg-sky-500/10 px-4 py-3 text-sm text-sky-100">
-                    <p className="font-semibold uppercase tracking-[0.18em] text-sky-200">
-                      Note:
-                    </p>
-                    <p className="mt-2">{resolvedInfoNote}</p>
-                  </div>
-                ) : null}
               </div>
               <div className="flex max-w-full flex-wrap items-center justify-end gap-3 max-[960px]:w-full max-[960px]:justify-start">
                 {props.summaryContent}
+                {resolvedInfoNote ? (
+                  <div className="flex flex-wrap items-center gap-2 border border-sky-400/30 bg-sky-500/10 px-4 py-3 text-sm text-sky-100 max-[960px]:w-full">
+                    <span className="font-semibold uppercase tracking-[0.18em] text-sky-200">
+                      Note:
+                    </span>
+                    <span>{resolvedInfoNote}</span>
+                  </div>
+                ) : null}
                 {!queryTooShort && !error ? (
-                  <div className="rounded-[24px] border border-(--border) bg-(--panel-soft) px-4 py-3 text-right max-[960px]:w-full max-[960px]:text-left">
+                  <div className="border border-(--border) bg-(--panel-soft) px-4 py-3 text-right max-[960px]:w-full max-[960px]:text-left">
                     <p className="text-lg font-semibold text-(--text)">
                       Found {summaryCount} songs
                     </p>
@@ -704,7 +714,7 @@ export function SongSearchPanel(props: {
             ) : null}
 
             {showAdvanced ? (
-              <div className="grid items-start gap-4 rounded-[24px] border border-(--border) bg-(--panel-soft) p-5 md:grid-cols-2 xl:grid-cols-4">
+              <div className="grid items-start gap-4 border border-(--border) bg-(--panel-soft) p-5 md:grid-cols-2 xl:grid-cols-4">
                 <div className="grid gap-2">
                   <Label htmlFor={`${props.title}-advanced-title`}>Title</Label>
                   <Input
@@ -826,259 +836,269 @@ export function SongSearchPanel(props: {
           <CardContent className="p-0">
             {renderPagination("top")}
 
-            <div
-              className={cn(
-                "search-panel__table-head grid gap-4 border-b border-(--border) px-5 py-4 text-[11px] font-semibold uppercase tracking-[0.22em] text-(--muted)",
-                resultsGridColumns
-              )}
-            >
-              <span>Song</span>
-              <span>Paths</span>
-              <span>Stats</span>
-              <span className="text-right">
-                {props.actionsLabel ?? "Actions"}
-              </span>
-            </div>
-
-            {isLoading && results.length === 0 ? (
-              <div className="px-5 py-8 text-sm text-(--muted)">
-                Loading songs...
-              </div>
-            ) : null}
-
-            {!isLoading && queryTooShort && !hasAdvancedFilter ? (
+            <div className="overflow-hidden">
               <div
                 className={cn(
-                  "grid gap-4 border-b border-(--border) px-5 py-4 text-[11px] font-semibold uppercase tracking-[0.22em] text-(--muted)",
-                  resultsGridColumns
+                  "paginated-transition-frame",
+                  resultsTransitionClassName
                 )}
               >
-                <span className="col-span-full normal-case tracking-normal text-sm font-normal text-(--muted)">
-                  Search terms must be at least 3 characters.
-                </span>
-              </div>
-            ) : null}
-
-            {!isLoading && requiresCoreSearchTerm ? (
-              <div className="px-5 py-8 text-sm text-(--muted)">
-                Add a title, artist, album, or creator.
-              </div>
-            ) : null}
-
-            {!isLoading && !requiresCoreSearchTerm && error ? (
-              <div className="px-5 py-8 text-sm text-rose-300">
-                {getErrorMessage(error)}
-              </div>
-            ) : null}
-
-            {!isLoading &&
-            !queryTooShort &&
-            !requiresCoreSearchTerm &&
-            visibleResults.length === 0 ? (
-              <div className="px-5 py-8 text-sm text-(--muted)">
-                {hasSearchInput
-                  ? "No songs matched those filters yet. Try broadening the search field or clearing one of the advanced inputs."
-                  : "No songs are available in the demo catalog yet."}
-              </div>
-            ) : null}
-
-            {visibleResults.map((song, index) => {
-              const copiedType =
-                copiedCommand?.songId === song.id ? copiedCommand.type : null;
-              const resultState = props.resultState?.(song) ?? {};
-              const isDisabled = resultState.disabled === true;
-              const disabledReason =
-                resultState.reasons && resultState.reasons.length > 0
-                  ? `Blacklisted - ${resultState.reasons.join(" · ")}`
-                  : "Blacklisted";
-
-              return (
                 <div
-                  key={song.id}
                   className={cn(
-                    "search-panel__row grid w-full gap-4 border-b border-(--border) px-5 py-4 text-left transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-(--brand) focus-visible:ring-inset",
-                    resultsGridColumns,
-                    index % 2 === 0
-                      ? "bg-(--panel-strong)"
-                      : "bg-(--panel-soft)",
-                    isDisabled
-                      ? "border-amber-400/35 bg-amber-500/8"
-                      : "hover:border-(--brand) hover:bg-(--bg-elevated)"
+                    "search-panel__table-head grid gap-4 border-b border-(--border) px-5 py-4 text-[11px] font-semibold uppercase tracking-[0.22em] text-(--muted)",
+                    resultsGridColumns
                   )}
                 >
-                  {hasCustomActions ? (
-                    <div className="search-panel__row-main col-span-2 grid min-w-0 grid-cols-[minmax(0,2.2fr)_minmax(0,1.05fr)] gap-4 text-left">
-                      <div className="search-panel__song min-w-0">
-                        <div className="flex flex-wrap items-center gap-2">
-                          <p className="truncate text-[15px] font-semibold text-(--text)">
-                            {song.title}
-                          </p>
-                          {isDisabled ? (
-                            <span className="inline-flex items-center rounded-full border border-amber-400/35 bg-amber-500/12 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.16em] text-amber-100">
-                              {disabledReason}
-                            </span>
-                          ) : null}
-                        </div>
-                        <p className="mt-1 truncate text-sm text-(--brand-deep)">
-                          {song.artist ?? "Unknown artist"}
-                        </p>
-                        {song.album ? (
-                          <p className="mt-1 truncate text-sm text-(--muted)">
-                            {song.album}
-                            {song.year ? ` - ${song.year}` : ""}
-                          </p>
-                        ) : null}
-                      </div>
+                  <span>Song</span>
+                  <span>Paths</span>
+                  <span>Stats</span>
+                  <span className="text-right">
+                    {props.actionsLabel ?? "Actions"}
+                  </span>
+                </div>
 
-                      <div className="search-panel__paths min-w-0">
-                        <div className="flex flex-wrap gap-2">
-                          {song.parts?.includes("lead") ? (
-                            <PathBadge
-                              label="Lead"
-                              shortLabel="L"
-                              className="border-emerald-400/30 bg-emerald-500/10 text-emerald-300 hover:bg-emerald-500/10"
-                            />
-                          ) : null}
-                          {song.parts?.includes("rhythm") ? (
-                            <PathBadge
-                              label="Rhythm"
-                              shortLabel="R"
-                              className="border-sky-400/30 bg-sky-500/10 text-sky-300 hover:bg-sky-500/10"
-                            />
-                          ) : null}
-                          {song.parts?.includes("bass") ? (
-                            <PathBadge
-                              label="Bass"
-                              shortLabel="B"
-                              className="border-orange-400/30 bg-orange-500/10 text-orange-300 hover:bg-orange-500/10"
-                            />
-                          ) : null}
-                          {song.parts?.includes("voice") ||
-                          song.parts?.includes("vocals") ? (
-                            <PathBadge
-                              label="Lyrics"
-                              shortLabel="V"
-                              className="border-violet-400/30 bg-violet-500/10 text-violet-300 hover:bg-violet-500/10"
-                            />
-                          ) : null}
-                        </div>
-                      </div>
-                    </div>
-                  ) : (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        if (!isDisabled) {
-                          void copyRequest(song, "sr");
-                        }
-                      }}
-                      disabled={isDisabled}
+                {isLoading && results.length === 0 ? (
+                  <div className="px-5 py-8 text-sm text-(--muted)">
+                    Loading songs...
+                  </div>
+                ) : null}
+
+                {!isLoading && queryTooShort && !hasAdvancedFilter ? (
+                  <div
+                    className={cn(
+                      "grid gap-4 border-b border-(--border) px-5 py-4 text-[11px] font-semibold uppercase tracking-[0.22em] text-(--muted)",
+                      resultsGridColumns
+                    )}
+                  >
+                    <span className="col-span-full normal-case tracking-normal text-sm font-normal text-(--muted)">
+                      Search terms must be at least 3 characters.
+                    </span>
+                  </div>
+                ) : null}
+
+                {!isLoading && requiresCoreSearchTerm ? (
+                  <div className="px-5 py-8 text-sm text-(--muted)">
+                    Add a title, artist, album, or creator.
+                  </div>
+                ) : null}
+
+                {!isLoading && !requiresCoreSearchTerm && error ? (
+                  <div className="px-5 py-8 text-sm text-rose-300">
+                    {getErrorMessage(error)}
+                  </div>
+                ) : null}
+
+                {!isLoading &&
+                !queryTooShort &&
+                !requiresCoreSearchTerm &&
+                visibleResults.length === 0 ? (
+                  <div className="px-5 py-8 text-sm text-(--muted)">
+                    {hasSearchInput
+                      ? "No songs matched those filters yet. Try broadening the search field or clearing one of the advanced inputs."
+                      : "No songs are available in the demo catalog yet."}
+                  </div>
+                ) : null}
+
+                {visibleResults.map((song, index) => {
+                  const copiedType =
+                    copiedCommand?.songId === song.id
+                      ? copiedCommand.type
+                      : null;
+                  const resultState = props.resultState?.(song) ?? {};
+                  const isDisabled = resultState.disabled === true;
+                  const disabledReason =
+                    resultState.reasons && resultState.reasons.length > 0
+                      ? `Blacklisted - ${resultState.reasons.join(" · ")}`
+                      : "Blacklisted";
+
+                  return (
+                    <div
+                      key={song.id}
                       className={cn(
-                        "search-panel__row-main col-span-2 grid min-w-0 grid-cols-[minmax(0,2.2fr)_minmax(0,1.05fr)] gap-4 text-left",
+                        "search-panel__row grid w-full gap-4 border-b border-(--border) px-5 py-4 text-left transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-(--brand) focus-visible:ring-inset",
+                        resultsGridColumns,
+                        index % 2 === 0
+                          ? "bg-(--panel-strong)"
+                          : "bg-(--panel-soft)",
                         isDisabled
-                          ? "cursor-not-allowed opacity-85"
-                          : "cursor-pointer"
+                          ? "border-amber-400/35 bg-amber-500/8"
+                          : "hover:border-(--brand) hover:bg-(--bg-elevated)"
                       )}
                     >
-                      <div className="search-panel__song min-w-0">
-                        <div className="flex flex-wrap items-center gap-2">
-                          <p className="truncate text-[15px] font-semibold text-(--text)">
-                            {song.title}
-                          </p>
-                          {isDisabled ? (
-                            <span className="inline-flex items-center rounded-full border border-amber-400/35 bg-amber-500/12 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.16em] text-amber-100">
-                              {disabledReason}
-                            </span>
-                          ) : null}
+                      {hasCustomActions ? (
+                        <div className="search-panel__row-main col-span-2 grid min-w-0 grid-cols-[minmax(0,2.2fr)_minmax(0,1.05fr)] gap-4 text-left">
+                          <div className="search-panel__song min-w-0">
+                            <div className="flex flex-wrap items-center gap-2">
+                              <p className="truncate text-[15px] font-semibold text-(--text)">
+                                {song.title}
+                              </p>
+                              {isDisabled ? (
+                                <span className="inline-flex items-center border border-amber-400/35 bg-amber-500/12 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.16em] text-amber-100">
+                                  {disabledReason}
+                                </span>
+                              ) : null}
+                            </div>
+                            <p className="mt-1 truncate text-sm text-(--brand-deep)">
+                              {song.artist ?? "Unknown artist"}
+                            </p>
+                            {song.album ? (
+                              <p className="mt-1 truncate text-sm text-(--muted)">
+                                {song.album}
+                                {song.year ? ` - ${song.year}` : ""}
+                              </p>
+                            ) : null}
+                          </div>
+
+                          <div className="search-panel__paths min-w-0">
+                            <div className="flex flex-wrap gap-2">
+                              {song.parts?.includes("lead") ? (
+                                <PathBadge
+                                  label="Lead"
+                                  shortLabel="L"
+                                  className="border-emerald-400/30 bg-emerald-500/10 text-emerald-300 hover:bg-emerald-500/10"
+                                />
+                              ) : null}
+                              {song.parts?.includes("rhythm") ? (
+                                <PathBadge
+                                  label="Rhythm"
+                                  shortLabel="R"
+                                  className="border-sky-400/30 bg-sky-500/10 text-sky-300 hover:bg-sky-500/10"
+                                />
+                              ) : null}
+                              {song.parts?.includes("bass") ? (
+                                <PathBadge
+                                  label="Bass"
+                                  shortLabel="B"
+                                  className="border-orange-400/30 bg-orange-500/10 text-orange-300 hover:bg-orange-500/10"
+                                />
+                              ) : null}
+                              {song.parts?.includes("voice") ||
+                              song.parts?.includes("vocals") ? (
+                                <PathBadge
+                                  label="Lyrics"
+                                  shortLabel="V"
+                                  className="border-violet-400/30 bg-violet-500/10 text-violet-300 hover:bg-violet-500/10"
+                                />
+                              ) : null}
+                            </div>
+                          </div>
                         </div>
-                        <p className="mt-1 truncate text-sm text-(--brand-deep)">
-                          {song.artist ?? "Unknown artist"}
-                        </p>
-                        {song.album ? (
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (!isDisabled) {
+                              void copyRequest(song, "sr");
+                            }
+                          }}
+                          disabled={isDisabled}
+                          className={cn(
+                            "search-panel__row-main col-span-2 grid min-w-0 grid-cols-[minmax(0,2.2fr)_minmax(0,1.05fr)] gap-4 text-left",
+                            isDisabled
+                              ? "cursor-not-allowed opacity-85"
+                              : "cursor-pointer"
+                          )}
+                        >
+                          <div className="search-panel__song min-w-0">
+                            <div className="flex flex-wrap items-center gap-2">
+                              <p className="truncate text-[15px] font-semibold text-(--text)">
+                                {song.title}
+                              </p>
+                              {isDisabled ? (
+                                <span className="inline-flex items-center border border-amber-400/35 bg-amber-500/12 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.16em] text-amber-100">
+                                  {disabledReason}
+                                </span>
+                              ) : null}
+                            </div>
+                            <p className="mt-1 truncate text-sm text-(--brand-deep)">
+                              {song.artist ?? "Unknown artist"}
+                            </p>
+                            {song.album ? (
+                              <p className="mt-1 truncate text-sm text-(--muted)">
+                                {song.album}
+                                {song.year ? ` - ${song.year}` : ""}
+                              </p>
+                            ) : null}
+                          </div>
+
+                          <div className="search-panel__paths min-w-0">
+                            <div className="flex flex-wrap gap-2">
+                              {song.parts?.includes("lead") ? (
+                                <PathBadge
+                                  label="Lead"
+                                  shortLabel="L"
+                                  className="border-emerald-400/30 bg-emerald-500/10 text-emerald-300 hover:bg-emerald-500/10"
+                                />
+                              ) : null}
+                              {song.parts?.includes("rhythm") ? (
+                                <PathBadge
+                                  label="Rhythm"
+                                  shortLabel="R"
+                                  className="border-sky-400/30 bg-sky-500/10 text-sky-300 hover:bg-sky-500/10"
+                                />
+                              ) : null}
+                              {song.parts?.includes("bass") ? (
+                                <PathBadge
+                                  label="Bass"
+                                  shortLabel="B"
+                                  className="border-orange-400/30 bg-orange-500/10 text-orange-300 hover:bg-orange-500/10"
+                                />
+                              ) : null}
+                              {song.parts?.includes("voice") ||
+                              song.parts?.includes("vocals") ? (
+                                <PathBadge
+                                  label="Lyrics"
+                                  shortLabel="V"
+                                  className="border-violet-400/30 bg-violet-500/10 text-violet-300 hover:bg-violet-500/10"
+                                />
+                              ) : null}
+                            </div>
+                          </div>
+                        </button>
+                      )}
+
+                      <div className="search-panel__stats min-w-0 text-sm">
+                        {song.durationText ? (
+                          <p className="search-panel__desktop-stat inline-flex items-center gap-1 text-(--text)">
+                            <Clock3 className="h-3.5 w-3.5 text-(--muted)" />
+                            <span>{song.durationText}</span>
+                          </p>
+                        ) : null}
+                        {song.tuning ? (
+                          <p className="search-panel__desktop-stat mt-1 truncate text-sm text-(--muted)">
+                            {song.tuning}
+                          </p>
+                        ) : null}
+                        {song.creator ? (
                           <p className="mt-1 truncate text-sm text-(--muted)">
-                            {song.album}
-                            {song.year ? ` - ${song.year}` : ""}
+                            Charted by {song.creator}
+                          </p>
+                        ) : null}
+                        {song.sourceUpdatedAt ? (
+                          <p className="mt-1 text-(--muted)">
+                            Updated{" "}
+                            {updatedDateFormatter.format(
+                              new Date(song.sourceUpdatedAt)
+                            )}
                           </p>
                         ) : null}
                       </div>
 
-                      <div className="search-panel__paths min-w-0">
-                        <div className="flex flex-wrap gap-2">
-                          {song.parts?.includes("lead") ? (
-                            <PathBadge
-                              label="Lead"
-                              shortLabel="L"
-                              className="border-emerald-400/30 bg-emerald-500/10 text-emerald-300 hover:bg-emerald-500/10"
-                            />
-                          ) : null}
-                          {song.parts?.includes("rhythm") ? (
-                            <PathBadge
-                              label="Rhythm"
-                              shortLabel="R"
-                              className="border-sky-400/30 bg-sky-500/10 text-sky-300 hover:bg-sky-500/10"
-                            />
-                          ) : null}
-                          {song.parts?.includes("bass") ? (
-                            <PathBadge
-                              label="Bass"
-                              shortLabel="B"
-                              className="border-orange-400/30 bg-orange-500/10 text-orange-300 hover:bg-orange-500/10"
-                            />
-                          ) : null}
-                          {song.parts?.includes("voice") ||
-                          song.parts?.includes("vocals") ? (
-                            <PathBadge
-                              label="Lyrics"
-                              shortLabel="V"
-                              className="border-violet-400/30 bg-violet-500/10 text-violet-300 hover:bg-violet-500/10"
-                            />
-                          ) : null}
-                        </div>
+                      <div className="search-panel__copy flex items-center justify-end">
+                        {hasCustomActions
+                          ? props.renderActions?.({ song, resultState })
+                          : renderDefaultActions(
+                              song,
+                              isDisabled,
+                              disabledReason,
+                              copiedType
+                            )}
                       </div>
-                    </button>
-                  )}
-
-                  <div className="search-panel__stats min-w-0 text-sm">
-                    {song.durationText ? (
-                      <p className="search-panel__desktop-stat inline-flex items-center gap-1 text-(--text)">
-                        <Clock3 className="h-3.5 w-3.5 text-(--muted)" />
-                        <span>{song.durationText}</span>
-                      </p>
-                    ) : null}
-                    {song.tuning ? (
-                      <p className="search-panel__desktop-stat mt-1 truncate text-sm text-(--muted)">
-                        {song.tuning}
-                      </p>
-                    ) : null}
-                    {song.creator ? (
-                      <p className="mt-1 truncate text-sm text-(--muted)">
-                        Charted by {song.creator}
-                      </p>
-                    ) : null}
-                    {song.sourceUpdatedAt ? (
-                      <p className="mt-1 text-(--muted)">
-                        Updated{" "}
-                        {updatedDateFormatter.format(
-                          new Date(song.sourceUpdatedAt)
-                        )}
-                      </p>
-                    ) : null}
-                  </div>
-
-                  <div className="search-panel__copy flex items-center justify-end">
-                    {hasCustomActions
-                      ? props.renderActions?.({ song, resultState })
-                      : renderDefaultActions(
-                          song,
-                          isDisabled,
-                          disabledReason,
-                          copiedType
-                        )}
-                  </div>
-                </div>
-              );
-            })}
-
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
             {renderPagination("bottom")}
           </CardContent>
         </Card>
@@ -1145,7 +1165,7 @@ function MultiSelectSelect(props: {
         <PopoverTrigger asChild>
           <button
             type="button"
-            className="flex h-12 w-full cursor-pointer items-center justify-between rounded-2xl border border-(--border) bg-(--panel-soft) px-4 py-3 text-sm text-(--text) shadow-(--shadow-soft) transition-[border-color,background,box-shadow] hover:bg-(--bg-elevated)"
+            className="flex h-12 w-full cursor-pointer items-center justify-between border border-(--border) bg-(--panel-soft) px-4 py-3 text-sm text-(--text) shadow-none transition-[border-color,background,box-shadow] hover:bg-(--bg-elevated)"
           >
             <span>{summary}</span>
             <ChevronDown
@@ -1158,9 +1178,9 @@ function MultiSelectSelect(props: {
         </PopoverTrigger>
         <PopoverContent
           align="start"
-          className="w-(--radix-popover-trigger-width) rounded-2xl border-(--border) bg-(--panel-strong) p-0 text-(--text)"
+          className="w-(--radix-popover-trigger-width) border-(--border) bg-(--panel-strong) p-0 text-(--text)"
         >
-          <Command className="rounded-2xl bg-(--panel-strong) text-(--text)">
+          <Command className="bg-(--panel-strong) text-(--text)">
             <CommandInput
               placeholder={`Filter ${props.label.toLowerCase()}...`}
             />
@@ -1182,7 +1202,7 @@ function MultiSelectSelect(props: {
                         }
                       }}
                       className={cn(
-                        "cursor-pointer gap-3 rounded-xl bg-transparent transition-colors hover:bg-(--panel-strong) data-[selected=true]:bg-(--panel-strong)",
+                        "cursor-pointer gap-3 bg-transparent transition-colors hover:bg-(--panel-strong) data-[selected=true]:bg-(--panel-strong)",
                         selected
                           ? "bg-(--panel-strong) text-(--text) hover:bg-(--panel-strong) data-[selected=true]:text-(--text)"
                           : "text-(--text) data-[selected=true]:text-(--text)"
@@ -1210,7 +1230,7 @@ function MultiSelectSelect(props: {
               type="button"
               onClick={() => props.onRemove(value)}
               className={cn(
-                "inline-flex select-none items-center gap-1 rounded-full border px-3 py-1.5 text-xs font-semibold transition-colors",
+                "inline-flex select-none items-center gap-1 border px-3 py-1.5 text-xs font-semibold transition-colors",
                 props.toneByValue?.(value) ??
                   "border-(--brand) bg-(--brand)/15 text-(--text)"
               )}

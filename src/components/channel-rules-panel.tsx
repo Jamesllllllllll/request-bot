@@ -231,7 +231,7 @@ export function ChannelRulesPanel(props: {
   }
 
   return (
-    <section className="grid gap-6">
+    <section className="grid gap-6 max-[960px]:gap-4 max-[960px]:border-t max-[960px]:border-(--border) max-[960px]:pt-4">
       <div className="grid gap-2">
         <h2 className="text-2xl font-semibold tracking-tight text-(--text)">
           Channel rules
@@ -239,7 +239,7 @@ export function ChannelRulesPanel(props: {
       </div>
 
       {searchError ? (
-        <div className="rounded-[24px] border border-rose-500/30 bg-rose-500/10 px-4 py-3 text-sm text-rose-200">
+        <div className="border border-rose-500/30 bg-rose-500/10 px-4 py-3 text-sm text-rose-200">
           {searchError}
         </div>
       ) : null}
@@ -251,7 +251,7 @@ export function ChannelRulesPanel(props: {
       props.songs.length > 0 ||
       props.canManageSetlist ||
       props.setlistArtists.length > 0 ? (
-        <div className="grid gap-6 md:grid-cols-2 2xl:grid-cols-4">
+        <div className="grid gap-6 md:grid-cols-2 2xl:grid-cols-4 max-[960px]:gap-0">
           {props.canManageBlacklist ||
           props.artists.length > 0 ||
           props.charters.length > 0 ||
@@ -423,7 +423,7 @@ export function ChannelRulesPanel(props: {
       ) : null}
 
       {mutateRules.error ? (
-        <div className="rounded-[24px] border border-rose-500/30 bg-rose-500/10 px-4 py-3 text-sm text-rose-200">
+        <div className="border border-rose-500/30 bg-rose-500/10 px-4 py-3 text-sm text-rose-200">
           {getErrorMessage(mutateRules.error)}
         </div>
       ) : null}
@@ -460,11 +460,11 @@ function SearchManageCard(props: {
   const showRemoveAction = canManage || !props.hideReadOnlyRemoveAction;
 
   return (
-    <Card>
-      <CardHeader className="p-5 pb-3">
+    <Card className="max-[960px]:rounded-none max-[960px]:border-x-0 max-[960px]:bg-transparent max-[960px]:shadow-none max-[960px]:[background-image:none]">
+      <CardHeader className="p-5 pb-3 max-[960px]:px-0">
         <CardTitle>{props.title}</CardTitle>
       </CardHeader>
-      <CardContent className="grid gap-4 px-5 pb-5 pt-0">
+      <CardContent className="grid gap-4 px-5 pb-5 pt-0 max-[960px]:px-0">
         {canManage && showSearch ? (
           <>
             <Input
@@ -480,12 +480,14 @@ function SearchManageCard(props: {
           </>
         ) : null}
         {canManage && showSearch && normalizedLength >= 2 ? (
-          <div className="grid gap-3">
+          <div className="overflow-hidden border border-(--border)">
             {props.matches.length > 0 ? (
-              props.matches.map((match) => (
+              props.matches.map((match, index) => (
                 <div
                   key={match.key}
-                  className="flex items-center justify-between gap-4 rounded-2xl border border-(--border) bg-(--panel-soft) px-4 py-3"
+                  className={`flex items-center justify-between gap-4 px-4 py-3 ${
+                    index % 2 === 0 ? "bg-(--panel-soft)" : "bg-(--panel-muted)"
+                  } ${index > 0 ? "border-t border-(--border)" : ""}`}
                 >
                   <div className="min-w-0">
                     <p className="truncate font-medium text-(--text)">
@@ -509,17 +511,25 @@ function SearchManageCard(props: {
             )}
           </div>
         ) : null}
-        <div className="max-h-[320px] overflow-y-auto rounded-2xl border border-(--border) bg-(--panel-soft)">
+        <div className="max-h-[320px] overflow-y-auto border border-(--border)">
           {props.currentItems.length > 0 ? (
-            <div className="divide-y divide-(--border)">
-              {props.currentItems.map((item) => (
+            <div>
+              {props.currentItems.map((item, index) => (
                 <div
                   key={item.key}
                   title={item.hoverDetail}
                   className={
                     showRemoveAction
-                      ? "flex items-start justify-between gap-4 px-4 py-3"
-                      : "px-4 py-3"
+                      ? `flex items-start justify-between gap-4 px-4 py-3 ${
+                          index % 2 === 0
+                            ? "bg-(--panel-soft)"
+                            : "bg-(--panel-muted)"
+                        } ${index > 0 ? "border-t border-(--border)" : ""}`
+                      : `px-4 py-3 ${
+                          index % 2 === 0
+                            ? "bg-(--panel-soft)"
+                            : "bg-(--panel-muted)"
+                        } ${index > 0 ? "border-t border-(--border)" : ""}`
                   }
                 >
                   <div className="min-w-0">

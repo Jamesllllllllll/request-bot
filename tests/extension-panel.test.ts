@@ -170,6 +170,8 @@ describe("extension panel service", () => {
       profileImageUrl: "https://example.com/viewer.png",
     } as never);
     vi.mocked(getChannelSettingsByChannelId).mockResolvedValue({
+      blacklistEnabled: true,
+      showPlaylistPositions: true,
       moderatorCanManageRequests: true,
       moderatorCanManageBlacklist: false,
       moderatorCanManageSetlist: false,
@@ -247,6 +249,9 @@ describe("extension panel service", () => {
       channel: {
         slug: "streamer",
       },
+      settings: {
+        showPlaylistPositions: true,
+      },
       playlist: {
         currentItemId: "item-current",
       },
@@ -254,8 +259,8 @@ describe("extension panel service", () => {
         isLinked: true,
         canRequest: true,
         canVipRequest: true,
-        canEditOwnRequest: true,
-        canRemoveOwnRequest: true,
+        canEditOwnRequest: false,
+        canRemoveOwnRequest: false,
       },
       management: {
         accessRole: "viewer",
@@ -291,6 +296,41 @@ describe("extension panel service", () => {
     });
   });
 
+  it("disables viewer request actions in bootstrap when the viewer is blocked", async () => {
+    vi.mocked(getViewerRequestStateForChannelViewer).mockResolvedValue({
+      viewer: {
+        twitchUserId: "viewer-1",
+        login: "viewer_one",
+        displayName: "Viewer One",
+        profileImageUrl: "https://example.com/viewer.png",
+        isSubscriber: false,
+        subscriptionVerified: false,
+        vipTokensAvailable: 2,
+        activeRequestLimit: 1,
+        access: {
+          allowed: false,
+          reason: "You are blocked from requesting songs in this channel.",
+        },
+      },
+    });
+
+    await expect(
+      getExtensionBootstrapState({
+        env,
+        auth,
+      })
+    ).resolves.toMatchObject({
+      viewer: {
+        canRequest: false,
+        canVipRequest: false,
+        access: {
+          allowed: false,
+          reason: "You are blocked from requesting songs in this channel.",
+        },
+      },
+    });
+  });
+
   it("returns lightweight live state for polling refreshes", async () => {
     await expect(
       getExtensionPanelState({
@@ -298,6 +338,9 @@ describe("extension panel service", () => {
         auth,
       })
     ).resolves.toMatchObject({
+      settings: {
+        showPlaylistPositions: true,
+      },
       playlist: {
         currentItemId: "item-current",
       },
@@ -308,13 +351,60 @@ describe("extension panel service", () => {
           }),
         ],
         canVipRequest: true,
-        canEditOwnRequest: true,
-        canRemoveOwnRequest: true,
+        canEditOwnRequest: false,
+        canRemoveOwnRequest: false,
         profile: {
           twitchUserId: "viewer-1",
           displayName: "Viewer One",
           vipTokensAvailable: 2,
         },
+      },
+    });
+  });
+
+  it("keeps viewer edit capability when multiple active requests are present", async () => {
+    vi.mocked(getExtensionPanelPlaylistByChannelId).mockResolvedValue({
+      playlist: {
+        id: "playlist-1",
+        currentItemId: null,
+      },
+      items: [
+        {
+          id: "item-1",
+          songId: "song-1",
+          requestedByTwitchUserId: "viewer-1",
+          songTitle: "Song One",
+          status: "queued",
+          requestKind: "regular",
+        },
+        {
+          id: "item-2",
+          songId: "song-2",
+          requestedByTwitchUserId: "viewer-1",
+          songTitle: "Song Two",
+          status: "queued",
+          requestKind: "vip",
+        },
+      ],
+    } as never);
+
+    await expect(
+      getExtensionPanelState({
+        env,
+        auth,
+      })
+    ).resolves.toMatchObject({
+      viewer: {
+        activeRequests: [
+          expect.objectContaining({
+            id: "item-1",
+          }),
+          expect.objectContaining({
+            id: "item-2",
+          }),
+        ],
+        canEditOwnRequest: true,
+        canRemoveOwnRequest: true,
       },
     });
   });
@@ -373,6 +463,60 @@ describe("extension panel service", () => {
     );
   });
 
+  it("passes channel request filters through extension search", async () => {
+    vi.mocked(getChannelSettingsByChannelId).mockResolvedValue({
+      onlyOfficialDlc: true,
+      allowedTuningsJson: '["E Standard","Drop D"]',
+      requiredPathsJson: '["lead","voice"]',
+      requiredPathsMatchMode: "all",
+    } as never);
+
+    await searchExtensionCatalog({
+      env,
+      auth,
+      search: {
+        query: "cherub",
+        page: 1,
+        pageSize: 10,
+      },
+    });
+
+    expect(searchCatalogSongs).toHaveBeenCalledWith(
+      env,
+      expect.objectContaining({
+        restrictToOfficial: true,
+        allowedTuningsFilter: ["E Standard", "Drop D"],
+        requiredPartsFilter: ["lead", "voice"],
+        requiredPartsFilterMatchMode: "all",
+      })
+    );
+  });
+
+  it("skips blacklist exclusions when blacklist rules are off", async () => {
+    vi.mocked(getChannelSettingsByChannelId).mockResolvedValue({
+      blacklistEnabled: false,
+    } as never);
+
+    await searchExtensionCatalog({
+      env,
+      auth,
+      search: {
+        query: "cherub",
+        page: 1,
+        pageSize: 10,
+      },
+    });
+
+    const searchInput = vi.mocked(searchCatalogSongs).mock.calls.at(-1)?.[1];
+
+    expect(searchInput).not.toHaveProperty("excludeSongIds");
+    expect(searchInput).not.toHaveProperty("excludeGroupedProjectIds");
+    expect(searchInput).not.toHaveProperty("excludeArtistIds");
+    expect(searchInput).not.toHaveProperty("excludeArtistNames");
+    expect(searchInput).not.toHaveProperty("excludeAuthorIds");
+    expect(searchInput).not.toHaveProperty("excludeCreatorNames");
+  });
+
   it("maps shared search results into panel items", async () => {
     vi.mocked(searchCatalogSongs).mockResolvedValue({
       results: [
@@ -423,6 +567,7 @@ describe("extension panel service", () => {
           songId: "song-1",
           requestKind: "vip",
           replaceExisting: true,
+          itemId: "item-1",
         },
       })
     ).resolves.toEqual({
@@ -441,6 +586,7 @@ describe("extension panel service", () => {
         songId: "song-1",
         requestKind: "vip",
         replaceExisting: true,
+        itemId: "item-1",
       },
       source: "extension",
     });

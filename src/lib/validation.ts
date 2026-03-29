@@ -214,6 +214,7 @@ export const settingsInputSchema = z
       z.literal(100),
     ]),
     duplicateWindowSeconds: z.number().int().min(0).max(86400),
+    showPlaylistPositions: z.boolean(),
     commandPrefix: z.string().trim().min(2).max(12),
   })
   .superRefine((input, ctx) => {
@@ -312,6 +313,7 @@ export const playlistMutationSchema = z.discriminatedUnion("action", [
   z.object({ action: z.literal("markPlayed"), itemId: z.string() }),
   z.object({ action: z.literal("restorePlayed"), playedSongId: z.string() }),
   z.object({ action: z.literal("setCurrent"), itemId: z.string() }),
+  z.object({ action: z.literal("returnToQueue"), itemId: z.string() }),
   z.object({ action: z.literal("deleteItem"), itemId: z.string() }),
   z.object({
     action: z.literal("changeRequestKind"),
@@ -359,6 +361,7 @@ export const viewerRequestMutationSchema = z.discriminatedUnion("action", [
     songId: z.string().trim().min(1).max(80),
     requestKind: z.enum(["regular", "vip"]),
     replaceExisting: z.boolean().optional().default(false),
+    itemId: z.string().trim().min(1).max(80).optional(),
   }),
   z.object({
     action: z.literal("remove"),
@@ -376,6 +379,7 @@ export const extensionSearchInputSchema = z.object({
 export const extensionSubmitRequestSchema = z.object({
   songId: z.string().trim().min(1).max(80),
   requestKind: z.enum(["regular", "vip"]),
+  itemId: z.string().trim().min(1).max(80).optional(),
 });
 
 export const extensionRemoveRequestSchema = z.object({
@@ -386,6 +390,10 @@ export const extensionRemoveRequestSchema = z.object({
 export const extensionPlaylistMutationSchema = z.discriminatedUnion("action", [
   z.object({
     action: z.literal("setCurrent"),
+    itemId: z.string().trim().min(1).max(80),
+  }),
+  z.object({
+    action: z.literal("returnToQueue"),
     itemId: z.string().trim().min(1).max(80),
   }),
   z.object({

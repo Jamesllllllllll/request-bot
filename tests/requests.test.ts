@@ -78,6 +78,7 @@ describe("parseRequestModifiers", () => {
       hasRandomModifier: true,
       hasChoiceModifier: false,
       ignoredOfficialModifier: false,
+      requestedPaths: [],
     });
   });
 
@@ -88,6 +89,33 @@ describe("parseRequestModifiers", () => {
       hasRandomModifier: false,
       hasChoiceModifier: true,
       ignoredOfficialModifier: false,
+      requestedPaths: [],
+    });
+  });
+
+  it("parses arrangement modifiers when enabled", () => {
+    expect(
+      parseRequestModifiers("The Cure - Lovesong *bass *lyrics", {
+        allowPathModifiers: true,
+      })
+    ).toEqual({
+      query: "The Cure - Lovesong",
+      mode: "catalog",
+      hasRandomModifier: false,
+      hasChoiceModifier: false,
+      ignoredOfficialModifier: false,
+      requestedPaths: ["bass"],
+    });
+  });
+
+  it("keeps arrangement modifiers in the query when disabled", () => {
+    expect(parseRequestModifiers("The Cure - Lovesong *bass")).toEqual({
+      query: "The Cure - Lovesong *bass",
+      mode: "catalog",
+      hasRandomModifier: false,
+      hasChoiceModifier: false,
+      ignoredOfficialModifier: false,
+      requestedPaths: [],
     });
   });
 });
@@ -138,6 +166,7 @@ describe("request policy", () => {
     setlistEnabled: false,
     subscribersMustFollowSetlist: false,
     autoGrantVipTokenToSubscribers: false,
+    allowRequestPathModifiers: false,
     commandPrefix: "!sr",
   } as const;
 
@@ -159,7 +188,21 @@ describe("request policy", () => {
     expect(message).toContain("!vip artist - song");
     expect(message).toContain("!edit artist - song");
     expect(message).toContain("!position");
-    expect(message).toContain("https://example.com/streamer");
+    expect(message).toContain(
+      "Browse the track list and request songs here: https://example.com/streamer"
+    );
+  });
+
+  it("includes arrangement modifier help when enabled", () => {
+    const message = buildHowMessage({
+      commandPrefix: "!sr",
+      appUrl: "https://example.com",
+      channelSlug: "streamer",
+      allowRequestPathModifiers: true,
+    });
+
+    expect(message).toContain("*bass");
+    expect(message).not.toContain("*lyrics");
   });
 
   it("rejects viewers when only subscribers or VIPs are allowed", () => {

@@ -1285,6 +1285,24 @@ function buildNormalizedVariants(query: string) {
   ]);
 }
 
+function buildCatalogFtsQuery(tokens: string[]) {
+  return tokens.map((token) => `${token}*`).join(" AND ");
+}
+
+function shouldRetryCatalogSearchWithoutFts(error: unknown) {
+  if (!(error instanceof Error)) {
+    return false;
+  }
+
+  const message = error.message.toLowerCase();
+  return (
+    message.includes("catalog_song_fts") ||
+    message.includes(" match ") ||
+    message.includes("match ?") ||
+    message.includes("fts")
+  );
+}
+
 function buildMatchLike(
   column:
     | typeof catalogSongs.title
@@ -1338,7 +1356,7 @@ export async function searchCatalogSongs(
   ).slice(0, 2);
   const field = input.field ?? "any";
   const ftsTerms = tokens.slice(0, 4);
-  const ftsQuery = ftsTerms.map((token) => `${token}*`).join(" ");
+  const ftsQuery = buildCatalogFtsQuery(ftsTerms);
 
   const orderSql = (() => {
     switch (input.sortBy) {
@@ -1360,37 +1378,6 @@ export async function searchCatalogSongs(
         return sql`catalog_songs.source_updated_at ${sql.raw(input.sortDirection === "asc" ? "ASC" : "DESC")}, catalog_songs.source_song_id DESC`;
       default:
         return sql`relevance DESC, catalog_songs.downloads DESC, catalog_songs.artist_name ASC, catalog_songs.title ASC`;
-    }
-  })();
-
-  const ftsEnabled = field === "any" && ftsQuery.length > 0;
-
-  const basicCondition = (() => {
-    if (!query) {
-      return sql`0`;
-    }
-
-    switch (field) {
-      case "title":
-        return buildMatchLike(catalogSongs.title, query);
-      case "artist":
-        return buildMatchLike(catalogSongs.artistName, query);
-      case "album":
-        return buildMatchLike(catalogSongs.albumName, query);
-      case "creator":
-        return buildMatchLike(catalogSongs.creatorName, query);
-      case "tuning":
-        return buildMatchLike(catalogSongs.tuningSummary, query);
-      case "parts":
-        return buildMatchLike(catalogSongs.partsJson, query);
-      default:
-        return sql`
-          ${ftsEnabled ? sql`catalog_songs.rowid IN (SELECT rowid FROM fts_matches)` : sql`0`}
-          OR ${buildMatchLike(catalogSongs.title, query)}
-          OR ${buildMatchLike(catalogSongs.artistName, query)}
-          OR ${buildMatchLike(catalogSongs.albumName, query)}
-          OR ${buildMatchLike(catalogSongs.creatorName, query)}
-        `;
     }
   })();
 
@@ -1431,12 +1418,6 @@ export async function searchCatalogSongs(
   const advancedCondition = hasAdvancedFilters
     ? sql.join(advancedConditions, sql` AND `)
     : null;
-  const baseWhereCondition =
-    query && advancedCondition
-      ? sql`(${basicCondition}) AND (${advancedCondition})`
-      : query
-        ? basicCondition
-        : (advancedCondition ?? sql`1 = 1`);
   const normalizedAllowedTunings = uniqueCompact(
     (input.allowedTuningsFilter ?? []).map((tuning) =>
       normalizeCatalogFilterValue(tuning)
@@ -1478,10 +1459,6 @@ export async function searchCatalogSongs(
   ].filter(
     (condition): condition is ReturnType<typeof sql> => condition !== null
   );
-  const filteredBaseWhereCondition =
-    policyConditions.length > 0
-      ? sql`(${baseWhereCondition}) AND (${sql.join(policyConditions, sql` AND `)})`
-      : baseWhereCondition;
   const normalizedExcludedArtists = uniqueCompact(
     (input.excludeArtistNames ?? []).map((name) => normalizeSearchPhrase(name))
   );
@@ -1545,10 +1522,6 @@ export async function searchCatalogSongs(
   ].filter(
     (condition): condition is ReturnType<typeof sql> => condition !== null
   );
-  const whereCondition =
-    blacklistConditions.length > 0
-      ? sql`(${filteredBaseWhereCondition}) AND (${sql.join(blacklistConditions, sql` AND `)})`
-      : filteredBaseWhereCondition;
   const hasBlacklistFilters = blacklistConditions.length > 0;
 
   const titleTokenScore = buildTokenMatchScore(
@@ -1626,192 +1599,256 @@ export async function searchCatalogSongs(
         `
       : sql`0`;
 
-  const relevanceSql = query
-    ? field === "artist"
-      ? sql`
-          ${primaryFieldScore(catalogSongs.artistName, 90, 45)} +
-          ${artistTokenScore} +
-          CASE WHEN ${buildMatchLike(catalogSongs.artistName, query)} THEN 20 ELSE 0 END
-        `
-      : field === "title"
-        ? sql`
-            ${primaryFieldScore(catalogSongs.title, 90, 45)} +
-            ${titleTokenScore} +
-            CASE WHEN ${buildMatchLike(catalogSongs.title, query)} THEN 20 ELSE 0 END
-          `
-        : field === "album"
-          ? sql`
-              ${primaryFieldScore(catalogSongs.albumName, 80, 35)} +
-              ${albumTokenScore} +
-              CASE WHEN ${buildMatchLike(catalogSongs.albumName, query)} THEN 24 ELSE 0 END
-            `
-          : field === "creator"
-            ? sql`
-                ${primaryFieldScore(catalogSongs.creatorName, 80, 35)} +
-                ${creatorTokenScore} +
-                CASE WHEN ${buildMatchLike(catalogSongs.creatorName, query)} THEN 24 ELSE 0 END
-              `
-            : field === "tuning"
-              ? sql`
-                  ${primaryFieldScore(catalogSongs.tuningSummary, 70, 30)} +
-                  CASE WHEN ${buildMatchLike(catalogSongs.tuningSummary, query)} THEN 18 ELSE 0 END
-                `
-              : field === "parts"
-                ? sql`
-                    CASE WHEN ${buildMatchLike(catalogSongs.partsJson, query)} THEN 30 ELSE 0 END
-                  `
-                : sql`
-                    CASE WHEN ${ftsEnabled ? sql`catalog_songs.rowid IN (SELECT rowid FROM fts_matches)` : sql`0`} THEN 80 ELSE 0 END +
-                    CASE WHEN ${titleTokenPresence} > 0 AND ${artistTokenPresence} > 0 THEN 45 ELSE 0 END +
-                    ${splitArtistTitleBonus} +
-                    ${primaryFieldScore(catalogSongs.title, 62, 34)} +
-                    ${primaryFieldScore(catalogSongs.artistName, 52, 28)} +
-                    ${primaryFieldScore(catalogSongs.albumName, 28, 12)} +
-                    ${titleTokenScore} +
-                    ${artistTokenScore} +
-                    ${albumTokenScore} +
-                    ${creatorTokenScore} +
-                    CASE WHEN ${buildMatchLike(catalogSongs.albumName, query)} THEN 8 ELSE 0 END +
-                    CASE WHEN ${buildMatchLike(catalogSongs.creatorName, query)} THEN 6 ELSE 0 END
-                  `
-    : sql`0`;
+  const initialFtsEnabled = field === "any" && ftsQuery.length > 0;
 
-  const totalResultPromise = db.all<{ count: number }>(sql`
-    WITH fts_matches AS (
-      ${
-        ftsEnabled
-          ? sql`SELECT rowid FROM catalog_song_fts WHERE catalog_song_fts MATCH ${ftsQuery}`
-          : sql`SELECT NULL AS rowid WHERE 0`
+  const runCatalogSongSearch = async (ftsEnabled: boolean) => {
+    const basicCondition = (() => {
+      if (!query) {
+        return sql`0`;
       }
-    ),
-    matches AS (
+
+      switch (field) {
+        case "title":
+          return buildMatchLike(catalogSongs.title, query);
+        case "artist":
+          return buildMatchLike(catalogSongs.artistName, query);
+        case "album":
+          return buildMatchLike(catalogSongs.albumName, query);
+        case "creator":
+          return buildMatchLike(catalogSongs.creatorName, query);
+        case "tuning":
+          return buildMatchLike(catalogSongs.tuningSummary, query);
+        case "parts":
+          return buildMatchLike(catalogSongs.partsJson, query);
+        default:
+          return sql`
+            ${ftsEnabled ? sql`catalog_songs.rowid IN (SELECT rowid FROM fts_matches)` : sql`0`}
+            OR ${buildMatchLike(catalogSongs.title, query)}
+            OR ${buildMatchLike(catalogSongs.artistName, query)}
+            OR ${buildMatchLike(catalogSongs.albumName, query)}
+            OR ${buildMatchLike(catalogSongs.creatorName, query)}
+          `;
+      }
+    })();
+
+    const baseWhereCondition =
+      query && advancedCondition
+        ? sql`(${basicCondition}) AND (${advancedCondition})`
+        : query
+          ? basicCondition
+          : (advancedCondition ?? sql`1 = 1`);
+    const filteredBaseWhereCondition =
+      policyConditions.length > 0
+        ? sql`(${baseWhereCondition}) AND (${sql.join(policyConditions, sql` AND `)})`
+        : baseWhereCondition;
+    const whereCondition =
+      blacklistConditions.length > 0
+        ? sql`(${filteredBaseWhereCondition}) AND (${sql.join(blacklistConditions, sql` AND `)})`
+        : filteredBaseWhereCondition;
+    const relevanceSql = query
+      ? field === "artist"
+        ? sql`
+            ${primaryFieldScore(catalogSongs.artistName, 90, 45)} +
+            ${artistTokenScore} +
+            CASE WHEN ${buildMatchLike(catalogSongs.artistName, query)} THEN 20 ELSE 0 END
+          `
+        : field === "title"
+          ? sql`
+              ${primaryFieldScore(catalogSongs.title, 90, 45)} +
+              ${titleTokenScore} +
+              CASE WHEN ${buildMatchLike(catalogSongs.title, query)} THEN 20 ELSE 0 END
+            `
+          : field === "album"
+            ? sql`
+                ${primaryFieldScore(catalogSongs.albumName, 80, 35)} +
+                ${albumTokenScore} +
+                CASE WHEN ${buildMatchLike(catalogSongs.albumName, query)} THEN 24 ELSE 0 END
+              `
+            : field === "creator"
+              ? sql`
+                  ${primaryFieldScore(catalogSongs.creatorName, 80, 35)} +
+                  ${creatorTokenScore} +
+                  CASE WHEN ${buildMatchLike(catalogSongs.creatorName, query)} THEN 24 ELSE 0 END
+                `
+              : field === "tuning"
+                ? sql`
+                    ${primaryFieldScore(catalogSongs.tuningSummary, 70, 30)} +
+                    CASE WHEN ${buildMatchLike(catalogSongs.tuningSummary, query)} THEN 18 ELSE 0 END
+                  `
+                : field === "parts"
+                  ? sql`
+                      CASE WHEN ${buildMatchLike(catalogSongs.partsJson, query)} THEN 30 ELSE 0 END
+                    `
+                  : sql`
+                      CASE WHEN ${ftsEnabled ? sql`catalog_songs.rowid IN (SELECT rowid FROM fts_matches)` : sql`0`} THEN 80 ELSE 0 END +
+                      CASE WHEN ${titleTokenPresence} > 0 AND ${artistTokenPresence} > 0 THEN 45 ELSE 0 END +
+                      ${splitArtistTitleBonus} +
+                      ${primaryFieldScore(catalogSongs.title, 62, 34)} +
+                      ${primaryFieldScore(catalogSongs.artistName, 52, 28)} +
+                      ${primaryFieldScore(catalogSongs.albumName, 28, 12)} +
+                      ${titleTokenScore} +
+                      ${artistTokenScore} +
+                      ${albumTokenScore} +
+                      ${creatorTokenScore} +
+                      CASE WHEN ${buildMatchLike(catalogSongs.albumName, query)} THEN 8 ELSE 0 END +
+                      CASE WHEN ${buildMatchLike(catalogSongs.creatorName, query)} THEN 6 ELSE 0 END
+                    `
+      : sql`0`;
+
+    const totalResultPromise = db.all<{ count: number }>(sql`
+      WITH fts_matches AS (
+        ${
+          ftsEnabled
+            ? sql`SELECT rowid FROM catalog_song_fts WHERE catalog_song_fts MATCH ${ftsQuery}`
+            : sql`SELECT NULL AS rowid WHERE 0`
+        }
+      ),
+      matches AS (
+        SELECT
+          catalog_songs.id
+        FROM catalog_songs
+        WHERE ${whereCondition}
+      )
+      SELECT count(*) AS count FROM matches
+    `);
+    const unfilteredTotalResultPromise = hasBlacklistFilters
+      ? db.all<{ count: number }>(sql`
+          WITH fts_matches AS (
+            ${
+              ftsEnabled
+                ? sql`SELECT rowid FROM catalog_song_fts WHERE catalog_song_fts MATCH ${ftsQuery}`
+                : sql`SELECT NULL AS rowid WHERE 0`
+            }
+          ),
+          matches AS (
+            SELECT
+              catalog_songs.id
+            FROM catalog_songs
+            WHERE ${filteredBaseWhereCondition}
+          )
+          SELECT count(*) AS count FROM matches
+        `)
+      : Promise.resolve(null);
+
+    const rowsPromise = db.all<{
+      id: string;
+      sourceSongId: number;
+      groupedProjectId: number | null;
+      artistId: number | null;
+      authorId: number | null;
+      title: string;
+      artistName: string;
+      albumName: string | null;
+      creatorName: string | null;
+      tuningSummary: string | null;
+      partsJson: string;
+      durationText: string | null;
+      durationSeconds: number | null;
+      year: number | null;
+      sourceUpdatedAt: number | null;
+      downloads: number;
+      hasLyrics: number;
+      source: string;
+      relevance: number;
+    }>(sql`
+      WITH fts_matches AS (
+        ${
+          ftsEnabled
+            ? sql`SELECT rowid FROM catalog_song_fts WHERE catalog_song_fts MATCH ${ftsQuery}`
+            : sql`SELECT NULL AS rowid WHERE 0`
+        }
+      )
       SELECT
-        catalog_songs.id
+          catalog_songs.id,
+          catalog_songs.source_song_id AS sourceSongId,
+          catalog_songs.grouped_project_id AS groupedProjectId,
+          catalog_songs.artist_id AS artistId,
+          catalog_songs.author_id AS authorId,
+          catalog_songs.title,
+        catalog_songs.artist_name AS artistName,
+        catalog_songs.album_name AS albumName,
+        catalog_songs.creator_name AS creatorName,
+        catalog_songs.tuning_summary AS tuningSummary,
+        catalog_songs.parts_json AS partsJson,
+        catalog_songs.duration_text AS durationText,
+        catalog_songs.duration_seconds AS durationSeconds,
+        catalog_songs.year,
+        catalog_songs.source_updated_at AS sourceUpdatedAt,
+        catalog_songs.downloads,
+        catalog_songs.has_lyrics AS hasLyrics,
+        catalog_songs.source,
+        (${relevanceSql}) AS relevance
       FROM catalog_songs
       WHERE ${whereCondition}
-    )
-    SELECT count(*) AS count FROM matches
-  `);
-  const unfilteredTotalResultPromise = hasBlacklistFilters
-    ? db.all<{ count: number }>(sql`
-        WITH fts_matches AS (
-          ${
-            ftsEnabled
-              ? sql`SELECT rowid FROM catalog_song_fts WHERE catalog_song_fts MATCH ${ftsQuery}`
-              : sql`SELECT NULL AS rowid WHERE 0`
-          }
-        ),
-        matches AS (
-          SELECT
-            catalog_songs.id
-          FROM catalog_songs
-          WHERE ${filteredBaseWhereCondition}
-        )
-        SELECT count(*) AS count FROM matches
-      `)
-    : Promise.resolve(null);
+      ORDER BY ${orderSql}
+      LIMIT ${pageSize}
+      OFFSET ${offset}
+    `);
+    const [totalResult, unfilteredTotalResult, rows] = await Promise.all([
+      totalResultPromise,
+      unfilteredTotalResultPromise,
+      rowsPromise,
+    ]);
+    const totalRows = unwrapD1Rows(totalResult);
+    const unfilteredTotalRows = unfilteredTotalResult
+      ? unwrapD1Rows(unfilteredTotalResult)
+      : [];
+    const resultRows = unwrapD1Rows(rows);
+    const visibleTotal = totalRows[0]?.count ?? 0;
+    const unfilteredTotal = unfilteredTotalRows[0]?.count ?? visibleTotal;
 
-  const rowsPromise = db.all<{
-    id: string;
-    sourceSongId: number;
-    groupedProjectId: number | null;
-    artistId: number | null;
-    authorId: number | null;
-    title: string;
-    artistName: string;
-    albumName: string | null;
-    creatorName: string | null;
-    tuningSummary: string | null;
-    partsJson: string;
-    durationText: string | null;
-    durationSeconds: number | null;
-    year: number | null;
-    sourceUpdatedAt: number | null;
-    downloads: number;
-    hasLyrics: number;
-    source: string;
-    relevance: number;
-  }>(sql`
-    WITH fts_matches AS (
-      ${
-        ftsEnabled
-          ? sql`SELECT rowid FROM catalog_song_fts WHERE catalog_song_fts MATCH ${ftsQuery}`
-          : sql`SELECT NULL AS rowid WHERE 0`
-      }
-    )
-    SELECT
-        catalog_songs.id,
-        catalog_songs.source_song_id AS sourceSongId,
-        catalog_songs.grouped_project_id AS groupedProjectId,
-        catalog_songs.artist_id AS artistId,
-        catalog_songs.author_id AS authorId,
-        catalog_songs.title,
-      catalog_songs.artist_name AS artistName,
-      catalog_songs.album_name AS albumName,
-      catalog_songs.creator_name AS creatorName,
-      catalog_songs.tuning_summary AS tuningSummary,
-      catalog_songs.parts_json AS partsJson,
-      catalog_songs.duration_text AS durationText,
-      catalog_songs.duration_seconds AS durationSeconds,
-      catalog_songs.year,
-      catalog_songs.source_updated_at AS sourceUpdatedAt,
-      catalog_songs.downloads,
-      catalog_songs.has_lyrics AS hasLyrics,
-      catalog_songs.source,
-      (${relevanceSql}) AS relevance
-    FROM catalog_songs
-    WHERE ${whereCondition}
-    ORDER BY ${orderSql}
-    LIMIT ${pageSize}
-    OFFSET ${offset}
-  `);
-  const [totalResult, unfilteredTotalResult, rows] = await Promise.all([
-    totalResultPromise,
-    unfilteredTotalResultPromise,
-    rowsPromise,
-  ]);
-  const totalRows = unwrapD1Rows(totalResult);
-  const unfilteredTotalRows = unfilteredTotalResult
-    ? unwrapD1Rows(unfilteredTotalResult)
-    : [];
-  const resultRows = unwrapD1Rows(rows);
-  const visibleTotal = totalRows[0]?.count ?? 0;
-  const unfilteredTotal = unfilteredTotalRows[0]?.count ?? visibleTotal;
-
-  return {
-    results: resultRows.map((row) => ({
-      id: row.id,
-      groupedProjectId: row.groupedProjectId ?? undefined,
-      artistId: row.artistId ?? undefined,
-      authorId: row.authorId ?? undefined,
-      title: decodeHtmlEntities(row.title),
-      artist: decodeHtmlEntities(row.artistName),
-      album: row.albumName ? decodeHtmlEntities(row.albumName) : undefined,
-      creator: row.creatorName
-        ? decodeHtmlEntities(row.creatorName)
-        : undefined,
-      tuning: row.tuningSummary
-        ? decodeHtmlEntities(row.tuningSummary)
-        : undefined,
-      parts: parseJsonStringArray(row.partsJson),
-      durationText: row.durationText ?? undefined,
-      year: row.year ?? undefined,
-      sourceUpdatedAt: row.sourceUpdatedAt ?? undefined,
-      sourceId: row.sourceSongId,
-      hasLyrics: !!row.hasLyrics,
-      downloads: row.downloads,
-      source: row.source,
-      sourceUrl: normalizeSongSourceUrl({
-        source: row.source,
+    return {
+      results: resultRows.map((row) => ({
+        id: row.id,
+        groupedProjectId: row.groupedProjectId ?? undefined,
+        artistId: row.artistId ?? undefined,
+        authorId: row.authorId ?? undefined,
+        title: decodeHtmlEntities(row.title),
+        artist: decodeHtmlEntities(row.artistName),
+        album: row.albumName ? decodeHtmlEntities(row.albumName) : undefined,
+        creator: row.creatorName
+          ? decodeHtmlEntities(row.creatorName)
+          : undefined,
+        tuning: row.tuningSummary
+          ? decodeHtmlEntities(row.tuningSummary)
+          : undefined,
+        parts: parseJsonStringArray(row.partsJson),
+        durationText: row.durationText ?? undefined,
+        year: row.year ?? undefined,
+        sourceUpdatedAt: row.sourceUpdatedAt ?? undefined,
         sourceId: row.sourceSongId,
-      }),
-      score: row.relevance,
-    })),
-    total: visibleTotal,
-    hiddenBlacklistedCount: Math.max(0, unfilteredTotal - visibleTotal),
-    page,
-    pageSize,
+        hasLyrics: !!row.hasLyrics,
+        downloads: row.downloads,
+        source: row.source,
+        sourceUrl: normalizeSongSourceUrl({
+          source: row.source,
+          sourceId: row.sourceSongId,
+        }),
+        score: row.relevance,
+      })),
+      total: visibleTotal,
+      hiddenBlacklistedCount: Math.max(0, unfilteredTotal - visibleTotal),
+      page,
+      pageSize,
+    };
   };
+
+  try {
+    return await runCatalogSongSearch(initialFtsEnabled);
+  } catch (error) {
+    if (!initialFtsEnabled || !shouldRetryCatalogSearchWithoutFts(error)) {
+      throw error;
+    }
+
+    console.warn("Catalog search FTS failed, retrying without MATCH", {
+      query,
+      field,
+      ftsQuery,
+      error: error instanceof Error ? error.message : String(error),
+    });
+
+    return runCatalogSongSearch(false);
+  }
 }
 
 function toCatalogSongSearchResult(

@@ -16,6 +16,11 @@ import { SongSearchPanel } from "~/components/song-search-panel";
 import { Badge } from "~/components/ui/badge";
 import { Button } from "~/components/ui/button";
 import { Checkbox } from "~/components/ui/checkbox";
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from "~/components/ui/collapsible";
 import { Input } from "~/components/ui/input";
 import { Label } from "~/components/ui/label";
 import {
@@ -29,8 +34,16 @@ import {
 } from "~/lib/channel-blacklist";
 import { formatSlugTitle, pageTitle } from "~/lib/page-title";
 import { getPickNumbersForQueuedItems } from "~/lib/pick-order";
+import {
+  ADD_REQUESTS_WHEN_LIVE_MESSAGE,
+  areChannelRequestsOpen,
+} from "~/lib/request-availability";
 import { STREAMER_CHOICE_WARNING_CODE } from "~/lib/request-modes";
 import { cn, decodeHtmlEntities, getErrorMessage } from "~/lib/utils";
+import {
+  getVipTokenAutomationDetails,
+  getVipTokenRedemptionDescription,
+} from "~/lib/vip-token-automation";
 import { formatVipTokenCount, hasRedeemableVipToken } from "~/lib/vip-tokens";
 
 type PublicPlaylistItem = {
@@ -114,6 +127,8 @@ type PublicChannelPageData = {
   channel?: {
     displayName?: string;
     login?: string;
+    isLive?: boolean;
+    botReadyState?: string | null;
   };
   settings?: {
     blacklistEnabled?: boolean;
@@ -126,10 +141,17 @@ type PublicChannelPageData = {
     canManageBlockedChatters?: boolean;
     canViewVipTokens?: boolean;
     canManageVipTokens?: boolean;
+    autoGrantVipTokenToSubscribers?: boolean;
+    autoGrantVipTokensForSharedSubRenewalMessage?: boolean;
     autoGrantVipTokensToSubGifters?: boolean;
     autoGrantVipTokensToGiftRecipients?: boolean;
     autoGrantVipTokensForCheers?: boolean;
     cheerBitsPerVipToken?: number;
+    cheerMinimumTokenPercent?: number;
+    autoGrantVipTokensForRaiders?: boolean;
+    raidMinimumViewerCount?: number;
+    autoGrantVipTokensForStreamElementsTips?: boolean;
+    streamElementsTipAmountPerVipToken?: number;
     showPlaylistPositions?: boolean;
   };
   items?: EnrichedPublicPlaylistItem[];
@@ -319,7 +341,10 @@ function PublicChannelPage() {
   });
 
   const channelDisplayName = data?.channel?.displayName ?? slug;
-  const vipAutomationSummary = getVipAutomationSummary(data?.settings ?? {});
+  const channelRequestsOpen = areChannelRequestsOpen(data?.channel ?? {});
+  const vipAutomationDetails = getVipTokenAutomationDetails(
+    data?.settings ?? {}
+  );
   const blacklistEnabled = !!data?.settings?.blacklistEnabled;
   const showPlaylistPositions = !!data?.settings?.showPlaylistPositions;
   const publicSearchResultState = useMemo(
@@ -367,6 +392,23 @@ function PublicChannelPage() {
   const canManagePlaylist = !!data?.settings?.canManageRequests;
   const canManageBlacklist = !!data?.settings?.canManageBlacklist;
   const canManageSetlist = !!data?.settings?.canManageSetlist;
+
+  useEffect(() => {
+    if (!signedInViewer || canManagePlaylist) {
+      return;
+    }
+
+    void queryClient.invalidateQueries({
+      queryKey: ["channel-viewer-request-state", slug],
+    });
+  }, [
+    canManagePlaylist,
+    channelRequestsOpen,
+    queryClient,
+    signedInViewer,
+    slug,
+  ]);
+
   const addSongMutation = useMutation({
     mutationFn: async (input: {
       song: SearchSong;
@@ -607,13 +649,32 @@ function PublicChannelPage() {
             </div>
           </div>
         </div>
-        {vipAutomationSummary ? (
+        {vipAutomationDetails.earningRules.length ? (
           <div className="mt-5 px-8 max-[960px]:px-6">
-            <div className="inline-flex max-w-full flex-wrap items-center gap-2 border border-violet-400/30 bg-violet-500/10 px-4 py-3 text-sm text-violet-100">
-              <span className="border border-violet-300/30 bg-violet-500/20 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.18em] text-violet-100">
-                VIP tokens
-              </span>
-              <span>{vipAutomationSummary}</span>
+            <div className="grid gap-3 border border-violet-400/30 bg-violet-500/10 px-4 py-4 text-sm text-violet-100">
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="border border-violet-300/30 bg-violet-500/20 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.18em] text-violet-100">
+                  VIP tokens
+                </span>
+                <span>{getVipTokenRedemptionDescription()}</span>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                {vipAutomationDetails.earningRules.map((rule) => (
+                  <span
+                    key={rule}
+                    className="border border-violet-300/20 bg-violet-500/15 px-3 py-1.5 text-[12px] leading-5 text-violet-50"
+                  >
+                    {rule}
+                  </span>
+                ))}
+              </div>
+              {vipAutomationDetails.notes.length ? (
+                <div className="grid gap-1 text-[12px] leading-5 text-violet-100/90">
+                  {vipAutomationDetails.notes.map((note) => (
+                    <p key={note}>{note}</p>
+                  ))}
+                </div>
+              ) : null}
             </div>
           </div>
         ) : null}
@@ -662,6 +723,11 @@ function PublicChannelPage() {
           {viewerRequestFeedback}
         </InlineStatusBanner>
       ) : null}
+      {!channelRequestsOpen ? (
+        <InlineStatusBanner tone="notice">
+          {ADD_REQUESTS_WHEN_LIVE_MESSAGE}
+        </InlineStatusBanner>
+      ) : null}
       {!canManagePlaylist && viewerRequestError ? (
         <InlineStatusBanner tone="danger">
           {viewerRequestError}
@@ -697,6 +763,7 @@ function PublicChannelPage() {
             ? (_: { query: string }) => (
                 <ViewerSpecialRequestControls
                   canManagePlaylist={canManagePlaylist}
+                  requestsOpen={channelRequestsOpen}
                   viewerState={viewerRequestState}
                   viewerStateLoading={viewerRequestStateQuery.isLoading}
                   viewerStateError={getErrorMessage(
@@ -728,8 +795,10 @@ function PublicChannelPage() {
               slug={slug}
               signedInViewer={signedInViewer}
               viewerState={viewerRequestState}
+              requestsOpen={channelRequestsOpen}
               viewerStateLoading={viewerRequestStateQuery.isLoading}
               viewerStateError={viewerRequestStateQuery.error}
+              vipAutomationDetails={vipAutomationDetails}
               activeRequests={viewerActiveRequests}
               queuedRequests={viewerQueuedRequests}
               removePending={removeViewerRequestsMutation.isPending}
@@ -744,6 +813,7 @@ function PublicChannelPage() {
                   slug={slug}
                   song={song}
                   resultState={resultState}
+                  requestsOpen={channelRequestsOpen}
                   currentViewer={currentViewer}
                   pendingAddSongId={pendingAddSongId}
                   mutationIsPending={addSongMutation.isPending}
@@ -762,6 +832,7 @@ function PublicChannelPage() {
                   <ViewerSearchSongActions
                     song={song}
                     resultState={resultState}
+                    requestsOpen={channelRequestsOpen}
                     viewerState={viewerRequestState}
                     viewerStateLoading={viewerRequestStateQuery.isLoading}
                     viewerStateError={getErrorMessage(
@@ -852,8 +923,10 @@ function ViewerRequestSummaryWidget(props: {
   slug: string;
   signedInViewer: ViewerSessionData["viewer"];
   viewerState: ViewerRequestStateData["viewer"];
+  requestsOpen: boolean;
   viewerStateLoading: boolean;
   viewerStateError: unknown;
+  vipAutomationDetails: ReturnType<typeof getVipTokenAutomationDetails>;
   activeRequests: EnrichedPublicPlaylistItem[];
   queuedRequests: EnrichedPublicPlaylistItem[];
   removePending: boolean;
@@ -877,14 +950,20 @@ function ViewerRequestSummaryWidget(props: {
     activeLimit != null && props.activeRequests.length >= activeLimit;
   const vipTokensLabel =
     props.viewerState != null
-      ? `${formatVipTokenCount(props.viewerState.vipTokensAvailable)} VIP`
+      ? `${formatVipTokenCount(props.viewerState.vipTokensAvailable)} VIP tokens`
       : props.viewerStateLoading
-        ? "... VIP"
-        : "VIP";
+        ? "VIP balance..."
+        : "VIP tokens";
   const requestsLabel =
     activeLimit != null
       ? `${props.activeRequests.length}/${activeLimit} reqs`
       : `${props.activeRequests.length} reqs`;
+  const vipBalanceSummary =
+    props.viewerState != null
+      ? `${formatVipTokenCount(props.viewerState.vipTokensAvailable)} VIP token${props.viewerState.vipTokensAvailable === 1 ? "" : "s"} available`
+      : props.viewerStateLoading
+        ? "Checking your VIP token balance..."
+        : "Your VIP token balance is unavailable right now.";
 
   return (
     <Popover>
@@ -931,8 +1010,12 @@ function ViewerRequestSummaryWidget(props: {
             <p className="truncate font-semibold">{viewer.displayName}</p>
             <p className="truncate text-sm text-(--muted)">@{viewer.login}</p>
           </div>
-          {!props.viewerState?.access.allowed &&
-          props.viewerState?.access.reason ? (
+          {!props.requestsOpen ? (
+            <p className="text-sm text-(--muted)">
+              {ADD_REQUESTS_WHEN_LIVE_MESSAGE}
+            </p>
+          ) : !props.viewerState?.access.allowed &&
+            props.viewerState?.access.reason ? (
             <p className="text-sm text-(--muted)">
               {props.viewerState.access.reason}
             </p>
@@ -950,6 +1033,39 @@ function ViewerRequestSummaryWidget(props: {
               New adds replace your queued requests.
             </p>
           ) : null}
+          <Collapsible>
+            <div className="overflow-hidden border border-(--border)">
+              <CollapsibleTrigger asChild>
+                <button
+                  type="button"
+                  className="flex w-full items-center justify-between gap-3 bg-(--panel-soft) px-4 py-3 text-left text-sm font-medium text-(--text) transition-colors hover:bg-(--panel)"
+                >
+                  <span>VIP token help</span>
+                  <span className="text-xs font-medium text-(--muted)">
+                    Open
+                  </span>
+                </button>
+              </CollapsibleTrigger>
+              <CollapsibleContent className="border-t border-(--border) bg-(--panel) p-4">
+                <div className="grid gap-2 text-sm leading-6 text-(--muted)">
+                  <p>{vipBalanceSummary}</p>
+                  <p>{getVipTokenRedemptionDescription()}</p>
+                  {props.vipAutomationDetails.earningRules.length ? (
+                    <div className="grid gap-1">
+                      {props.vipAutomationDetails.earningRules.map((rule) => (
+                        <p key={rule}>{rule}</p>
+                      ))}
+                    </div>
+                  ) : (
+                    <p>This channel grants VIP tokens manually right now.</p>
+                  )}
+                  {props.vipAutomationDetails.notes.map((note) => (
+                    <p key={note}>{note}</p>
+                  ))}
+                </div>
+              </CollapsibleContent>
+            </div>
+          </Collapsible>
           {props.activeRequests.length > 0 ? (
             <div className="overflow-hidden border border-(--border)">
               {props.activeRequests.map((item, index) => (
@@ -1010,6 +1126,7 @@ function ViewerRequestSummaryWidget(props: {
 function ViewerSearchSongActions(props: {
   song: SearchSong;
   resultState: SearchSongResultState;
+  requestsOpen: boolean;
   viewerState: ViewerRequestStateData["viewer"];
   viewerStateLoading: boolean;
   viewerStateError: string;
@@ -1032,6 +1149,7 @@ function ViewerSearchSongActions(props: {
   const regularDisabledReason = getViewerSongActionDisabledReason({
     requestKind: "regular",
     resultState: props.resultState,
+    requestsOpen: props.requestsOpen,
     viewerState: props.viewerState,
     viewerStateLoading: props.viewerStateLoading,
     viewerStateError: props.viewerStateError,
@@ -1043,6 +1161,7 @@ function ViewerSearchSongActions(props: {
   const vipDisabledReason = getViewerSongActionDisabledReason({
     requestKind: "vip",
     resultState: props.resultState,
+    requestsOpen: props.requestsOpen,
     viewerState: props.viewerState,
     viewerStateLoading: props.viewerStateLoading,
     viewerStateError: props.viewerStateError,
@@ -1103,6 +1222,7 @@ function ViewerSearchSongActions(props: {
 
 function ViewerSpecialRequestControls(props: {
   canManagePlaylist: boolean;
+  requestsOpen: boolean;
   viewerState: ViewerRequestStateData["viewer"];
   viewerStateLoading: boolean;
   viewerStateError: string;
@@ -1137,6 +1257,7 @@ function ViewerSpecialRequestControls(props: {
     query: normalizedQuery,
     requestMode,
     requestKind,
+    requestsOpen: props.requestsOpen,
     viewerState: props.viewerState,
     viewerStateLoading: props.viewerStateLoading,
     viewerStateError: props.viewerStateError,
@@ -1270,6 +1391,7 @@ function ViewerSpecialRequestControls(props: {
 function getViewerSongActionDisabledReason(input: {
   requestKind: "regular" | "vip";
   resultState: SearchSongResultState;
+  requestsOpen?: boolean;
   viewerState: ViewerRequestStateData["viewer"];
   viewerStateLoading: boolean;
   viewerStateError: string;
@@ -1286,6 +1408,10 @@ function getViewerSongActionDisabledReason(input: {
 
   if (input.viewerStateLoading) {
     return "Checking your request access...";
+  }
+
+  if (input.requestsOpen === false) {
+    return ADD_REQUESTS_WHEN_LIVE_MESSAGE;
   }
 
   if (!input.viewerState) {
@@ -1328,7 +1454,7 @@ function getViewerSongActionDisabledReason(input: {
 }
 
 function InlineStatusBanner(props: {
-  tone: "success" | "danger";
+  tone: "success" | "danger" | "notice";
   children: string;
 }) {
   return (
@@ -1337,7 +1463,9 @@ function InlineStatusBanner(props: {
         "border px-4 py-3 text-sm",
         props.tone === "success"
           ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-200"
-          : "border-rose-500/30 bg-rose-500/10 text-rose-200"
+          : props.tone === "danger"
+            ? "border-rose-500/30 bg-rose-500/10 text-rose-200"
+            : "border-amber-500/30 bg-amber-500/10 text-amber-100"
       )}
     >
       {props.children}
@@ -1349,6 +1477,7 @@ function ManageSearchSongActions(props: {
   slug: string;
   song: SearchSong;
   resultState: SearchSongResultState;
+  requestsOpen: boolean;
   currentViewer: ViewerMatch | null;
   pendingAddSongId: string | null;
   mutationIsPending: boolean;
@@ -1386,6 +1515,7 @@ function ManageSearchSongActions(props: {
     enabled: open && normalizedQuery.length >= 2,
   });
   const addDisabled =
+    !props.requestsOpen ||
     props.resultState.disabled ||
     (props.mutationIsPending && props.pendingAddSongId === props.song.id) ||
     !props.currentViewer?.login;
@@ -1397,12 +1527,19 @@ function ManageSearchSongActions(props: {
           type="button"
           className="h-auto min-h-10 w-full px-2 py-2 text-center text-[clamp(0.65rem,0.2vw+0.62rem,0.76rem)] leading-[1.15] whitespace-normal tracking-[0.08em] shadow-none"
           onClick={() => {
-            if (!props.currentViewer || props.resultState.disabled) {
+            if (
+              !props.requestsOpen ||
+              !props.currentViewer ||
+              props.resultState.disabled
+            ) {
               return;
             }
             props.onAdd(props.currentViewer);
           }}
           disabled={addDisabled}
+          title={
+            props.requestsOpen ? undefined : ADD_REQUESTS_WHEN_LIVE_MESSAGE
+          }
         >
           {props.mutationIsPending && props.pendingAddSongId === props.song.id
             ? "Adding..."
@@ -1414,7 +1551,14 @@ function ManageSearchSongActions(props: {
               type="button"
               variant="outline"
               className="h-auto min-h-10 w-full px-2 py-2 text-center text-[clamp(0.65rem,0.2vw+0.62rem,0.76rem)] leading-[1.15] whitespace-normal tracking-[0.08em]"
-              disabled={props.resultState.disabled || props.mutationIsPending}
+              disabled={
+                !props.requestsOpen ||
+                props.resultState.disabled ||
+                props.mutationIsPending
+              }
+              title={
+                props.requestsOpen ? undefined : ADD_REQUESTS_WHEN_LIVE_MESSAGE
+              }
             >
               Add for user
             </Button>
@@ -1460,6 +1604,9 @@ function ManageSearchSongActions(props: {
                         key={user.id}
                         type="button"
                         onClick={() => {
+                          if (!props.requestsOpen) {
+                            return;
+                          }
                           props.onAdd(user);
                           setOpen(false);
                           setQuery("");
@@ -1499,37 +1646,11 @@ function ManageSearchSongActions(props: {
   );
 }
 
-function getVipAutomationSummary(input: {
-  autoGrantVipTokensToSubGifters?: boolean;
-  autoGrantVipTokensToGiftRecipients?: boolean;
-  autoGrantVipTokensForCheers?: boolean;
-  cheerBitsPerVipToken?: number;
-}) {
-  const parts: string[] = [];
-
-  if (input.autoGrantVipTokensToSubGifters) {
-    parts.push("Gift 1 sub");
-  }
-
-  if (input.autoGrantVipTokensToGiftRecipients) {
-    parts.push("Receive a gifted sub");
-  }
-
-  if (input.autoGrantVipTokensForCheers && input.cheerBitsPerVipToken) {
-    parts.push(`Cheer ${input.cheerBitsPerVipToken} bits`);
-  }
-
-  if (!parts.length) {
-    return null;
-  }
-
-  return `1 VIP token = ${parts.join(" or ")}.`;
-}
-
 function getViewerSpecialActionDisabledReason(input: {
   query: string;
   requestMode: "random" | "choice";
   requestKind: "regular" | "vip";
+  requestsOpen?: boolean;
   viewerState: ViewerRequestStateData["viewer"];
   viewerStateLoading: boolean;
   viewerStateError: string;
@@ -1540,6 +1661,10 @@ function getViewerSpecialActionDisabledReason(input: {
 
   if (input.viewerStateLoading) {
     return "Checking your request access...";
+  }
+
+  if (input.requestsOpen === false) {
+    return ADD_REQUESTS_WHEN_LIVE_MESSAGE;
   }
 
   if (!input.viewerState) {

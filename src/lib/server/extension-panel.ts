@@ -78,8 +78,23 @@ type ExtensionPanelManagement = {
 };
 
 type ExtensionPanelLiveState = {
+  channel: {
+    isLive: boolean;
+    botReadyState?: string | null;
+  };
   settings: {
     showPlaylistPositions: boolean;
+    autoGrantVipTokenToSubscribers: boolean;
+    autoGrantVipTokensForSharedSubRenewalMessage: boolean;
+    autoGrantVipTokensToSubGifters: boolean;
+    autoGrantVipTokensToGiftRecipients: boolean;
+    autoGrantVipTokensForCheers: boolean;
+    cheerBitsPerVipToken: number;
+    cheerMinimumTokenPercent: number;
+    autoGrantVipTokensForRaiders: boolean;
+    raidMinimumViewerCount: number;
+    autoGrantVipTokensForStreamElementsTips: boolean;
+    streamElementsTipAmountPerVipToken: number;
   };
   playlist: {
     currentItemId: string | null;
@@ -165,6 +180,17 @@ export async function getExtensionBootstrapState(input: {
         channel: null,
         settings: {
           showPlaylistPositions: false,
+          autoGrantVipTokenToSubscribers: false,
+          autoGrantVipTokensForSharedSubRenewalMessage: false,
+          autoGrantVipTokensToSubGifters: false,
+          autoGrantVipTokensToGiftRecipients: false,
+          autoGrantVipTokensForCheers: false,
+          cheerBitsPerVipToken: 200,
+          cheerMinimumTokenPercent: 25,
+          autoGrantVipTokensForRaiders: false,
+          raidMinimumViewerCount: 1,
+          autoGrantVipTokensForStreamElementsTips: false,
+          streamElementsTipAmountPerVipToken: 5,
         },
         playlist: {
           currentItemId: null,
@@ -248,6 +274,8 @@ export async function getExtensionBootstrapState(input: {
         login: channel.login,
         displayName: channel.displayName,
         twitchChannelId: channel.twitchChannelId,
+        isLive: !!channel.isLive,
+        botReadyState: channel.botReadyState,
       },
       settings: liveState.settings,
       playlist: liveState.playlist,
@@ -560,8 +588,32 @@ async function getExtensionPanelLiveState(input: {
       : (playlist?.playlist.currentItemId ?? null);
 
   return {
+    channel: {
+      isLive: !!input.channel.isLive,
+      botReadyState: input.channel.botReadyState,
+    },
     settings: {
       showPlaylistPositions: !!settings?.showPlaylistPositions,
+      autoGrantVipTokenToSubscribers:
+        !!settings?.autoGrantVipTokenToSubscribers,
+      autoGrantVipTokensForSharedSubRenewalMessage:
+        !!settings?.autoGrantVipTokensForSharedSubRenewalMessage,
+      autoGrantVipTokensToSubGifters:
+        !!settings?.autoGrantVipTokensToSubGifters,
+      autoGrantVipTokensToGiftRecipients:
+        !!settings?.autoGrantVipTokensToGiftRecipients,
+      autoGrantVipTokensForCheers: !!settings?.autoGrantVipTokensForCheers,
+      cheerBitsPerVipToken: settings?.cheerBitsPerVipToken ?? 200,
+      cheerMinimumTokenPercent: settings?.cheerMinimumTokenPercent ?? 25,
+      autoGrantVipTokensForRaiders: !!settings?.autoGrantVipTokensForRaiders,
+      raidMinimumViewerCount: Math.max(
+        1,
+        settings?.raidMinimumViewerCount ?? 1
+      ),
+      autoGrantVipTokensForStreamElementsTips:
+        !!settings?.autoGrantVipTokensForStreamElementsTips,
+      streamElementsTipAmountPerVipToken:
+        settings?.streamElementsTipAmountPerVipToken ?? 5,
     },
     playlist: {
       currentItemId,

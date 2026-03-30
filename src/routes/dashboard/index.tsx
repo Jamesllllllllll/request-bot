@@ -78,18 +78,51 @@ function DashboardOverviewPage() {
   const manageableChannels = data?.session?.viewer?.manageableChannels ?? [];
   const needsModeratorScopeReconnect =
     !!data?.session?.viewer?.needsModeratorScopeReconnect;
-  const sortedManageableChannels = [...manageableChannels].sort(
-    (left, right) =>
-      Number(right.isLive) - Number(left.isLive) ||
-      left.displayName.localeCompare(right.displayName)
-  );
+  const onlineManageableChannels = manageableChannels
+    .filter((managedChannel) => managedChannel.isLive)
+    .sort((left, right) => left.displayName.localeCompare(right.displayName));
   const botStatus = channel?.botReadyState ?? "disabled";
-  const notes = getOverviewNotes({
-    botStatus,
-    botChannelEnabled: !!settings?.botChannelEnabled,
-    requestsEnabled: !!settings?.requestsEnabled,
-    isLive: !!channel?.isLive,
-  });
+  const notes =
+    channel && settings
+      ? getOverviewNotes({
+          botStatus,
+          botChannelEnabled: !!settings.botChannelEnabled,
+          requestsEnabled: !!settings.requestsEnabled,
+          isLive: !!channel.isLive,
+        })
+      : [];
+  const channelStatus = channel
+    ? {
+        value: channel.isLive ? "Live" : "Offline",
+        tone: channel.isLive ? ("good" as const) : ("warn" as const),
+      }
+    : {
+        value: "Unavailable",
+        tone: "neutral" as const,
+      };
+  const requestsStatus = settings
+    ? {
+        value: settings.requestsEnabled ? "Enabled" : "Paused",
+        tone: settings.requestsEnabled ? ("good" as const) : ("warn" as const),
+      }
+    : {
+        value: "Unavailable",
+        tone: "neutral" as const,
+      };
+  const botStatusSummary = channel
+    ? {
+        value: getBotStatusLabel(botStatus),
+        tone:
+          botStatus === "active" || botStatus === "active_offline_testing"
+            ? ("good" as const)
+            : botStatus === "subscription_error"
+              ? ("warn" as const)
+              : ("neutral" as const),
+      }
+    : {
+        value: "Unavailable",
+        tone: "neutral" as const,
+      };
 
   return (
     <div className="page-section-stack grid gap-6 [container-type:inline-size]">
@@ -117,29 +150,30 @@ function DashboardOverviewPage() {
         aside={
           <div className="grid min-w-[14rem] gap-2">
             <StatusIndicator
-              label="Bot"
-              value={getBotStatusLabel(botStatus)}
-              tone={
-                botStatus === "active" || botStatus === "active_offline_testing"
-                  ? "good"
-                  : botStatus === "subscription_error"
-                    ? "warn"
-                    : "neutral"
-              }
+              label="Channel Status"
+              value={channelStatus.value}
+              tone={channelStatus.tone}
             />
             <StatusIndicator
               label="Requests"
-              value={settings?.requestsEnabled ? "Enabled" : "Paused"}
-              tone={settings?.requestsEnabled ? "good" : "warn"}
+              value={requestsStatus.value}
+              tone={requestsStatus.tone}
+            />
+            <StatusIndicator
+              label="Bot"
+              value={botStatusSummary.value}
+              tone={botStatusSummary.tone}
             />
           </div>
         }
       />
 
-      {needsModeratorScopeReconnect || sortedManageableChannels.length > 0 ? (
+      {needsModeratorScopeReconnect || manageableChannels.length > 0 ? (
         <Card>
           <CardHeader>
-            <CardTitle className="text-2xl">Your channels</CardTitle>
+            <CardTitle className="text-2xl">
+              Online channels you moderate
+            </CardTitle>
           </CardHeader>
           <CardContent className="grid gap-3">
             {needsModeratorScopeReconnect ? (
@@ -147,14 +181,10 @@ function DashboardOverviewPage() {
                 Reconnect Twitch to refresh your moderated channel access.
               </div>
             ) : null}
-            {sortedManageableChannels.map((managedChannel) => (
+            {onlineManageableChannels.map((managedChannel) => (
               <div
                 key={managedChannel.slug}
-                className={`flex items-center justify-between gap-4 border px-4 py-4 ${
-                  managedChannel.isLive
-                    ? "border-(--border) bg-(--panel-soft)"
-                    : "border-(--border) bg-(--panel-muted)"
-                }`}
+                className="flex items-center justify-between gap-4 border border-(--border) bg-(--panel-soft) px-4 py-4"
               >
                 <div className="min-w-0">
                   <div className="flex items-center gap-3">
@@ -189,41 +219,49 @@ function DashboardOverviewPage() {
                 </div>
               </div>
             ))}
+            {!needsModeratorScopeReconnect &&
+            onlineManageableChannels.length === 0 ? (
+              <p className="text-sm text-(--muted)">
+                No moderated channels are live right now.
+              </p>
+            ) : null}
           </CardContent>
         </Card>
       ) : null}
 
-      <section className="grid gap-6">
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-2xl">Channel status</CardTitle>
-          </CardHeader>
-          <CardContent className="grid gap-3">
-            {notes.map((note, index) => (
-              <div
-                key={note.title}
-                className={`border px-4 py-4 shadow-none ${
-                  index === 0
-                    ? "border-amber-300 bg-[#3a3117]"
-                    : index === 1
-                      ? "border-[#37525d] bg-[#18262d]"
-                      : "border-[#4c3f62] bg-[#211a2d]"
-                }`}
-              >
-                <div className="flex items-start gap-3">
-                  <StickyNote className="mt-0.5 h-4 w-4 shrink-0 text-white/80" />
-                  <div>
-                    <p className="font-semibold text-white">{note.title}</p>
-                    <p className="mt-1 text-sm leading-6 text-white/75">
-                      {note.body}
-                    </p>
+      {notes.length > 0 ? (
+        <section className="grid gap-6">
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-2xl">Notes</CardTitle>
+            </CardHeader>
+            <CardContent className="grid gap-3">
+              {notes.map((note, index) => (
+                <div
+                  key={note.title}
+                  className={`border px-4 py-4 shadow-none ${
+                    index === 0
+                      ? "border-amber-300 bg-[#3a3117]"
+                      : index === 1
+                        ? "border-[#37525d] bg-[#18262d]"
+                        : "border-[#4c3f62] bg-[#211a2d]"
+                  }`}
+                >
+                  <div className="flex items-start gap-3">
+                    <StickyNote className="mt-0.5 h-4 w-4 shrink-0 text-white/80" />
+                    <div>
+                      <p className="font-semibold text-white">{note.title}</p>
+                      <p className="mt-1 text-sm leading-6 text-white/75">
+                        {note.body}
+                      </p>
+                    </div>
                   </div>
                 </div>
-              </div>
-            ))}
-          </CardContent>
-        </Card>
-      </section>
+              ))}
+            </CardContent>
+          </Card>
+        </section>
+      ) : null}
     </div>
   );
 }
@@ -239,6 +277,15 @@ function getOverviewNotes(input: {
       {
         title: "Enable the bot",
         body: "Turn on bot control in Settings before using requests on your channel.",
+      },
+    ];
+  }
+
+  if (input.botStatus === "active_offline_testing") {
+    return [
+      {
+        title: "Offline testing is on",
+        body: "Requests stay available while you test the bot offline.",
       },
     ];
   }

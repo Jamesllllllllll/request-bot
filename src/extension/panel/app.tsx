@@ -54,6 +54,14 @@ import {
   getUpdatedPositionsAfterSetCurrent,
   getUpdatedQueuedPositionsAfterKindChange,
 } from "~/lib/playlist/order";
+import {
+  ADD_REQUESTS_WHEN_LIVE_MESSAGE,
+  areChannelRequestsOpen,
+} from "~/lib/request-availability";
+import {
+  getVipTokenAutomationDetails,
+  getVipTokenRedemptionDescription,
+} from "~/lib/vip-token-automation";
 import { toExtensionApiUrl, toExtensionAppUrl } from "./config";
 import {
   applyDemoViewerRequestMutation,
@@ -76,9 +84,22 @@ type PanelBootstrapResponse = {
     login: string;
     displayName: string;
     twitchChannelId: string;
+    isLive: boolean;
+    botReadyState?: string | null;
   };
   settings: {
     showPlaylistPositions: boolean;
+    autoGrantVipTokenToSubscribers: boolean;
+    autoGrantVipTokensForSharedSubRenewalMessage: boolean;
+    autoGrantVipTokensToSubGifters: boolean;
+    autoGrantVipTokensToGiftRecipients: boolean;
+    autoGrantVipTokensForCheers: boolean;
+    cheerBitsPerVipToken: number;
+    cheerMinimumTokenPercent: number;
+    autoGrantVipTokensForRaiders: boolean;
+    raidMinimumViewerCount: number;
+    autoGrantVipTokensForStreamElementsTips: boolean;
+    streamElementsTipAmountPerVipToken: number;
   };
   playlist: {
     currentItemId: string | null;
@@ -137,6 +158,10 @@ type PanelSearchResponse = {
 };
 
 type PanelStateResponse = {
+  channel: {
+    isLive: boolean;
+    botReadyState?: string | null;
+  };
   settings: PanelBootstrapResponse["settings"];
   playlist: PanelBootstrapResponse["playlist"];
   viewer: Pick<
@@ -228,6 +253,7 @@ export function ExtensionPanelApp(props: { apiBaseUrl?: string }) {
   const [activeTab, setActiveTab] = useState<"playlist" | "search">("playlist");
   const [transientNotice, setTransientNotice] =
     useState<TransientPanelNotice | null>(null);
+  const [vipHelpOpen, setVipHelpOpen] = useState(false);
   const [pendingAction, setPendingAction] = useState<string | null>(null);
   const [confirmingRemoveItemId, setConfirmingRemoveItemId] = useState<
     string | null
@@ -252,16 +278,22 @@ export function ExtensionPanelApp(props: { apiBaseUrl?: string }) {
   const queueCount = bootstrap?.playlist.items.length ?? 0;
   const showPlaylistPositions =
     bootstrap?.settings.showPlaylistPositions ?? false;
+  const vipTokenAutomationDetails = getVipTokenAutomationDetails(
+    bootstrap?.settings ?? {}
+  );
   const managementPermissions = bootstrap?.management.permissions;
   const canManagePlaylist = managementPermissions?.canManageRequests ?? false;
   const canManageVipRequests =
     !!managementPermissions?.canManageRequests &&
     !!managementPermissions?.canManageVipTokens;
+  const channelRequestsOpen = areChannelRequestsOpen(bootstrap?.channel ?? {});
   const showViewerSearchActions =
-    !!bootstrap?.viewer.canRequest || !!bootstrap?.viewer.canVipRequest;
+    channelRequestsOpen &&
+    (!!bootstrap?.viewer.canRequest || !!bootstrap?.viewer.canVipRequest);
   const viewerProfile = bootstrap?.viewer.profile ?? null;
-  const vipSearchDisabledReason =
-    viewerProfile && viewerProfile.vipTokensAvailable < 1
+  const vipSearchDisabledReason = !channelRequestsOpen
+    ? ADD_REQUESTS_WHEN_LIVE_MESSAGE
+    : viewerProfile && viewerProfile.vipTokensAvailable < 1
       ? "Not enough VIP tokens."
       : null;
   const playlistItems = bootstrap?.playlist.items ?? [];
@@ -506,11 +538,38 @@ export function ExtensionPanelApp(props: { apiBaseUrl?: string }) {
         props.apiBaseUrl
       );
 
+      if (
+        areChannelRequestsOpen(bootstrap?.channel ?? {}) !==
+        areChannelRequestsOpen(data.channel)
+      ) {
+        const refreshedBootstrap =
+          await fetchExtensionJson<PanelBootstrapResponse>(
+            token,
+            "/api/extension/bootstrap",
+            props.apiBaseUrl
+          );
+
+        startTransition(() => {
+          setBootstrap(refreshedBootstrap);
+          setBootstrapError(null);
+          setConnectionMessage(null);
+        });
+
+        return data;
+      }
+
       startTransition(() => {
         setBootstrap((current) =>
           current
             ? {
                 ...current,
+                channel: current.channel
+                  ? {
+                      ...current.channel,
+                      isLive: data.channel.isLive,
+                      botReadyState: data.channel.botReadyState,
+                    }
+                  : current.channel,
                 settings: data.settings,
                 playlist: data.playlist,
                 viewer: {
@@ -956,7 +1015,7 @@ export function ExtensionPanelApp(props: { apiBaseUrl?: string }) {
                   </h1>
                   <p className="truncate text-[11px] leading-4 text-(--muted)">
                     {viewerProfile
-                      ? `${viewerProfile.displayName} · ${formatVipTokensCompact(viewerProfile.vipTokensAvailable)} · ${formatRequestLimitCompact(activeRequestCount, activeRequestLimit)}`
+                      ? `${viewerProfile.displayName} · ${formatVipTokensCompact(viewerProfile.vipTokensAvailable)} available · ${formatRequestLimitCompact(activeRequestCount, activeRequestLimit)}`
                       : bootstrap?.viewer.isLinked
                         ? (bootstrap.viewer.access.reason ??
                           "Viewer state is still loading.")
@@ -993,6 +1052,57 @@ export function ExtensionPanelApp(props: { apiBaseUrl?: string }) {
                   </Button>
                 ) : null}
               </div>
+
+              {viewerProfile ||
+              vipTokenAutomationDetails.earningRules.length ? (
+                <Collapsible
+                  open={vipHelpOpen}
+                  onOpenChange={setVipHelpOpen}
+                  className="mt-2"
+                >
+                  <div className="overflow-hidden border border-(--border)">
+                    <CollapsibleTrigger asChild>
+                      <button
+                        type="button"
+                        className="flex w-full items-center justify-between gap-2 bg-(--panel-soft) px-2.5 py-2 text-left"
+                      >
+                        <span className="text-[10px] font-semibold uppercase tracking-[0.16em] text-(--text)">
+                          VIP tokens
+                        </span>
+                        <span className="text-[10px] text-(--muted)">
+                          {vipHelpOpen ? "Hide" : "Show"}
+                        </span>
+                      </button>
+                    </CollapsibleTrigger>
+                    <CollapsibleContent className="border-t border-(--border) bg-(--panel) px-2.5 py-2">
+                      <div className="grid gap-1.5 text-[11px] leading-4 text-(--muted)">
+                        <p>
+                          {viewerProfile
+                            ? `${formatVipTokensCompact(viewerProfile.vipTokensAvailable)} available.`
+                            : "Sign in to see your VIP token balance."}
+                        </p>
+                        <p>{getVipTokenRedemptionDescription()}</p>
+                        {vipTokenAutomationDetails.earningRules.length ? (
+                          <div className="grid gap-1">
+                            {vipTokenAutomationDetails.earningRules.map(
+                              (rule) => (
+                                <p key={rule}>{rule}</p>
+                              )
+                            )}
+                          </div>
+                        ) : (
+                          <p>
+                            This channel grants VIP tokens manually right now.
+                          </p>
+                        )}
+                        {vipTokenAutomationDetails.notes.map((note) => (
+                          <p key={note}>{note}</p>
+                        ))}
+                      </div>
+                    </CollapsibleContent>
+                  </div>
+                </Collapsible>
+              ) : null}
             </>
           )}
         </section>
@@ -1039,6 +1149,11 @@ export function ExtensionPanelApp(props: { apiBaseUrl?: string }) {
         {bootstrap?.setup ? (
           <PanelNotice icon={<CircleAlert className="h-4 w-4" />}>
             {bootstrap.setup.message}
+          </PanelNotice>
+        ) : null}
+        {bootstrap?.channel && !channelRequestsOpen ? (
+          <PanelNotice icon={<CircleAlert className="h-4 w-4" />}>
+            {ADD_REQUESTS_WHEN_LIVE_MESSAGE}
           </PanelNotice>
         ) : null}
 
@@ -1223,8 +1338,12 @@ export function ExtensionPanelApp(props: { apiBaseUrl?: string }) {
                   {showViewerSearchActions ? (
                     <PanelSpecialRequestControls
                       query={searchQuery}
-                      canRequest={!!bootstrap?.viewer.canRequest}
-                      canVipRequest={!!bootstrap?.viewer.canVipRequest}
+                      canRequest={
+                        channelRequestsOpen && !!bootstrap?.viewer.canRequest
+                      }
+                      canVipRequest={
+                        channelRequestsOpen && !!bootstrap?.viewer.canVipRequest
+                      }
                       vipDisabledReason={vipSearchDisabledReason}
                       pendingAction={pendingAction}
                       isEditingRequest={isEditingRequest}
@@ -1269,8 +1388,14 @@ export function ExtensionPanelApp(props: { apiBaseUrl?: string }) {
                                     className="h-7 rounded-none px-2 text-[11px] shadow-none"
                                     disabled={
                                       !songId ||
+                                      !channelRequestsOpen ||
                                       !bootstrap?.viewer.canRequest ||
                                       pendingAction === actionKey
+                                    }
+                                    title={
+                                      !channelRequestsOpen
+                                        ? ADD_REQUESTS_WHEN_LIVE_MESSAGE
+                                        : undefined
                                     }
                                     onClick={() => {
                                       if (!songId) {
@@ -1295,6 +1420,7 @@ export function ExtensionPanelApp(props: { apiBaseUrl?: string }) {
                                     disabledReason={vipSearchDisabledReason}
                                     disabled={
                                       !songId ||
+                                      !channelRequestsOpen ||
                                       !bootstrap?.viewer.canVipRequest ||
                                       pendingAction === vipActionKey
                                     }

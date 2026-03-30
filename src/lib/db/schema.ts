@@ -173,6 +173,12 @@ export const channelSettings = sqliteTable("channel_settings", {
   )
     .notNull()
     .default(false),
+  autoGrantVipTokensForSharedSubRenewalMessage: integer(
+    "auto_grant_vip_tokens_for_shared_sub_renewal_message",
+    { mode: "boolean" }
+  )
+    .notNull()
+    .default(false),
   autoGrantVipTokensToSubGifters: integer(
     "auto_grant_vip_tokens_to_sub_gifters",
     { mode: "boolean" }
@@ -186,6 +192,11 @@ export const channelSettings = sqliteTable("channel_settings", {
     .notNull()
     .default(false),
   autoGrantVipTokensForCheers: integer("auto_grant_vip_tokens_for_cheers", {
+    mode: "boolean",
+  })
+    .notNull()
+    .default(false),
+  autoGrantVipTokensForRaiders: integer("auto_grant_vip_tokens_for_raiders", {
     mode: "boolean",
   })
     .notNull()
@@ -209,6 +220,9 @@ export const channelSettings = sqliteTable("channel_settings", {
   cheerMinimumTokenPercent: integer("cheer_minimum_token_percent")
     .notNull()
     .default(25),
+  raidMinimumViewerCount: integer("raid_minimum_viewer_count")
+    .notNull()
+    .default(1),
   streamElementsTipAmountPerVipToken: real(
     "streamelements_tip_amount_per_vip_token"
   )

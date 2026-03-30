@@ -50,6 +50,10 @@ import {
   getUpdatedPositionsAfterSetCurrent,
   getUpdatedQueuedPositionsAfterKindChange,
 } from "~/lib/playlist/order";
+import {
+  ADD_REQUESTS_WHEN_LIVE_MESSAGE,
+  areChannelRequestsOpen,
+} from "~/lib/request-availability";
 import { formatPathLabel } from "~/lib/request-policy";
 import { getErrorMessage, normalizeSongSourceUrl } from "~/lib/utils";
 import {
@@ -150,7 +154,13 @@ const playlistItemTransition = {
 };
 
 type PlaylistQueryData = {
-  channel: { id: string; slug: string; displayName: string };
+  channel: {
+    id: string;
+    slug: string;
+    displayName: string;
+    isLive: boolean;
+    botReadyState?: string | null;
+  };
   settings?: {
     canManageBlacklist?: boolean;
   };
@@ -225,7 +235,13 @@ export function PlaylistManagementSurface(
     queryFn: async () => {
       const response = await fetch(playlistEndpoint);
       return response.json() as Promise<{
-        channel: { id: string; slug: string; displayName: string };
+        channel: {
+          id: string;
+          slug: string;
+          displayName: string;
+          isLive: boolean;
+          botReadyState?: string | null;
+        };
         settings?: {
           canManageBlacklist?: boolean;
         };
@@ -554,6 +570,9 @@ export function PlaylistManagementSurface(
     vipTokens.map((token) => [token.login.toLowerCase(), token.availableCount])
   );
   const managedChannel = playlistQuery.data?.channel ?? null;
+  const requestsOpen = managedChannel
+    ? areChannelRequestsOpen(managedChannel)
+    : false;
   const accessRole = playlistQuery.data?.accessRole ?? "owner";
   const canManageBlacklist = !!playlistQuery.data?.settings?.canManageBlacklist;
   const isDeletingItem = (itemId: string) =>
@@ -629,12 +648,19 @@ export function PlaylistManagementSurface(
               value={manualRequesterLogin}
               onChange={(event) => setManualRequesterLogin(event.target.value)}
               placeholder="Requester username (optional)"
+              disabled={!requestsOpen}
             />
             <Input
               value={manualQuery}
               onChange={(event) => setManualQuery(event.target.value)}
               placeholder="Search and add a song"
+              disabled={!requestsOpen}
             />
+            {!requestsOpen ? (
+              <div className="border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-100">
+                {ADD_REQUESTS_WHEN_LIVE_MESSAGE}
+              </div>
+            ) : null}
             {manualQueryTooShort ? (
               <p className="text-sm text-(--muted)">
                 Search terms must be at least 3 characters.
@@ -749,7 +775,14 @@ export function PlaylistManagementSurface(
                               ]),
                             })
                           }
-                          disabled={isManualAddPending(song.id)}
+                          disabled={
+                            !requestsOpen || isManualAddPending(song.id)
+                          }
+                          title={
+                            requestsOpen
+                              ? undefined
+                              : ADD_REQUESTS_WHEN_LIVE_MESSAGE
+                          }
                         >
                           <Plus className="h-4 w-4" />
                           Add
@@ -768,7 +801,7 @@ export function PlaylistManagementSurface(
         <section className="grid gap-3">
           <div className="flex flex-wrap items-start justify-between gap-4 max-[960px]:px-4">
             {props.currentPlaylistTitle ? (
-              <h2 className="text-2xl font-semibold text-(--text)">
+              <h2 className="text-3xl font-semibold text-(--text)">
                 {props.currentPlaylistTitle}
               </h2>
             ) : null}

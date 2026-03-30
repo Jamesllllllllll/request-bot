@@ -107,13 +107,16 @@ const defaultForm: DashboardSettingsFormData = {
   setlistEnabled: false,
   subscribersMustFollowSetlist: false,
   autoGrantVipTokenToSubscribers: false,
+  autoGrantVipTokensForSharedSubRenewalMessage: false,
   autoGrantVipTokensToSubGifters: false,
   autoGrantVipTokensToGiftRecipients: false,
   autoGrantVipTokensForCheers: false,
+  autoGrantVipTokensForRaiders: false,
   autoGrantVipTokensForStreamElementsTips: false,
   allowRequestPathModifiers: false,
   cheerBitsPerVipToken: 200,
   cheerMinimumTokenPercent: 25,
+  raidMinimumViewerCount: 1,
   streamElementsTipAmountPerVipToken: 5,
   duplicateWindowSeconds: 900,
   showPlaylistPositions: false,
@@ -138,9 +141,11 @@ export const Route = createFileRoute("/dashboard/settings")({
 
 function DashboardSettingsPage() {
   const queryClient = useQueryClient();
-  const [saveMessage, setSaveMessage] = useState<string | null>(null);
   const [saveWarning, setSaveWarning] = useState<string | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
+  const [savedIndicatorPhase, setSavedIndicatorPhase] = useState<
+    "hidden" | "visible" | "fading"
+  >("hidden");
   const [relayUrlCopied, setRelayUrlCopied] = useState(false);
   const sessionQuery = useQuery<ViewerSessionData>({
     queryKey: ["viewer-session"],
@@ -186,6 +191,30 @@ function DashboardSettingsPage() {
     }
   }, [settingsQuery.data]);
 
+  useEffect(() => {
+    if (savedIndicatorPhase === "hidden") {
+      return;
+    }
+
+    if (savedIndicatorPhase === "visible") {
+      const fadeTimer = window.setTimeout(() => {
+        setSavedIndicatorPhase("fading");
+      }, 1000);
+
+      return () => {
+        window.clearTimeout(fadeTimer);
+      };
+    }
+
+    const hideTimer = window.setTimeout(() => {
+      setSavedIndicatorPhase("hidden");
+    }, 300);
+
+    return () => {
+      window.clearTimeout(hideTimer);
+    };
+  }, [savedIndicatorPhase]);
+
   const mutation = useMutation({
     mutationFn: async () => {
       const payload = {
@@ -215,9 +244,9 @@ function DashboardSettingsPage() {
       return body as { message?: string; warning?: string | null };
     },
     onMutate: () => {
-      setSaveMessage(null);
       setSaveWarning(null);
       setSaveError(null);
+      setSavedIndicatorPhase("hidden");
 
       return {
         submittedForm: normalizeSettingsFormData(form),
@@ -237,8 +266,8 @@ function DashboardSettingsPage() {
         );
       }
 
-      setSaveMessage(payload?.message ?? "Settings saved.");
       setSaveWarning(payload?.warning ?? null);
+      setSavedIndicatorPhase("visible");
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ["dashboard-settings"] }),
         queryClient.invalidateQueries({ queryKey: ["dashboard-overview"] }),
@@ -271,6 +300,18 @@ function DashboardSettingsPage() {
     !settingsQuery.error &&
     hasUnsavedChanges &&
     !mutation.isPending;
+  const activeSaveNotice = saveError
+    ? {
+        tone: "danger" as const,
+        message: saveError,
+      }
+    : saveWarning
+      ? {
+          tone: "warning" as const,
+          message: saveWarning,
+        }
+      : null;
+  const reserveSaveNoticeSpace = !!saveWarning || !!saveError;
   const pathSummary = buildRequiredPathsSummary(
     form.requiredPaths,
     form.requiredPathsMatchMode
@@ -393,7 +434,9 @@ function DashboardSettingsPage() {
       {!sessionQuery.isLoading && !hasOwnerChannel ? (
         <Card className="dashboard-settings__section">
           <CardHeader>
-            <CardTitle>Owner settings only</CardTitle>
+            <CardTitle as="h2" className="text-xl leading-tight md:text-2xl">
+              Owner settings only
+            </CardTitle>
             <CardDescription>
               This area is only available for channels you own. Use the channel
               page for moderation work on channels you manage.
@@ -477,29 +520,53 @@ function DashboardSettingsPage() {
                   </p>
                 </div>
 
-                <Button
-                  onClick={() => mutation.mutate()}
-                  disabled={!canSaveSettings}
-                  variant={
-                    hasUnsavedChanges || mutation.isPending
-                      ? "default"
-                      : "outline"
-                  }
-                >
-                  {mutation.isPending ? "Saving..." : "Save settings"}
-                </Button>
+                <div className="flex items-center gap-3">
+                  <span
+                    aria-live="polite"
+                    className={`text-xs font-semibold uppercase tracking-[0.16em] text-emerald-200 transition-opacity duration-300 ${
+                      savedIndicatorPhase === "hidden"
+                        ? "pointer-events-none opacity-0"
+                        : savedIndicatorPhase === "fading"
+                          ? "opacity-0"
+                          : "opacity-100"
+                    }`}
+                  >
+                    Saved
+                  </span>
+                  <Button
+                    onClick={() => mutation.mutate()}
+                    disabled={!canSaveSettings}
+                    variant={
+                      hasUnsavedChanges || mutation.isPending
+                        ? "default"
+                        : "outline"
+                    }
+                  >
+                    {mutation.isPending ? "Saving..." : "Save settings"}
+                  </Button>
+                </div>
               </div>
             </div>
 
-            {saveMessage && !hasUnsavedChanges ? (
-              <Banner tone="success">{saveMessage}</Banner>
-            ) : null}
-            {saveWarning ? <Banner tone="warning">{saveWarning}</Banner> : null}
-            {saveError ? <Banner tone="danger">{saveError}</Banner> : null}
+            <div
+              className={reserveSaveNoticeSpace ? "min-h-14" : ""}
+              style={{ overflowAnchor: "none" }}
+            >
+              {activeSaveNotice ? (
+                <Banner tone={activeSaveNotice.tone}>
+                  {activeSaveNotice.message}
+                </Banner>
+              ) : null}
+            </div>
 
             <Card className="dashboard-settings__section">
               <CardHeader>
-                <CardTitle>Channel setup</CardTitle>
+                <CardTitle
+                  as="h2"
+                  className="text-xl leading-tight md:text-2xl"
+                >
+                  Channel setup
+                </CardTitle>
                 <CardDescription>
                   Turn requests on, set the command prefix, and control the
                   basic playlist behavior viewers see.
@@ -597,7 +664,12 @@ function DashboardSettingsPage() {
 
             <Card className="dashboard-settings__section">
               <CardHeader>
-                <CardTitle>Who can request</CardTitle>
+                <CardTitle
+                  as="h2"
+                  className="text-xl leading-tight md:text-2xl"
+                >
+                  Who can request
+                </CardTitle>
                 <CardDescription>
                   Choose which viewers can add songs to your playlist.
                 </CardDescription>
@@ -635,7 +707,12 @@ function DashboardSettingsPage() {
 
             <Card className="dashboard-settings__section">
               <CardHeader>
-                <CardTitle>Search and request filters</CardTitle>
+                <CardTitle
+                  as="h2"
+                  className="text-xl leading-tight md:text-2xl"
+                >
+                  Search and request filters
+                </CardTitle>
                 <CardDescription>
                   These rules limit what appears in search and what viewers can
                   request on your channel page.
@@ -646,9 +723,9 @@ function DashboardSettingsPage() {
                   <div className="grid gap-3">
                     <div className="grid gap-3">
                       <div className="grid gap-1">
-                        <p className="font-medium text-(--text)">
+                        <h3 className="text-lg font-semibold leading-tight text-(--text)">
                           Official DLC
-                        </p>
+                        </h3>
                         <p className="text-sm leading-6 text-(--muted)">
                           Limit search results and requests to official DLC.
                         </p>
@@ -720,9 +797,9 @@ function DashboardSettingsPage() {
                 <div className="grid gap-4 border border-(--border) bg-(--panel-soft) p-4">
                   <div className="flex flex-wrap items-center justify-between gap-3">
                     <div className="grid gap-1">
-                      <p className="font-medium text-(--text)">
+                      <h3 className="text-lg font-semibold leading-tight text-(--text)">
                         Allowed tunings
-                      </p>
+                      </h3>
                       <p className="text-sm leading-6 text-(--muted)">
                         Click any tuning to allow or block it.
                       </p>
@@ -775,7 +852,9 @@ function DashboardSettingsPage() {
 
                 <div className="grid gap-4 border border-(--border) bg-(--panel-soft) p-4">
                   <div className="grid gap-1">
-                    <p className="font-medium text-(--text)">Required paths</p>
+                    <h3 className="text-lg font-semibold leading-tight text-(--text)">
+                      Required paths
+                    </h3>
                     <p className="text-sm leading-6 text-(--muted)">
                       Choose the paths a song needs before it appears in search
                       or can be requested.
@@ -860,7 +939,12 @@ function DashboardSettingsPage() {
 
             <Card className="dashboard-settings__section">
               <CardHeader>
-                <CardTitle>Queue and rate limits</CardTitle>
+                <CardTitle
+                  as="h2"
+                  className="text-xl leading-tight md:text-2xl"
+                >
+                  Queue and rate limits
+                </CardTitle>
                 <CardDescription>
                   Set the playlist size and decide how often regular or VIP
                   requests can be added.
@@ -986,32 +1070,114 @@ function DashboardSettingsPage() {
 
             <Card className="dashboard-settings__section">
               <CardHeader>
-                <CardTitle>VIP token automation</CardTitle>
+                <CardTitle
+                  as="h2"
+                  className="text-xl leading-tight md:text-2xl"
+                >
+                  VIP token automation
+                </CardTitle>
                 <CardDescription>
-                  Automatically reward VIP tokens for Twitch support events and
-                  StreamElements tips.
+                  Automatically reward VIP tokens for new subs, gifted subs,
+                  raids, cheers, and StreamElements tips.
                 </CardDescription>
               </CardHeader>
               <CardContent className="grid gap-6">
                 <div className="grid gap-4 xl:grid-cols-[minmax(0,0.78fr)_minmax(0,1.22fr)]">
-                  <div className="grid min-w-0 gap-3 border border-(--border) bg-(--panel-soft) p-4">
-                    <p className="text-sm font-semibold text-(--text)">
-                      Gifted subs
-                    </p>
-                    <PermissionRow
-                      label="Give 1 VIP token to the gifter for each gifted sub"
-                      checked={form.autoGrantVipTokensToSubGifters}
-                      onChange={(value) =>
-                        setBoolean("autoGrantVipTokensToSubGifters", value)
-                      }
-                    />
-                    <PermissionRow
-                      label="Give 1 VIP token to each gifted sub recipient"
-                      checked={form.autoGrantVipTokensToGiftRecipients}
-                      onChange={(value) =>
-                        setBoolean("autoGrantVipTokensToGiftRecipients", value)
-                      }
-                    />
+                  <div className="grid min-w-0 gap-4">
+                    <div className="grid min-w-0 gap-3 border border-(--border) bg-(--panel-soft) p-4">
+                      <p className="text-sm font-semibold text-(--text)">
+                        Subscribers
+                      </p>
+                      <PermissionRow
+                        label="Give 1 VIP token for a new paid sub"
+                        checked={form.autoGrantVipTokenToSubscribers}
+                        onChange={(value) =>
+                          setBoolean("autoGrantVipTokenToSubscribers", value)
+                        }
+                      />
+                      <PermissionRow
+                        label="Give 1 VIP token for a shared sub renewal message"
+                        checked={
+                          form.autoGrantVipTokensForSharedSubRenewalMessage
+                        }
+                        onChange={(value) =>
+                          setBoolean(
+                            "autoGrantVipTokensForSharedSubRenewalMessage",
+                            value
+                          )
+                        }
+                      />
+                      <div className="border border-dashed border-(--border) bg-(--panel-muted)/60 p-3 text-sm leading-6 text-(--muted)">
+                        Quiet sub renewals do not award automatically. Twitch
+                        only sends a renewal event here when the viewer shares
+                        the resub message in chat.
+                      </div>
+                    </div>
+
+                    <div className="grid min-w-0 gap-3 border border-(--border) bg-(--panel-soft) p-4">
+                      <p className="text-sm font-semibold text-(--text)">
+                        Gifted subs
+                      </p>
+                      <PermissionRow
+                        label="Give 1 VIP token to the gifter for each gifted sub"
+                        checked={form.autoGrantVipTokensToSubGifters}
+                        onChange={(value) =>
+                          setBoolean("autoGrantVipTokensToSubGifters", value)
+                        }
+                      />
+                      <PermissionRow
+                        label="Give 1 VIP token to each gifted sub recipient"
+                        checked={form.autoGrantVipTokensToGiftRecipients}
+                        onChange={(value) =>
+                          setBoolean(
+                            "autoGrantVipTokensToGiftRecipients",
+                            value
+                          )
+                        }
+                      />
+                    </div>
+
+                    <div
+                      className={`grid min-w-0 gap-3 border p-4 ${
+                        form.autoGrantVipTokensForRaiders
+                          ? "border-(--border-strong) bg-(--panel-soft)"
+                          : "border-(--border) bg-(--panel-muted)/40"
+                      }`}
+                    >
+                      <p className="text-sm font-semibold text-(--text)">
+                        Raids
+                      </p>
+                      <PermissionRow
+                        label="Give 1 VIP token to the streamer who raids this channel"
+                        checked={form.autoGrantVipTokensForRaiders}
+                        onChange={(value) =>
+                          setBoolean("autoGrantVipTokensForRaiders", value)
+                        }
+                      />
+                      <FieldBlock
+                        label="Minimum raid size"
+                        description="Set 1 to reward every raid."
+                      >
+                        <div className="max-w-32">
+                          <Input
+                            type="number"
+                            min={1}
+                            value={form.raidMinimumViewerCount}
+                            disabled={!form.autoGrantVipTokensForRaiders}
+                            onChange={(event) =>
+                              setNumber(
+                                "raidMinimumViewerCount",
+                                Math.max(1, Number(event.target.value) || 0)
+                              )
+                            }
+                          />
+                        </div>
+                      </FieldBlock>
+                      <div className="border border-dashed border-(--border) bg-(--panel-muted)/60 p-3 text-sm leading-6 text-(--muted)">
+                        Twitch only sends raid rewards here when the raid shows
+                        up in chat.
+                      </div>
+                    </div>
                   </div>
 
                   <div
@@ -1216,7 +1382,12 @@ function DashboardSettingsPage() {
 
             <Card className="dashboard-settings__section">
               <CardHeader>
-                <CardTitle>Blacklist and setlist rules</CardTitle>
+                <CardTitle
+                  as="h2"
+                  className="text-xl leading-tight md:text-2xl"
+                >
+                  Blacklist and setlist rules
+                </CardTitle>
                 <CardDescription>
                   Blacklist and setlist entries are managed on the channel page.
                   These toggles control how those rules are enforced.
@@ -1252,7 +1423,12 @@ function DashboardSettingsPage() {
 
             <Card className="dashboard-settings__section">
               <CardHeader>
-                <CardTitle>Moderator permissions</CardTitle>
+                <CardTitle
+                  as="h2"
+                  className="text-xl leading-tight md:text-2xl"
+                >
+                  Moderator permissions
+                </CardTitle>
                 <CardDescription>
                   Moderators always see VIP tokens. Turn other
                   channel-management actions on or off here.

@@ -19,6 +19,7 @@ function createState(
       slug: "tester",
       displayName: "Tester",
       twitchChannelId: "tw_test",
+      isLive: true,
     },
     settings: {
       moderatorCanManageRequests: false,
@@ -113,12 +114,19 @@ describe("settings capability validation", () => {
       setlistEnabled: false,
       subscribersMustFollowSetlist: false,
       autoGrantVipTokenToSubscribers: false,
+      autoGrantVipTokensForSharedSubRenewalMessage: false,
       autoGrantVipTokensToSubGifters: false,
       autoGrantVipTokensToGiftRecipients: false,
       autoGrantVipTokensForCheers: false,
+      autoGrantVipTokensForRaiders: false,
+      autoGrantVipTokensForStreamElementsTips: false,
+      allowRequestPathModifiers: false,
       cheerBitsPerVipToken: 200,
       cheerMinimumTokenPercent: 25,
+      raidMinimumViewerCount: 1,
+      streamElementsTipAmountPerVipToken: 5,
       duplicateWindowSeconds: 900,
+      showPlaylistPositions: false,
       commandPrefix: "!sr",
     });
 

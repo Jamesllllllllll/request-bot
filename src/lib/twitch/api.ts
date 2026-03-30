@@ -2,10 +2,12 @@ import type { AppEnv } from "~/lib/env";
 import type {
   EventSubChatMessageEvent,
   EventSubCheerEvent,
+  EventSubRaidEvent,
   EventSubStreamOfflineEvent,
   EventSubStreamOnlineEvent,
   EventSubSubscribeEvent,
   EventSubSubscriptionGiftEvent,
+  EventSubSubscriptionMessageEvent,
   TwitchBroadcasterSubscriptionsResponse,
   TwitchChannelSearchResponse,
   TwitchChattersResponse,
@@ -423,7 +425,9 @@ export async function createEventSubSubscription(input: {
   type:
     | "channel.chat.message"
     | "channel.cheer"
+    | "channel.raid"
     | "channel.subscribe"
+    | "channel.subscription.message"
     | "channel.subscription.gift"
     | "stream.online"
     | "stream.offline";
@@ -462,7 +466,9 @@ export async function listEventSubSubscriptions(input: {
   type?:
     | "channel.chat.message"
     | "channel.cheer"
+    | "channel.raid"
     | "channel.subscribe"
+    | "channel.subscription.message"
     | "channel.subscription.gift"
     | "stream.online"
     | "stream.offline";
@@ -704,10 +710,22 @@ export function isChannelSubscribeEvent(
   return isEventType(payload, "channel.subscribe");
 }
 
+export function isChannelSubscriptionMessageEvent(
+  payload: unknown
+): payload is { event: EventSubSubscriptionMessageEvent } {
+  return isEventType(payload, "channel.subscription.message");
+}
+
 export function isChannelCheerEvent(
   payload: unknown
 ): payload is { event: EventSubCheerEvent } {
   return isEventType(payload, "channel.cheer");
+}
+
+export function isChannelRaidEvent(
+  payload: unknown
+): payload is { event: EventSubRaidEvent } {
+  return isEventType(payload, "channel.raid");
 }
 
 function isEventType(payload: unknown, eventType: string) {

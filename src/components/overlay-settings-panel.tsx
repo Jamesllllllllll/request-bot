@@ -527,7 +527,7 @@ export function OverlaySettingsPanel() {
       {showRestoreDialog ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4">
           <div className="w-full max-w-md border border-(--border-strong) bg-(--panel-strong) p-6 shadow-(--shadow)">
-            <h2 className="text-xl font-semibold text-(--text)">
+            <h2 className="text-2xl font-semibold text-(--text)">
               Restore defaults?
             </h2>
             <p className="mt-3 text-sm leading-7 text-(--muted)">

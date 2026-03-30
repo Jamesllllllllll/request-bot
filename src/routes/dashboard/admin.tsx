@@ -922,6 +922,11 @@ function formatAdminTimestamp(value: number | undefined | null) {
 }
 
 function formatAdminLabel(value: string) {
+  const override = adminLabelOverrides[value];
+  if (override) {
+    return override;
+  }
+
   return value
     .replace(/[_-]+/g, " ")
     .replace(/\s+/g, " ")
@@ -941,8 +946,14 @@ function summarizeAuditPayload(payloadJson: string | null | undefined) {
     }
 
     const preferredKeys = [
+      "source",
+      "grantedTokenCount",
       "enabled",
       "amount",
+      "bits",
+      "viewers",
+      "minimumRaidViewerCount",
+      "totalGiftedSubs",
       "requestKind",
       "songTitle",
       "songArtist",
@@ -951,7 +962,6 @@ function summarizeAuditPayload(payloadJson: string | null | undefined) {
       "viewerLogin",
       "login",
       "displayName",
-      "twitchUserId",
     ];
 
     const entries = Object.entries(parsed as Record<string, unknown>);
@@ -967,15 +977,66 @@ function summarizeAuditPayload(payloadJson: string | null | undefined) {
     ];
 
     const summary = prioritized
-      .filter(([, value]) => isScalarAuditValue(value))
+      .filter((entry): entry is [string, string | number | boolean | null] =>
+        isScalarAuditValue(entry[1])
+      )
       .slice(0, 3)
-      .map(([key, value]) => `${formatAdminLabel(key)}: ${String(value)}`)
+      .map(
+        ([key, value]) =>
+          `${formatAdminLabel(key)}: ${formatAuditValue(key, value)}`
+      )
       .join(" • ");
 
     return summary || null;
   } catch {
     return payloadJson;
   }
+}
+
+const adminLabelOverrides: Record<string, string> = {
+  auto_grant_vip_tokens_cheer: "Auto-grant VIP tokens: cheer",
+  auto_grant_vip_tokens_gift_recipient:
+    "Auto-grant VIP tokens: gifted sub recipient",
+  auto_grant_vip_tokens_new_subscriber: "Auto-grant VIP tokens: new paid sub",
+  auto_grant_vip_tokens_raid: "Auto-grant VIP tokens: raid",
+  auto_grant_vip_tokens_shared_sub_renewal_message:
+    "Auto-grant VIP tokens: shared sub renewal message",
+  auto_grant_vip_tokens_streamelements_tip:
+    "Auto-grant VIP tokens: StreamElements tip",
+  auto_grant_vip_tokens_sub_gifter: "Auto-grant VIP tokens: gifted sub gifter",
+  grantedTokenCount: "Tokens granted",
+  minimumRaidViewerCount: "Minimum raid size",
+  totalGiftedSubs: "Gifted subs",
+  twitchMessageId: "EventSub message ID",
+  vip_token: "VIP token",
+};
+
+const auditSourceLabelOverrides: Record<string, string> = {
+  "channel.cheer": "Cheer",
+  "channel.raid": "Raid",
+  "channel.subscribe": "Channel subscribe",
+  "channel.subscription.gift": "Gifted sub",
+  "channel.subscription.message": "Shared sub renewal message",
+  "streamelements.tip": "StreamElements tip",
+};
+
+function formatAuditValue(
+  key: string,
+  value: string | number | boolean | null
+) {
+  if (value == null) {
+    return "None";
+  }
+
+  if (key === "source" && typeof value === "string") {
+    return auditSourceLabelOverrides[value] ?? value;
+  }
+
+  if (typeof value === "boolean") {
+    return value ? "Yes" : "No";
+  }
+
+  return String(value);
 }
 
 function isScalarAuditValue(value: unknown) {

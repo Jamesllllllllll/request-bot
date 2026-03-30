@@ -240,7 +240,7 @@ export function ChannelCommunityPanel(props: {
   return (
     <section className="grid gap-6 max-[960px]:gap-4 max-[960px]:border-t max-[960px]:border-(--border) max-[960px]:pt-4">
       <div className="grid gap-2 px-8 max-[960px]:px-6">
-        <h2 className="text-2xl font-semibold tracking-tight text-(--text)">
+        <h2 className="text-3xl font-semibold tracking-tight text-(--text)">
           Community controls
         </h2>
         <p className="max-w-3xl text-sm leading-7 text-(--muted)">

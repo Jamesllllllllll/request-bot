@@ -2548,13 +2548,16 @@ export async function updateSettings(
     setlistEnabled: boolean;
     subscribersMustFollowSetlist: boolean;
     autoGrantVipTokenToSubscribers: boolean;
+    autoGrantVipTokensForSharedSubRenewalMessage: boolean;
     autoGrantVipTokensToSubGifters: boolean;
     autoGrantVipTokensToGiftRecipients: boolean;
     autoGrantVipTokensForCheers: boolean;
+    autoGrantVipTokensForRaiders: boolean;
     autoGrantVipTokensForStreamElementsTips: boolean;
     allowRequestPathModifiers: boolean;
     cheerBitsPerVipToken: number;
     cheerMinimumTokenPercent: 25 | 50 | 75 | 100;
+    raidMinimumViewerCount: number;
     streamElementsTipAmountPerVipToken: number;
     duplicateWindowSeconds: number;
     showPlaylistPositions: boolean;
@@ -2599,15 +2602,19 @@ export async function updateSettings(
       setlistEnabled: input.setlistEnabled,
       subscribersMustFollowSetlist: input.subscribersMustFollowSetlist,
       autoGrantVipTokenToSubscribers: input.autoGrantVipTokenToSubscribers,
+      autoGrantVipTokensForSharedSubRenewalMessage:
+        input.autoGrantVipTokensForSharedSubRenewalMessage,
       autoGrantVipTokensToSubGifters: input.autoGrantVipTokensToSubGifters,
       autoGrantVipTokensToGiftRecipients:
         input.autoGrantVipTokensToGiftRecipients,
       autoGrantVipTokensForCheers: input.autoGrantVipTokensForCheers,
+      autoGrantVipTokensForRaiders: input.autoGrantVipTokensForRaiders,
       autoGrantVipTokensForStreamElementsTips:
         input.autoGrantVipTokensForStreamElementsTips,
       allowRequestPathModifiers: input.allowRequestPathModifiers,
       cheerBitsPerVipToken: input.cheerBitsPerVipToken,
       cheerMinimumTokenPercent: input.cheerMinimumTokenPercent,
+      raidMinimumViewerCount: input.raidMinimumViewerCount,
       streamElementsTipAmountPerVipToken:
         input.streamElementsTipAmountPerVipToken,
       duplicateWindowSeconds: input.duplicateWindowSeconds,

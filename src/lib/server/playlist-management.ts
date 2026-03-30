@@ -27,6 +27,10 @@ import {
   DatabaseSchemaOutOfDateError,
 } from "~/lib/db/schema-version";
 import type { AppEnv } from "~/lib/env";
+import {
+  ADD_REQUESTS_WHEN_LIVE_MESSAGE,
+  areChannelRequestsOpen,
+} from "~/lib/request-availability";
 import { getArraySetting } from "~/lib/request-policy";
 import { json } from "~/lib/utils";
 import type { playlistMutationSchema } from "~/lib/validation";
@@ -90,6 +94,8 @@ export type PlaylistManagementState = {
     slug: string;
     displayName: string;
     twitchChannelId: string;
+    isLive: boolean;
+    botReadyState?: string | null;
   };
   settings: Awaited<ReturnType<typeof getChannelSettingsByChannelId>>;
   playlist: unknown;
@@ -458,6 +464,15 @@ export async function performPlaylistMutation(
     return json(
       {
         error: currentSongLockMessage,
+      },
+      { status: 409 }
+    );
+  }
+
+  if (body.action === "manualAdd" && !areChannelRequestsOpen(state.channel)) {
+    return json(
+      {
+        error: ADD_REQUESTS_WHEN_LIVE_MESSAGE,
       },
       { status: 409 }
     );

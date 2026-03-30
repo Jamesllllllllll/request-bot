@@ -108,6 +108,7 @@ describe("viewer request service", () => {
     displayName: "Streamer",
     ownerUserId: "owner-1",
     twitchChannelId: "broadcaster-1",
+    isLive: true,
   };
 
   const baseViewer = {
@@ -302,6 +303,82 @@ describe("viewer request service", () => {
         access: {
           allowed: false,
           reason: "You are blocked from requesting songs in this channel.",
+        },
+      },
+    });
+  });
+
+  it("returns offline access when the channel is not live", async () => {
+    vi.mocked(getChannelBySlug).mockResolvedValue({
+      ...baseChannel,
+      isLive: false,
+    } as never);
+
+    await expect(
+      getViewerRequestState({
+        env,
+        request,
+        slug: "streamer",
+      })
+    ).resolves.toEqual({
+      viewer: {
+        twitchUserId: "viewer-1",
+        login: "viewer_one",
+        displayName: "Viewer One",
+        profileImageUrl: "https://example.com/viewer.png",
+        isSubscriber: false,
+        subscriptionVerified: false,
+        vipTokensAvailable: 2,
+        activeRequestLimit: 1,
+        access: {
+          allowed: false,
+          reason: "You can add requests when the stream goes live.",
+        },
+      },
+    });
+  });
+
+  it("rejects submit mutations while the channel is offline", async () => {
+    vi.mocked(getChannelBySlug).mockResolvedValue({
+      ...baseChannel,
+      isLive: false,
+    } as never);
+
+    await expect(
+      performViewerRequestMutation({
+        env,
+        request,
+        slug: "streamer",
+        mutation: {
+          action: "submit",
+          songId: "song-1",
+          requestKind: "regular",
+          replaceExisting: false,
+        },
+      })
+    ).rejects.toMatchObject({
+      status: 403,
+      message: "You can add requests when the stream goes live.",
+    });
+  });
+
+  it("allows requests while offline testing is enabled", async () => {
+    vi.mocked(getChannelBySlug).mockResolvedValue({
+      ...baseChannel,
+      isLive: false,
+      botReadyState: "active_offline_testing",
+    } as never);
+
+    await expect(
+      getViewerRequestState({
+        env,
+        request,
+        slug: "streamer",
+      })
+    ).resolves.toMatchObject({
+      viewer: {
+        access: {
+          allowed: true,
         },
       },
     });

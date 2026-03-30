@@ -80,6 +80,7 @@ describe("extension panel service", () => {
     displayName: "Streamer",
     ownerUserId: "owner-1",
     twitchChannelId: "twitch-channel-1",
+    isLive: true,
   };
 
   beforeEach(() => {
@@ -248,6 +249,7 @@ describe("extension panel service", () => {
       connected: true,
       channel: {
         slug: "streamer",
+        isLive: true,
       },
       settings: {
         showPlaylistPositions: true,
@@ -338,6 +340,9 @@ describe("extension panel service", () => {
         auth,
       })
     ).resolves.toMatchObject({
+      channel: {
+        isLive: true,
+      },
       settings: {
         showPlaylistPositions: true,
       },

@@ -1,1 +1,1 @@
-export const LATEST_MIGRATION_NAME = "0018_request_path_modifiers.sql";
+export const LATEST_MIGRATION_NAME = "0020_raid_vip_tokens.sql";

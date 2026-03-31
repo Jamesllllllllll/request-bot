@@ -88,7 +88,15 @@ export function getVipTokenAutomationDetails(
 }
 
 export function getVipTokenRedemptionDescription() {
-  return "Spend 1 VIP token to submit a VIP request.";
+  return "Spend 1 VIP token for your song to be placed at the top of the playlist.";
+}
+
+export function getVipTokenRedemptionDetails() {
+  return {
+    summary:
+      "Spend 1 VIP token for your song to be placed at the top of the playlist.",
+    uses: [],
+  };
 }
 
 function normalizePositiveNumber(value: number | null | undefined) {

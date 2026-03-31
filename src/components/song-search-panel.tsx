@@ -57,7 +57,6 @@ import {
   TooltipTrigger,
 } from "~/components/ui/tooltip";
 import { pathOptions } from "~/lib/channel-options";
-import { usePaginatedContentTransition } from "~/lib/paginated-content-transition";
 import { formatPathLabel } from "~/lib/request-policy";
 import { cn, getErrorMessage } from "~/lib/utils";
 
@@ -126,6 +125,15 @@ export function buildEditRequestCommand(song: SearchSong) {
 export type SearchSongResultState = {
   disabled?: boolean;
   reasons?: string[];
+  warning?: string;
+};
+
+export type SearchSongResultContext = {
+  activePathFilters: string[];
+  activePathFilterMatchMode: "any" | "all";
+  defaultPathFilters: string[];
+  defaultPathFilterMatchMode: "any" | "all";
+  hasOverriddenDefaultPathFilters: boolean;
 };
 
 export type SearchSongActionRenderArgs = {
@@ -150,9 +158,15 @@ export function SongSearchPanel(props: {
   infoNote?: string;
   placeholder?: string;
   className?: string;
+  defaultPathFilters?: string[];
+  defaultPathFilterMatchMode?: "any" | "all";
+  defaultPathFilterOwnerName?: string;
   extraSearchParams?: Record<string, string | number | boolean | undefined>;
   resultFilter?: (song: SearchSong) => boolean;
-  resultState?: (song: SearchSong) => SearchSongResultState;
+  resultState?: (
+    song: SearchSong,
+    context: SearchSongResultContext
+  ) => SearchSongResultState;
   advancedFiltersContent?:
     | ReactNode
     | ((args: {
@@ -167,6 +181,14 @@ export function SongSearchPanel(props: {
   actionsLabel?: string;
   renderActions?: (args: SearchSongActionRenderArgs) => ReactNode;
 }) {
+  const normalizedDefaultPathFilters = useMemo(
+    () =>
+      [...new Set(props.defaultPathFilters ?? [])].filter((path) =>
+        pathOptions.includes(path as (typeof pathOptions)[number])
+      ),
+    [props.defaultPathFilters]
+  );
+  const defaultPathFilterMatchMode = props.defaultPathFilterMatchMode ?? "any";
   const [query, setQuery] = useState("");
   const [debouncedQuery, setDebouncedQuery] = useState("");
   const [page, setPage] = useState(1);
@@ -176,17 +198,33 @@ export function SongSearchPanel(props: {
     songId: string;
     type: "sr" | "edit" | "vip";
   } | null>(null);
-  const [advancedFilters, setAdvancedFilters] = useState({
+  const [advancedFilters, setAdvancedFilters] = useState(() => ({
     title: "",
     artist: "",
     album: "",
     creator: "",
     tuning: [] as string[],
-    parts: [] as string[],
+    parts: normalizedDefaultPathFilters,
+    partsMatchMode: props.defaultPathFilterMatchMode ?? "any",
     year: [] as number[],
-  });
+  }));
   const [debouncedAdvancedFilters, setDebouncedAdvancedFilters] =
     useState(advancedFilters);
+  const activePathFilters = debouncedAdvancedFilters.parts;
+  const activeNonPathFilterCount = useMemo(
+    () =>
+      [
+        debouncedAdvancedFilters.title.trim(),
+        debouncedAdvancedFilters.artist.trim(),
+        debouncedAdvancedFilters.album.trim(),
+        debouncedAdvancedFilters.creator.trim(),
+        debouncedAdvancedFilters.tuning.length > 0 ? "tuning" : "",
+        debouncedAdvancedFilters.year.length > 0 ? "year" : "",
+      ].filter(Boolean).length,
+    [debouncedAdvancedFilters]
+  );
+  const showAppliedFiltersSummary =
+    activePathFilters.length > 0 || activeNonPathFilterCount > 0;
 
   useEffect(() => {
     const timeout = window.setTimeout(() => {
@@ -215,6 +253,13 @@ export function SongSearchPanel(props: {
     }
 
     for (const [key, value] of Object.entries(debouncedAdvancedFilters)) {
+      if (
+        key === "partsMatchMode" &&
+        debouncedAdvancedFilters.parts.length === 0
+      ) {
+        continue;
+      }
+
       if (Array.isArray(value)) {
         for (const part of value) {
           params.append(key, String(part));
@@ -250,27 +295,24 @@ export function SongSearchPanel(props: {
     () =>
       Boolean(
         debouncedQuery.trim() ||
-          Object.values(debouncedAdvancedFilters).some((value) =>
-            Array.isArray(value) ? value.length > 0 : value.trim()
+          Object.entries(debouncedAdvancedFilters).some(([key, value]) =>
+            key === "partsMatchMode"
+              ? false
+              : Array.isArray(value)
+                ? value.length > 0
+                : value.trim()
           )
-      ),
-    [debouncedAdvancedFilters, debouncedQuery]
-  );
-  const hasCoreSearchTerm = useMemo(
-    () =>
-      Boolean(
-        debouncedQuery.trim() ||
-          debouncedAdvancedFilters.title.trim() ||
-          debouncedAdvancedFilters.artist.trim() ||
-          debouncedAdvancedFilters.album.trim() ||
-          debouncedAdvancedFilters.creator.trim()
       ),
     [debouncedAdvancedFilters, debouncedQuery]
   );
   const hasAdvancedFilter = useMemo(
     () =>
-      Object.values(debouncedAdvancedFilters).some((value) =>
-        Array.isArray(value) ? value.length > 0 : value.trim()
+      Object.entries(debouncedAdvancedFilters).some(([key, value]) =>
+        key === "partsMatchMode"
+          ? false
+          : Array.isArray(value)
+            ? value.length > 0
+            : value.trim()
       ),
     [debouncedAdvancedFilters]
   );
@@ -278,14 +320,6 @@ export function SongSearchPanel(props: {
     const trimmed = debouncedQuery.trim();
     return trimmed.length > 0 && trimmed.length < 3;
   }, [debouncedQuery]);
-  const requiresCoreSearchTerm = useMemo(
-    () =>
-      !hasCoreSearchTerm &&
-      (debouncedAdvancedFilters.parts.length > 0 ||
-        debouncedAdvancedFilters.tuning.length > 0 ||
-        debouncedAdvancedFilters.year.length > 0),
-    [debouncedAdvancedFilters, hasCoreSearchTerm]
-  );
 
   const filterOptionsQuery = useQuery<SearchFilterOptionsResponse>({
     queryKey: ["search-filter-options"],
@@ -337,7 +371,7 @@ export function SongSearchPanel(props: {
 
   const searchQuery = useQuery<SearchResponse>({
     queryKey: ["song-search", searchParams.toString()],
-    enabled: !queryTooShort && !requiresCoreSearchTerm,
+    enabled: !queryTooShort,
     placeholderData: keepPreviousData,
     queryFn: async (): Promise<SearchResponse> => {
       const response = await fetch(`/api/search?${searchParams.toString()}`);
@@ -358,18 +392,9 @@ export function SongSearchPanel(props: {
     },
   });
   const { data, error, isLoading } = searchQuery;
-  const {
-    goToPage: goToResultsPage,
-    isTransitioning: isResultsTransitioning,
-    transitionClassName: resultsTransitionClassName,
-  } = usePaginatedContentTransition({
-    currentPage: page,
-    isFetching: searchQuery.isFetching,
-    onPageChange: (nextPage) => setPage(nextPage),
-  });
+  const isResultsTransitioning = searchQuery.isFetching;
 
-  const results =
-    !queryTooShort && !requiresCoreSearchTerm ? (data?.results ?? []) : [];
+  const results = !queryTooShort ? (data?.results ?? []) : [];
   const visibleResults = useMemo(
     () =>
       props.resultFilter
@@ -458,6 +483,7 @@ export function SongSearchPanel(props: {
         creator: "",
         tuning: [],
         parts: [],
+        partsMatchMode: "any",
         year: [],
       });
     });
@@ -497,64 +523,95 @@ export function SongSearchPanel(props: {
   }
 
   function renderPagination(position: "top" | "bottom") {
-    if (totalPages <= 1) {
+    const showTopFilterSummary =
+      position === "top" && showAppliedFiltersSummary;
+
+    if (totalPages <= 1 && !showTopFilterSummary) {
       return null;
     }
 
     return (
       <div
         className={cn(
-          "flex flex-wrap items-center justify-between gap-4 px-5 py-4",
+          "flex flex-wrap items-center gap-4 px-5 py-4",
           position === "top"
             ? "border-b border-(--border) bg-(--panel-muted)"
             : "border-t border-(--border) bg-(--panel-muted)"
         )}
       >
-        <p className="text-sm text-(--muted)">
-          Page {page} of {totalPages}
-        </p>
-        <Pagination className="mx-0 w-auto justify-end">
-          <PaginationContent>
-            <PaginationItem>
-              <PaginationPrevious
-                onClick={() => goToResultsPage(Math.max(1, page - 1))}
-                disabled={page <= 1 || isResultsTransitioning}
+        {showTopFilterSummary ? (
+          <div className="min-w-0 flex flex-1 flex-wrap items-center gap-1.5 text-xs text-(--muted)">
+            <span className="uppercase tracking-[0.16em]">Filters</span>
+            {activePathFilters.map((path) => (
+              <PathBadge
+                key={`summary-${path}`}
+                label={formatPathLabel(path).toUpperCase()}
+                shortLabel={formatPathLabel(path).slice(0, 1).toUpperCase()}
+                className={getPathToneByValue(path)}
               />
-            </PaginationItem>
+            ))}
+            {activeNonPathFilterCount > 0 ? (
+              <span className="inline-flex items-center border border-(--border-strong) bg-(--panel) px-2 py-1 text-[11px] font-medium text-(--text)">
+                +{activeNonPathFilterCount} more
+              </span>
+            ) : null}
+            {!showAdvanced ? (
+              <button
+                type="button"
+                className="text-(--brand) transition hover:opacity-80"
+                onClick={() => setShowAdvanced(true)}
+              >
+                Change filters
+              </button>
+            ) : null}
+          </div>
+        ) : (
+          <div className="flex-1" />
+        )}
+        {totalPages > 1 ? (
+          <Pagination className="mx-0 w-auto justify-end">
+            <PaginationContent>
+              <PaginationItem>
+                <PaginationPrevious
+                  onClick={() => setPage(Math.max(1, page - 1))}
+                  disabled={page <= 1 || isResultsTransitioning}
+                />
+              </PaginationItem>
 
-            {visiblePageNumbers.map((pageNumber, index) => {
-              const previousPage = visiblePageNumbers[index - 1];
-              const showGap =
-                previousPage != null && pageNumber - previousPage > 1;
+              {visiblePageNumbers.map((pageNumber, index) => {
+                const previousPage = visiblePageNumbers[index - 1];
+                const showGap =
+                  previousPage != null && pageNumber - previousPage > 1;
 
-              return (
-                <Fragment key={pageNumber}>
-                  {showGap ? (
+                return (
+                  <Fragment key={pageNumber}>
+                    {showGap ? (
+                      <PaginationItem>
+                        <PaginationEllipsis />
+                      </PaginationItem>
+                    ) : null}
                     <PaginationItem>
-                      <PaginationEllipsis />
+                      <PaginationLink
+                        isActive={pageNumber === page}
+                        onClick={() => setPage(pageNumber)}
+                        disabled={isResultsTransitioning}
+                      >
+                        {pageNumber}
+                      </PaginationLink>
                     </PaginationItem>
-                  ) : null}
-                  <PaginationItem>
-                    <PaginationLink
-                      isActive={pageNumber === page}
-                      onClick={() => goToResultsPage(pageNumber)}
-                      disabled={isResultsTransitioning}
-                    >
-                      {pageNumber}
-                    </PaginationLink>
-                  </PaginationItem>
-                </Fragment>
-              );
-            })}
+                  </Fragment>
+                );
+              })}
 
-            <PaginationItem>
-              <PaginationNext
-                onClick={() => goToResultsPage(Math.min(totalPages, page + 1))}
-                disabled={page >= totalPages || isResultsTransitioning}
-              />
-            </PaginationItem>
-          </PaginationContent>
-        </Pagination>
+              <PaginationItem>
+                <PaginationNext
+                  onClick={() => setPage(Math.min(totalPages, page + 1))}
+                  disabled={page >= totalPages || isResultsTransitioning}
+                />
+              </PaginationItem>
+            </PaginationContent>
+          </Pagination>
+        ) : null}
       </div>
     );
   }
@@ -666,11 +723,6 @@ export function SongSearchPanel(props: {
                 >
                   {props.title}
                 </CardTitle>
-                {props.description ? (
-                  <p className="mt-2 text-sm text-(--muted)">
-                    {props.description}
-                  </p>
-                ) : null}
               </div>
               <div className="flex max-w-full flex-wrap items-center justify-end gap-3 max-[960px]:w-full max-[960px]:justify-start">
                 {props.summaryContent}
@@ -733,125 +785,166 @@ export function SongSearchPanel(props: {
               </Button>
             </div>
 
-            {resolvedControlsContent ? (
-              <div className="grid gap-3">{resolvedControlsContent}</div>
-            ) : null}
-
             {showAdvanced ? (
-              <div className="grid items-start gap-4 border border-(--border) bg-(--panel-soft) p-5 md:grid-cols-2 xl:grid-cols-4">
-                <div className="grid gap-2">
-                  <Label htmlFor={`${props.title}-advanced-title`}>Title</Label>
-                  <Input
-                    id={`${props.title}-advanced-title`}
-                    value={advancedFilters.title}
-                    onChange={(event) =>
-                      updateAdvancedFilter("title", event.target.value)
-                    }
-                    spellCheck={false}
-                    autoCorrect="off"
-                    autoCapitalize="none"
-                  />
+              <div className="grid gap-4 border border-(--border) bg-(--panel-soft) p-5">
+                <div className="grid items-start gap-4 md:grid-cols-2 xl:grid-cols-4">
+                  <div className="grid gap-2">
+                    <Label htmlFor={`${props.title}-advanced-title`}>
+                      Title
+                    </Label>
+                    <Input
+                      id={`${props.title}-advanced-title`}
+                      value={advancedFilters.title}
+                      onChange={(event) =>
+                        updateAdvancedFilter("title", event.target.value)
+                      }
+                      spellCheck={false}
+                      autoCorrect="off"
+                      autoCapitalize="none"
+                    />
+                  </div>
+                  <div className="grid gap-2">
+                    <Label htmlFor={`${props.title}-advanced-artist`}>
+                      Artist
+                    </Label>
+                    <Input
+                      id={`${props.title}-advanced-artist`}
+                      value={advancedFilters.artist}
+                      onChange={(event) =>
+                        updateAdvancedFilter("artist", event.target.value)
+                      }
+                      spellCheck={false}
+                      autoCorrect="off"
+                      autoCapitalize="none"
+                    />
+                  </div>
+                  <div className="grid gap-2">
+                    <Label htmlFor={`${props.title}-advanced-album`}>
+                      Album
+                    </Label>
+                    <Input
+                      id={`${props.title}-advanced-album`}
+                      value={advancedFilters.album}
+                      onChange={(event) =>
+                        updateAdvancedFilter("album", event.target.value)
+                      }
+                      spellCheck={false}
+                      autoCorrect="off"
+                      autoCapitalize="none"
+                    />
+                  </div>
+                  <div className="grid gap-2">
+                    <Label htmlFor={`${props.title}-advanced-creator`}>
+                      Creator
+                    </Label>
+                    <Input
+                      id={`${props.title}-advanced-creator`}
+                      value={advancedFilters.creator}
+                      onChange={(event) =>
+                        updateAdvancedFilter("creator", event.target.value)
+                      }
+                      spellCheck={false}
+                      autoCorrect="off"
+                      autoCapitalize="none"
+                    />
+                  </div>
+                  <div className="grid gap-2">
+                    <Label>Tuning</Label>
+                    <MultiSelectSelect
+                      label="Tuning"
+                      options={filterOptionsQuery.data?.tunings ?? []}
+                      selectedValues={advancedFilters.tuning}
+                      onAdd={(value) => toggleAdvancedTuning(value)}
+                      onRemove={(value) => toggleAdvancedTuning(value)}
+                    />
+                  </div>
+                  <div className="grid gap-2">
+                    <Label>Path</Label>
+                    <MultiSelectSelect
+                      label="Path"
+                      options={pathOptions.map((part) => formatPathLabel(part))}
+                      selectedValues={advancedFilters.parts.map((part) =>
+                        formatPathLabel(part)
+                      )}
+                      onAdd={(value) =>
+                        toggleAdvancedPart(getPathTokenFromLabel(value))
+                      }
+                      onRemove={(value) =>
+                        toggleAdvancedPart(getPathTokenFromLabel(value))
+                      }
+                      toneByValue={getPathToneByValue}
+                    />
+                    {advancedFilters.parts.length > 1 ? (
+                      <div className="flex flex-wrap gap-2">
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant={
+                            advancedFilters.partsMatchMode === "any"
+                              ? "secondary"
+                              : "ghost"
+                          }
+                          className="h-8 px-3 text-[11px] tracking-[0.05em] shadow-none"
+                          onClick={() =>
+                            updateAdvancedFilter("partsMatchMode", "any")
+                          }
+                        >
+                          Match any
+                        </Button>
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant={
+                            advancedFilters.partsMatchMode === "all"
+                              ? "secondary"
+                              : "ghost"
+                          }
+                          className="h-8 px-3 text-[11px] tracking-[0.05em] shadow-none"
+                          onClick={() =>
+                            updateAdvancedFilter("partsMatchMode", "all")
+                          }
+                        >
+                          Match all
+                        </Button>
+                      </div>
+                    ) : null}
+                  </div>
+                  <div className="grid gap-2">
+                    <Label>Year</Label>
+                    <MultiSelectSelect
+                      label="Year"
+                      options={(filterOptionsQuery.data?.years ?? []).map(
+                        (year) => String(year)
+                      )}
+                      selectedValues={advancedFilters.year.map((year) =>
+                        String(year)
+                      )}
+                      onAdd={(value) => toggleAdvancedYear(Number(value))}
+                      onRemove={(value) => toggleAdvancedYear(Number(value))}
+                    />
+                  </div>
+                  <div className="grid gap-2 self-start">
+                    <Label className="invisible">Actions</Label>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={clearAdvancedFilters}
+                    >
+                      Clear advanced filters
+                    </Button>
+                  </div>
                 </div>
-                <div className="grid gap-2">
-                  <Label htmlFor={`${props.title}-advanced-artist`}>
-                    Artist
-                  </Label>
-                  <Input
-                    id={`${props.title}-advanced-artist`}
-                    value={advancedFilters.artist}
-                    onChange={(event) =>
-                      updateAdvancedFilter("artist", event.target.value)
-                    }
-                    spellCheck={false}
-                    autoCorrect="off"
-                    autoCapitalize="none"
-                  />
-                </div>
-                <div className="grid gap-2">
-                  <Label htmlFor={`${props.title}-advanced-album`}>Album</Label>
-                  <Input
-                    id={`${props.title}-advanced-album`}
-                    value={advancedFilters.album}
-                    onChange={(event) =>
-                      updateAdvancedFilter("album", event.target.value)
-                    }
-                    spellCheck={false}
-                    autoCorrect="off"
-                    autoCapitalize="none"
-                  />
-                </div>
-                <div className="grid gap-2">
-                  <Label htmlFor={`${props.title}-advanced-creator`}>
-                    Creator
-                  </Label>
-                  <Input
-                    id={`${props.title}-advanced-creator`}
-                    value={advancedFilters.creator}
-                    onChange={(event) =>
-                      updateAdvancedFilter("creator", event.target.value)
-                    }
-                    spellCheck={false}
-                    autoCorrect="off"
-                    autoCapitalize="none"
-                  />
-                </div>
-                <div className="grid gap-2">
-                  <Label>Tuning</Label>
-                  <MultiSelectSelect
-                    label="Tuning"
-                    options={filterOptionsQuery.data?.tunings ?? []}
-                    selectedValues={advancedFilters.tuning}
-                    onAdd={(value) => toggleAdvancedTuning(value)}
-                    onRemove={(value) => toggleAdvancedTuning(value)}
-                  />
-                </div>
-                <div className="grid gap-2">
-                  <Label>Path</Label>
-                  <MultiSelectSelect
-                    label="Path"
-                    options={pathOptions.map((part) => formatPathLabel(part))}
-                    selectedValues={advancedFilters.parts.map((part) =>
-                      formatPathLabel(part)
-                    )}
-                    onAdd={(value) =>
-                      toggleAdvancedPart(getPathTokenFromLabel(value))
-                    }
-                    onRemove={(value) =>
-                      toggleAdvancedPart(getPathTokenFromLabel(value))
-                    }
-                    toneByValue={getPathToneByValue}
-                  />
-                </div>
-                <div className="grid gap-2">
-                  <Label>Year</Label>
-                  <MultiSelectSelect
-                    label="Year"
-                    options={(filterOptionsQuery.data?.years ?? []).map(
-                      (year) => String(year)
-                    )}
-                    selectedValues={advancedFilters.year.map((year) =>
-                      String(year)
-                    )}
-                    onAdd={(value) => toggleAdvancedYear(Number(value))}
-                    onRemove={(value) => toggleAdvancedYear(Number(value))}
-                  />
-                </div>
-                <div className="grid gap-2 self-start">
-                  <Label className="invisible">Actions</Label>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    onClick={clearAdvancedFilters}
-                  >
-                    Clear advanced filters
-                  </Button>
-                </div>
+
                 {resolvedAdvancedFiltersContent ? (
-                  <div className="grid gap-2 md:col-span-2 xl:col-span-4">
+                  <div className="grid gap-2">
                     {resolvedAdvancedFiltersContent}
                   </div>
                 ) : null}
               </div>
+            ) : null}
+
+            {resolvedControlsContent ? (
+              <div className="grid gap-3">{resolvedControlsContent}</div>
             ) : null}
           </CardContent>
         </Card>
@@ -861,12 +954,7 @@ export function SongSearchPanel(props: {
             {renderPagination("top")}
 
             <div className="overflow-hidden">
-              <div
-                className={cn(
-                  "paginated-transition-frame",
-                  resultsTransitionClassName
-                )}
-              >
+              <div>
                 <div
                   className={cn(
                     "search-panel__table-head grid gap-4 border-b border-(--border) px-5 py-4 text-[11px] font-semibold uppercase tracking-[0.22em] text-(--muted)",
@@ -900,22 +988,13 @@ export function SongSearchPanel(props: {
                   </div>
                 ) : null}
 
-                {!isLoading && requiresCoreSearchTerm ? (
-                  <div className="px-5 py-8 text-sm text-(--muted)">
-                    Add a title, artist, album, or creator.
-                  </div>
-                ) : null}
-
-                {!isLoading && !requiresCoreSearchTerm && error ? (
+                {!isLoading && error ? (
                   <div className="px-5 py-8 text-sm text-rose-300">
                     {getErrorMessage(error)}
                   </div>
                 ) : null}
 
-                {!isLoading &&
-                !queryTooShort &&
-                !requiresCoreSearchTerm &&
-                visibleResults.length === 0 ? (
+                {!isLoading && !queryTooShort && visibleResults.length === 0 ? (
                   <div className="px-5 py-8 text-sm text-(--muted)">
                     {hasSearchInput
                       ? "No songs matched those filters yet. Try broadening the search field or clearing one of the advanced inputs."
@@ -928,7 +1007,21 @@ export function SongSearchPanel(props: {
                     copiedCommand?.songId === song.id
                       ? copiedCommand.type
                       : null;
-                  const resultState = props.resultState?.(song) ?? {};
+                  const resultStateContext: SearchSongResultContext = {
+                    activePathFilters: advancedFilters.parts,
+                    activePathFilterMatchMode: advancedFilters.partsMatchMode,
+                    defaultPathFilters: normalizedDefaultPathFilters,
+                    defaultPathFilterMatchMode,
+                    hasOverriddenDefaultPathFilters:
+                      advancedFilters.partsMatchMode !==
+                        defaultPathFilterMatchMode ||
+                      !haveSameSelectedValues(
+                        advancedFilters.parts,
+                        normalizedDefaultPathFilters
+                      ),
+                  };
+                  const resultState =
+                    props.resultState?.(song, resultStateContext) ?? {};
                   const isDisabled = resultState.disabled === true;
                   const disabledReason =
                     resultState.reasons && resultState.reasons.length > 0
@@ -1108,7 +1201,7 @@ export function SongSearchPanel(props: {
                         ) : null}
                       </div>
 
-                      <div className="search-panel__copy flex items-center justify-end">
+                      <div className="search-panel__copy grid justify-items-end gap-2">
                         {hasCustomActions
                           ? props.renderActions?.({ song, resultState })
                           : renderDefaultActions(
@@ -1117,6 +1210,11 @@ export function SongSearchPanel(props: {
                               disabledReason,
                               copiedType
                             )}
+                        {resultState.warning ? (
+                          <p className="max-w-[18rem] text-right text-xs text-amber-200">
+                            {resultState.warning}
+                          </p>
+                        ) : null}
                       </div>
                     </div>
                   );
@@ -1167,6 +1265,19 @@ function getPathToneByValue(value: string) {
 
 function getPathTokenFromLabel(value: string) {
   return value.toLowerCase() === "lyrics" ? "voice" : value.toLowerCase();
+}
+
+function haveSameSelectedValues(left: string[], right: string[]) {
+  if (left.length !== right.length) {
+    return false;
+  }
+
+  const normalizedLeft = [...left].sort();
+  const normalizedRight = [...right].sort();
+
+  return normalizedLeft.every(
+    (value, index) => value === normalizedRight[index]
+  );
 }
 
 function MultiSelectSelect(props: {

@@ -10,7 +10,9 @@ import {
 import { ScrollText, ShieldAlert } from "lucide-react";
 import { useEffect, useState } from "react";
 import { DashboardPageHeader } from "~/components/dashboard-page-header";
+import { PlaylistQueueItemPreview } from "~/components/playlist-management-surface";
 import { Button } from "~/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "~/components/ui/card";
 import {
   Select,
   SelectContent,
@@ -352,6 +354,7 @@ function DashboardAdminPage() {
     auditsQuery.data?.offset ?? auditsOffset,
     audits.length
   );
+  const showPlaylistPrototype = import.meta.env.DEV;
 
   return (
     <div className="page-section-stack dashboard-admin grid gap-6">
@@ -475,6 +478,21 @@ function DashboardAdminPage() {
           </div>
         </div>
       </section>
+
+      {showPlaylistPrototype ? (
+        <section className="grid gap-4">
+          <div className="grid gap-1">
+            <h2 className="text-2xl font-semibold text-(--text)">
+              Playlist row prototype
+            </h2>
+            <p className="text-sm text-(--muted)">
+              Preview of a more condensed playlist item with always-visible song
+              versions.
+            </p>
+          </div>
+          <DevPlaylistPrototypeCard />
+        </section>
+      ) : null}
 
       <section className="grid gap-4">
         <div className="flex flex-wrap items-end justify-between gap-3">
@@ -612,6 +630,23 @@ function AdminMetric(props: {
         </p>
       ) : null}
     </div>
+  );
+}
+
+function DevPlaylistPrototypeCard() {
+  return (
+    <Card>
+      <CardHeader className="grid gap-2">
+        <CardTitle>Condensed multi-version playlist item</CardTitle>
+        <p className="text-sm text-(--muted)">
+          This preview uses the same playlist-item component as the live
+          playlist page, with a demo song that has two versions.
+        </p>
+      </CardHeader>
+      <CardContent>
+        <PlaylistQueueItemPreview />
+      </CardContent>
+    </Card>
   );
 }
 

@@ -616,17 +616,48 @@ describe("extension panel service", () => {
     expect(performViewerRequestMutationForChannelViewer).not.toHaveBeenCalled();
   });
 
-  it("delegates playlist management mutations for moderators", async () => {
+  it.each([
+    {
+      mutation: {
+        action: "setCurrent" as const,
+        itemId: "item-current",
+      },
+    },
+    {
+      mutation: {
+        action: "returnToQueue" as const,
+        itemId: "item-current",
+      },
+    },
+    {
+      mutation: {
+        action: "markPlayed" as const,
+        itemId: "item-current",
+      },
+    },
+    {
+      mutation: {
+        action: "changeRequestKind" as const,
+        itemId: "item-current",
+        requestKind: "vip" as const,
+      },
+    },
+    {
+      mutation: {
+        action: "deleteItem" as const,
+        itemId: "item-current",
+      },
+    },
+  ])("delegates playlist management mutation $mutation.action for moderators", async ({
+    mutation,
+  }) => {
     const response = await performExtensionPlaylistMutation({
       env,
       auth: {
         ...auth,
         role: "moderator",
       },
-      mutation: {
-        action: "setCurrent",
-        itemId: "item-current",
-      },
+      mutation,
     });
 
     expect(loadPlaylistManagementStateForAccess).toHaveBeenCalledWith(env, {
@@ -634,8 +665,15 @@ describe("extension panel service", () => {
       accessRole: "moderator",
       actorUserId: "user-1",
     });
-    expect(canPerformPlaylistMutationAction).toHaveBeenCalled();
-    expect(performPlaylistMutation).toHaveBeenCalled();
+    expect(canPerformPlaylistMutationAction).toHaveBeenCalledWith(
+      expect.anything(),
+      mutation.action
+    );
+    expect(performPlaylistMutation).toHaveBeenCalledWith(
+      env,
+      expect.anything(),
+      mutation
+    );
     await expect(response.json()).resolves.toEqual({ ok: true });
   });
 

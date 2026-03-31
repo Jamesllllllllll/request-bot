@@ -8,6 +8,7 @@ import {
   text,
   uniqueIndex,
 } from "drizzle-orm/sqlite-core";
+import { DEFAULT_MAX_QUEUE_SIZE } from "~/lib/settings-defaults";
 
 export const users = sqliteTable("users", {
   id: text("id").primaryKey(),
@@ -118,7 +119,9 @@ export const channelSettings = sqliteTable("channel_settings", {
   requiredPathsMatchMode: text("required_paths_match_mode")
     .notNull()
     .default("any"),
-  maxQueueSize: integer("max_queue_size").notNull().default(250),
+  maxQueueSize: integer("max_queue_size")
+    .notNull()
+    .default(DEFAULT_MAX_QUEUE_SIZE),
   maxViewerRequestsAtOnce: integer("max_viewer_requests_at_once")
     .notNull()
     .default(1),

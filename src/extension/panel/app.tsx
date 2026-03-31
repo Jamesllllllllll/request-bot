@@ -12,6 +12,7 @@ import { getReorderDestinationIndex } from "@atlaskit/pragmatic-drag-and-drop-hi
 import {
   Check,
   CircleAlert,
+  CircleCheckBig,
   Disc3,
   GripVertical,
   LoaderCircle,
@@ -22,6 +23,7 @@ import {
   Shuffle,
   Sparkles,
   Trash2,
+  Undo2,
   X,
 } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
@@ -2510,6 +2512,38 @@ function PanelPlaylistRow(props: {
     props.onReorder,
   ]);
 
+  useEffect(() => {
+    if (!isActionTrayOpen) {
+      return;
+    }
+
+    const handlePointerDown = (event: MouseEvent | TouchEvent) => {
+      const target = event.target;
+
+      if (
+        target instanceof Node &&
+        itemRef.current &&
+        !itemRef.current.contains(target)
+      ) {
+        props.onExpandedActionItemChange(null);
+        props.onConfirmRemoveChange(null);
+      }
+    };
+
+    document.addEventListener("mousedown", handlePointerDown);
+    document.addEventListener("touchstart", handlePointerDown);
+
+    return () => {
+      document.removeEventListener("mousedown", handlePointerDown);
+      document.removeEventListener("touchstart", handlePointerDown);
+    };
+  }, [
+    isActionTrayOpen,
+    props.itemId,
+    props.onConfirmRemoveChange,
+    props.onExpandedActionItemChange,
+  ]);
+
   return (
     <motion.div
       ref={itemRef}
@@ -2741,14 +2775,14 @@ function PanelPlaylistRow(props: {
                           {props.pendingAction === returnToQueueActionKey ? (
                             <LoaderCircle className="h-3.5 w-3.5 animate-spin" />
                           ) : (
-                            <Play className="h-3.5 w-3.5" />
+                            <Undo2 className="h-3.5 w-3.5" />
                           )}
                         </PanelActionIconButton>
                       ) : null}
 
                       {canMarkPlayed ? (
                         <PanelActionIconButton
-                          label="Mark played"
+                          label="Mark complete"
                           onClick={() => {
                             void props.onPlaylistMutation({
                               action: "markPlayed",
@@ -2760,7 +2794,7 @@ function PanelPlaylistRow(props: {
                           {props.pendingAction === markPlayedActionKey ? (
                             <LoaderCircle className="h-3.5 w-3.5 animate-spin" />
                           ) : (
-                            <Check className="h-3.5 w-3.5" />
+                            <CircleCheckBig className="h-3.5 w-3.5" />
                           )}
                         </PanelActionIconButton>
                       ) : null}
@@ -2773,7 +2807,7 @@ function PanelPlaylistRow(props: {
                           >
                             <span>
                               {props.canManagePlaylist
-                                ? "Delete item?"
+                                ? "Remove from playlist?"
                                 : "Remove request?"}
                             </span>
                             <Button
@@ -2819,7 +2853,7 @@ function PanelPlaylistRow(props: {
                           <PanelActionIconButton
                             label={
                               props.canManagePlaylist
-                                ? "Delete item"
+                                ? "Remove from playlist"
                                 : "Remove request"
                             }
                             className="text-(--danger) hover:bg-(--danger)/10 hover:text-(--danger)"

@@ -60,6 +60,8 @@ export const Route = createFileRoute("/api/channel/$slug/playlist")({
               ...getPlaylistManagementResponseBody(managementState),
               blocks: canManageBlockedChatters ? managementState.blocks : [],
               settings: {
+                requestsEnabled:
+                  managementState.settings?.requestsEnabled ?? true,
                 blacklistEnabled:
                   managementState.settings?.blacklistEnabled ?? false,
                 setlistEnabled:
@@ -69,6 +71,10 @@ export const Route = createFileRoute("/api/channel/$slug/playlist")({
                 subscribersMustFollowSetlist:
                   managementState.settings?.subscribersMustFollowSetlist ??
                   false,
+                requiredPathsJson:
+                  managementState.settings?.requiredPathsJson ?? "[]",
+                requiredPathsMatchMode:
+                  managementState.settings?.requiredPathsMatchMode ?? "any",
                 canManageRequests: canManageChannelRequests(managementState),
                 canManageBlacklist: canManageChannelBlacklist(managementState),
                 canManageSetlist: canManageChannelSetlist(managementState),
@@ -136,12 +142,15 @@ export const Route = createFileRoute("/api/channel/$slug/playlist")({
             channel,
             accessRole: sessionUserId ? "viewer" : "anonymous",
             settings: {
+              requestsEnabled: settings?.requestsEnabled ?? true,
               blacklistEnabled: settings?.blacklistEnabled ?? false,
               setlistEnabled: settings?.setlistEnabled ?? false,
               letSetlistBypassBlacklist:
                 settings?.letSetlistBypassBlacklist ?? false,
               subscribersMustFollowSetlist:
                 settings?.subscribersMustFollowSetlist ?? false,
+              requiredPathsJson: settings?.requiredPathsJson ?? "[]",
+              requiredPathsMatchMode: settings?.requiredPathsMatchMode ?? "any",
               canManageRequests: false,
               canManageBlacklist: false,
               canManageSetlist: false,

@@ -50,7 +50,16 @@ export function getSentryD1Database(env: SentryRuntimeEnv) {
   return instrumented;
 }
 
-function shouldEnableSentry(env: Pick<SentryRuntimeEnv, "SENTRY_DSN">) {
+function shouldEnableSentry(
+  env: Pick<SentryRuntimeEnv, "SENTRY_DSN" | "SENTRY_ENVIRONMENT">
+) {
+  return (
+    hasSentryDsn(env) &&
+    getSentryEnvironment(env.SENTRY_ENVIRONMENT) !== "development"
+  );
+}
+
+function hasSentryDsn(env: Pick<SentryRuntimeEnv, "SENTRY_DSN">) {
   return typeof env.SENTRY_DSN === "string" && env.SENTRY_DSN.length > 0;
 }
 

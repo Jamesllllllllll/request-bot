@@ -1,3 +1,4 @@
+import { setHttpStatus, startSpan } from "@sentry/cloudflare";
 import type { AppEnv } from "~/lib/env";
 import type {
   EventSubChatMessageEvent,
@@ -633,51 +634,98 @@ export async function sendChatReply(input: {
   senderUserId: string;
   message: string;
 }) {
-  const response = await fetchWithRetry({
-    url: `${twitchBaseUrl}/chat/messages`,
-    init: {
-      method: "POST",
-      headers: authHeaders(input.env, input.accessToken),
-      body: JSON.stringify({
-        broadcaster_id: input.broadcasterUserId,
-        sender_id: input.senderUserId,
-        message: input.message,
-      }),
+  return startSpan(
+    {
+      name: "Send Twitch chat reply",
+      op: "twitch.chat.reply",
+      attributes: {
+        "messaging.system": "twitch",
+        "messaging.destination.name": "chat/messages",
+        "request_bot.chat.reply.message_length": input.message.length,
+        "request_bot.chat.reply.max_retries": 4,
+      },
     },
-    maxRetries: 4,
-    baseDelayMs: 750,
-  });
+    async (span) => {
+      let spanStatusSet = false;
 
-  if (!response.ok) {
-    const errorBody = await response.text().catch(() => "");
-    throw new Error(
-      `Failed to send chat reply: ${response.status}${errorBody ? ` ${errorBody}` : ""}`
-    );
-  }
+      try {
+        const response = await fetchWithRetry({
+          url: `${twitchBaseUrl}/chat/messages`,
+          init: {
+            method: "POST",
+            headers: authHeaders(input.env, input.accessToken),
+            body: JSON.stringify({
+              broadcaster_id: input.broadcasterUserId,
+              sender_id: input.senderUserId,
+              message: input.message,
+            }),
+          },
+          maxRetries: 4,
+          baseDelayMs: 750,
+        });
 
-  const payload = (await response.json()) as {
-    data?: Array<{
-      message_id?: string;
-      is_sent?: boolean;
-      drop_reason?: {
-        code?: string;
-        message?: string;
-      } | null;
-    }>;
-  };
-  const result = payload.data?.[0];
+        setHttpStatus(span, response.status);
 
-  if (!result?.is_sent) {
-    const dropCode = result?.drop_reason?.code;
-    const dropMessage = result?.drop_reason?.message;
-    throw new Error(
-      `Chat reply accepted by Twitch API but not sent${dropCode || dropMessage ? `: ${dropCode ?? "unknown"}${dropMessage ? ` ${dropMessage}` : ""}` : "."}`
-    );
-  }
+        if (!response.ok) {
+          const errorBody = await response.text().catch(() => "");
+          throw new Error(
+            `Failed to send chat reply: ${response.status}${errorBody ? ` ${errorBody}` : ""}`
+          );
+        }
 
-  return {
-    messageId: result.message_id ?? null,
-  };
+        const payload = (await response.json()) as {
+          data?: Array<{
+            message_id?: string;
+            is_sent?: boolean;
+            drop_reason?: {
+              code?: string;
+              message?: string;
+            } | null;
+          }>;
+        };
+        const result = payload.data?.[0];
+
+        span.setAttribute(
+          "request_bot.chat.reply.is_sent",
+          Boolean(result?.is_sent)
+        );
+
+        if (!result?.is_sent) {
+          const dropCode = result?.drop_reason?.code;
+          const dropMessage = result?.drop_reason?.message;
+          if (dropCode) {
+            span.setAttribute("request_bot.chat.reply.drop_code", dropCode);
+          }
+          span.setStatus({
+            code: 2,
+            message: "failed_precondition",
+          });
+          spanStatusSet = true;
+          throw new Error(
+            `Chat reply accepted by Twitch API but not sent${dropCode || dropMessage ? `: ${dropCode ?? "unknown"}${dropMessage ? ` ${dropMessage}` : ""}` : "."}`
+          );
+        }
+
+        span.setStatus({
+          code: 1,
+          message: "ok",
+        });
+        spanStatusSet = true;
+
+        return {
+          messageId: result.message_id ?? null,
+        };
+      } catch (error) {
+        if (!spanStatusSet) {
+          span.setStatus({
+            code: 2,
+            message: "internal_error",
+          });
+        }
+        throw error;
+      }
+    }
+  );
 }
 
 export function isChatMessageEvent(

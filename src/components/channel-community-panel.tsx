@@ -1,12 +1,16 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Check, Minus, Plus } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Badge } from "~/components/ui/badge";
 import { Button } from "~/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "~/components/ui/card";
 import { Input } from "~/components/ui/input";
 import { getErrorMessage } from "~/lib/utils";
-import { clampVipTokenCount, formatVipTokenCount } from "~/lib/vip-tokens";
+import {
+  clampVipTokenCount,
+  formatVipTokenCount,
+  normalizeVipTokenCount,
+} from "~/lib/vip-tokens";
 
 type TwitchUserMatch = {
   id: string;
@@ -27,6 +31,10 @@ type VipTokenRowData = {
   displayName?: string | null;
   availableCount: number;
 };
+
+const VIP_TOKEN_SAVE_DEBOUNCE_MS = 800;
+const VIP_TOKEN_PAGE_SIZE = 10;
+const SYNTHETIC_VIP_SEARCH_USER_ID_PREFIX = "vip-existing:";
 
 export function ChannelCommunityPanel(props: {
   slug: string;
@@ -73,6 +81,91 @@ export function ChannelCommunityPanel(props: {
     null
   );
   const [vipSearchError, setVipSearchError] = useState<string | null>(null);
+  const [vipTokenPage, setVipTokenPage] = useState(1);
+  const [pendingVipFocusLogin, setPendingVipFocusLogin] = useState<
+    string | null
+  >(null);
+  const [highlightedVipTokenLogin, setHighlightedVipTokenLogin] = useState<
+    string | null
+  >(null);
+  const [vipTokenNotice, setVipTokenNotice] = useState<string | null>(null);
+  const [vipTokenNoticeVisible, setVipTokenNoticeVisible] = useState(false);
+  const normalizedVipLookupQuery = normalizeVipLookupValue(
+    debouncedVipLookupQuery
+  );
+
+  const vipTokensByLogin = useMemo(
+    () =>
+      new Map(
+        props.vipTokens.map((token) => [
+          normalizeVipLookupValue(token.login),
+          token,
+        ])
+      ),
+    [props.vipTokens]
+  );
+  const prioritizedVipLookupResults = useMemo(
+    () =>
+      buildPrioritizedVipLookupResults({
+        query: debouncedVipLookupQuery,
+        results: vipLookupResults,
+        vipTokens: props.vipTokens,
+      }),
+    [debouncedVipLookupQuery, props.vipTokens, vipLookupResults]
+  );
+  const totalVipTokenPages = Math.max(
+    1,
+    Math.ceil(props.vipTokens.length / VIP_TOKEN_PAGE_SIZE)
+  );
+  const paginatedVipTokens = useMemo(() => {
+    const start = (vipTokenPage - 1) * VIP_TOKEN_PAGE_SIZE;
+    return props.vipTokens.slice(start, start + VIP_TOKEN_PAGE_SIZE);
+  }, [props.vipTokens, vipTokenPage]);
+  const vipTokenRangeStart =
+    props.vipTokens.length > 0
+      ? (vipTokenPage - 1) * VIP_TOKEN_PAGE_SIZE + 1
+      : 0;
+  const vipTokenRangeEnd = Math.min(
+    props.vipTokens.length,
+    vipTokenPage * VIP_TOKEN_PAGE_SIZE
+  );
+  const shouldShowVipLookupResults =
+    normalizedVipLookupQuery.length >= 4 ||
+    prioritizedVipLookupResults.length > 0;
+  const hasShortVipLookupQuery =
+    normalizedVipLookupQuery.length > 0 && normalizedVipLookupQuery.length < 4;
+  const hasLocalVipLookupMatches = prioritizedVipLookupResults.some((user) =>
+    vipTokensByLogin.has(normalizeVipLookupValue(user.login))
+  );
+
+  async function handleGrantVipToken() {
+    if (!selectedVipUser) {
+      return;
+    }
+
+    const normalizedLogin = normalizeVipLookupValue(selectedVipUser.login);
+
+    try {
+      const payload: {
+        action: "addVipToken";
+        login: string;
+        displayName?: string;
+        twitchUserId?: string;
+      } = {
+        action: "addVipToken",
+        login: selectedVipUser.login,
+        displayName: selectedVipUser.displayName,
+      };
+
+      if (!isSyntheticVipLookupUserId(selectedVipUser.id)) {
+        payload.twitchUserId = selectedVipUser.id;
+      }
+
+      await mutation.mutateAsync(payload);
+      setPendingVipFocusLogin(normalizedLogin);
+      setVipTokenNotice("Added 1 token");
+    } catch {}
+  }
 
   useEffect(() => {
     const timeout = window.setTimeout(() => {
@@ -233,20 +326,74 @@ export function ChannelCommunityPanel(props: {
     };
   }, [debouncedVipLookupQuery, props.canViewVipTokens, props.slug]);
 
+  useEffect(() => {
+    setVipTokenPage((currentPage) => Math.min(currentPage, totalVipTokenPages));
+  }, [totalVipTokenPages]);
+
+  useEffect(() => {
+    if (!pendingVipFocusLogin) {
+      return;
+    }
+
+    const focusedIndex = props.vipTokens.findIndex(
+      (token) => normalizeVipLookupValue(token.login) === pendingVipFocusLogin
+    );
+
+    if (focusedIndex === -1) {
+      return;
+    }
+
+    setVipTokenPage(Math.floor(focusedIndex / VIP_TOKEN_PAGE_SIZE) + 1);
+    setHighlightedVipTokenLogin(pendingVipFocusLogin);
+    setPendingVipFocusLogin(null);
+  }, [pendingVipFocusLogin, props.vipTokens]);
+
+  useEffect(() => {
+    if (!highlightedVipTokenLogin) {
+      return;
+    }
+
+    const timeout = window.setTimeout(() => {
+      setHighlightedVipTokenLogin((current) =>
+        current === highlightedVipTokenLogin ? null : current
+      );
+    }, 1600);
+
+    return () => window.clearTimeout(timeout);
+  }, [highlightedVipTokenLogin]);
+
+  useEffect(() => {
+    if (!vipTokenNotice) {
+      setVipTokenNoticeVisible(false);
+      return;
+    }
+
+    setVipTokenNoticeVisible(true);
+    const fadeTimeout = window.setTimeout(() => {
+      setVipTokenNoticeVisible(false);
+    }, 900);
+    const clearTimeoutId = window.setTimeout(() => {
+      setVipTokenNotice((current) =>
+        current === vipTokenNotice ? null : current
+      );
+    }, 1250);
+
+    return () => {
+      window.clearTimeout(fadeTimeout);
+      window.clearTimeout(clearTimeoutId);
+    };
+  }, [vipTokenNotice]);
+
   if (!props.canManageBlockedChatters && !props.canViewVipTokens) {
     return null;
   }
 
   return (
     <section className="grid gap-6 max-[960px]:gap-4 max-[960px]:border-t max-[960px]:border-(--border) max-[960px]:pt-4">
-      <div className="grid gap-2 px-8 max-[960px]:px-6">
+      <div className="px-8 max-[960px]:px-6">
         <h2 className="text-3xl font-semibold tracking-tight text-(--text)">
-          Community controls
+          Moderator controls
         </h2>
-        <p className="max-w-3xl text-sm leading-7 text-(--muted)">
-          Manage blocked viewers and VIP token balances directly on the channel
-          page when your role allows it.
-        </p>
       </div>
 
       {props.canManageBlockedChatters || props.canViewVipTokens ? (
@@ -257,14 +404,36 @@ export function ChannelCommunityPanel(props: {
                 <CardTitle>Blocked viewers</CardTitle>
               </CardHeader>
               <CardContent className="grid gap-4 max-[960px]:px-0">
-                <Input
-                  value={blockedLookupQuery}
-                  onChange={(event) => {
-                    setBlockedLookupQuery(event.target.value);
-                    setSelectedBlockedUser(null);
-                  }}
-                  placeholder="Search Twitch username to block"
-                />
+                <div className="flex flex-wrap items-center gap-3">
+                  <Input
+                    value={blockedLookupQuery}
+                    onChange={(event) => {
+                      setBlockedLookupQuery(event.target.value);
+                      setSelectedBlockedUser(null);
+                    }}
+                    placeholder="Search Twitch username to block"
+                    className="min-w-[16rem] flex-1"
+                  />
+                  <Button
+                    onClick={() => {
+                      if (!selectedBlockedUser) {
+                        return;
+                      }
+
+                      mutation.mutate({
+                        action: "blockUser",
+                        twitchUserId: selectedBlockedUser.id,
+                        login: selectedBlockedUser.login,
+                        displayName: selectedBlockedUser.displayName,
+                        reason: "Blocked from making requests in this channel.",
+                      });
+                    }}
+                    disabled={mutation.isPending || !selectedBlockedUser}
+                    className="max-[520px]:w-full"
+                  >
+                    Block viewer
+                  </Button>
+                </div>
                 {blockedLookupQuery.trim().replace(/^@+/, "").length > 0 &&
                 blockedLookupQuery.trim().replace(/^@+/, "").length < 4 ? (
                   <p className="text-sm text-(--muted)">
@@ -354,26 +523,6 @@ export function ChannelCommunityPanel(props: {
                     )}
                   </div>
                 ) : null}
-                <div className="flex flex-wrap gap-3">
-                  <Button
-                    onClick={() => {
-                      if (!selectedBlockedUser) {
-                        return;
-                      }
-
-                      mutation.mutate({
-                        action: "blockUser",
-                        twitchUserId: selectedBlockedUser.id,
-                        login: selectedBlockedUser.login,
-                        displayName: selectedBlockedUser.displayName,
-                        reason: "Blocked from making requests in this channel.",
-                      });
-                    }}
-                    disabled={mutation.isPending || !selectedBlockedUser}
-                  >
-                    Block selected viewer
-                  </Button>
-                </div>
                 <p className="text-sm text-(--muted)">
                   Blocked viewers can still talk in Twitch chat, but they cannot
                   add or edit requests from chat, the website, or the extension
@@ -438,18 +587,31 @@ export function ChannelCommunityPanel(props: {
               <CardContent className="grid gap-4 max-[960px]:px-0">
                 {props.canManageVipTokens ? (
                   <>
-                    <Input
-                      value={vipLookupQuery}
-                      onChange={(event) => {
-                        setVipLookupQuery(event.target.value);
-                        setSelectedVipUser(null);
-                      }}
-                      placeholder="Search Twitch username to grant a token"
-                    />
-                    {vipLookupQuery.trim().replace(/^@+/, "").length > 0 &&
-                    vipLookupQuery.trim().replace(/^@+/, "").length < 4 ? (
+                    <div className="flex flex-wrap items-center gap-3">
+                      <Input
+                        value={vipLookupQuery}
+                        onChange={(event) => {
+                          setVipLookupQuery(event.target.value);
+                          setSelectedVipUser(null);
+                        }}
+                        placeholder="Search Twitch username to grant a token"
+                        className="min-w-[16rem] flex-1"
+                      />
+                      <Button
+                        onClick={() => {
+                          void handleGrantVipToken();
+                        }}
+                        disabled={mutation.isPending || !selectedVipUser}
+                        className="max-[520px]:w-full"
+                      >
+                        Grant token
+                      </Button>
+                    </div>
+                    {hasShortVipLookupQuery ? (
                       <p className="text-sm text-(--muted)">
-                        Type at least 4 characters to search Twitch usernames.
+                        {hasLocalVipLookupMatches
+                          ? "Existing VIP token holders appear below. Type at least 4 characters to search all Twitch usernames."
+                          : "Type at least 4 characters to search Twitch usernames."}
                       </p>
                     ) : null}
                     {needsVipChatterScopeReconnect ? (
@@ -472,24 +634,35 @@ export function ChannelCommunityPanel(props: {
                         {vipSearchError}
                       </div>
                     ) : null}
-                    {debouncedVipLookupQuery.length >= 4 ? (
+                    {shouldShowVipLookupResults ? (
                       <div className="overflow-hidden border border-(--border)">
-                        {vipLookupResults.length > 0 ? (
+                        {prioritizedVipLookupResults.length > 0 ? (
                           <div>
                             <div className="flex items-center justify-between gap-3 border-b border-(--border) bg-(--panel) px-4 py-3">
                               <p className="text-xs uppercase tracking-[0.16em] text-(--muted)">
-                                {vipPreferredSource === "chatters"
-                                  ? "Current chatters first"
-                                  : "Twitch matches"}
+                                {hasShortVipLookupQuery &&
+                                hasLocalVipLookupMatches
+                                  ? "VIP token holders first"
+                                  : vipPreferredSource === "chatters"
+                                    ? "Current chatters first"
+                                    : "Twitch matches"}
                               </p>
                               <Badge variant="outline">
-                                {vipLookupResults.length} result
-                                {vipLookupResults.length === 1 ? "" : "s"}
+                                {prioritizedVipLookupResults.length} result
+                                {prioritizedVipLookupResults.length === 1
+                                  ? ""
+                                  : "s"}
                               </Badge>
                             </div>
-                            {vipLookupResults.map((user, index) => {
+                            {prioritizedVipLookupResults.map((user, index) => {
+                              const normalizedUserLogin =
+                                normalizeVipLookupValue(user.login);
+                              const existingVipToken =
+                                vipTokensByLogin.get(normalizedUserLogin);
                               const isVipSelected =
-                                selectedVipUser?.id === user.id;
+                                normalizeVipLookupValue(
+                                  selectedVipUser?.login ?? ""
+                                ) === normalizedUserLogin;
 
                               return (
                                 <button
@@ -516,6 +689,17 @@ export function ChannelCommunityPanel(props: {
                                     </p>
                                   </div>
                                   <div className="flex items-center gap-2">
+                                    {existingVipToken ? (
+                                      <Badge className="border-sky-500/40 bg-sky-500/15 text-sky-100">
+                                        {formatVipTokenCount(
+                                          existingVipToken.availableCount
+                                        )}{" "}
+                                        token
+                                        {existingVipToken.availableCount === 1
+                                          ? ""
+                                          : "s"}
+                                      </Badge>
+                                    ) : null}
                                     {user.isCurrentChatter ? (
                                       <Badge className="border-emerald-500/40 bg-emerald-500/15 text-emerald-200">
                                         In chat
@@ -536,25 +720,6 @@ export function ChannelCommunityPanel(props: {
                         )}
                       </div>
                     ) : null}
-                    <div className="flex flex-wrap gap-3">
-                      <Button
-                        onClick={() => {
-                          if (!selectedVipUser) {
-                            return;
-                          }
-
-                          mutation.mutate({
-                            action: "addVipToken",
-                            login: selectedVipUser.login,
-                            displayName: selectedVipUser.displayName,
-                            twitchUserId: selectedVipUser.id,
-                          });
-                        }}
-                        disabled={mutation.isPending || !selectedVipUser}
-                      >
-                        Grant token to selected chatter
-                      </Button>
-                    </div>
                   </>
                 ) : (
                   <p className="text-sm text-(--muted)">
@@ -562,37 +727,94 @@ export function ChannelCommunityPanel(props: {
                     allowed moderator can change them.
                   </p>
                 )}
+                <div className="min-h-5" aria-live="polite" role="status">
+                  {vipTokenNotice ? (
+                    <p
+                      className={`text-sm text-emerald-300 transition-opacity duration-300 ${
+                        vipTokenNoticeVisible ? "opacity-100" : "opacity-0"
+                      }`}
+                    >
+                      {vipTokenNotice}
+                    </p>
+                  ) : null}
+                </div>
                 <div className="overflow-hidden border border-(--border) bg-(--panel-soft)">
                   {props.vipTokens.length > 0 ? (
-                    <table className="w-full border-collapse text-sm">
-                      <thead>
-                        <tr className="border-b border-(--border) bg-(--panel)">
-                          <th className="px-4 py-3 text-left font-semibold text-(--muted)">
-                            Username
-                          </th>
-                          <th className="px-4 py-3 text-left font-semibold text-(--muted)">
-                            Tokens
-                          </th>
-                          <th className="w-12 px-4 py-3" />
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {props.vipTokens.map((token) => (
-                          <VipTokenRow
-                            key={token.login}
-                            token={token}
-                            canManage={props.canManageVipTokens}
-                            onSave={async (input) => {
-                              mutation.mutate({
-                                action: "setVipTokenCount",
-                                login: input.login,
-                                count: input.count,
-                              });
-                            }}
-                          />
-                        ))}
-                      </tbody>
-                    </table>
+                    <>
+                      <table className="w-full border-collapse text-sm">
+                        <thead>
+                          <tr className="border-b border-(--border) bg-(--panel)">
+                            <th className="px-4 py-3 text-left font-semibold text-(--muted)">
+                              Username
+                            </th>
+                            <th className="px-4 py-3 text-left font-semibold text-(--muted)">
+                              Tokens
+                            </th>
+                            <th className="w-12 px-4 py-3" />
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {paginatedVipTokens.map((token) => (
+                            <VipTokenRow
+                              key={token.login}
+                              token={token}
+                              canManage={props.canManageVipTokens}
+                              isHighlighted={
+                                highlightedVipTokenLogin ===
+                                normalizeVipLookupValue(token.login)
+                              }
+                              onShowNotice={setVipTokenNotice}
+                              onSave={async (input) => {
+                                await mutation.mutateAsync({
+                                  action: "setVipTokenCount",
+                                  login: input.login,
+                                  count: input.count,
+                                });
+                              }}
+                            />
+                          ))}
+                        </tbody>
+                      </table>
+                      {props.vipTokens.length > VIP_TOKEN_PAGE_SIZE ? (
+                        <div className="flex flex-wrap items-center justify-between gap-3 border-t border-(--border) bg-(--panel) px-4 py-3">
+                          <p className="text-sm text-(--muted)">
+                            Showing {vipTokenRangeStart}-{vipTokenRangeEnd} of{" "}
+                            {props.vipTokens.length}
+                          </p>
+                          <div className="flex items-center gap-2">
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant="outline"
+                              onClick={() =>
+                                setVipTokenPage((current) =>
+                                  Math.max(1, current - 1)
+                                )
+                              }
+                              disabled={vipTokenPage === 1}
+                            >
+                              Previous
+                            </Button>
+                            <Badge variant="outline">
+                              Page {vipTokenPage} of {totalVipTokenPages}
+                            </Badge>
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant="outline"
+                              onClick={() =>
+                                setVipTokenPage((current) =>
+                                  Math.min(totalVipTokenPages, current + 1)
+                                )
+                              }
+                              disabled={vipTokenPage === totalVipTokenPages}
+                            >
+                              Next
+                            </Button>
+                          </div>
+                        </div>
+                      ) : null}
+                    </>
                   ) : (
                     <p className="px-4 py-3 text-sm text-(--muted)">
                       No VIP tokens yet.
@@ -617,7 +839,9 @@ export function ChannelCommunityPanel(props: {
 function VipTokenRow(props: {
   token: VipTokenRowData;
   canManage: boolean;
-  onSave(input: { login: string; count: number }): void;
+  isHighlighted?: boolean;
+  onShowNotice(message: string): void;
+  onSave(input: { login: string; count: number }): Promise<void>;
 }) {
   const [draftCount, setDraftCount] = useState(
     formatVipTokenCount(props.token.availableCount)
@@ -658,6 +882,9 @@ function VipTokenRow(props: {
     setSaveState("queued");
     const timeout = window.setTimeout(async () => {
       try {
+        const delta = normalizeVipTokenCount(
+          normalizedCount - props.token.availableCount
+        );
         setSaveState("saving");
         await props.onSave({
           login: props.token.login,
@@ -666,13 +893,16 @@ function VipTokenRow(props: {
         setDraftCount(formatVipTokenCount(normalizedCount));
         setHasLocalEdits(false);
         setSaveState("saved");
+        if (delta !== 0) {
+          props.onShowNotice(formatVipTokenDeltaNotice(delta));
+        }
         window.setTimeout(() => {
           setSaveState((current) => (current === "saved" ? "idle" : current));
         }, 1200);
       } catch {
         setSaveState("error");
       }
-    }, 500);
+    }, VIP_TOKEN_SAVE_DEBOUNCE_MS);
 
     return () => {
       window.clearTimeout(timeout);
@@ -681,13 +911,18 @@ function VipTokenRow(props: {
     draftCount,
     hasLocalEdits,
     props.canManage,
+    props.onShowNotice,
     props.onSave,
     props.token.availableCount,
     props.token.login,
   ]);
 
   return (
-    <tr className="border-b border-(--border) last:border-b-0">
+    <tr
+      className={`border-b border-(--border) transition-colors last:border-b-0 ${
+        props.isHighlighted ? "bg-sky-500/10" : ""
+      }`}
+    >
       <td className="px-4 py-3 font-medium text-(--text)">
         @{props.token.login}
       </td>
@@ -774,4 +1009,118 @@ function VipTokenRow(props: {
       </td>
     </tr>
   );
+}
+
+function normalizeVipLookupValue(value: string | null | undefined) {
+  return (value ?? "").trim().replace(/^@+/, "").toLowerCase();
+}
+
+function isSyntheticVipLookupUserId(id: string) {
+  return id.startsWith(SYNTHETIC_VIP_SEARCH_USER_ID_PREFIX);
+}
+
+function vipTokenMatchesLookupQuery(token: VipTokenRowData, query: string) {
+  const normalizedQuery = normalizeVipLookupValue(query);
+  if (!normalizedQuery) {
+    return false;
+  }
+
+  return (
+    normalizeVipLookupValue(token.login).includes(normalizedQuery) ||
+    normalizeVipLookupValue(token.displayName).includes(normalizedQuery)
+  );
+}
+
+function buildPrioritizedVipLookupResults(input: {
+  query: string;
+  results: TwitchUserMatch[];
+  vipTokens: VipTokenRowData[];
+}) {
+  const normalizedQuery = normalizeVipLookupValue(input.query);
+  if (!normalizedQuery) {
+    return [];
+  }
+
+  const vipTokensByLogin = new Map(
+    input.vipTokens.map((token) => [
+      normalizeVipLookupValue(token.login),
+      token,
+    ])
+  );
+  const mergedResults = new Map<string, TwitchUserMatch>();
+
+  for (const result of input.results) {
+    const normalizedLogin = normalizeVipLookupValue(result.login);
+    if (!normalizedLogin) {
+      continue;
+    }
+
+    mergedResults.set(normalizedLogin, result);
+  }
+
+  for (const token of input.vipTokens) {
+    const normalizedLogin = normalizeVipLookupValue(token.login);
+    if (!normalizedLogin || mergedResults.has(normalizedLogin)) {
+      continue;
+    }
+
+    if (!vipTokenMatchesLookupQuery(token, normalizedQuery)) {
+      continue;
+    }
+
+    mergedResults.set(normalizedLogin, {
+      id: `${SYNTHETIC_VIP_SEARCH_USER_ID_PREFIX}${normalizedLogin}`,
+      login: token.login,
+      displayName: token.displayName ?? token.login,
+    });
+  }
+
+  return [...mergedResults.values()].sort((left, right) => {
+    const leftLogin = normalizeVipLookupValue(left.login);
+    const rightLogin = normalizeVipLookupValue(right.login);
+    const leftDisplayName = normalizeVipLookupValue(left.displayName);
+    const rightDisplayName = normalizeVipLookupValue(right.displayName);
+    const leftHasVipTokens = vipTokensByLogin.has(leftLogin);
+    const rightHasVipTokens = vipTokensByLogin.has(rightLogin);
+
+    if (leftHasVipTokens !== rightHasVipTokens) {
+      return leftHasVipTokens ? -1 : 1;
+    }
+
+    const leftStartsWithQuery =
+      leftLogin.startsWith(normalizedQuery) ||
+      leftDisplayName.startsWith(normalizedQuery);
+    const rightStartsWithQuery =
+      rightLogin.startsWith(normalizedQuery) ||
+      rightDisplayName.startsWith(normalizedQuery);
+    if (leftStartsWithQuery !== rightStartsWithQuery) {
+      return leftStartsWithQuery ? -1 : 1;
+    }
+
+    if (!!left.isCurrentChatter !== !!right.isCurrentChatter) {
+      return left.isCurrentChatter ? -1 : 1;
+    }
+
+    return (left.displayName || left.login).localeCompare(
+      right.displayName || right.login,
+      undefined,
+      { sensitivity: "base" }
+    );
+  });
+}
+
+function formatVipTokenDeltaNotice(delta: number) {
+  const normalizedDelta = normalizeVipTokenCount(delta);
+  const formattedDelta = formatVipTokenCount(Math.abs(normalizedDelta));
+  const tokenLabel = formattedDelta === "1" ? "VIP token" : "VIP tokens";
+
+  if (normalizedDelta > 0) {
+    return `Added ${formattedDelta} ${tokenLabel}`;
+  }
+
+  if (normalizedDelta < 0) {
+    return `Removed ${formattedDelta} ${tokenLabel}`;
+  }
+
+  return "Saved VIP tokens";
 }

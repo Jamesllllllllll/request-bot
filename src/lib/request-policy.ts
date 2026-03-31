@@ -11,6 +11,15 @@ function normalize(value: string | undefined | null) {
   return (value ?? "").trim().toLowerCase();
 }
 
+function getNormalizedSongTunings(tuning: string | undefined | null) {
+  const normalized = tuning
+    ?.split("|")
+    .map((entry) => normalize(entry))
+    .filter(Boolean);
+
+  return normalized && normalized.length > 0 ? normalized : [];
+}
+
 export interface ChannelRequestSettings {
   requestsEnabled: boolean;
   allowAnyoneToRequest: boolean;
@@ -193,10 +202,14 @@ export function isSongAllowed(input: {
   }
 
   if (allowedTunings.length > 0) {
-    const songTuning = normalize(input.song.tuning);
-    const allowed = allowedTunings.some(
-      (entry) => normalize(entry) === songTuning
+    const songTunings = getNormalizedSongTunings(input.song.tuning);
+    const normalizedAllowedTunings = new Set(
+      allowedTunings.map((entry) => normalize(entry))
     );
+    const allowed =
+      songTunings.length > 0 &&
+      songTunings.every((entry) => normalizedAllowedTunings.has(entry));
+
     if (!allowed) {
       return {
         allowed: false,

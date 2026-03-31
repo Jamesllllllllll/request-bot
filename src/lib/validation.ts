@@ -44,6 +44,7 @@ export const searchInputSchema = z
     creator: z.string().trim().max(200).optional(),
     tuning: z.array(z.string().trim().max(200)).max(50).optional(),
     parts: z.array(z.enum(pathOptions)).max(pathOptions.length).optional(),
+    partsMatchMode: z.enum(["any", "all"]).default("any"),
     year: z
       .array(z.coerce.number().int().min(1900).max(2100))
       .max(200)
@@ -54,32 +55,11 @@ export const searchInputSchema = z
     sortDirection: z.enum(["asc", "desc"]).default("desc"),
   })
   .superRefine((input, ctx) => {
-    const hasCoreText = !!(
-      input.query ||
-      input.title ||
-      input.artist ||
-      input.album ||
-      input.creator
-    );
-
     if (input.query && input.query.length < 3) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
         message: "Search terms must be at least 3 characters.",
         path: ["query"],
-      });
-    }
-
-    if (
-      !hasCoreText &&
-      ((input.tuning && input.tuning.length > 0) ||
-        (input.parts && input.parts.length > 0) ||
-        (input.year && input.year.length > 0))
-    ) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        message: "Add a title, artist, album, or creator.",
-        path: ["title"],
       });
     }
   });

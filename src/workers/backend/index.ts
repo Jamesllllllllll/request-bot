@@ -1828,7 +1828,8 @@ async function sendReply(
 }
 
 const backendHandler = {
-  async fetch(request: Request, env: BackendEnv) {
+  async fetch(request: Request, env: BackendEnv, ctx: ExecutionContext) {
+    void ctx;
     await assertDatabaseSchemaCurrent(env);
     const url = new URL(request.url);
 
@@ -1938,7 +1939,12 @@ const backendHandler = {
 
     return new Response("Not found", { status: 404 });
   },
-  async queue(batch: MessageBatch<ReplyQueueMessage>, env: BackendEnv) {
+  async queue(
+    batch: MessageBatch<ReplyQueueMessage>,
+    env: BackendEnv,
+    ctx: ExecutionContext
+  ) {
+    void ctx;
     await assertDatabaseSchemaCurrent(env);
     for (const message of batch.messages) {
       try {
@@ -1958,17 +1964,55 @@ const backendHandler = {
       }
     }
   },
-  async scheduled(_controller: ScheduledController, env: BackendEnv) {
+  async scheduled(
+    _controller: ScheduledController,
+    env: BackendEnv,
+    ctx: ExecutionContext
+  ) {
+    void ctx;
     await withMonitor("request-bot-backend-scheduled", async () => {
       await assertDatabaseSchemaCurrent(env);
     });
   },
 } satisfies ExportedHandler<BackendEnv, ReplyQueueMessage>;
 
-export default withSentry<BackendEnv, ReplyQueueMessage>(
+const sentryBackendHandler = withSentry<BackendEnv, ReplyQueueMessage>(
   (env) => getSentryOptions(env),
-  backendHandler
+  {
+    fetch: backendHandler.fetch,
+    queue: backendHandler.queue,
+    scheduled: backendHandler.scheduled,
+  } satisfies ExportedHandler<BackendEnv, ReplyQueueMessage>
 );
+
+export default {
+  async fetch(request, env, ctx) {
+    if (!getSentryOptions(env)) {
+      return backendHandler.fetch(request, env, ctx);
+    }
+
+    const sentryFetch = sentryBackendHandler.fetch;
+    if (!sentryFetch) {
+      return backendHandler.fetch(request, env, ctx);
+    }
+
+    return sentryFetch(request, env, ctx);
+  },
+  async queue(batch, env, ctx) {
+    if (!getSentryOptions(env)) {
+      return backendHandler.queue?.(batch, env, ctx);
+    }
+
+    return sentryBackendHandler.queue?.(batch, env, ctx);
+  },
+  async scheduled(controller, env, ctx) {
+    if (!getSentryOptions(env)) {
+      return backendHandler.scheduled?.(controller, env, ctx);
+    }
+
+    return sentryBackendHandler.scheduled?.(controller, env, ctx);
+  },
+} satisfies ExportedHandler<BackendEnv, ReplyQueueMessage>;
 
 async function resolveTwitchUserForRequester(
   env: BackendEnv,

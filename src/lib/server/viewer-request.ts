@@ -486,6 +486,7 @@ function buildViewerCatalogSearchInput(input: {
 
   return {
     query: input.query,
+    field: "artist",
     page: input.page,
     pageSize: input.pageSize,
     sortBy: "relevance" as const,

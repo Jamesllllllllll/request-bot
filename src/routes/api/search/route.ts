@@ -13,6 +13,7 @@ import {
 } from "~/lib/db/repositories";
 import { assertDatabaseSchemaCurrent } from "~/lib/db/schema-version";
 import type { AppEnv } from "~/lib/env";
+import { getArraySetting } from "~/lib/request-policy";
 import { getErrorMessage, json, sha256 } from "~/lib/utils";
 import { searchInputSchema } from "~/lib/validation";
 
@@ -32,6 +33,7 @@ function normalizeSearchCacheInput(
     creator: input.creator ?? "",
     tuning: input.tuning ?? [],
     parts: input.parts ?? [],
+    partsMatchMode: input.partsMatchMode,
     year: input.year ?? [],
     page: input.page,
     pageSize: input.pageSize,
@@ -88,6 +90,7 @@ export const Route = createFileRoute("/api/search")({
               .filter(Boolean);
             return values.length > 0 ? values : undefined;
           })(),
+          partsMatchMode: url.searchParams.get("partsMatchMode") ?? undefined,
           year: (() => {
             const values = url.searchParams
               .getAll("year")
@@ -131,9 +134,12 @@ export const Route = createFileRoute("/api/search")({
           );
         }
 
+        const isChannelScopedSearch = !!normalizedInput.channelSlug;
         const cacheInput = normalizeSearchCacheInput(normalizedInput);
         const cacheKey = await sha256(JSON.stringify(cacheInput));
-        const cached = await getCachedSearchResult(runtimeEnv, cacheKey);
+        const cached = isChannelScopedSearch
+          ? null
+          : await getCachedSearchResult(runtimeEnv, cacheKey);
 
         if (cached) {
           return json(cached, {
@@ -145,7 +151,9 @@ export const Route = createFileRoute("/api/search")({
 
         try {
           let blacklistFilterInput = {};
-          if (normalizedInput.channelSlug && !normalizedInput.showBlacklisted) {
+          let channelPolicyFilterInput = {};
+          let hasBlacklistFilters = false;
+          if (normalizedInput.channelSlug) {
             const channel = await getChannelBySlug(
               runtimeEnv,
               normalizedInput.channelSlug
@@ -156,6 +164,13 @@ export const Route = createFileRoute("/api/search")({
                 getChannelSettingsByChannelId(runtimeEnv, channel.id),
                 getChannelBlacklistByChannelId(runtimeEnv, channel.id),
               ]);
+
+              channelPolicyFilterInput = {
+                restrictToOfficial: !!settings?.onlyOfficialDlc,
+                allowedTuningsFilter: getArraySetting(
+                  settings?.allowedTuningsJson
+                ),
+              };
 
               if (settings?.blacklistEnabled) {
                 blacklistFilterInput = {
@@ -178,24 +193,43 @@ export const Route = createFileRoute("/api/search")({
                     (charter) => charter.charterName
                   ),
                 };
+                hasBlacklistFilters = Object.values(blacklistFilterInput).some(
+                  (value) => Array.isArray(value) && value.length > 0
+                );
               }
             }
           }
 
           const results = await searchCatalogSongsInDb(runtimeEnv, {
             ...normalizedInput,
-            ...blacklistFilterInput,
+            ...channelPolicyFilterInput,
+            ...(normalizedInput.showBlacklisted ? {} : blacklistFilterInput),
           });
+          const resolvedResults =
+            normalizedInput.showBlacklisted && hasBlacklistFilters
+              ? {
+                  ...results,
+                  hiddenBlacklistedCount: (
+                    await searchCatalogSongsInDb(runtimeEnv, {
+                      ...normalizedInput,
+                      ...channelPolicyFilterInput,
+                      ...blacklistFilterInput,
+                    })
+                  ).hiddenBlacklistedCount,
+                }
+              : results;
 
-          await upsertCachedSearchResult(runtimeEnv, {
-            cacheKey,
-            responseJson: JSON.stringify(results),
-            expiresAt: Date.now() + searchCacheTtlMs,
-          });
+          if (!isChannelScopedSearch) {
+            await upsertCachedSearchResult(runtimeEnv, {
+              cacheKey,
+              responseJson: JSON.stringify(resolvedResults),
+              expiresAt: Date.now() + searchCacheTtlMs,
+            });
+          }
 
-          return json(results, {
+          return json(resolvedResults, {
             headers: {
-              "x-search-cache": "miss",
+              "x-search-cache": isChannelScopedSearch ? "bypass" : "miss",
             },
           });
         } catch (error) {

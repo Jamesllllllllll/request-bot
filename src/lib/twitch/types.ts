@@ -143,6 +143,22 @@ export interface EventSubSubscribeEvent {
   is_gift: boolean;
 }
 
+export interface EventSubSubscriptionMessageEvent {
+  user_id: string;
+  user_login: string;
+  user_name: string;
+  broadcaster_user_id: string;
+  broadcaster_user_login: string;
+  broadcaster_user_name: string;
+  tier: string;
+  cumulative_months?: number;
+  streak_months?: number | null;
+  duration_months?: number;
+  message: {
+    text: string;
+  };
+}
+
 export interface EventSubCheerEvent {
   is_anonymous: boolean;
   user_id?: string | null;
@@ -153,6 +169,16 @@ export interface EventSubCheerEvent {
   broadcaster_user_name: string;
   message: string;
   bits: number;
+}
+
+export interface EventSubRaidEvent {
+  from_broadcaster_user_id: string;
+  from_broadcaster_user_login: string;
+  from_broadcaster_user_name: string;
+  to_broadcaster_user_id: string;
+  to_broadcaster_user_login: string;
+  to_broadcaster_user_name: string;
+  viewers: number;
 }
 
 export interface TwitchEventSubCreateResponse {

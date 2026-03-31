@@ -55,6 +55,7 @@ function normalizeSearchCacheInput(
     creator: input.creator ?? "",
     tuning: input.tuning ?? [],
     parts: input.parts ?? [],
+    partsMatchMode: input.partsMatchMode,
     year: input.year ?? [],
     page: input.page,
     pageSize: input.pageSize,

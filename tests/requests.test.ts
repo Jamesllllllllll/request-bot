@@ -258,6 +258,72 @@ describe("request policy", () => {
     });
   });
 
+  it("allows songs when every tuning in a multi-tuning summary is allowed", () => {
+    expect(
+      isSongAllowed({
+        song: {
+          id: "song-multi-tuning-allowed",
+          sourceId: 99081,
+          title: "Neon Noir",
+          artist: "VV",
+          tuning: "E Standard | A Standard",
+          source: "library",
+        },
+        settings: {
+          ...baseSettings,
+          allowedTuningsJson: JSON.stringify(["E Standard", "A Standard"]),
+        },
+        blacklistArtists: [],
+        blacklistCharters: [],
+        blacklistSongs: [],
+        blacklistSongGroups: [],
+        setlistArtists: [],
+        requester: {
+          isBroadcaster: false,
+          isModerator: false,
+          isVip: false,
+          isSubscriber: false,
+        },
+      })
+    ).toEqual({
+      allowed: true,
+    });
+  });
+
+  it("rejects songs when a multi-tuning summary includes a disallowed tuning", () => {
+    expect(
+      isSongAllowed({
+        song: {
+          id: "song-multi-tuning-blocked",
+          sourceId: 99082,
+          title: "Neon Noir",
+          artist: "VV",
+          tuning: "E Standard | A Standard",
+          source: "library",
+        },
+        settings: {
+          ...baseSettings,
+          allowedTuningsJson: JSON.stringify(["E Standard"]),
+        },
+        blacklistArtists: [],
+        blacklistCharters: [],
+        blacklistSongs: [],
+        blacklistSongGroups: [],
+        setlistArtists: [],
+        requester: {
+          isBroadcaster: false,
+          isModerator: false,
+          isVip: false,
+          isSubscriber: false,
+        },
+      })
+    ).toEqual({
+      allowed: false,
+      reason: "That song's tuning is not allowed in this channel.",
+      reasonCode: "disallowed_tuning",
+    });
+  });
+
   it("blocks artists and songs by exact IDs", () => {
     expect(
       isSongAllowed({

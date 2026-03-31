@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Copy } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useId, useMemo, useState } from "react";
 import {
   StreamOverlay,
   type StreamOverlayTheme,
@@ -13,6 +13,7 @@ import {
   CardHeader,
   CardTitle,
 } from "~/components/ui/card";
+import { Checkbox } from "~/components/ui/checkbox";
 import { Input } from "~/components/ui/input";
 import { getErrorMessage, hexToRgba } from "~/lib/utils";
 import type { OverlaySettingsInputData } from "~/lib/validation";
@@ -527,7 +528,7 @@ export function OverlaySettingsPanel() {
       {showRestoreDialog ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4">
           <div className="w-full max-w-md border border-(--border-strong) bg-(--panel-strong) p-6 shadow-(--shadow)">
-            <h2 className="text-xl font-semibold text-(--text)">
+            <h2 className="text-2xl font-semibold text-(--text)">
               Restore defaults?
             </h2>
             <p className="mt-3 text-sm leading-7 text-(--muted)">
@@ -558,21 +559,24 @@ function ToggleRow(props: {
   checked: boolean;
   onChange: (value: boolean) => void;
 }) {
+  const inputId = useId();
+
   return (
-    <label className="grid gap-2 px-4 py-3 odd:bg-(--panel-soft) even:bg-(--panel-muted)">
+    <div className="grid gap-2 px-4 py-3 odd:bg-(--panel-soft) even:bg-(--panel-muted)">
       <div className="flex items-center justify-between gap-4">
-        <p className="font-medium text-(--text)">{props.label}</p>
-        <input
-          type="checkbox"
+        <label htmlFor={inputId} className="font-medium text-(--text)">
+          {props.label}
+        </label>
+        <Checkbox
+          id={inputId}
           checked={props.checked}
-          onChange={(event) => props.onChange(event.target.checked)}
-          className="h-5 w-5 shrink-0"
+          onCheckedChange={(checked) => props.onChange(checked === true)}
         />
       </div>
       {props.description ? (
         <p className="text-sm leading-6 text-(--muted)">{props.description}</p>
       ) : null}
-    </label>
+    </div>
   );
 }
 

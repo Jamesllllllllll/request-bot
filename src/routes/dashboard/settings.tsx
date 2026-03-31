@@ -1,8 +1,8 @@
 // Route: Renders request behavior and channel configuration settings.
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
-import { Copy } from "lucide-react";
-import { type ReactNode, useEffect, useState } from "react";
+import { ChevronDown, Copy } from "lucide-react";
+import { type ReactNode, useEffect, useId, useState } from "react";
 import { DashboardPageHeader } from "~/components/dashboard-page-header";
 import { OverlaySettingsPanel } from "~/components/overlay-settings-panel";
 import { Badge } from "~/components/ui/badge";
@@ -14,10 +14,17 @@ import {
   CardHeader,
   CardTitle,
 } from "~/components/ui/card";
+import { Checkbox } from "~/components/ui/checkbox";
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from "~/components/ui/collapsible";
 import { Input } from "~/components/ui/input";
 import { getBotStatusLabel } from "~/lib/bot-status";
 import { pathOptions, tuningOptions } from "~/lib/channel-options";
 import { pageTitle } from "~/lib/page-title";
+import { DEFAULT_MAX_QUEUE_SIZE } from "~/lib/settings-defaults";
 import { getErrorMessage } from "~/lib/utils";
 import type { SettingsInputData } from "~/lib/validation";
 
@@ -91,7 +98,7 @@ const defaultForm: DashboardSettingsFormData = {
   allowedTunings: allTuningOptions,
   requiredPaths: [],
   requiredPathsMatchMode: "any",
-  maxQueueSize: 50,
+  maxQueueSize: DEFAULT_MAX_QUEUE_SIZE,
   maxViewerRequestsAtOnce: 1,
   maxSubscriberRequestsAtOnce: 1,
   maxVipViewerRequestsAtOnce: 1,
@@ -107,13 +114,16 @@ const defaultForm: DashboardSettingsFormData = {
   setlistEnabled: false,
   subscribersMustFollowSetlist: false,
   autoGrantVipTokenToSubscribers: false,
+  autoGrantVipTokensForSharedSubRenewalMessage: false,
   autoGrantVipTokensToSubGifters: false,
   autoGrantVipTokensToGiftRecipients: false,
   autoGrantVipTokensForCheers: false,
+  autoGrantVipTokensForRaiders: false,
   autoGrantVipTokensForStreamElementsTips: false,
   allowRequestPathModifiers: false,
   cheerBitsPerVipToken: 200,
   cheerMinimumTokenPercent: 25,
+  raidMinimumViewerCount: 1,
   streamElementsTipAmountPerVipToken: 5,
   duplicateWindowSeconds: 900,
   showPlaylistPositions: false,
@@ -138,9 +148,11 @@ export const Route = createFileRoute("/dashboard/settings")({
 
 function DashboardSettingsPage() {
   const queryClient = useQueryClient();
-  const [saveMessage, setSaveMessage] = useState<string | null>(null);
   const [saveWarning, setSaveWarning] = useState<string | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
+  const [savedIndicatorPhase, setSavedIndicatorPhase] = useState<
+    "hidden" | "visible" | "fading"
+  >("hidden");
   const [relayUrlCopied, setRelayUrlCopied] = useState(false);
   const sessionQuery = useQuery<ViewerSessionData>({
     queryKey: ["viewer-session"],
@@ -179,12 +191,39 @@ function DashboardSettingsPage() {
     enabled: !sessionQuery.isLoading && hasOwnerChannel,
   });
   const [form, setForm] = useState<DashboardSettingsFormData>(defaultForm);
+  const [officialDlcOpen, setOfficialDlcOpen] = useState(false);
+  const [allowedTuningsOpen, setAllowedTuningsOpen] = useState(false);
+  const [requiredPathsOpen, setRequiredPathsOpen] = useState(false);
 
   useEffect(() => {
     if (settingsQuery.data?.settings) {
       setForm(normalizeSettingsFormData(settingsQuery.data.settings));
     }
   }, [settingsQuery.data]);
+
+  useEffect(() => {
+    if (savedIndicatorPhase === "hidden") {
+      return;
+    }
+
+    if (savedIndicatorPhase === "visible") {
+      const fadeTimer = window.setTimeout(() => {
+        setSavedIndicatorPhase("fading");
+      }, 1000);
+
+      return () => {
+        window.clearTimeout(fadeTimer);
+      };
+    }
+
+    const hideTimer = window.setTimeout(() => {
+      setSavedIndicatorPhase("hidden");
+    }, 300);
+
+    return () => {
+      window.clearTimeout(hideTimer);
+    };
+  }, [savedIndicatorPhase]);
 
   const mutation = useMutation({
     mutationFn: async () => {
@@ -215,9 +254,9 @@ function DashboardSettingsPage() {
       return body as { message?: string; warning?: string | null };
     },
     onMutate: () => {
-      setSaveMessage(null);
       setSaveWarning(null);
       setSaveError(null);
+      setSavedIndicatorPhase("hidden");
 
       return {
         submittedForm: normalizeSettingsFormData(form),
@@ -237,8 +276,8 @@ function DashboardSettingsPage() {
         );
       }
 
-      setSaveMessage(payload?.message ?? "Settings saved.");
       setSaveWarning(payload?.warning ?? null);
+      setSavedIndicatorPhase("visible");
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ["dashboard-settings"] }),
         queryClient.invalidateQueries({ queryKey: ["dashboard-overview"] }),
@@ -271,6 +310,18 @@ function DashboardSettingsPage() {
     !settingsQuery.error &&
     hasUnsavedChanges &&
     !mutation.isPending;
+  const activeSaveNotice = saveError
+    ? {
+        tone: "danger" as const,
+        message: saveError,
+      }
+    : saveWarning
+      ? {
+          tone: "warning" as const,
+          message: saveWarning,
+        }
+      : null;
+  const reserveSaveNoticeSpace = !!saveWarning || !!saveError;
   const pathSummary = buildRequiredPathsSummary(
     form.requiredPaths,
     form.requiredPathsMatchMode
@@ -393,7 +444,9 @@ function DashboardSettingsPage() {
       {!sessionQuery.isLoading && !hasOwnerChannel ? (
         <Card className="dashboard-settings__section">
           <CardHeader>
-            <CardTitle>Owner settings only</CardTitle>
+            <CardTitle as="h2" className="text-xl leading-tight md:text-2xl">
+              Owner settings only
+            </CardTitle>
             <CardDescription>
               This area is only available for channels you own. Use the channel
               page for moderation work on channels you manage.
@@ -477,32 +530,56 @@ function DashboardSettingsPage() {
                   </p>
                 </div>
 
-                <Button
-                  onClick={() => mutation.mutate()}
-                  disabled={!canSaveSettings}
-                  variant={
-                    hasUnsavedChanges || mutation.isPending
-                      ? "default"
-                      : "outline"
-                  }
-                >
-                  {mutation.isPending ? "Saving..." : "Save settings"}
-                </Button>
+                <div className="flex items-center gap-3">
+                  <span
+                    aria-live="polite"
+                    className={`text-xs font-semibold uppercase tracking-[0.16em] text-emerald-200 transition-opacity duration-300 ${
+                      savedIndicatorPhase === "hidden"
+                        ? "pointer-events-none opacity-0"
+                        : savedIndicatorPhase === "fading"
+                          ? "opacity-0"
+                          : "opacity-100"
+                    }`}
+                  >
+                    Saved
+                  </span>
+                  <Button
+                    onClick={() => mutation.mutate()}
+                    disabled={!canSaveSettings}
+                    variant={
+                      hasUnsavedChanges || mutation.isPending
+                        ? "default"
+                        : "outline"
+                    }
+                  >
+                    {mutation.isPending ? "Saving..." : "Save settings"}
+                  </Button>
+                </div>
               </div>
             </div>
 
-            {saveMessage && !hasUnsavedChanges ? (
-              <Banner tone="success">{saveMessage}</Banner>
-            ) : null}
-            {saveWarning ? <Banner tone="warning">{saveWarning}</Banner> : null}
-            {saveError ? <Banner tone="danger">{saveError}</Banner> : null}
+            <div
+              className={reserveSaveNoticeSpace ? "min-h-14" : ""}
+              style={{ overflowAnchor: "none" }}
+            >
+              {activeSaveNotice ? (
+                <Banner tone={activeSaveNotice.tone}>
+                  {activeSaveNotice.message}
+                </Banner>
+              ) : null}
+            </div>
 
             <Card className="dashboard-settings__section">
               <CardHeader>
-                <CardTitle>Channel setup</CardTitle>
+                <CardTitle
+                  as="h2"
+                  className="text-xl leading-tight md:text-2xl"
+                >
+                  Channel setup
+                </CardTitle>
                 <CardDescription>
-                  Turn requests on, set the command prefix, and control the
-                  basic playlist behavior viewers see.
+                  Control the main playlist toggles, chat command, and
+                  viewer-facing playlist behavior.
                 </CardDescription>
               </CardHeader>
               <CardContent className="grid gap-4 lg:grid-cols-[minmax(0,1.1fr)_minmax(0,0.9fr)]">
@@ -521,18 +598,36 @@ function DashboardSettingsPage() {
                     </div>
                   ) : null}
                   <div className="grid gap-3 border border-(--border) bg-(--panel-soft) p-4">
+                    <h3 className="text-sm font-semibold text-(--text)">
+                      Main toggles
+                    </h3>
                     <PermissionRow
-                      label="Enable playlist on your channel"
+                      label="Enable bot on this channel"
                       checked={form.botChannelEnabled}
                       onChange={(value) =>
                         setBoolean("botChannelEnabled", value)
                       }
                     />
+                    <div className="border border-dashed border-(--border) bg-(--panel-muted) p-3 text-sm leading-6 text-(--muted)">
+                      Turn this off when you do not want request-bot actions,
+                      including awarding VIP tokens for subscriptions, raids,
+                      etc.
+                    </div>
                     <PermissionRow
                       label="Enable requests"
                       checked={form.requestsEnabled}
                       onChange={(value) => setBoolean("requestsEnabled", value)}
                     />
+                    <div className="border border-dashed border-(--border) bg-(--panel-muted) p-3 text-sm leading-6 text-(--muted)">
+                      Turning requests off keeps playlist management available
+                      to you and your moderators, but viewers cannot add songs.
+                    </div>
+                  </div>
+
+                  <div className="grid gap-3 border border-(--border) bg-(--panel-soft) p-4">
+                    <h3 className="text-sm font-semibold text-(--text)">
+                      Playlist display
+                    </h3>
                     <PermissionRow
                       label="Show playlist positions"
                       checked={form.showPlaylistPositions}
@@ -551,6 +646,7 @@ function DashboardSettingsPage() {
                     <div className="max-w-32">
                       <Input
                         value={form.commandPrefix}
+                        spellCheck={false}
                         onChange={(event) =>
                           setForm((current) => ({
                             ...current,
@@ -597,7 +693,12 @@ function DashboardSettingsPage() {
 
             <Card className="dashboard-settings__section">
               <CardHeader>
-                <CardTitle>Who can request</CardTitle>
+                <CardTitle
+                  as="h2"
+                  className="text-xl leading-tight md:text-2xl"
+                >
+                  Who can request
+                </CardTitle>
                 <CardDescription>
                   Choose which viewers can add songs to your playlist.
                 </CardDescription>
@@ -635,45 +736,44 @@ function DashboardSettingsPage() {
 
             <Card className="dashboard-settings__section">
               <CardHeader>
-                <CardTitle>Search and request filters</CardTitle>
+                <CardTitle
+                  as="h2"
+                  className="text-xl leading-tight md:text-2xl"
+                >
+                  Search and request filters
+                </CardTitle>
                 <CardDescription>
                   These rules limit what appears in search and what viewers can
                   request on your channel page.
                 </CardDescription>
               </CardHeader>
               <CardContent className="grid gap-4">
-                <div className="grid gap-4 border border-(--border) bg-(--panel-soft) p-4">
+                <FilterSection
+                  title="Official DLC"
+                  description="Limit search results and requests to official DLC."
+                  open={officialDlcOpen}
+                  onOpenChange={setOfficialDlcOpen}
+                >
                   <div className="grid gap-3">
-                    <div className="grid gap-3">
-                      <div className="grid gap-1">
-                        <p className="font-medium text-(--text)">
-                          Official DLC
-                        </p>
-                        <p className="text-sm leading-6 text-(--muted)">
-                          Limit search results and requests to official DLC.
-                        </p>
-                      </div>
-                      <div className="grid gap-3 border border-(--border) bg-(--panel-muted) p-3">
-                        <PermissionRow
-                          label="Only include official DLC"
-                          checked={form.onlyOfficialDlc}
-                          onChange={(value) =>
-                            setBoolean("onlyOfficialDlc", value)
-                          }
-                          disabled
-                        />
-                        <PermissionRow
-                          label="Only include official DLC that I own"
-                          checked={false}
-                          onChange={() => {}}
-                          disabled
-                        />
-                      </div>
-                    </div>
-
                     <div className="border border-sky-500/30 bg-sky-500/10 px-3 py-2 text-sm text-sky-200">
                       Official DLC filters are not available yet. This section
                       previews settings that appear here in a future update.
+                    </div>
+                    <div className="grid gap-3 border border-(--border) bg-(--panel-muted) p-3">
+                      <PermissionRow
+                        label="Only include official DLC"
+                        checked={form.onlyOfficialDlc}
+                        onChange={(value) =>
+                          setBoolean("onlyOfficialDlc", value)
+                        }
+                        disabled
+                      />
+                      <PermissionRow
+                        label="Only include official DLC that I own"
+                        checked={false}
+                        onChange={() => {}}
+                        disabled
+                      />
                     </div>
 
                     <div className="grid gap-3 border border-(--border) bg-(--panel-muted) p-3">
@@ -715,21 +815,50 @@ function DashboardSettingsPage() {
                       </div>
                     </div>
                   </div>
-                </div>
+                </FilterSection>
 
-                <div className="grid gap-4 border border-(--border) bg-(--panel-soft) p-4">
-                  <div className="flex flex-wrap items-center justify-between gap-3">
-                    <div className="grid gap-1">
-                      <p className="font-medium text-(--text)">
-                        Allowed tunings
-                      </p>
-                      <p className="text-sm leading-6 text-(--muted)">
-                        Click any tuning to allow or block it.
-                      </p>
+                <FilterSection
+                  title="Allowed tunings"
+                  description="Click any tuning to allow or block it."
+                  open={allowedTuningsOpen}
+                  onOpenChange={setAllowedTuningsOpen}
+                >
+                  <div className="flex flex-wrap items-start justify-between gap-4">
+                    <div className="min-w-0 flex-1 grid gap-4">
+                      {groupTuningOptions(tuningOptions).map((group) => (
+                        <div key={group.label} className="grid gap-2">
+                          <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-(--muted)">
+                            {group.label}
+                          </p>
+                          <div className="flex flex-wrap gap-2">
+                            {group.options.map((option) => {
+                              const isSelected =
+                                form.allowedTunings.includes(option);
+
+                              return (
+                                <button
+                                  key={option}
+                                  type="button"
+                                  onClick={() => toggleAllowedTuning(option)}
+                                  aria-pressed={isSelected}
+                                  className={`border px-2.5 py-1.5 text-xs font-medium transition-colors ${
+                                    isSelected
+                                      ? "border-(--brand) bg-(--brand) text-white"
+                                      : "border-(--border) bg-(--panel-muted) text-(--muted)"
+                                  }`}
+                                >
+                                  {option}
+                                </button>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      ))}
                     </div>
                     <Button
                       type="button"
                       variant="outline"
+                      className="shrink-0"
                       onClick={() =>
                         setForm((current) => ({
                           ...current,
@@ -740,137 +869,111 @@ function DashboardSettingsPage() {
                       Allow all
                     </Button>
                   </div>
+                </FilterSection>
+
+                <FilterSection
+                  title="Required paths"
+                  description="Choose the paths a song needs before it appears in search or can be requested."
+                  open={requiredPathsOpen}
+                  onOpenChange={setRequiredPathsOpen}
+                >
                   <div className="grid gap-4">
-                    {groupTuningOptions(tuningOptions).map((group) => (
-                      <div key={group.label} className="grid gap-2">
-                        <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-(--muted)">
-                          {group.label}
-                        </p>
-                        <div className="flex flex-wrap gap-2">
-                          {group.options.map((option) => {
-                            const isSelected =
-                              form.allowedTunings.includes(option);
+                    <div className="flex flex-wrap gap-2">
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setForm((current) => ({
+                            ...current,
+                            requiredPathsMatchMode: "any",
+                          }))
+                        }
+                        className={`border px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.18em] transition-colors ${
+                          form.requiredPathsMatchMode === "any"
+                            ? "border-(--brand) bg-(--brand) text-white"
+                            : "border-(--border) bg-(--panel-muted) text-(--muted)"
+                        }`}
+                      >
+                        Match any selected path
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setForm((current) => ({
+                            ...current,
+                            requiredPathsMatchMode: "all",
+                          }))
+                        }
+                        className={`border px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.18em] transition-colors ${
+                          form.requiredPathsMatchMode === "all"
+                            ? "border-(--brand) bg-(--brand) text-white"
+                            : "border-(--border) bg-(--panel-muted) text-(--muted)"
+                        }`}
+                      >
+                        Match all selected paths
+                      </button>
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      {pathOptions.map((option) => {
+                        const isSelected = form.requiredPaths.includes(option);
 
-                            return (
-                              <button
-                                key={option}
-                                type="button"
-                                onClick={() => toggleAllowedTuning(option)}
-                                aria-pressed={isSelected}
-                                className={`border px-2.5 py-1.5 text-xs font-medium transition-colors ${
-                                  isSelected
-                                    ? "border-(--brand) bg-(--brand) text-white"
-                                    : "border-(--border) bg-(--panel-muted) text-(--muted)"
-                                }`}
-                              >
-                                {option}
-                              </button>
-                            );
-                          })}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-
-                <div className="grid gap-4 border border-(--border) bg-(--panel-soft) p-4">
-                  <div className="grid gap-1">
-                    <p className="font-medium text-(--text)">Required paths</p>
-                    <p className="text-sm leading-6 text-(--muted)">
-                      Choose the paths a song needs before it appears in search
-                      or can be requested.
-                    </p>
-                  </div>
-                  <div className="flex flex-wrap gap-2">
-                    <button
-                      type="button"
-                      onClick={() =>
-                        setForm((current) => ({
-                          ...current,
-                          requiredPathsMatchMode: "any",
-                        }))
-                      }
-                      className={`border px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.18em] transition-colors ${
-                        form.requiredPathsMatchMode === "any"
-                          ? "border-(--brand) bg-(--brand) text-white"
-                          : "border-(--border) bg-(--panel-muted) text-(--muted)"
-                      }`}
-                    >
-                      Match any selected path
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() =>
-                        setForm((current) => ({
-                          ...current,
-                          requiredPathsMatchMode: "all",
-                        }))
-                      }
-                      className={`border px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.18em] transition-colors ${
-                        form.requiredPathsMatchMode === "all"
-                          ? "border-(--brand) bg-(--brand) text-white"
-                          : "border-(--border) bg-(--panel-muted) text-(--muted)"
-                      }`}
-                    >
-                      Match all selected paths
-                    </button>
-                  </div>
-                  <div className="flex flex-wrap gap-2">
-                    {pathOptions.map((option) => {
-                      const isSelected = form.requiredPaths.includes(option);
-
-                      return (
-                        <button
-                          key={option}
-                          type="button"
-                          onClick={() =>
-                            setForm((current) => ({
-                              ...current,
-                              requiredPaths: toggleArrayValue(
-                                current.requiredPaths,
-                                option
-                              ),
-                            }))
-                          }
-                          aria-pressed={isSelected}
-                          className={`border px-2.5 py-1 text-xs font-semibold uppercase tracking-[0.16em] transition-colors ${
-                            isSelected
-                              ? getPathBadgeTone(option)
-                              : "border-(--border) bg-(--panel-muted) text-(--muted)"
-                          }`}
-                        >
-                          {formatPathOptionLabel(option)}
-                        </button>
-                      );
-                    })}
-                  </div>
-                  <div className="grid gap-2 border border-(--border) bg-(--panel-muted) p-3">
-                    <p className="text-sm font-medium text-(--text)">
-                      {pathSummary.summary}
-                    </p>
-                    {pathSummary.example ? (
-                      <p className="text-sm leading-6 text-(--muted)">
-                        {pathSummary.example}
+                        return (
+                          <button
+                            key={option}
+                            type="button"
+                            onClick={() =>
+                              setForm((current) => ({
+                                ...current,
+                                requiredPaths: toggleArrayValue(
+                                  current.requiredPaths,
+                                  option
+                                ),
+                              }))
+                            }
+                            aria-pressed={isSelected}
+                            className={`border px-2.5 py-1 text-xs font-semibold uppercase tracking-[0.16em] transition-colors ${
+                              isSelected
+                                ? getPathBadgeTone(option)
+                                : "border-(--border) bg-(--panel-muted) text-(--muted)"
+                            }`}
+                          >
+                            {formatPathOptionLabel(option)}
+                          </button>
+                        );
+                      })}
+                    </div>
+                    <div className="grid gap-2 border border-(--border) bg-(--panel-muted) p-3">
+                      <p className="text-sm font-medium text-(--text)">
+                        {pathSummary.summary}
                       </p>
-                    ) : null}
+                      {pathSummary.example ? (
+                        <p className="text-sm leading-6 text-(--muted)">
+                          {pathSummary.example}
+                        </p>
+                      ) : null}
+                    </div>
                   </div>
-                </div>
+                </FilterSection>
               </CardContent>
             </Card>
 
             <Card className="dashboard-settings__section">
               <CardHeader>
-                <CardTitle>Queue and rate limits</CardTitle>
+                <CardTitle
+                  as="h2"
+                  className="text-xl leading-tight md:text-2xl"
+                >
+                  Queue and rate limits
+                </CardTitle>
                 <CardDescription>
                   Set the playlist size and decide how often regular or VIP
                   requests can be added.
                 </CardDescription>
               </CardHeader>
-              <CardContent className="grid gap-6 lg:grid-cols-2">
-                <div className="grid content-start gap-3 lg:border-r lg:border-(--border) lg:pr-6">
-                  <p className="text-sm font-semibold text-(--text)">
+              <CardContent className="grid gap-4 lg:grid-cols-2">
+                <div className="grid min-w-0 content-start gap-3 border border-(--border) bg-(--panel-soft) p-4">
+                  <h3 className="text-sm font-semibold text-(--text)">
                     Queue limits
-                  </p>
+                  </h3>
                   <div className="divide-y divide-(--border)">
                     <CompactNumberRow
                       label="Maximum playlist size"
@@ -908,18 +1011,19 @@ function DashboardSettingsPage() {
                   </div>
                 </div>
 
-                <div className="grid content-start gap-4 lg:pl-6">
-                  <p className="text-sm font-semibold text-(--text)">
+                <div className="grid min-w-0 content-start gap-3 border border-(--border) bg-(--panel-soft) p-4">
+                  <h3 className="text-sm font-semibold text-(--text)">
                     Request rate limits
-                  </p>
+                  </h3>
 
                   <div
-                    className={`border p-4 ${
-                      form.limitRegularRequestsEnabled
-                        ? "border-(--border-strong) bg-(--panel-soft)"
-                        : "border-(--border) bg-(--panel-muted)/40 opacity-70"
+                    className={`grid gap-3 ${
+                      !form.limitRegularRequestsEnabled ? "opacity-70" : ""
                     }`}
                   >
+                    <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-(--muted)">
+                      Regular
+                    </p>
                     <PermissionRow
                       label="Enable regular request rate limit"
                       checked={form.limitRegularRequestsEnabled}
@@ -927,7 +1031,7 @@ function DashboardSettingsPage() {
                         setBoolean("limitRegularRequestsEnabled", value)
                       }
                     />
-                    <div className="mt-3 divide-y divide-(--border)">
+                    <div className="divide-y divide-(--border)">
                       <CompactNumberRow
                         label="Regular requests allowed"
                         value={form.regularRequestsPerPeriod}
@@ -948,12 +1052,13 @@ function DashboardSettingsPage() {
                   </div>
 
                   <div
-                    className={`border p-4 ${
-                      form.limitVipRequestsEnabled
-                        ? "border-(--border-strong) bg-(--panel-soft)"
-                        : "border-(--border) bg-(--panel-muted)/40 opacity-70"
+                    className={`grid gap-3 border-t border-(--border) pt-3 ${
+                      !form.limitVipRequestsEnabled ? "opacity-70" : ""
                     }`}
                   >
+                    <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-(--muted)">
+                      VIP
+                    </p>
                     <PermissionRow
                       label="Enable VIP request rate limit"
                       checked={form.limitVipRequestsEnabled}
@@ -986,229 +1091,326 @@ function DashboardSettingsPage() {
 
             <Card className="dashboard-settings__section">
               <CardHeader>
-                <CardTitle>VIP token automation</CardTitle>
+                <CardTitle
+                  as="h2"
+                  className="text-xl leading-tight md:text-2xl"
+                >
+                  VIP token automation
+                </CardTitle>
                 <CardDescription>
-                  Automatically reward VIP tokens for Twitch support events and
-                  StreamElements tips.
+                  Automatically reward VIP tokens for new subs, gifted subs,
+                  raids, cheers, and StreamElements tips.
                 </CardDescription>
               </CardHeader>
               <CardContent className="grid gap-6">
-                <div className="grid gap-4 xl:grid-cols-[minmax(0,0.78fr)_minmax(0,1.22fr)]">
-                  <div className="grid min-w-0 gap-3 border border-(--border) bg-(--panel-soft) p-4">
-                    <p className="text-sm font-semibold text-(--text)">
-                      Gifted subs
-                    </p>
-                    <PermissionRow
-                      label="Give 1 VIP token to the gifter for each gifted sub"
-                      checked={form.autoGrantVipTokensToSubGifters}
-                      onChange={(value) =>
-                        setBoolean("autoGrantVipTokensToSubGifters", value)
-                      }
-                    />
-                    <PermissionRow
-                      label="Give 1 VIP token to each gifted sub recipient"
-                      checked={form.autoGrantVipTokensToGiftRecipients}
-                      onChange={(value) =>
-                        setBoolean("autoGrantVipTokensToGiftRecipients", value)
-                      }
-                    />
-                  </div>
-
-                  <div
-                    className={`grid min-w-0 gap-4 border p-4 ${
-                      form.autoGrantVipTokensForCheers
-                        ? "border-(--border-strong) bg-(--panel-soft)"
-                        : "border-(--border) bg-(--panel-muted)/40"
-                    }`}
-                  >
-                    <PermissionRow
-                      label="Give VIP tokens for cheers"
-                      checked={form.autoGrantVipTokensForCheers}
-                      onChange={(value) =>
-                        setBoolean("autoGrantVipTokensForCheers", value)
-                      }
-                    />
-                    <div className="grid gap-4 lg:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]">
-                      <div
-                        className={`grid gap-2 ${!form.autoGrantVipTokensForCheers ? "opacity-60" : ""}`}
-                      >
-                        <p className="text-sm font-medium text-(--text)">
-                          Cheer conversion
-                        </p>
-                        <div className="flex flex-wrap items-center gap-3">
-                          <div className="w-24 shrink-0">
-                            <Input
-                              id="cheer-bits-per-vip-token"
-                              type="number"
-                              min={0}
-                              value={form.cheerBitsPerVipToken}
-                              disabled={!form.autoGrantVipTokensForCheers}
-                              onChange={(event) =>
-                                setNumber(
-                                  "cheerBitsPerVipToken",
-                                  Number(event.target.value) || 0
-                                )
-                              }
-                            />
-                          </div>
-                          <label
-                            htmlFor="cheer-bits-per-vip-token"
-                            className="text-sm text-(--muted)"
-                          >
-                            bits per 1 VIP token
-                          </label>
-                        </div>
-                      </div>
-                      <div
-                        className={`grid gap-2 ${!form.autoGrantVipTokensForCheers ? "opacity-60" : ""}`}
-                      >
-                        <p className="text-sm font-medium text-(--text)">
-                          Minimum cheer to earn a partial token
-                        </p>
-                        <div className="flex flex-wrap gap-2">
-                          {[25, 50, 75, 100].map((percent) => (
-                            <button
-                              key={percent}
-                              type="button"
-                              disabled={!form.autoGrantVipTokensForCheers}
-                              onClick={() =>
-                                setNumber(
-                                  "cheerMinimumTokenPercent",
-                                  percent as DashboardSettingsFormData["cheerMinimumTokenPercent"]
-                                )
-                              }
-                              className={`border px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.18em] transition-colors disabled:cursor-not-allowed ${
-                                form.cheerMinimumTokenPercent === percent
-                                  ? "border-(--brand) bg-(--brand) text-white"
-                                  : "border-(--border) bg-(--panel-muted) text-(--muted)"
-                              }`}
-                            >
-                              {percent}%
-                            </button>
-                          ))}
-                        </div>
+                <div className="grid items-start gap-4 xl:grid-cols-[minmax(0,0.78fr)_minmax(0,1.22fr)]">
+                  <div className="grid min-w-0 gap-4">
+                    <div className="grid min-w-0 gap-3 border border-(--border) bg-(--panel-soft) p-4">
+                      <h3 className="text-sm font-semibold text-(--text)">
+                        Subscribes
+                      </h3>
+                      <PermissionRow
+                        label="Give 1 VIP token for a new paid sub"
+                        checked={form.autoGrantVipTokenToSubscribers}
+                        onChange={(value) =>
+                          setBoolean("autoGrantVipTokenToSubscribers", value)
+                        }
+                      />
+                      <PermissionRow
+                        label="Give 1 VIP token for a shared sub renewal message"
+                        checked={
+                          form.autoGrantVipTokensForSharedSubRenewalMessage
+                        }
+                        onChange={(value) =>
+                          setBoolean(
+                            "autoGrantVipTokensForSharedSubRenewalMessage",
+                            value
+                          )
+                        }
+                      />
+                      <div className="border border-dashed border-(--border) bg-(--panel-muted) p-3 text-sm leading-6 text-(--muted)">
+                        Quiet sub renewals do not award automatically. Twitch
+                        only sends a renewal event here when the viewer shares
+                        the resub message in chat.
                       </div>
                     </div>
+
+                    <div className="grid min-w-0 gap-3 border border-(--border) bg-(--panel-soft) p-4">
+                      <h3 className="text-sm font-semibold text-(--text)">
+                        Gifted subs
+                      </h3>
+                      <PermissionRow
+                        label="Give 1 VIP token to the gifter for each gifted sub"
+                        checked={form.autoGrantVipTokensToSubGifters}
+                        onChange={(value) =>
+                          setBoolean("autoGrantVipTokensToSubGifters", value)
+                        }
+                      />
+                      <PermissionRow
+                        label="Give 1 VIP token to each gifted sub recipient"
+                        checked={form.autoGrantVipTokensToGiftRecipients}
+                        onChange={(value) =>
+                          setBoolean(
+                            "autoGrantVipTokensToGiftRecipients",
+                            value
+                          )
+                        }
+                      />
+                    </div>
+
                     <div
-                      className={`grid gap-1.5 border border-dashed border-(--border) bg-(--panel-muted)/60 p-3 ${
-                        !form.autoGrantVipTokensForCheers ? "opacity-60" : ""
+                      className={`grid min-w-0 gap-3 border bg-(--panel-soft) p-4 ${
+                        form.autoGrantVipTokensForRaiders
+                          ? "border-(--border-strong)"
+                          : "border-(--border) opacity-70"
                       }`}
                     >
-                      <p className="text-sm font-medium text-(--text)">
-                        Live example
-                      </p>
-                      {form.cheerBitsPerVipToken > 0 ? (
-                        <>
-                          <p className="text-sm leading-6 text-(--muted)">
-                            Minimum cheer:{" "}
-                            {formatSettingsNumber(cheerMinimumBits)} bits grants{" "}
-                            {formatSettingsNumber(cheerMinimumPartialTokens)} of
-                            a VIP token at the {form.cheerMinimumTokenPercent}%
-                            threshold.
-                          </p>
-                          <p className="text-sm leading-6 text-(--muted)">
-                            {formatSettingsNumber(form.cheerBitsPerVipToken)}{" "}
-                            bits grants 1 VIP token.{" "}
-                            {formatSettingsNumber(
-                              form.cheerBitsPerVipToken * 5
-                            )}{" "}
-                            bits grants 5 VIP tokens.
-                          </p>
-                        </>
-                      ) : (
-                        <p className="text-sm leading-6 text-(--muted)">
-                          Set the bits per VIP token above 0 to preview the
-                          minimum cheer threshold.
-                        </p>
-                      )}
+                      <h3 className="text-sm font-semibold text-(--text)">
+                        Raids
+                      </h3>
+                      <PermissionRow
+                        label="Give 1 VIP token to the streamer who raids this channel"
+                        checked={form.autoGrantVipTokensForRaiders}
+                        onChange={(value) =>
+                          setBoolean("autoGrantVipTokensForRaiders", value)
+                        }
+                      />
+                      <FieldBlock
+                        label="Minimum raid size"
+                        description="Set 1 to reward every raid."
+                      >
+                        <div className="max-w-32">
+                          <Input
+                            type="number"
+                            min={1}
+                            value={form.raidMinimumViewerCount}
+                            disabled={!form.autoGrantVipTokensForRaiders}
+                            onChange={(event) =>
+                              setNumber(
+                                "raidMinimumViewerCount",
+                                Math.max(1, Number(event.target.value) || 0)
+                              )
+                            }
+                          />
+                        </div>
+                      </FieldBlock>
+                      <div className="border border-dashed border-(--border) bg-(--panel-muted) p-3 text-sm leading-6 text-(--muted)">
+                        Twitch only sends raid rewards here when the raid shows
+                        up in chat.
+                      </div>
                     </div>
                   </div>
-                </div>
 
-                <div
-                  className={`grid gap-4 border p-4 ${
-                    form.autoGrantVipTokensForStreamElementsTips
-                      ? "border-(--border-strong) bg-(--panel-soft)"
-                      : "border-(--border) bg-(--panel-muted)/40"
-                  }`}
-                >
-                  <PermissionRow
-                    label="Give VIP tokens for StreamElements tips"
-                    checked={form.autoGrantVipTokensForStreamElementsTips}
-                    onChange={(value) =>
-                      setBoolean(
-                        "autoGrantVipTokensForStreamElementsTips",
-                        value
-                      )
-                    }
-                  />
-                  <div className="grid gap-4 md:grid-cols-[minmax(0,0.8fr)_minmax(0,1.2fr)]">
-                    <FieldBlock
-                      label="Tip amount per 1 VIP token"
-                      description="A $25 tip grants 5 VIP tokens when this is set to 5."
+                  <div className="grid min-w-0 content-start gap-4">
+                    <div
+                      className={`grid min-w-0 gap-3 border bg-(--panel-soft) p-4 ${
+                        form.autoGrantVipTokensForCheers
+                          ? "border-(--border-strong)"
+                          : "border-(--border) opacity-70"
+                      }`}
                     >
-                      <div className="max-w-40">
-                        <Input
-                          type="number"
-                          min={0.01}
-                          step={0.01}
-                          value={form.streamElementsTipAmountPerVipToken}
-                          disabled={
-                            !form.autoGrantVipTokensForStreamElementsTips
-                          }
-                          onChange={(event) =>
-                            setNumber(
-                              "streamElementsTipAmountPerVipToken",
-                              Number(event.target.value) || 0
-                            )
-                          }
-                        />
+                      <h3 className="text-sm font-semibold text-(--text)">
+                        Cheers
+                      </h3>
+                      <PermissionRow
+                        label="Give VIP tokens for cheers"
+                        checked={form.autoGrantVipTokensForCheers}
+                        onChange={(value) =>
+                          setBoolean("autoGrantVipTokensForCheers", value)
+                        }
+                      />
+                      <div
+                        className={`grid gap-3 ${!form.autoGrantVipTokensForCheers ? "opacity-60" : ""}`}
+                      >
+                        <div className="grid gap-3 md:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]">
+                          <div className="grid gap-1.5">
+                            <p className="text-sm font-medium text-(--text)">
+                              Cheer conversion
+                            </p>
+                            <div className="flex flex-wrap items-center gap-2">
+                              <div className="w-24 shrink-0">
+                                <Input
+                                  id="cheer-bits-per-vip-token"
+                                  type="number"
+                                  min={0}
+                                  value={form.cheerBitsPerVipToken}
+                                  disabled={!form.autoGrantVipTokensForCheers}
+                                  onChange={(event) =>
+                                    setNumber(
+                                      "cheerBitsPerVipToken",
+                                      Number(event.target.value) || 0
+                                    )
+                                  }
+                                />
+                              </div>
+                              <label
+                                htmlFor="cheer-bits-per-vip-token"
+                                className="text-sm text-(--muted)"
+                              >
+                                bits per 1 VIP token
+                              </label>
+                            </div>
+                          </div>
+                          <div className="grid gap-1.5">
+                            <p className="text-sm font-medium text-(--text)">
+                              Minimum cheer to earn a partial token
+                            </p>
+                            <div className="flex flex-wrap gap-2">
+                              {[25, 50, 75, 100].map((percent) => (
+                                <button
+                                  key={percent}
+                                  type="button"
+                                  disabled={!form.autoGrantVipTokensForCheers}
+                                  onClick={() =>
+                                    setNumber(
+                                      "cheerMinimumTokenPercent",
+                                      percent as DashboardSettingsFormData["cheerMinimumTokenPercent"]
+                                    )
+                                  }
+                                  className={`border px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.18em] transition-colors disabled:cursor-not-allowed ${
+                                    form.cheerMinimumTokenPercent === percent
+                                      ? "border-(--brand) bg-(--brand) text-white"
+                                      : "border-(--border) bg-(--panel-muted) text-(--muted)"
+                                  }`}
+                                >
+                                  {percent}%
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+                        </div>
+                        <div className="grid gap-1.5 border border-dashed border-(--border) bg-(--panel-muted) p-3">
+                          <p className="text-sm font-medium text-(--text)">
+                            Live example
+                          </p>
+                          {form.cheerBitsPerVipToken > 0 ? (
+                            <>
+                              <p className="text-sm leading-6 text-(--muted)">
+                                Minimum cheer:{" "}
+                                {formatSettingsNumber(cheerMinimumBits)} bits
+                                grants{" "}
+                                {formatSettingsNumber(
+                                  cheerMinimumPartialTokens
+                                )}{" "}
+                                of a VIP token at the{" "}
+                                {form.cheerMinimumTokenPercent}% threshold.
+                              </p>
+                              <p className="text-sm leading-6 text-(--muted)">
+                                {formatSettingsNumber(
+                                  form.cheerBitsPerVipToken
+                                )}{" "}
+                                bits grants 1 VIP token.{" "}
+                                {formatSettingsNumber(
+                                  form.cheerBitsPerVipToken * 5
+                                )}{" "}
+                                bits grants 5 VIP tokens.
+                              </p>
+                            </>
+                          ) : (
+                            <p className="text-sm leading-6 text-(--muted)">
+                              Set the bits per VIP token above 0 to preview the
+                              minimum cheer threshold.
+                            </p>
+                          )}
+                        </div>
                       </div>
-                    </FieldBlock>
-                    <FieldBlock
-                      label="Relay URL"
-                      description="Paste this into the Streamer.bot step that forwards your StreamElements Tip event."
+                    </div>
+
+                    <div
+                      className={`grid min-w-0 gap-3 border bg-(--panel-soft) p-4 ${
+                        form.autoGrantVipTokensForStreamElementsTips
+                          ? "border-(--border-strong)"
+                          : "border-(--border) opacity-70"
+                      }`}
                     >
-                      <div className="grid min-w-0 grid-cols-[minmax(0,1fr)_auto] items-stretch gap-2">
-                        <Input
-                          value={streamElementsTipRelayUrl ?? ""}
-                          readOnly
-                          disabled={!streamElementsTipRelayUrl}
-                        />
-                        <Button
-                          type="button"
-                          variant="outline"
-                          onClick={copyRelayUrl}
-                          disabled={!streamElementsTipRelayUrl}
-                          className="self-stretch"
-                        >
-                          <Copy className="h-4 w-4" />
-                          {relayUrlCopied ? "Copied" : "Copy URL"}
-                        </Button>
+                      <h3 className="text-sm font-semibold text-(--text)">
+                        Tips
+                      </h3>
+                      <PermissionRow
+                        label="Give VIP tokens for StreamElements tips"
+                        checked={form.autoGrantVipTokensForStreamElementsTips}
+                        onChange={(value) =>
+                          setBoolean(
+                            "autoGrantVipTokensForStreamElementsTips",
+                            value
+                          )
+                        }
+                      />
+                      <div
+                        className={`grid gap-3 ${!form.autoGrantVipTokensForStreamElementsTips ? "opacity-60" : ""}`}
+                      >
+                        <div className="grid gap-4 md:grid-cols-[minmax(0,0.8fr)_minmax(0,1.2fr)]">
+                          <FieldBlock
+                            label="Tip amount per 1 VIP token"
+                            description="A $25 tip grants 5 VIP tokens when this is set to 5."
+                          >
+                            <div className="max-w-40">
+                              <Input
+                                type="number"
+                                min={0.01}
+                                step={0.01}
+                                value={form.streamElementsTipAmountPerVipToken}
+                                disabled={
+                                  !form.autoGrantVipTokensForStreamElementsTips
+                                }
+                                onChange={(event) =>
+                                  setNumber(
+                                    "streamElementsTipAmountPerVipToken",
+                                    Number(event.target.value) || 0
+                                  )
+                                }
+                              />
+                            </div>
+                          </FieldBlock>
+                          <FieldBlock
+                            label="Relay URL"
+                            description="Use this URL in the Streamer.bot step that forwards your StreamElements tip event."
+                          >
+                            <div className="grid min-w-0 grid-cols-[minmax(0,1fr)_auto] items-stretch gap-2">
+                              <Input
+                                value={streamElementsTipRelayUrl ?? ""}
+                                readOnly
+                                disabled={!streamElementsTipRelayUrl}
+                              />
+                              <Button
+                                type="button"
+                                variant="outline"
+                                onClick={copyRelayUrl}
+                                disabled={!streamElementsTipRelayUrl}
+                                className="self-stretch"
+                              >
+                                <Copy className="h-4 w-4" />
+                                {relayUrlCopied ? "Copied" : "Copy URL"}
+                              </Button>
+                            </div>
+                          </FieldBlock>
+                        </div>
+                        <div className="grid gap-2 border border-(--border) bg-(--panel-muted) p-3">
+                          <p className="text-sm font-medium text-(--text)">
+                            Setup
+                          </p>
+                          <p className="text-sm leading-6 text-(--muted)">
+                            StreamElements can keep showing tip alerts in OBS
+                            the way you already use them. VIP token rewards need
+                            Streamer.bot to forward the tip event here.
+                          </p>
+                          <ol className="grid gap-1.5 pl-5 text-sm leading-6 text-(--muted) list-decimal">
+                            <li>Connect Streamer.bot to StreamElements.</li>
+                            <li>
+                              Use the StreamElements Tip trigger in
+                              Streamer.bot.
+                            </li>
+                            <li>
+                              Send that tip event to the Relay URL shown here.
+                            </li>
+                            <li>
+                              Without Streamer.bot, tips still show in OBS, but
+                              they do not add VIP tokens here.
+                            </li>
+                          </ol>
+                        </div>
                       </div>
-                    </FieldBlock>
-                    <FieldBlock
-                      label="Setup today"
-                      description="StreamElements can already show tip alerts in OBS. VIP token rewards need Streamer.bot to forward the tip event here."
-                    >
-                      <ol className="grid gap-2 pl-5 text-sm leading-6 text-(--muted) list-decimal">
-                        <li>
-                          Keep your StreamElements tip alert in OBS the way you
-                          already use it.
-                        </li>
-                        <li>
-                          Connect Streamer.bot to StreamElements and use the
-                          StreamElements Tip trigger.
-                        </li>
-                        <li>
-                          Send that tip event to the Relay URL shown here.
-                        </li>
-                        <li>
-                          If you do not use Streamer.bot yet, tips still show in
-                          OBS, but they do not add VIP tokens here.
-                        </li>
-                      </ol>
-                    </FieldBlock>
+                    </div>
                   </div>
                 </div>
               </CardContent>
@@ -1216,7 +1418,12 @@ function DashboardSettingsPage() {
 
             <Card className="dashboard-settings__section">
               <CardHeader>
-                <CardTitle>Blacklist and setlist rules</CardTitle>
+                <CardTitle
+                  as="h2"
+                  className="text-xl leading-tight md:text-2xl"
+                >
+                  Blacklist and setlist rules
+                </CardTitle>
                 <CardDescription>
                   Blacklist and setlist entries are managed on the channel page.
                   These toggles control how those rules are enforced.
@@ -1252,7 +1459,12 @@ function DashboardSettingsPage() {
 
             <Card className="dashboard-settings__section">
               <CardHeader>
-                <CardTitle>Moderator permissions</CardTitle>
+                <CardTitle
+                  as="h2"
+                  className="text-xl leading-tight md:text-2xl"
+                >
+                  Moderator permissions
+                </CardTitle>
                 <CardDescription>
                   Moderators always see VIP tokens. Turn other
                   channel-management actions on or off here.
@@ -1344,25 +1556,75 @@ function FieldBlock(props: {
   );
 }
 
+function FilterSection(props: {
+  title: string;
+  description: string;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  children: ReactNode;
+}) {
+  return (
+    <Collapsible
+      open={props.open}
+      onOpenChange={props.onOpenChange}
+      className="overflow-hidden border border-(--border) bg-(--panel-soft)"
+    >
+      <CollapsibleTrigger asChild>
+        <button
+          type="button"
+          className="flex w-full items-start justify-between gap-4 px-4 py-4 text-left transition-colors hover:bg-(--panel)"
+        >
+          <div className="grid gap-1">
+            <h3 className="text-lg font-semibold leading-tight text-(--text)">
+              {props.title}
+            </h3>
+            <p className="text-sm leading-6 text-(--muted)">
+              {props.description}
+            </p>
+          </div>
+          <span className="flex shrink-0 items-center gap-2 pt-0.5 text-xs font-semibold uppercase tracking-[0.16em] text-(--muted)">
+            {props.open ? "Hide" : "Show"}
+            <ChevronDown
+              className={`h-4 w-4 transition-transform ${
+                props.open ? "rotate-180" : ""
+              }`}
+            />
+          </span>
+        </button>
+      </CollapsibleTrigger>
+      <CollapsibleContent className="border-t border-(--border) bg-(--panel-soft) px-4 py-4">
+        {props.children}
+      </CollapsibleContent>
+    </Collapsible>
+  );
+}
+
 function PermissionRow(props: {
   label: string;
   checked: boolean;
   onChange: (value: boolean) => void;
   disabled?: boolean;
 }) {
+  const inputId = useId();
+
   return (
-    <label
-      className={`flex items-center gap-3 ${props.disabled ? "opacity-60" : ""}`}
+    <div
+      className={`flex items-start gap-3 rounded-[8px] px-1 py-1 ${props.disabled ? "opacity-60" : ""}`}
     >
-      <input
-        type="checkbox"
+      <Checkbox
+        id={inputId}
         checked={props.checked}
-        onChange={(event) => props.onChange(event.target.checked)}
+        onCheckedChange={(checked) => props.onChange(checked === true)}
         disabled={props.disabled}
-        className="mt-1 h-4 w-4 shrink-0"
+        className="mt-0.5"
       />
-      <span className="text-sm font-medium text-(--text)">{props.label}</span>
-    </label>
+      <label
+        htmlFor={inputId}
+        className="pt-0.5 text-sm font-medium text-(--text)"
+      >
+        {props.label}
+      </label>
+    </div>
   );
 }
 

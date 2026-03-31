@@ -3,8 +3,10 @@ import type { AppEnv } from "~/lib/env";
 import type { EventSubSupportDependencies } from "~/lib/eventsub/support-events";
 import {
   processEventSubChannelCheer,
+  processEventSubChannelRaid,
   processEventSubChannelSubscribe,
   processEventSubSubscriptionGift,
+  processEventSubSubscriptionMessage,
 } from "~/lib/eventsub/support-events";
 
 function createDeps(
@@ -17,11 +19,15 @@ function createDeps(
       twitchChannelId: "broadcaster-1",
     }),
     getChannelSettingsByChannelId: vi.fn().mockResolvedValue({
+      autoGrantVipTokenToSubscribers: true,
+      autoGrantVipTokensForSharedSubRenewalMessage: true,
       autoGrantVipTokensToSubGifters: true,
       autoGrantVipTokensToGiftRecipients: true,
       autoGrantVipTokensForCheers: true,
+      autoGrantVipTokensForRaiders: true,
       cheerBitsPerVipToken: 200,
       cheerMinimumTokenPercent: 25,
+      raidMinimumViewerCount: 1,
     }),
     claimEventSubDelivery: vi.fn().mockResolvedValue(true),
     grantVipToken: vi.fn().mockResolvedValue(undefined),
@@ -108,14 +114,188 @@ describe("support EventSub automation", () => {
     });
   });
 
-  it("ignores cheers below the configured minimum partial threshold", async () => {
+  it("grants one VIP token for a new paid sub", async () => {
+    const deps = createDeps();
+
+    const result = await processEventSubChannelSubscribe({
+      env,
+      deps,
+      messageId: "msg-2b",
+      event: {
+        user_id: "viewer-2",
+        user_login: "viewer_two",
+        user_name: "Viewer Two",
+        broadcaster_user_id: "broadcaster-1",
+        broadcaster_user_login: "streamer",
+        broadcaster_user_name: "Streamer",
+        tier: "1000",
+        is_gift: false,
+      },
+    });
+
+    expect(result).toEqual({
+      body: "Accepted",
+      status: 202,
+    });
+    expect(deps.grantVipToken).toHaveBeenCalledWith(env, {
+      channelId: "channel-1",
+      login: "viewer_two",
+      displayName: "Viewer Two",
+      twitchUserId: "viewer-2",
+      count: 1,
+    });
+    expect(deps.sendChatReply).toHaveBeenCalledWith(
+      env,
+      expect.objectContaining({
+        message: "Added 1 VIP token to @viewer_two for a new sub.",
+      })
+    );
+  });
+
+  it("grants one VIP token for a shared sub renewal message", async () => {
+    const deps = createDeps();
+
+    const result = await processEventSubSubscriptionMessage({
+      env,
+      deps,
+      messageId: "msg-2c",
+      event: {
+        user_id: "viewer-3",
+        user_login: "viewer_three",
+        user_name: "Viewer Three",
+        broadcaster_user_id: "broadcaster-1",
+        broadcaster_user_login: "streamer",
+        broadcaster_user_name: "Streamer",
+        tier: "1000",
+        cumulative_months: 6,
+        streak_months: 6,
+        duration_months: 6,
+        message: {
+          text: "Love the stream!",
+        },
+      },
+    });
+
+    expect(result).toEqual({
+      body: "Accepted",
+      status: 202,
+    });
+    expect(deps.grantVipToken).toHaveBeenCalledWith(env, {
+      channelId: "channel-1",
+      login: "viewer_three",
+      displayName: "Viewer Three",
+      twitchUserId: "viewer-3",
+      count: 1,
+    });
+    expect(deps.sendChatReply).toHaveBeenCalledWith(
+      env,
+      expect.objectContaining({
+        message:
+          "Added 1 VIP token to @viewer_three for sharing a sub renewal message.",
+      })
+    );
+  });
+
+  it("grants one VIP token to the streamer who raids the channel", async () => {
     const deps = createDeps({
       getChannelSettingsByChannelId: vi.fn().mockResolvedValue({
+        autoGrantVipTokenToSubscribers: true,
+        autoGrantVipTokensForSharedSubRenewalMessage: true,
         autoGrantVipTokensToSubGifters: true,
         autoGrantVipTokensToGiftRecipients: true,
         autoGrantVipTokensForCheers: true,
+        autoGrantVipTokensForRaiders: true,
         cheerBitsPerVipToken: 200,
         cheerMinimumTokenPercent: 25,
+        raidMinimumViewerCount: 10,
+      }),
+    });
+
+    const result = await processEventSubChannelRaid({
+      env,
+      deps,
+      messageId: "msg-raid-1",
+      event: {
+        from_broadcaster_user_id: "raider-1",
+        from_broadcaster_user_login: "raider_one",
+        from_broadcaster_user_name: "Raider One",
+        to_broadcaster_user_id: "broadcaster-1",
+        to_broadcaster_user_login: "streamer",
+        to_broadcaster_user_name: "Streamer",
+        viewers: 27,
+      },
+    });
+
+    expect(result).toEqual({
+      body: "Accepted",
+      status: 202,
+    });
+    expect(deps.grantVipToken).toHaveBeenCalledWith(env, {
+      channelId: "channel-1",
+      login: "raider_one",
+      displayName: "Raider One",
+      twitchUserId: "raider-1",
+      count: 1,
+    });
+    expect(deps.sendChatReply).toHaveBeenCalledWith(
+      env,
+      expect.objectContaining({
+        message:
+          "Added 1 VIP token to @raider_one for raiding with 27 viewers.",
+      })
+    );
+  });
+
+  it("ignores raids below the minimum configured size", async () => {
+    const deps = createDeps({
+      getChannelSettingsByChannelId: vi.fn().mockResolvedValue({
+        autoGrantVipTokenToSubscribers: true,
+        autoGrantVipTokensForSharedSubRenewalMessage: true,
+        autoGrantVipTokensToSubGifters: true,
+        autoGrantVipTokensToGiftRecipients: true,
+        autoGrantVipTokensForCheers: true,
+        autoGrantVipTokensForRaiders: true,
+        cheerBitsPerVipToken: 200,
+        cheerMinimumTokenPercent: 25,
+        raidMinimumViewerCount: 10,
+      }),
+    });
+
+    const result = await processEventSubChannelRaid({
+      env,
+      deps,
+      messageId: "msg-raid-2",
+      event: {
+        from_broadcaster_user_id: "raider-1",
+        from_broadcaster_user_login: "raider_one",
+        from_broadcaster_user_name: "Raider One",
+        to_broadcaster_user_id: "broadcaster-1",
+        to_broadcaster_user_login: "streamer",
+        to_broadcaster_user_name: "Streamer",
+        viewers: 5,
+      },
+    });
+
+    expect(result).toEqual({
+      body: "Ignored",
+      status: 202,
+    });
+    expect(deps.grantVipToken).not.toHaveBeenCalled();
+    expect(deps.sendChatReply).not.toHaveBeenCalled();
+  });
+
+  it("ignores cheers below the configured minimum partial threshold", async () => {
+    const deps = createDeps({
+      getChannelSettingsByChannelId: vi.fn().mockResolvedValue({
+        autoGrantVipTokenToSubscribers: true,
+        autoGrantVipTokensForSharedSubRenewalMessage: true,
+        autoGrantVipTokensToSubGifters: true,
+        autoGrantVipTokensToGiftRecipients: true,
+        autoGrantVipTokensForCheers: true,
+        autoGrantVipTokensForRaiders: true,
+        cheerBitsPerVipToken: 200,
+        cheerMinimumTokenPercent: 25,
+        raidMinimumViewerCount: 1,
       }),
     });
 
@@ -147,11 +327,15 @@ describe("support EventSub automation", () => {
   it("grants proportional fractional VIP tokens for cheers above the threshold", async () => {
     const deps = createDeps({
       getChannelSettingsByChannelId: vi.fn().mockResolvedValue({
+        autoGrantVipTokenToSubscribers: true,
+        autoGrantVipTokensForSharedSubRenewalMessage: true,
         autoGrantVipTokensToSubGifters: true,
         autoGrantVipTokensToGiftRecipients: true,
         autoGrantVipTokensForCheers: true,
+        autoGrantVipTokensForRaiders: true,
         cheerBitsPerVipToken: 200,
         cheerMinimumTokenPercent: 25,
+        raidMinimumViewerCount: 1,
       }),
     });
 

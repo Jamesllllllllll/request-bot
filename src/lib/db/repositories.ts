@@ -1,6 +1,7 @@
 import { and, asc, desc, eq, inArray, sql } from "drizzle-orm";
 import { tuningOptions } from "~/lib/channel-options";
 import type { AppEnv } from "~/lib/env";
+import { DEFAULT_MAX_QUEUE_SIZE } from "~/lib/settings-defaults";
 import {
   getAppAccessToken,
   getLiveStreams,
@@ -286,7 +287,7 @@ export async function upsertUserAndChannel(
       moderatorCanManageVipTokens: true,
       moderatorCanManageTags: true,
       allowedTuningsJson: JSON.stringify(Array.from(tuningOptions)),
-      maxQueueSize: 50,
+      maxQueueSize: DEFAULT_MAX_QUEUE_SIZE,
     })
     .onConflictDoNothing();
   await db
@@ -1093,6 +1094,7 @@ export interface CatalogSearchInput {
   creator?: string;
   tuning?: string[];
   parts?: string[];
+  partsMatchMode?: "any" | "all";
   year?: number[];
   restrictToOfficial?: boolean;
   allowedTuningsFilter?: string[];
@@ -1401,7 +1403,7 @@ export async function searchCatalogSongs(
           input.parts.map((part) =>
             buildMatchLike(catalogSongs.partsJson, part)
           ),
-          sql` OR `
+          input.partsMatchMode === "all" ? sql` AND ` : sql` OR `
         )})`
       : null,
     input.year?.length
@@ -2548,13 +2550,16 @@ export async function updateSettings(
     setlistEnabled: boolean;
     subscribersMustFollowSetlist: boolean;
     autoGrantVipTokenToSubscribers: boolean;
+    autoGrantVipTokensForSharedSubRenewalMessage: boolean;
     autoGrantVipTokensToSubGifters: boolean;
     autoGrantVipTokensToGiftRecipients: boolean;
     autoGrantVipTokensForCheers: boolean;
+    autoGrantVipTokensForRaiders: boolean;
     autoGrantVipTokensForStreamElementsTips: boolean;
     allowRequestPathModifiers: boolean;
     cheerBitsPerVipToken: number;
     cheerMinimumTokenPercent: 25 | 50 | 75 | 100;
+    raidMinimumViewerCount: number;
     streamElementsTipAmountPerVipToken: number;
     duplicateWindowSeconds: number;
     showPlaylistPositions: boolean;
@@ -2599,20 +2604,38 @@ export async function updateSettings(
       setlistEnabled: input.setlistEnabled,
       subscribersMustFollowSetlist: input.subscribersMustFollowSetlist,
       autoGrantVipTokenToSubscribers: input.autoGrantVipTokenToSubscribers,
+      autoGrantVipTokensForSharedSubRenewalMessage:
+        input.autoGrantVipTokensForSharedSubRenewalMessage,
       autoGrantVipTokensToSubGifters: input.autoGrantVipTokensToSubGifters,
       autoGrantVipTokensToGiftRecipients:
         input.autoGrantVipTokensToGiftRecipients,
       autoGrantVipTokensForCheers: input.autoGrantVipTokensForCheers,
+      autoGrantVipTokensForRaiders: input.autoGrantVipTokensForRaiders,
       autoGrantVipTokensForStreamElementsTips:
         input.autoGrantVipTokensForStreamElementsTips,
       allowRequestPathModifiers: input.allowRequestPathModifiers,
       cheerBitsPerVipToken: input.cheerBitsPerVipToken,
       cheerMinimumTokenPercent: input.cheerMinimumTokenPercent,
+      raidMinimumViewerCount: input.raidMinimumViewerCount,
       streamElementsTipAmountPerVipToken:
         input.streamElementsTipAmountPerVipToken,
       duplicateWindowSeconds: input.duplicateWindowSeconds,
       showPlaylistPositions: input.showPlaylistPositions,
       commandPrefix: input.commandPrefix,
+      updatedAt: Date.now(),
+    })
+    .where(eq(channelSettings.channelId, channelId));
+}
+
+export async function updateChannelRequestsEnabled(
+  env: AppEnv,
+  channelId: string,
+  requestsEnabled: boolean
+) {
+  await getDb(env)
+    .update(channelSettings)
+    .set({
+      requestsEnabled,
       updatedAt: Date.now(),
     })
     .where(eq(channelSettings.channelId, channelId));

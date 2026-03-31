@@ -141,7 +141,7 @@ function HomePage() {
         <p className="text-xs font-semibold uppercase tracking-[0.34em] text-(--brand-deep)">
           Playlist Managment for Rocksmith Streamers
         </p>
-        <h1 className="mt-4 max-w-3xl text-4xl font-semibold tracking-[-0.04em] text-(--text) md:text-5xl max-[960px]:text-[clamp(2.3rem,6.5vw,3.8rem)] max-[720px]:text-[clamp(2rem,9vw,2.75rem)]">
+        <h1 className="mt-4 max-w-3xl text-5xl font-semibold tracking-[-0.04em] text-(--text) md:text-6xl max-[960px]:text-[clamp(2.5rem,6.8vw,4.4rem)] max-[720px]:text-[clamp(2.2rem,9vw,3.1rem)]">
           Search songs or manage your channel.
         </h1>
 
@@ -218,7 +218,7 @@ function HomePage() {
               <p className="text-xs font-semibold uppercase tracking-[0.24em] text-(--brand-deep)">
                 Live now
               </p>
-              <h2 className="mt-3 text-3xl font-semibold text-(--text)">
+              <h2 className="mt-3 text-4xl font-semibold text-(--text)">
                 Current streamers
               </h2>
             </div>
@@ -302,7 +302,7 @@ function FeaturedLiveChannelCard(props: { channel: HomeLiveChannel }) {
       <div className="p-6 md:p-7">
         <div className="flex items-start justify-between gap-4">
           <div className="min-w-0">
-            <p className="truncate text-3xl font-semibold text-(--text)">
+            <p className="truncate text-4xl font-semibold text-(--text)">
               {channel.displayName}
             </p>
             {channel.streamTitle ? (
@@ -393,7 +393,7 @@ function CompactLiveChannelCard(props: { channel: HomeLiveChannel }) {
       ) : null}
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
-          <p className="truncate text-xl font-semibold text-(--text)">
+          <p className="truncate text-2xl font-semibold text-(--text)">
             {channel.displayName}
           </p>
           {channel.streamTitle ? (

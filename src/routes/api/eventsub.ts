@@ -10,14 +10,18 @@ import {
 import {
   createEventSubSupportDependencies,
   processEventSubChannelCheer,
+  processEventSubChannelRaid,
   processEventSubChannelSubscribe,
   processEventSubSubscriptionGift,
+  processEventSubSubscriptionMessage,
 } from "~/lib/eventsub/support-events";
 import { normalizeCommandPrefix } from "~/lib/request-policy";
 import { normalizeChatEvent, parseChatCommand } from "~/lib/requests";
 import {
   isChannelCheerEvent,
+  isChannelRaidEvent,
   isChannelSubscribeEvent,
+  isChannelSubscriptionMessageEvent,
   isChatMessageEvent,
   isStreamOfflineEvent,
   isStreamOnlineEvent,
@@ -113,6 +117,21 @@ export const Route = createFileRoute("/api/eventsub")({
           return new Response(result.body, { status: result.status });
         }
 
+        if (isChannelSubscriptionMessageEvent(payload)) {
+          console.info("EventSub subscription message received", {
+            broadcasterLogin: payload.event.broadcaster_user_login,
+            subscriberLogin: payload.event.user_login,
+            cumulativeMonths: payload.event.cumulative_months ?? null,
+          });
+          const result = await processEventSubSubscriptionMessage({
+            env: runtimeEnv,
+            deps: supportDeps,
+            messageId,
+            event: payload.event,
+          });
+          return new Response(result.body, { status: result.status });
+        }
+
         if (isChannelCheerEvent(payload)) {
           console.info("EventSub channel cheer received", {
             broadcasterLogin: payload.event.broadcaster_user_login,
@@ -121,6 +140,21 @@ export const Route = createFileRoute("/api/eventsub")({
             isAnonymous: payload.event.is_anonymous,
           });
           const result = await processEventSubChannelCheer({
+            env: runtimeEnv,
+            deps: supportDeps,
+            messageId,
+            event: payload.event,
+          });
+          return new Response(result.body, { status: result.status });
+        }
+
+        if (isChannelRaidEvent(payload)) {
+          console.info("EventSub channel raid received", {
+            broadcasterLogin: payload.event.to_broadcaster_user_login,
+            raiderLogin: payload.event.from_broadcaster_user_login,
+            viewers: payload.event.viewers,
+          });
+          const result = await processEventSubChannelRaid({
             env: runtimeEnv,
             deps: supportDeps,
             messageId,

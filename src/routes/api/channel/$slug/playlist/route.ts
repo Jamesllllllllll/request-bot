@@ -60,6 +60,8 @@ export const Route = createFileRoute("/api/channel/$slug/playlist")({
               ...getPlaylistManagementResponseBody(managementState),
               blocks: canManageBlockedChatters ? managementState.blocks : [],
               settings: {
+                requestsEnabled:
+                  managementState.settings?.requestsEnabled ?? true,
                 blacklistEnabled:
                   managementState.settings?.blacklistEnabled ?? false,
                 setlistEnabled:
@@ -69,12 +71,22 @@ export const Route = createFileRoute("/api/channel/$slug/playlist")({
                 subscribersMustFollowSetlist:
                   managementState.settings?.subscribersMustFollowSetlist ??
                   false,
+                requiredPathsJson:
+                  managementState.settings?.requiredPathsJson ?? "[]",
+                requiredPathsMatchMode:
+                  managementState.settings?.requiredPathsMatchMode ?? "any",
                 canManageRequests: canManageChannelRequests(managementState),
                 canManageBlacklist: canManageChannelBlacklist(managementState),
                 canManageSetlist: canManageChannelSetlist(managementState),
                 canManageBlockedChatters,
                 canViewVipTokens,
                 canManageVipTokens: canManageChannelVipTokens(managementState),
+                autoGrantVipTokenToSubscribers:
+                  managementState.settings?.autoGrantVipTokenToSubscribers ??
+                  false,
+                autoGrantVipTokensForSharedSubRenewalMessage:
+                  managementState.settings
+                    ?.autoGrantVipTokensForSharedSubRenewalMessage ?? false,
                 autoGrantVipTokensToSubGifters:
                   managementState.settings?.autoGrantVipTokensToSubGifters ??
                   false,
@@ -84,8 +96,21 @@ export const Route = createFileRoute("/api/channel/$slug/playlist")({
                 autoGrantVipTokensForCheers:
                   managementState.settings?.autoGrantVipTokensForCheers ??
                   false,
+                autoGrantVipTokensForRaiders:
+                  managementState.settings?.autoGrantVipTokensForRaiders ??
+                  false,
                 cheerBitsPerVipToken:
                   managementState.settings?.cheerBitsPerVipToken ?? 200,
+                cheerMinimumTokenPercent:
+                  managementState.settings?.cheerMinimumTokenPercent ?? 25,
+                raidMinimumViewerCount:
+                  managementState.settings?.raidMinimumViewerCount ?? 1,
+                autoGrantVipTokensForStreamElementsTips:
+                  managementState.settings
+                    ?.autoGrantVipTokensForStreamElementsTips ?? false,
+                streamElementsTipAmountPerVipToken:
+                  managementState.settings
+                    ?.streamElementsTipAmountPerVipToken ?? 5,
                 showPlaylistPositions:
                   managementState.settings?.showPlaylistPositions ?? false,
               },
@@ -117,18 +142,25 @@ export const Route = createFileRoute("/api/channel/$slug/playlist")({
             channel,
             accessRole: sessionUserId ? "viewer" : "anonymous",
             settings: {
+              requestsEnabled: settings?.requestsEnabled ?? true,
               blacklistEnabled: settings?.blacklistEnabled ?? false,
               setlistEnabled: settings?.setlistEnabled ?? false,
               letSetlistBypassBlacklist:
                 settings?.letSetlistBypassBlacklist ?? false,
               subscribersMustFollowSetlist:
                 settings?.subscribersMustFollowSetlist ?? false,
+              requiredPathsJson: settings?.requiredPathsJson ?? "[]",
+              requiredPathsMatchMode: settings?.requiredPathsMatchMode ?? "any",
               canManageRequests: false,
               canManageBlacklist: false,
               canManageSetlist: false,
               canManageBlockedChatters: false,
               canViewVipTokens: false,
               canManageVipTokens: false,
+              autoGrantVipTokenToSubscribers:
+                settings?.autoGrantVipTokenToSubscribers ?? false,
+              autoGrantVipTokensForSharedSubRenewalMessage:
+                settings?.autoGrantVipTokensForSharedSubRenewalMessage ?? false,
               autoGrantVipTokensToSubGifters:
                 settings?.autoGrantVipTokensToSubGifters ?? false,
               autoGrantVipTokensToGiftRecipients:
@@ -136,6 +168,15 @@ export const Route = createFileRoute("/api/channel/$slug/playlist")({
               autoGrantVipTokensForCheers:
                 settings?.autoGrantVipTokensForCheers ?? false,
               cheerBitsPerVipToken: settings?.cheerBitsPerVipToken ?? 200,
+              cheerMinimumTokenPercent:
+                settings?.cheerMinimumTokenPercent ?? 25,
+              autoGrantVipTokensForRaiders:
+                settings?.autoGrantVipTokensForRaiders ?? false,
+              raidMinimumViewerCount: settings?.raidMinimumViewerCount ?? 1,
+              autoGrantVipTokensForStreamElementsTips:
+                settings?.autoGrantVipTokensForStreamElementsTips ?? false,
+              streamElementsTipAmountPerVipToken:
+                settings?.streamElementsTipAmountPerVipToken ?? 5,
               showPlaylistPositions: settings?.showPlaylistPositions ?? false,
             },
             items: await enrichPlaylistItems(runtimeEnv, playlist?.items ?? []),

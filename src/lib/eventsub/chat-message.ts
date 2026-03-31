@@ -1156,9 +1156,9 @@ export async function processEventSubChatMessage(input: {
         login: requesterIdentity.login,
       })
     : null;
-  // Intentionally disabled for now. The original one-time auto-grant behavior
-  // does not match the intended product behavior, which should track recurring
-  // subscriber renewal periods before granting monthly VIP tokens.
+  // Subscriber VIP automation is handled by dedicated support-event flows.
+  // Keep this disabled here so VIP redemption does not quietly mint tokens,
+  // especially for renewal cases that Twitch does not expose automatically.
   const canAutoGrantVipToken = false;
 
   if (

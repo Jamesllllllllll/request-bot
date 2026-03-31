@@ -213,15 +213,23 @@ export function ChannelRulesPanel(props: {
   const visibleSetlistMatches = setlistMatches.filter(
     (artist) => !setlistArtistIds.has(artist.artistId)
   );
+  const showBlacklistedArtistsCard =
+    props.canManageBlacklist || props.artists.length > 0;
+  const showBlacklistedChartersCard =
+    props.canManageBlacklist || props.charters.length > 0;
+  const showBlacklistedSongsCard =
+    props.canManageBlacklist || props.songGroups.length > 0;
+  const showBlacklistedVersionsCard =
+    props.canManageBlacklist || props.songs.length > 0;
+  const showSetlistArtistsCard =
+    props.canManageSetlist || props.setlistArtists.length > 0;
+  const showBlacklistSection =
+    showBlacklistedArtistsCard ||
+    showBlacklistedChartersCard ||
+    showBlacklistedSongsCard ||
+    showBlacklistedVersionsCard;
 
-  const hasVisibleRules =
-    props.blacklistEnabled ||
-    props.setlistEnabled ||
-    props.artists.length > 0 ||
-    props.charters.length > 0 ||
-    props.songGroups.length > 0 ||
-    props.songs.length > 0 ||
-    props.setlistArtists.length > 0;
+  const hasVisibleRules = showBlacklistSection || showSetlistArtistsCard;
 
   if (
     !hasVisibleRules &&
@@ -234,7 +242,7 @@ export function ChannelRulesPanel(props: {
   return (
     <section className="grid gap-6 max-[960px]:gap-4 max-[960px]:border-t max-[960px]:border-(--border) max-[960px]:pt-4">
       <div className="grid gap-2 px-8 max-[960px]:px-6">
-        <h2 className="text-2xl font-semibold tracking-tight text-(--text)">
+        <h2 className="text-3xl font-semibold tracking-tight text-(--text)">
           {props.channelDisplayName
             ? `${props.channelDisplayName}'s channel rules`
             : "Channel rules"}
@@ -247,150 +255,148 @@ export function ChannelRulesPanel(props: {
         </div>
       ) : null}
 
-      {props.canManageBlacklist ||
-      props.artists.length > 0 ||
-      props.charters.length > 0 ||
-      props.songGroups.length > 0 ||
-      props.songs.length > 0 ||
-      props.canManageSetlist ||
-      props.setlistArtists.length > 0 ? (
+      {showBlacklistSection || showSetlistArtistsCard ? (
         <div className="grid gap-6 md:grid-cols-2 2xl:grid-cols-4 max-[960px]:gap-0">
-          {props.canManageBlacklist ||
-          props.artists.length > 0 ||
-          props.charters.length > 0 ||
-          props.songGroups.length > 0 ||
-          props.songs.length > 0 ? (
+          {showBlacklistSection ? (
             <>
-              <SearchManageCard
-                title="Blacklisted artists"
-                inputValue={artistQuery}
-                onInputChange={setArtistQuery}
-                placeholder="Search artists by name"
-                matches={visibleArtistMatches.map((artist) => ({
-                  key: `artist-match-${artist.artistId}`,
-                  label: artist.artistName,
-                  meta: `${artist.trackCount} tracks`,
-                  onAdd: () =>
-                    mutateRules.mutate({
-                      action: "addBlacklistedArtist",
-                      artistId: artist.artistId,
-                      artistName: artist.artistName,
-                    }),
-                }))}
-                currentItems={props.artists.map((item) => ({
-                  key: `artist-current-${item.artistId}`,
-                  label: item.artistName,
-                  hoverDetail: `Artist ID ${item.artistId}`,
-                  onRemove: () =>
-                    mutateRules.mutate({
-                      action: "removeBlacklistedArtist",
-                      artistId: item.artistId,
-                    }),
-                }))}
-                isPending={mutateRules.isPending}
-                emptyCurrentLabel="No blacklisted artists."
-                canManage={props.canManageBlacklist}
-                hideReadOnlyRemoveAction
-              />
+              {showBlacklistedArtistsCard ? (
+                <SearchManageCard
+                  title="Blacklisted artists"
+                  inputValue={artistQuery}
+                  onInputChange={setArtistQuery}
+                  placeholder="Search artists by name"
+                  matches={visibleArtistMatches.map((artist) => ({
+                    key: `artist-match-${artist.artistId}`,
+                    label: artist.artistName,
+                    meta: `${artist.trackCount} tracks`,
+                    onAdd: () =>
+                      mutateRules.mutate({
+                        action: "addBlacklistedArtist",
+                        artistId: artist.artistId,
+                        artistName: artist.artistName,
+                      }),
+                  }))}
+                  currentItems={props.artists.map((item) => ({
+                    key: `artist-current-${item.artistId}`,
+                    label: item.artistName,
+                    hoverDetail: `Artist ID ${item.artistId}`,
+                    onRemove: () =>
+                      mutateRules.mutate({
+                        action: "removeBlacklistedArtist",
+                        artistId: item.artistId,
+                      }),
+                  }))}
+                  isPending={mutateRules.isPending}
+                  emptyCurrentLabel="No blacklisted artists."
+                  canManage={props.canManageBlacklist}
+                  hideReadOnlyRemoveAction
+                />
+              ) : null}
 
-              <SearchManageCard
-                title="Blacklisted charters"
-                inputValue={charterQuery}
-                onInputChange={setCharterQuery}
-                placeholder="Search charters by name"
-                matches={visibleCharterMatches.map((charter) => ({
-                  key: `charter-match-${charter.charterId}`,
-                  label: charter.charterName,
-                  meta: `${charter.trackCount} tracks`,
-                  onAdd: () =>
-                    mutateRules.mutate({
-                      action: "addBlacklistedCharter",
-                      charterId: charter.charterId,
-                      charterName: charter.charterName,
-                    }),
-                }))}
-                currentItems={props.charters.map((item) => ({
-                  key: `charter-current-${item.charterId}`,
-                  label: item.charterName,
-                  hoverDetail: `Charter ID ${item.charterId}`,
-                  onRemove: () =>
-                    mutateRules.mutate({
-                      action: "removeBlacklistedCharter",
-                      charterId: item.charterId,
-                    }),
-                }))}
-                isPending={mutateRules.isPending}
-                emptyCurrentLabel="No blacklisted charters."
-                canManage={props.canManageBlacklist}
-                hideReadOnlyRemoveAction
-              />
+              {showBlacklistedChartersCard ? (
+                <SearchManageCard
+                  title="Blacklisted charters"
+                  inputValue={charterQuery}
+                  onInputChange={setCharterQuery}
+                  placeholder="Search charters by name"
+                  matches={visibleCharterMatches.map((charter) => ({
+                    key: `charter-match-${charter.charterId}`,
+                    label: charter.charterName,
+                    meta: `${charter.trackCount} tracks`,
+                    onAdd: () =>
+                      mutateRules.mutate({
+                        action: "addBlacklistedCharter",
+                        charterId: charter.charterId,
+                        charterName: charter.charterName,
+                      }),
+                  }))}
+                  currentItems={props.charters.map((item) => ({
+                    key: `charter-current-${item.charterId}`,
+                    label: item.charterName,
+                    hoverDetail: `Charter ID ${item.charterId}`,
+                    onRemove: () =>
+                      mutateRules.mutate({
+                        action: "removeBlacklistedCharter",
+                        charterId: item.charterId,
+                      }),
+                  }))}
+                  isPending={mutateRules.isPending}
+                  emptyCurrentLabel="No blacklisted charters."
+                  canManage={props.canManageBlacklist}
+                  hideReadOnlyRemoveAction
+                />
+              ) : null}
 
-              <SearchManageCard
-                title="Blacklisted songs"
-                inputValue={songGroupQuery}
-                onInputChange={setSongGroupQuery}
-                placeholder="Search songs by title"
-                matches={visibleSongGroupMatches.map((song) => ({
-                  key: `song-group-match-${song.groupedProjectId}`,
-                  label: song.artistName
-                    ? `${song.songTitle} - ${song.artistName}`
-                    : song.songTitle,
-                  meta: `${song.versionCount} version${song.versionCount === 1 ? "" : "s"} - Song group ${song.groupedProjectId}`,
-                  onAdd: () =>
-                    mutateRules.mutate({
-                      action: "addBlacklistedSongGroup",
-                      groupedProjectId: song.groupedProjectId,
-                      songTitle: song.songTitle,
-                      artistId: song.artistId ?? null,
-                      artistName: song.artistName ?? undefined,
-                    }),
-                }))}
-                currentItems={props.songGroups.map((item) => ({
-                  key: `song-group-current-${item.groupedProjectId}`,
-                  label: item.artistName
-                    ? `${item.songTitle} - ${item.artistName}`
-                    : item.songTitle,
-                  hoverDetail: `Song group ${item.groupedProjectId}`,
-                  onRemove: () =>
-                    mutateRules.mutate({
-                      action: "removeBlacklistedSongGroup",
-                      groupedProjectId: item.groupedProjectId,
-                    }),
-                }))}
-                isPending={mutateRules.isPending}
-                emptyCurrentLabel="No blacklisted songs."
-                canManage={props.canManageBlacklist}
-                hideReadOnlyRemoveAction
-              />
+              {showBlacklistedSongsCard ? (
+                <SearchManageCard
+                  title="Blacklisted songs"
+                  inputValue={songGroupQuery}
+                  onInputChange={setSongGroupQuery}
+                  placeholder="Search songs by title"
+                  matches={visibleSongGroupMatches.map((song) => ({
+                    key: `song-group-match-${song.groupedProjectId}`,
+                    label: song.artistName
+                      ? `${song.songTitle} - ${song.artistName}`
+                      : song.songTitle,
+                    meta: `${song.versionCount} version${song.versionCount === 1 ? "" : "s"} - Song group ${song.groupedProjectId}`,
+                    onAdd: () =>
+                      mutateRules.mutate({
+                        action: "addBlacklistedSongGroup",
+                        groupedProjectId: song.groupedProjectId,
+                        songTitle: song.songTitle,
+                        artistId: song.artistId ?? null,
+                        artistName: song.artistName ?? undefined,
+                      }),
+                  }))}
+                  currentItems={props.songGroups.map((item) => ({
+                    key: `song-group-current-${item.groupedProjectId}`,
+                    label: item.artistName
+                      ? `${item.songTitle} - ${item.artistName}`
+                      : item.songTitle,
+                    hoverDetail: `Song group ${item.groupedProjectId}`,
+                    onRemove: () =>
+                      mutateRules.mutate({
+                        action: "removeBlacklistedSongGroup",
+                        groupedProjectId: item.groupedProjectId,
+                      }),
+                  }))}
+                  isPending={mutateRules.isPending}
+                  emptyCurrentLabel="No blacklisted songs."
+                  canManage={props.canManageBlacklist}
+                  hideReadOnlyRemoveAction
+                />
+              ) : null}
 
-              <SearchManageCard
-                title="Blacklisted versions"
-                inputValue=""
-                onInputChange={() => {}}
-                placeholder=""
-                matches={[]}
-                currentItems={props.songs.map((item) => ({
-                  key: `song-version-current-${item.songId}`,
-                  label: item.artistName
-                    ? `${item.songTitle} - ${item.artistName}`
-                    : item.songTitle,
-                  hoverDetail: `Version ID ${item.songId}`,
-                  onRemove: () =>
-                    mutateRules.mutate({
-                      action: "removeBlacklistedSong",
-                      songId: item.songId,
-                    }),
-                }))}
-                isPending={mutateRules.isPending}
-                emptyCurrentLabel="No blacklisted versions."
-                canManage={props.canManageBlacklist}
-                showSearch={false}
-                hideReadOnlyRemoveAction
-              />
+              {showBlacklistedVersionsCard ? (
+                <SearchManageCard
+                  title="Blacklisted versions"
+                  inputValue=""
+                  onInputChange={() => {}}
+                  placeholder=""
+                  matches={[]}
+                  currentItems={props.songs.map((item) => ({
+                    key: `song-version-current-${item.songId}`,
+                    label: item.artistName
+                      ? `${item.songTitle} - ${item.artistName}`
+                      : item.songTitle,
+                    hoverDetail: `Version ID ${item.songId}`,
+                    onRemove: () =>
+                      mutateRules.mutate({
+                        action: "removeBlacklistedSong",
+                        songId: item.songId,
+                      }),
+                  }))}
+                  isPending={mutateRules.isPending}
+                  emptyCurrentLabel="No blacklisted versions."
+                  canManage={props.canManageBlacklist}
+                  showSearch={false}
+                  hideReadOnlyRemoveAction
+                />
+              ) : null}
             </>
           ) : null}
 
-          {props.canManageSetlist || props.setlistArtists.length > 0 ? (
+          {showSetlistArtistsCard ? (
             <SearchManageCard
               title="Setlist artists"
               inputValue={setlistQuery}

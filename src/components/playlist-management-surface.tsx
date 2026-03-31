@@ -13,12 +13,19 @@ import { getReorderDestinationIndex } from "@atlaskit/pragmatic-drag-and-drop-hi
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   AlertTriangle,
+  ArrowDown,
+  ArrowUp,
   Ban,
+  ChevronsDown,
+  ChevronsUp,
+  CircleCheckBig,
   Clock3,
+  Download,
   GripVertical,
   type LucideIcon,
   MoreHorizontal,
   Plus,
+  Undo2,
 } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
 import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
@@ -46,12 +53,20 @@ import {
   PopoverTrigger,
 } from "~/components/ui/popover";
 import {
+  formatPlaylistItemSummaryLine,
+  getResolvedPlaylistCandidates,
+} from "~/lib/playlist/management-display";
+import {
   getQueuedPositionsFromRegularOrder,
   getUpdatedPositionsAfterSetCurrent,
   getUpdatedQueuedPositionsAfterKindChange,
 } from "~/lib/playlist/order";
+import {
+  ADD_REQUESTS_WHEN_LIVE_MESSAGE,
+  areChannelRequestsOpen,
+} from "~/lib/request-availability";
 import { formatPathLabel } from "~/lib/request-policy";
-import { getErrorMessage, normalizeSongSourceUrl } from "~/lib/utils";
+import { getErrorMessage } from "~/lib/utils";
 import {
   formatVipTokenCount,
   hasRedeemableVipToken,
@@ -59,7 +74,7 @@ import {
   subtractVipTokenRedemption,
 } from "~/lib/vip-tokens";
 
-type PlaylistItem = {
+export type PlaylistItem = {
   id: string;
   songId?: string;
   songCatalogSourceId?: number | null;
@@ -90,7 +105,7 @@ type PlaylistItem = {
   requestKind?: "regular" | "vip";
 };
 
-type PlaylistCandidate = {
+export type PlaylistCandidate = {
   id: string;
   groupedProjectId?: number;
   authorId?: number;
@@ -116,6 +131,67 @@ type PlayedSong = {
   requestedByDisplayName?: string;
   requestedByLogin?: string;
   playedAt: number;
+};
+
+const PLAYLIST_PREVIEW_CANDIDATES: PlaylistCandidate[] = [
+  {
+    id: "vv-neon-noir-johncryx",
+    groupedProjectId: 81554,
+    authorId: 2638,
+    title: "Neon Noir",
+    artist: "VV",
+    album: "Neon Noir",
+    creator: "JohnCryx",
+    tuning: "E Standard | A Standard",
+    parts: ["lead", "rhythm", "bass", "voice"],
+    durationText: "3:49",
+    sourceUpdatedAt: Date.parse("2025-12-08T00:00:00Z"),
+    downloads: 4284,
+    sourceUrl: "https://customsforge.com/index.php?/customs/99081",
+    sourceId: 99081,
+  },
+  {
+    id: "vv-neon-noir-alt",
+    groupedProjectId: 81554,
+    authorId: 4811,
+    title: "Neon Noir",
+    artist: "VV",
+    album: "Neon Noir",
+    creator: "AltCharter",
+    tuning: "E Standard",
+    parts: ["lead", "rhythm"],
+    durationText: "3:49",
+    sourceUpdatedAt: Date.parse("2026-01-16T00:00:00Z"),
+    downloads: 1137,
+    sourceUrl: "https://customsforge.com/index.php?/customs/99142",
+    sourceId: 99142,
+  },
+];
+
+const PLAYLIST_PREVIEW_ITEM: PlaylistItem = {
+  id: "demo-playlist-item",
+  songId: "cat_5e52d9dbbeea471ca4683636778cbc03",
+  songCatalogSourceId: 99081,
+  songGroupedProjectId: 81554,
+  songArtistId: 934,
+  songCharterId: 2638,
+  songTitle: "Neon Noir",
+  songArtist: "VV",
+  songAlbum: "Neon Noir",
+  songCreator: "JohnCryx",
+  songTuning: "E Standard | A Standard",
+  songPartsJson: JSON.stringify(["lead", "rhythm", "bass", "voice"]),
+  songDurationText: "3:49",
+  songUrl: "https://customsforge.com/index.php?/customs/99081",
+  songSourceUpdatedAt: Date.parse("2025-12-08T00:00:00Z"),
+  songDownloads: 4284,
+  requestedByLogin: "jimmy_pants_",
+  requestedByDisplayName: "Jimmy_Pants_",
+  candidateMatchesJson: JSON.stringify(PLAYLIST_PREVIEW_CANDIDATES),
+  createdAt: Date.now() - 12 * 60 * 1000,
+  position: 2,
+  status: "queued",
+  requestKind: "vip",
 };
 
 type VipTokenBalance = {
@@ -150,7 +226,13 @@ const playlistItemTransition = {
 };
 
 type PlaylistQueryData = {
-  channel: { id: string; slug: string; displayName: string };
+  channel: {
+    id: string;
+    slug: string;
+    displayName: string;
+    isLive: boolean;
+    botReadyState?: string | null;
+  };
   settings?: {
     canManageBlacklist?: boolean;
   };
@@ -212,6 +294,7 @@ export function PlaylistManagementSurface(
     itemId: string;
     edge: Edge;
   } | null>(null);
+  const [useTouchReorderControls, setUseTouchReorderControls] = useState(false);
   const playlistQueryKey = props.queryKey ?? [
     props.queryKeyBase,
     props.selectedChannelSlug ?? null,
@@ -225,7 +308,13 @@ export function PlaylistManagementSurface(
     queryFn: async () => {
       const response = await fetch(playlistEndpoint);
       return response.json() as Promise<{
-        channel: { id: string; slug: string; displayName: string };
+        channel: {
+          id: string;
+          slug: string;
+          displayName: string;
+          isLive: boolean;
+          botReadyState?: string | null;
+        };
         settings?: {
           canManageBlacklist?: boolean;
         };
@@ -554,6 +643,9 @@ export function PlaylistManagementSurface(
     vipTokens.map((token) => [token.login.toLowerCase(), token.availableCount])
   );
   const managedChannel = playlistQuery.data?.channel ?? null;
+  const requestsOpen = managedChannel
+    ? areChannelRequestsOpen(managedChannel)
+    : false;
   const accessRole = playlistQuery.data?.accessRole ?? "owner";
   const canManageBlacklist = !!playlistQuery.data?.settings?.canManageBlacklist;
   const isDeletingItem = (itemId: string) =>
@@ -605,6 +697,49 @@ export function PlaylistManagementSurface(
       orderedItemIds,
     });
   };
+
+  const reorderPlaylistByMoveAction = (
+    itemId: string,
+    moveAction: "top" | "up" | "down" | "bottom"
+  ) => {
+    const orderedItemIds = getOrderedItemIdsForMoveAction(
+      items,
+      itemId,
+      moveAction
+    );
+
+    if (!orderedItemIds) {
+      return;
+    }
+
+    setDraggingItemId(null);
+    setDropTargetState(null);
+    mutation.mutate({
+      action: "reorderItems",
+      orderedItemIds,
+    });
+  };
+
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+
+    const mediaQuery = window.matchMedia("(pointer: coarse)");
+    const updatePreference = () => {
+      setUseTouchReorderControls(
+        mediaQuery.matches || navigator.maxTouchPoints > 0
+      );
+    };
+
+    updatePreference();
+    mediaQuery.addEventListener("change", updatePreference);
+
+    return () => {
+      mediaQuery.removeEventListener("change", updatePreference);
+    };
+  }, []);
+
   return (
     <div className="dashboard-playlist grid gap-6">
       {props.headerTitle ? (
@@ -629,12 +764,19 @@ export function PlaylistManagementSurface(
               value={manualRequesterLogin}
               onChange={(event) => setManualRequesterLogin(event.target.value)}
               placeholder="Requester username (optional)"
+              disabled={!requestsOpen}
             />
             <Input
               value={manualQuery}
               onChange={(event) => setManualQuery(event.target.value)}
               placeholder="Search and add a song"
+              disabled={!requestsOpen}
             />
+            {!requestsOpen ? (
+              <div className="border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-100">
+                {ADD_REQUESTS_WHEN_LIVE_MESSAGE}
+              </div>
+            ) : null}
             {manualQueryTooShort ? (
               <p className="text-sm text-(--muted)">
                 Search terms must be at least 3 characters.
@@ -710,9 +852,10 @@ export function PlaylistManagementSurface(
                             : "No path info"}
                         </p>
                       </div>
-                      <div className="dashboard-playlist__manual-add flex items-center justify-end">
+                      <div className="dashboard-playlist__manual-add flex items-center justify-end self-start">
                         <Button
                           size="sm"
+                          className="h-8 px-2.5 text-[11px]"
                           onClick={() =>
                             mutation.mutate({
                               action: "manualAdd",
@@ -749,7 +892,14 @@ export function PlaylistManagementSurface(
                               ]),
                             })
                           }
-                          disabled={isManualAddPending(song.id)}
+                          disabled={
+                            !requestsOpen || isManualAddPending(song.id)
+                          }
+                          title={
+                            requestsOpen
+                              ? undefined
+                              : ADD_REQUESTS_WHEN_LIVE_MESSAGE
+                          }
                         >
                           <Plus className="h-4 w-4" />
                           Add
@@ -765,10 +915,10 @@ export function PlaylistManagementSurface(
       ) : null}
 
       {props.embedCurrentPlaylist ? (
-        <section className="grid gap-3">
-          <div className="flex flex-wrap items-start justify-between gap-4 max-[960px]:px-4">
+        <section className="grid gap-3 max-[960px]:px-4">
+          <div className="flex flex-wrap items-start justify-between gap-4">
             {props.currentPlaylistTitle ? (
-              <h2 className="text-2xl font-semibold text-(--text)">
+              <h2 className="text-3xl font-semibold text-(--text)">
                 {props.currentPlaylistTitle}
               </h2>
             ) : null}
@@ -831,6 +981,10 @@ export function PlaylistManagementSurface(
             vipTokenBalancesByLogin={vipTokenBalancesByLogin}
             isDeletingItem={isDeletingItem}
             isRowPending={isRowPending}
+            isReorderPending={
+              mutation.isPending && pendingRowAction?.action === "reorderItems"
+            }
+            useTouchReorderControls={useTouchReorderControls}
             onDragStart={setDraggingItemId}
             onDragEnd={() => {
               setDraggingItemId(null);
@@ -845,6 +999,7 @@ export function PlaylistManagementSurface(
               );
             }}
             onReorder={reorderPlaylist}
+            onMoveItem={reorderPlaylistByMoveAction}
             onSetCurrent={(itemId) =>
               mutation.mutate({
                 action: "setCurrent",
@@ -1025,6 +1180,11 @@ export function PlaylistManagementSurface(
               vipTokenBalancesByLogin={vipTokenBalancesByLogin}
               isDeletingItem={isDeletingItem}
               isRowPending={isRowPending}
+              isReorderPending={
+                mutation.isPending &&
+                pendingRowAction?.action === "reorderItems"
+              }
+              useTouchReorderControls={useTouchReorderControls}
               onDragStart={setDraggingItemId}
               onDragEnd={() => {
                 setDraggingItemId(null);
@@ -1039,6 +1199,7 @@ export function PlaylistManagementSurface(
                 );
               }}
               onReorder={reorderPlaylist}
+              onMoveItem={reorderPlaylistByMoveAction}
               onSetCurrent={(itemId) =>
                 mutation.mutate({
                   action: "setCurrent",
@@ -1247,7 +1408,9 @@ export function PlaylistManagementSurface(
       >
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Delete this request?</AlertDialogTitle>
+            <AlertDialogTitle>
+              Remove this request from playlist?
+            </AlertDialogTitle>
             <AlertDialogDescription>
               {deleteDialogItem
                 ? `This removes "${deleteDialogItem.songTitle}"${deleteDialogItem.songArtist ? ` by ${deleteDialogItem.songArtist}` : ""} from the playlist. This cannot be undone.`
@@ -1270,8 +1433,8 @@ export function PlaylistManagementSurface(
               {mutation.isPending &&
               deleteDialogItem != null &&
               isDeletingItem(deleteDialogItem.id)
-                ? "Deleting..."
-                : "Delete request"}
+                ? "Removing..."
+                : "Remove request"}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
@@ -1294,6 +1457,8 @@ function CurrentPlaylistRows(props: {
   vipTokenBalancesByLogin: Map<string, number>;
   isDeletingItem: (itemId: string) => boolean;
   isRowPending: (action: string, itemId: string) => boolean;
+  isReorderPending: boolean;
+  useTouchReorderControls: boolean;
   isBlacklistArtistPending: boolean;
   isBlacklistSongPending: boolean;
   isBlacklistSongGroupPending: boolean;
@@ -1303,6 +1468,10 @@ function CurrentPlaylistRows(props: {
   onDragHover: (targetItemId: string, edge: Edge) => void;
   onDragLeaveForItem: (itemId: string) => void;
   onReorder: (sourceItemId: string, targetItemId: string, edge: Edge) => void;
+  onMoveItem: (
+    itemId: string,
+    moveAction: "top" | "up" | "down" | "bottom"
+  ) => void;
   onSetCurrent: (itemId: string) => void;
   onReturnToQueue: (itemId: string) => void;
   onMarkPlayed: (itemId: string) => void;
@@ -1314,6 +1483,10 @@ function CurrentPlaylistRows(props: {
   onBlacklistArtist: (item: PlaylistItem) => void;
   onBlacklistCharter: (candidate: PlaylistCandidate) => void;
 }) {
+  const reorderableItemIds = props.items
+    .filter((item) => item.id !== props.currentItemId)
+    .map((item) => item.id);
+
   return (
     <>
       {props.playlistActionError ? (
@@ -1341,6 +1514,10 @@ function CurrentPlaylistRows(props: {
               "changeRequestKind",
               item.id
             )}
+            isReorderPending={props.isReorderPending}
+            useTouchReorderControls={props.useTouchReorderControls}
+            reorderableIndex={reorderableItemIds.indexOf(item.id)}
+            reorderableCount={reorderableItemIds.length}
             canManageBlacklist={props.canManageBlacklist}
             isBlacklistedArtist={
               item.songArtistId != null &&
@@ -1374,6 +1551,7 @@ function CurrentPlaylistRows(props: {
               props.onDragLeaveForItem(item.id);
             }}
             onReorder={props.onReorder}
+            onMoveItem={(moveAction) => props.onMoveItem(item.id, moveAction)}
             onSetCurrent={() => props.onSetCurrent(item.id)}
             onReturnToQueue={() => props.onReturnToQueue(item.id)}
             onMarkPlayed={() => props.onMarkPlayed(item.id)}
@@ -1396,77 +1574,6 @@ function CurrentPlaylistRows(props: {
       ) : null}
     </>
   );
-}
-
-function getSongParts(partsJson?: string) {
-  if (!partsJson) {
-    return [];
-  }
-
-  try {
-    const parsed = JSON.parse(partsJson) as unknown;
-    return Array.isArray(parsed) ? parsed.map((part) => String(part)) : [];
-  } catch {
-    return [];
-  }
-}
-
-function getPlaylistCandidates(candidateMatchesJson?: string) {
-  if (!candidateMatchesJson) {
-    return [] as PlaylistCandidate[];
-  }
-
-  try {
-    const parsed = JSON.parse(candidateMatchesJson) as unknown;
-    return Array.isArray(parsed) ? (parsed as PlaylistCandidate[]) : [];
-  } catch {
-    return [];
-  }
-}
-
-function getResolvedCandidates(item: PlaylistItem) {
-  const candidates = getPlaylistCandidates(item.candidateMatchesJson);
-  if (candidates.length > 0) {
-    return [...candidates]
-      .map((candidate) => ({
-        ...candidate,
-        groupedProjectId:
-          candidate.groupedProjectId ?? item.songGroupedProjectId ?? undefined,
-        album: candidate.album ?? item.songAlbum,
-        sourceUrl: normalizeSongSourceUrl({
-          source: "library",
-          sourceUrl: candidate.sourceUrl,
-          sourceId: candidate.sourceId,
-        }),
-      }))
-      .sort((left, right) => {
-        const leftUpdatedAt = left.sourceUpdatedAt ?? -1;
-        const rightUpdatedAt = right.sourceUpdatedAt ?? -1;
-        return rightUpdatedAt - leftUpdatedAt;
-      });
-  }
-
-  return [
-    {
-      id: item.id,
-      groupedProjectId: item.songGroupedProjectId ?? undefined,
-      title: item.songTitle,
-      artist: item.songArtist,
-      album: item.songAlbum,
-      creator: item.songCreator,
-      tuning: item.songTuning,
-      parts: getSongParts(item.songPartsJson),
-      durationText: item.songDurationText,
-      sourceUpdatedAt: item.songSourceUpdatedAt ?? undefined,
-      downloads: item.songDownloads ?? undefined,
-      sourceUrl: normalizeSongSourceUrl({
-        source: "library",
-        sourceUrl: item.songUrl,
-        sourceId: item.songCatalogSourceId ?? undefined,
-      }),
-      sourceId: item.songCatalogSourceId ?? undefined,
-    } satisfies PlaylistCandidate,
-  ];
 }
 
 function formatTimeAgo(timestamp: number) {
@@ -1630,6 +1737,46 @@ function getReorderedItemIds(
   });
 }
 
+function getOrderedItemIdsForMoveAction(
+  items: PlaylistItem[],
+  itemId: string,
+  moveAction: "top" | "up" | "down" | "bottom"
+) {
+  const currentItemId =
+    items.find((item) => item.status === "current")?.id ?? null;
+  const reorderableItemIds = items
+    .filter((item) => item.id !== currentItemId)
+    .map((item) => item.id);
+  const startIndex = reorderableItemIds.indexOf(itemId);
+
+  if (startIndex === -1) {
+    return null;
+  }
+
+  const finishIndex =
+    moveAction === "top"
+      ? 0
+      : moveAction === "bottom"
+        ? reorderableItemIds.length - 1
+        : moveAction === "up"
+          ? Math.max(0, startIndex - 1)
+          : Math.min(reorderableItemIds.length - 1, startIndex + 1);
+
+  if (finishIndex === startIndex) {
+    return null;
+  }
+
+  const reorderedItemIds = reorder({
+    list: reorderableItemIds,
+    startIndex,
+    finishIndex,
+  });
+
+  return currentItemId
+    ? [currentItemId, ...reorderedItemIds]
+    : reorderedItemIds;
+}
+
 function getPlaylistDragData(args: {
   itemId: string;
   element: HTMLElement;
@@ -1659,6 +1806,10 @@ function PlaylistQueueItem(props: {
   isReturnToQueuePending: boolean;
   isMarkPlayedPending: boolean;
   isChangeRequestKindPending: boolean;
+  isReorderPending: boolean;
+  useTouchReorderControls: boolean;
+  reorderableIndex: number;
+  reorderableCount: number;
   canManageBlacklist: boolean;
   isBlacklistedArtist: boolean;
   isBlacklistedSong: boolean;
@@ -1675,6 +1826,7 @@ function PlaylistQueueItem(props: {
   onDragHover: (targetItemId: string, edge: Edge) => void;
   onDragLeave: () => void;
   onReorder: (sourceItemId: string, targetItemId: string, edge: Edge) => void;
+  onMoveItem: (moveAction: "top" | "up" | "down" | "bottom") => void;
   onSetCurrent: () => void;
   onReturnToQueue: () => void;
   onMarkPlayed: () => void;
@@ -1688,6 +1840,7 @@ function PlaylistQueueItem(props: {
 }) {
   const itemRef = useRef<HTMLDivElement | null>(null);
   const dragHandleRef = useRef<HTMLButtonElement | null>(null);
+  const [showVersions, setShowVersions] = useState(false);
   const isDragging = props.draggingItemId === props.item.id;
   const isCurrentItem = props.item.status === "current";
   const isVipRequest = props.item.requestKind === "vip";
@@ -1701,17 +1854,26 @@ function PlaylistQueueItem(props: {
     !isVipRequest &&
     hasRequester &&
     hasRedeemableVipToken(props.availableVipTokenCount);
+  const canMoveUp = props.reorderableIndex > 0;
+  const canMoveDown =
+    props.reorderableIndex >= 0 &&
+    props.reorderableIndex < props.reorderableCount - 1;
   const dropEdge =
     props.dropTargetState?.itemId === props.item.id
       ? props.dropTargetState.edge
       : null;
-  const resolvedCandidates = getResolvedCandidates(props.item);
+  const resolvedCandidates = getResolvedPlaylistCandidates(props.item);
+  const hasMultipleVersions = resolvedCandidates.length > 1;
+  const singleVersionDownloadUrl =
+    !hasMultipleVersions && resolvedCandidates[0]?.sourceUrl
+      ? resolvedCandidates[0].sourceUrl
+      : null;
 
   useEffect(() => {
     const element = itemRef.current;
     const dragHandle = dragHandleRef.current;
 
-    if (!element || !dragHandle) {
+    if (props.useTouchReorderControls || !element || !dragHandle) {
       return;
     }
 
@@ -1730,12 +1892,18 @@ function PlaylistQueueItem(props: {
         props.onDragEnd();
       },
     });
-  }, [isCurrentItem, props.item.id, props.onDragEnd, props.onDragStart]);
+  }, [
+    isCurrentItem,
+    props.item.id,
+    props.onDragEnd,
+    props.onDragStart,
+    props.useTouchReorderControls,
+  ]);
 
   useEffect(() => {
     const element = itemRef.current;
 
-    if (!element) {
+    if (props.useTouchReorderControls || !element) {
       return;
     }
 
@@ -1787,12 +1955,13 @@ function PlaylistQueueItem(props: {
     props.onDragHover,
     props.onDragLeave,
     props.onReorder,
+    props.useTouchReorderControls,
   ]);
 
   return (
     <motion.div
       ref={itemRef}
-      layout
+      layout="position"
       initial={{ opacity: 0, y: 10, scale: 0.99 }}
       animate={{ opacity: isDragging ? 0.72 : 1, y: 0, scale: 1 }}
       exit={{ opacity: 0, y: -10, scale: 0.985 }}
@@ -1813,87 +1982,167 @@ function PlaylistQueueItem(props: {
       ) : null}
 
       <div className="flex items-stretch">
-        <button
-          ref={dragHandleRef}
-          type="button"
-          aria-label={`Reorder ${props.item.songTitle}`}
-          className={`dashboard-playlist__drag-handle inline-flex shrink-0 items-center justify-center self-stretch border-r border-(--border) px-2 text-(--muted) opacity-45 transition ${
-            isCurrentItem
-              ? "cursor-not-allowed opacity-30"
-              : "cursor-grab group-hover:opacity-100 hover:bg-(--panel) hover:text-(--text) active:cursor-grabbing"
-          } w-11`}
-          disabled={isCurrentItem}
-        >
-          <span
-            className={`flex h-full items-center justify-center ${
-              isVipRequest ? "text-violet-200" : ""
-            } min-h-[8.5rem]`}
+        {props.useTouchReorderControls ? (
+          <div className="dashboard-playlist__drag-handle inline-flex w-14 shrink-0 self-stretch border-r border-(--border) px-1 py-2">
+            <div className="grid w-full grid-cols-2 gap-1">
+              <TouchReorderButton
+                label="Move to top"
+                icon={ChevronsUp}
+                disabled={isCurrentItem || !canMoveUp || props.isReorderPending}
+                onClick={() => props.onMoveItem("top")}
+              />
+              <TouchReorderButton
+                label="Move up"
+                icon={ArrowUp}
+                disabled={isCurrentItem || !canMoveUp || props.isReorderPending}
+                onClick={() => props.onMoveItem("up")}
+              />
+              <TouchReorderButton
+                label="Move down"
+                icon={ArrowDown}
+                disabled={
+                  isCurrentItem || !canMoveDown || props.isReorderPending
+                }
+                onClick={() => props.onMoveItem("down")}
+              />
+              <TouchReorderButton
+                label="Move to bottom"
+                icon={ChevronsDown}
+                disabled={
+                  isCurrentItem || !canMoveDown || props.isReorderPending
+                }
+                onClick={() => props.onMoveItem("bottom")}
+              />
+            </div>
+          </div>
+        ) : (
+          <button
+            ref={dragHandleRef}
+            type="button"
+            aria-label={`Reorder ${props.item.songTitle}`}
+            className={`dashboard-playlist__drag-handle inline-flex shrink-0 items-center justify-center self-stretch border-r border-(--border) px-2 text-(--muted) opacity-45 transition ${
+              isCurrentItem
+                ? "cursor-not-allowed opacity-30"
+                : "cursor-grab group-hover:opacity-100 hover:bg-(--panel) hover:text-(--text) active:cursor-grabbing"
+            } w-11`}
+            disabled={isCurrentItem}
           >
-            <GripVertical className="h-4.5 w-4.5" />
-          </span>
-        </button>
+            <span
+              className={`flex h-full items-center justify-center ${
+                isVipRequest ? "text-violet-200" : ""
+              } min-h-[8.5rem]`}
+            >
+              <GripVertical className="h-4.5 w-4.5" />
+            </span>
+          </button>
+        )}
 
-        <div className="min-w-0 flex-1 px-5 py-4">
-          <div className="flex flex-wrap items-start justify-between gap-4">
-            <div className="flex flex-wrap items-center gap-3">
+        <div className="grid min-w-0 flex-1 gap-4 px-4 py-3 md:grid-cols-[minmax(0,1fr)_auto]">
+          <motion.div layout="position" className="min-w-0 grid gap-3">
+            <motion.div layout="position" className="flex items-center gap-3">
               <span
-                className={`border px-3 py-1 text-xs font-semibold uppercase tracking-[0.18em] ${
+                className={`inline-flex min-h-7 min-w-7 shrink-0 items-center justify-center border px-2 text-xs font-semibold ${
                   isVipRequest
                     ? "border-violet-400/30 bg-violet-500/15 text-violet-100"
-                    : "border-(--border) bg-(--panel) text-(--muted)"
+                    : "border-(--border-strong) bg-(--panel) text-(--text)"
                 }`}
               >
-                #{props.item.position}
+                {props.item.position}
               </span>
-              {isVipRequest ? (
-                <Badge className="border-violet-400/35 bg-violet-500/15 text-violet-100 hover:bg-violet-500/15">
-                  VIP
-                </Badge>
-              ) : null}
-              {isCurrentItem ? (
-                <Badge className="border-emerald-400/35 bg-emerald-500/15 text-emerald-200 hover:bg-emerald-500/15">
-                  Playing
-                </Badge>
+              <div className="min-w-0 flex flex-1 gap-3">
+                <p className="break-words text-lg font-semibold leading-tight text-(--text)">
+                  {props.item.songTitle}
+                </p>
+                <div className="flex flex-wrap items-center gap-2">
+                  {isVipRequest ? (
+                    <Badge className="border-violet-400/35 bg-violet-500/15 text-violet-100 hover:bg-violet-500/15">
+                      VIP
+                    </Badge>
+                  ) : null}
+                  {isCurrentItem ? (
+                    <Badge className="border-emerald-400/35 bg-emerald-500/15 text-emerald-200 hover:bg-emerald-500/15">
+                      Playing
+                    </Badge>
+                  ) : null}
+                  {props.item.warningMessage ? (
+                    <StatusPill
+                      icon={AlertTriangle}
+                      className="border-amber-400/40 bg-amber-500/15 text-amber-200"
+                    >
+                      Warning
+                    </StatusPill>
+                  ) : null}
+                  {props.isBlacklistedSong ? (
+                    <Badge
+                      variant="outline"
+                      className="border-rose-400/40 bg-rose-500/10 text-rose-200"
+                    >
+                      Version blacklisted
+                    </Badge>
+                  ) : null}
+                  {props.isBlacklistedSongGroup ? (
+                    <Badge
+                      variant="outline"
+                      className="border-rose-400/40 bg-rose-500/10 text-rose-200"
+                    >
+                      Song blacklisted
+                    </Badge>
+                  ) : null}
+                  {props.isBlacklistedArtist ? (
+                    <Badge
+                      variant="outline"
+                      className="border-rose-400/40 bg-rose-500/10 text-rose-200"
+                    >
+                      Artist blacklisted
+                    </Badge>
+                  ) : null}
+                </div>
+              </div>
+            </motion.div>
+
+            <motion.div layout="position" className="grid gap-1.5">
+              <p className="break-words text-sm text-(--brand-deep)">
+                {formatPlaylistItemSummaryLine(props.item, {
+                  hasMultipleVersions,
+                })}
+              </p>
+              <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+                {getRequesterLabel(props.item) ? (
+                  <p className="text-base font-semibold text-(--text)">
+                    Requested by {getRequesterLabel(props.item)}
+                  </p>
+                ) : null}
+                {showVipTokenBalance ? (
+                  <p className="text-sm font-medium text-(--muted)">
+                    {formatVipTokenCount(props.availableVipTokenCount)} VIP
+                    tokens
+                  </p>
+                ) : null}
+                <p className="inline-flex items-center gap-1.5 text-sm text-(--muted)">
+                  <Clock3 className="h-3.5 w-3.5" />
+                  <span>Added {formatTimeAgo(props.item.createdAt)}</span>
+                </p>
+              </div>
+              {props.item.requestedQuery ? (
+                <p className="text-xs text-amber-200">
+                  Requested text: {props.item.requestedQuery}
+                </p>
               ) : null}
               {props.item.warningMessage ? (
-                <StatusPill
-                  icon={AlertTriangle}
-                  className="border-amber-400/40 bg-amber-500/15 text-amber-200"
-                >
-                  Warning
-                </StatusPill>
+                <p className="text-sm text-amber-100">
+                  {props.item.warningMessage}
+                </p>
               ) : null}
-              {props.isBlacklistedArtist ? (
-                <Badge
-                  variant="outline"
-                  className="border-rose-400/40 bg-rose-500/10 text-rose-200"
-                >
-                  Artist blacklisted
-                </Badge>
-              ) : null}
-              {props.isBlacklistedSong ? (
-                <Badge
-                  variant="outline"
-                  className="border-rose-400/40 bg-rose-500/10 text-rose-200"
-                >
-                  Version blacklisted
-                </Badge>
-              ) : null}
-              {props.isBlacklistedSongGroup ? (
-                <Badge
-                  variant="outline"
-                  className="border-rose-400/40 bg-rose-500/10 text-rose-200"
-                >
-                  Song blacklisted
-                </Badge>
-              ) : null}
-            </div>
+            </motion.div>
+          </motion.div>
 
-            <div className="dashboard-playlist__item-actions flex max-w-full flex-wrap justify-end gap-2">
+          <div className="grid gap-3 sm:justify-items-end md:min-w-[12rem] md:content-between">
+            <div className="dashboard-playlist__item-actions flex max-w-full flex-wrap gap-2 sm:justify-end">
               {isVipRequest && hasRequester && !isCurrentItem ? (
                 <Button
                   size="sm"
                   variant="outline"
+                  className="h-8 px-2.5 text-[11px]"
                   onClick={() => props.onChangeRequestKind("regular")}
                   disabled={props.isChangeRequestKindPending}
                 >
@@ -1906,6 +2155,7 @@ function PlaylistQueueItem(props: {
                 <Button
                   size="sm"
                   variant="outline"
+                  className="h-8 px-2.5 text-[11px]"
                   onClick={() => props.onChangeRequestKind("vip")}
                   disabled={props.isChangeRequestKindPending}
                 >
@@ -1916,9 +2166,11 @@ function PlaylistQueueItem(props: {
                 <Button
                   size="sm"
                   variant="outline"
+                  className="h-8 px-2.5 text-[11px]"
                   onClick={props.onReturnToQueue}
                   disabled={props.isReturnToQueuePending}
                 >
+                  <Undo2 className="h-3.5 w-3.5" />
                   {props.isReturnToQueuePending
                     ? "Saving..."
                     : "Return to queue"}
@@ -1927,6 +2179,7 @@ function PlaylistQueueItem(props: {
                 <Button
                   size="sm"
                   variant="outline"
+                  className="h-8 px-2.5 text-[11px]"
                   onClick={props.onSetCurrent}
                   disabled={hasCurrentItem || props.isSetCurrentPending}
                 >
@@ -1937,26 +2190,20 @@ function PlaylistQueueItem(props: {
                 <Button
                   size="sm"
                   variant="outline"
+                  className="h-8 px-2.5 text-[11px]"
                   onClick={props.onMarkPlayed}
                   disabled={props.isMarkPlayedPending}
                 >
-                  Mark played
+                  <CircleCheckBig className="h-3.5 w-3.5" />
+                  Mark complete
                 </Button>
               ) : null}
-              {!isCurrentItem ? (
-                <Button
-                  size="sm"
-                  variant="outline"
-                  onClick={props.onDelete}
-                  disabled={props.isDeletingItem}
-                >
-                  Delete
-                </Button>
-              ) : null}
-              {props.canManageBlacklist ? (
-                <BlacklistActionsPopover
+              {props.canManageBlacklist || !isCurrentItem ? (
+                <PlaylistItemActionsPopover
                   item={props.item}
                   candidates={resolvedCandidates}
+                  canManageBlacklist={props.canManageBlacklist}
+                  isCurrentItem={isCurrentItem}
                   isBlacklistedArtist={props.isBlacklistedArtist}
                   isBlacklistedSong={props.isBlacklistedSong}
                   isBlacklistedSongGroup={props.isBlacklistedSongGroup}
@@ -1967,6 +2214,8 @@ function PlaylistQueueItem(props: {
                     props.isBlacklistSongGroupPending
                   }
                   isBlacklistCharterPending={props.isBlacklistCharterPending}
+                  isDeletingItem={props.isDeletingItem}
+                  onDelete={props.onDelete}
                   onBlacklistSong={props.onBlacklistSong}
                   onBlacklistSongGroup={props.onBlacklistSongGroup}
                   onBlacklistArtist={props.onBlacklistArtist}
@@ -1974,175 +2223,67 @@ function PlaylistQueueItem(props: {
                 />
               ) : null}
             </div>
-          </div>
 
-          <div className="mt-3 min-w-0">
-            <p className="text-xl font-semibold text-(--text)">
-              {props.item.songTitle}
-            </p>
-            <p className="mt-1 text-sm text-(--brand-deep)">
-              {props.item.songArtist ?? "Unknown artist"}
-              {props.item.songAlbum ? ` - ${props.item.songAlbum}` : ""}
-            </p>
-            <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-2">
-              {getRequesterLabel(props.item) ? (
-                <p className="text-sm font-medium text-(--brand-deep)">
-                  Requested by {getRequesterLabel(props.item)}
-                </p>
-              ) : null}
-              {showVipTokenBalance ? (
-                <p className="text-sm text-(--muted)">
-                  VIP tokens:{" "}
-                  {formatVipTokenCount(props.availableVipTokenCount)}
-                </p>
-              ) : null}
-              <p className="inline-flex items-center gap-1.5 text-sm text-(--muted)">
-                <Clock3 className="h-3.5 w-3.5" />
-                <span>Requested {formatTimeAgo(props.item.createdAt)}</span>
-              </p>
-            </div>
-            {props.item.requestedQuery ? (
-              <p className="mt-2 text-xs text-amber-200">
-                Requested text: {props.item.requestedQuery}
-              </p>
-            ) : null}
-            {props.item.warningMessage ? (
-              <p className="mt-2 text-sm text-amber-100">
-                {props.item.warningMessage}
-              </p>
+            {hasMultipleVersions ? (
+              <Button
+                type="button"
+                size="sm"
+                variant={showVersions ? "secondary" : "outline"}
+                className="h-8 w-fit px-2.5 text-[11px]"
+                aria-expanded={showVersions}
+                onClick={() => setShowVersions((current) => !current)}
+              >
+                {resolvedCandidates.length} version
+                {resolvedCandidates.length === 1 ? "" : "s"}
+              </Button>
+            ) : singleVersionDownloadUrl ? (
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                asChild
+                className="h-8 w-fit px-2.5 text-[11px]"
+              >
+                <a
+                  href={singleVersionDownloadUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="no-underline"
+                >
+                  <Download className="h-3.5 w-3.5" />
+                  Download from CF
+                </a>
+              </Button>
             ) : null}
           </div>
 
-          <details className="mt-4 border-t border-(--border) pt-4">
-            <summary className="cursor-pointer list-none text-sm font-medium text-(--brand-deep)">
-              View {resolvedCandidates.length} version
-              {resolvedCandidates.length === 1 ? "" : "s"}
-            </summary>
-            <div className="mt-3 overflow-hidden border border-(--border)">
-              <div className="grid">
-                {resolvedCandidates.map((candidate, candidateIndex) => {
-                  const isBlacklistedCandidateSong =
-                    candidate.sourceId != null &&
-                    props.blacklistedSongIds.has(candidate.sourceId);
-                  const isBlacklistedCharter =
-                    candidate.authorId != null &&
-                    props.blacklistedCharterIds.has(candidate.authorId);
-
-                  return (
-                    <div
-                      key={`${props.item.id}-${candidate.id}-${candidateIndex}`}
-                      className={`grid gap-3 border-t border-(--border) px-4 py-4 first:border-t-0 ${
-                        candidateIndex % 2 === 0
-                          ? "bg-(--panel-strong)"
-                          : "bg-(--panel-soft)"
-                      } ${isBlacklistedCharter ? "opacity-55" : ""}`}
-                    >
-                      <div className="flex flex-wrap items-start justify-between gap-3">
-                        <div className="min-w-0 flex-1">
-                          <p className="truncate font-medium text-(--text)">
-                            {candidate.title}
-                          </p>
-                          {candidate.album ? (
-                            <p className="mt-1 truncate text-xs text-(--muted)">
-                              {candidate.album}
-                            </p>
-                          ) : null}
-                          <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-(--muted)">
-                            <span>
-                              Charted by {candidate.creator ?? "Unknown"}
-                            </span>
-                            {isBlacklistedCharter ? (
-                              <Badge
-                                variant="outline"
-                                className="border-rose-400/40 bg-rose-500/10 text-rose-200"
-                              >
-                                Blacklisted
-                              </Badge>
-                            ) : null}
-                          </div>
-                        </div>
-                        <div className="flex shrink-0 flex-wrap items-center gap-2">
-                          {props.canManageBlacklist ? (
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              className="shrink-0"
-                              disabled={
-                                isBlacklistedCandidateSong ||
-                                candidate.sourceId == null ||
-                                props.isBlacklistSongPending
-                              }
-                              onClick={() =>
-                                props.onBlacklistCandidateSong(candidate)
-                              }
-                            >
-                              {isBlacklistedCandidateSong
-                                ? "Version blacklisted"
-                                : "Blacklist version"}
-                            </Button>
-                          ) : null}
-                          {candidate.sourceUrl ? (
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              asChild
-                              className="shrink-0"
-                            >
-                              <a
-                                href={candidate.sourceUrl}
-                                target="_blank"
-                                rel="noreferrer"
-                                className="no-underline"
-                              >
-                                Download
-                              </a>
-                            </Button>
-                          ) : null}
-                        </div>
-                      </div>
-
-                      <div className="grid gap-x-6 gap-y-2 text-sm sm:grid-cols-2 xl:grid-cols-3">
-                        <VersionMeta
-                          label="Tuning"
-                          value={candidate.tuning ?? "Unknown"}
-                        />
-                        <VersionMeta
-                          label="Paths"
-                          value={
-                            candidate.parts?.length
-                              ? candidate.parts
-                                  .map((part) => formatPathLabel(part))
-                                  .join(", ")
-                              : "Unknown"
-                          }
-                        />
-                        <VersionMeta
-                          label="Length"
-                          value={candidate.durationText ?? "??:??"}
-                        />
-                        <VersionMeta
-                          label="Updated"
-                          value={
-                            candidate.sourceUpdatedAt
-                              ? formatDate(candidate.sourceUpdatedAt)
-                              : "Unknown"
-                          }
-                        />
-                        <VersionMeta
-                          label="DLs"
-                          value={
-                            candidate.downloads != null
-                              ? candidate.downloads.toLocaleString()
-                              : "Unknown"
-                          }
-                        />
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-          </details>
+          <AnimatePresence initial={false}>
+            {showVersions && hasMultipleVersions ? (
+              <motion.div
+                key="versions"
+                initial={{ height: 0, opacity: 0.7 }}
+                animate={{ height: "auto", opacity: 1 }}
+                exit={{ height: 0, opacity: 0.7 }}
+                transition={{
+                  duration: 0.2,
+                  ease: [0.2, 0, 0, 1],
+                }}
+                className="overflow-hidden md:col-span-2"
+              >
+                <div className="border-t border-(--border) pt-4">
+                  <PlaylistVersionsTable
+                    itemId={props.item.id}
+                    candidates={resolvedCandidates}
+                    canManageBlacklist={props.canManageBlacklist}
+                    blacklistedSongIds={props.blacklistedSongIds}
+                    blacklistedCharterIds={props.blacklistedCharterIds}
+                    isBlacklistSongPending={props.isBlacklistSongPending}
+                    onBlacklistCandidateSong={props.onBlacklistCandidateSong}
+                  />
+                </div>
+              </motion.div>
+            ) : null}
+          </AnimatePresence>
         </div>
       </div>
     </motion.div>
@@ -2166,9 +2307,35 @@ function StatusPill(props: {
   );
 }
 
-function BlacklistActionsPopover(props: {
+function TouchReorderButton(props: {
+  label: string;
+  icon: LucideIcon;
+  disabled: boolean;
+  onClick: () => void;
+}) {
+  const Icon = props.icon;
+
+  return (
+    <Button
+      type="button"
+      size="icon"
+      variant="ghost"
+      aria-label={props.label}
+      title={props.label}
+      className="h-6 w-6 rounded-none border border-(--border) px-0 text-(--muted) shadow-none hover:bg-(--panel) hover:text-(--text)"
+      disabled={props.disabled}
+      onClick={props.onClick}
+    >
+      <Icon className="h-3.5 w-3.5" />
+    </Button>
+  );
+}
+
+function PlaylistItemActionsPopover(props: {
   item: PlaylistItem;
   candidates: PlaylistCandidate[];
+  canManageBlacklist: boolean;
+  isCurrentItem: boolean;
   isBlacklistedArtist: boolean;
   isBlacklistedSong: boolean;
   isBlacklistedSongGroup: boolean;
@@ -2177,11 +2344,15 @@ function BlacklistActionsPopover(props: {
   isBlacklistSongPending: boolean;
   isBlacklistSongGroupPending: boolean;
   isBlacklistCharterPending: boolean;
+  isDeletingItem: boolean;
+  onDelete: () => void;
   onBlacklistSong: () => void;
   onBlacklistSongGroup: () => void;
   onBlacklistArtist: () => void;
   onBlacklistCharter: (candidate: PlaylistCandidate) => void;
 }) {
+  const [open, setOpen] = useState(false);
+  const [view, setView] = useState<"menu" | "blacklist">("menu");
   const queuedVersionLabel =
     props.item.songCatalogSourceId != null
       ? `Queued version ID ${props.item.songCatalogSourceId}`
@@ -2196,16 +2367,30 @@ function BlacklistActionsPopover(props: {
         .map((candidate) => [candidate.authorId, candidate])
     ).values()
   );
+  const canRemoveFromPlaylist = !props.isCurrentItem;
+  const hasActions = canRemoveFromPlaylist || props.canManageBlacklist;
+
+  if (!hasActions) {
+    return null;
+  }
 
   return (
-    <Popover>
+    <Popover
+      open={open}
+      onOpenChange={(nextOpen) => {
+        setOpen(nextOpen);
+        if (!nextOpen) {
+          setView("menu");
+        }
+      }}
+    >
       <PopoverTrigger asChild>
         <Button
           type="button"
           size="icon"
-          variant="ghost"
-          aria-label={`Open blacklist actions for ${props.item.songTitle}`}
-          className="h-9 w-9"
+          variant="outline"
+          aria-label={`Open actions for ${props.item.songTitle}`}
+          className="h-8 w-8"
         >
           <MoreHorizontal className="h-4 w-4" />
         </Button>
@@ -2214,139 +2399,490 @@ function BlacklistActionsPopover(props: {
         align="end"
         className="w-80 max-w-[calc(100vw-2rem)] border-(--border) bg-(--panel-strong) p-3 text-(--text)"
       >
-        <PopoverHeader className="gap-0">
-          <PopoverTitle className="truncate text-sm">
-            Blacklist actions
-          </PopoverTitle>
-        </PopoverHeader>
-        <p className="mt-2 text-xs leading-5 text-(--muted)">
-          Choose whether to block the queued version, every version of this
-          song, the artist, or a charter.
-        </p>
-        <p className="mt-1 text-xs leading-5 text-(--muted)">
-          {queuedVersionLabel}
-        </p>
-        <div className="mt-3 grid gap-2">
-          <Button
-            type="button"
-            variant="outline"
-            className="h-auto w-full items-start justify-start gap-3 whitespace-normal px-3 py-2.5 text-left"
-            disabled={
-              props.isBlacklistedSong ||
-              props.item.songCatalogSourceId == null ||
-              props.isBlacklistSongPending
-            }
-            onClick={props.onBlacklistSong}
-          >
-            <Ban className="mt-0.5 h-4 w-4 shrink-0" />
-            <div className="grid min-w-0 flex-1 gap-0.5 text-left">
-              <span className="font-medium">
-                {props.isBlacklistedSong
-                  ? "Version blacklisted"
-                  : "Blacklist queued version"}
-              </span>
-              <span className="text-xs text-(--muted)">
-                {props.item.songCatalogSourceId != null
-                  ? `Blocks only version ID ${props.item.songCatalogSourceId}.`
-                  : "Blocks only the exact version attached to this request."}
-              </span>
-            </div>
-          </Button>
-          <Button
-            type="button"
-            variant="outline"
-            className="h-auto w-full items-start justify-start gap-3 whitespace-normal px-3 py-2.5 text-left"
-            disabled={
-              props.isBlacklistedSongGroup ||
-              props.item.songGroupedProjectId == null ||
-              props.isBlacklistSongGroupPending
-            }
-            onClick={props.onBlacklistSongGroup}
-          >
-            <Ban className="mt-0.5 h-4 w-4 shrink-0" />
-            <div className="grid min-w-0 flex-1 gap-0.5 text-left">
-              <span className="font-medium">
-                {props.isBlacklistedSongGroup
-                  ? "Song blacklisted"
-                  : "Blacklist all versions of this song"}
-              </span>
-              <span className="text-xs text-(--muted)">
-                Blocks every version grouped under this song.
-              </span>
-            </div>
-          </Button>
-          <Button
-            type="button"
-            variant="outline"
-            className="h-auto w-full items-start justify-start gap-3 whitespace-normal px-3 py-2.5 text-left"
-            disabled={
-              props.isBlacklistedArtist ||
-              props.item.songArtistId == null ||
-              props.isBlacklistArtistPending
-            }
-            onClick={props.onBlacklistArtist}
-          >
-            <Ban className="mt-0.5 h-4 w-4 shrink-0" />
-            <div className="grid min-w-0 flex-1 gap-0.5 text-left">
-              <span className="font-medium">
-                {props.isBlacklistedArtist
-                  ? `Artist blacklisted: ${props.item.songArtist ?? "Unknown artist"}`
-                  : `Blacklist artist: ${props.item.songArtist ?? "Unknown artist"}`}
-              </span>
-              <span className="text-xs text-(--muted)">
-                Blocks every song by this artist ID.
-              </span>
-            </div>
-          </Button>
-          {charterCandidates.map((candidate) => {
-            const isBlacklistedCharter = props.blacklistedCharterIds.has(
-              candidate.authorId
-            );
-
-            return (
+        {view === "menu" ? (
+          <div className="grid gap-1">
+            {canRemoveFromPlaylist ? (
+              <button
+                type="button"
+                className="flex w-full items-center px-2 py-1.5 text-left text-xs font-medium text-(--text) hover:bg-(--panel-soft)"
+                disabled={props.isDeletingItem}
+                onClick={() => {
+                  setOpen(false);
+                  props.onDelete();
+                }}
+              >
+                <span>
+                  {props.isDeletingItem
+                    ? "Removing..."
+                    : "Remove from playlist"}
+                </span>
+              </button>
+            ) : null}
+            {props.canManageBlacklist ? (
+              <button
+                type="button"
+                className="flex w-full items-center gap-2 px-2 py-1.5 text-left text-xs font-medium text-(--text) hover:bg-(--panel-soft)"
+                onClick={() => setView("blacklist")}
+              >
+                <Ban className="h-3.5 w-3.5 shrink-0" />
+                <span>Blacklist</span>
+              </button>
+            ) : null}
+          </div>
+        ) : (
+          <>
+            <div className="flex items-start justify-between gap-3">
+              <PopoverHeader className="gap-0 px-0 py-0">
+                <PopoverTitle className="truncate text-sm">
+                  Blacklist actions
+                </PopoverTitle>
+              </PopoverHeader>
               <Button
-                key={`${props.item.id}-${candidate.id}-${candidate.authorId}`}
+                type="button"
+                size="sm"
+                variant="ghost"
+                className="h-7 px-2 text-[11px]"
+                onClick={() => setView("menu")}
+              >
+                Back
+              </Button>
+            </div>
+            <p className="mt-2 text-xs leading-5 text-(--muted)">
+              Choose whether to block the queued version, every version of this
+              song, the artist, or a charter.
+            </p>
+            <p className="mt-1 text-xs leading-5 text-(--muted)">
+              {queuedVersionLabel}
+            </p>
+            <div className="mt-3 grid gap-2">
+              <Button
                 type="button"
                 variant="outline"
                 className="h-auto w-full items-start justify-start gap-3 whitespace-normal px-3 py-2.5 text-left"
                 disabled={
-                  isBlacklistedCharter || props.isBlacklistCharterPending
+                  props.isBlacklistedSong ||
+                  props.item.songCatalogSourceId == null ||
+                  props.isBlacklistSongPending
                 }
-                onClick={() => props.onBlacklistCharter(candidate)}
+                onClick={() => {
+                  props.onBlacklistSong();
+                  setOpen(false);
+                }}
               >
                 <Ban className="mt-0.5 h-4 w-4 shrink-0" />
                 <div className="grid min-w-0 flex-1 gap-0.5 text-left">
                   <span className="font-medium">
-                    {isBlacklistedCharter
-                      ? `Charter blacklisted: ${candidate.creator ?? "Unknown"}`
-                      : `Blacklist charter: ${candidate.creator ?? "Unknown"}`}
+                    {props.isBlacklistedSong
+                      ? "Version blacklisted"
+                      : "Blacklist queued version"}
                   </span>
                   <span className="text-xs text-(--muted)">
-                    Blocks every song by this charter ID.
+                    {props.item.songCatalogSourceId != null
+                      ? `Blocks only version ID ${props.item.songCatalogSourceId}.`
+                      : "Blocks only the exact version attached to this request."}
                   </span>
                 </div>
               </Button>
-            );
-          })}
-          {!charterCandidates.length ? (
-            <div className="border border-dashed border-(--border) px-3 py-2 text-xs text-(--muted)">
-              No charter IDs available for these versions.
+              <Button
+                type="button"
+                variant="outline"
+                className="h-auto w-full items-start justify-start gap-3 whitespace-normal px-3 py-2.5 text-left"
+                disabled={
+                  props.isBlacklistedSongGroup ||
+                  props.item.songGroupedProjectId == null ||
+                  props.isBlacklistSongGroupPending
+                }
+                onClick={() => {
+                  props.onBlacklistSongGroup();
+                  setOpen(false);
+                }}
+              >
+                <Ban className="mt-0.5 h-4 w-4 shrink-0" />
+                <div className="grid min-w-0 flex-1 gap-0.5 text-left">
+                  <span className="font-medium">
+                    {props.isBlacklistedSongGroup
+                      ? "Song blacklisted"
+                      : "Blacklist all versions of this song"}
+                  </span>
+                  <span className="text-xs text-(--muted)">
+                    Blocks every version grouped under this song.
+                  </span>
+                </div>
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                className="h-auto w-full items-start justify-start gap-3 whitespace-normal px-3 py-2.5 text-left"
+                disabled={
+                  props.isBlacklistedArtist ||
+                  props.item.songArtistId == null ||
+                  props.isBlacklistArtistPending
+                }
+                onClick={() => {
+                  props.onBlacklistArtist();
+                  setOpen(false);
+                }}
+              >
+                <Ban className="mt-0.5 h-4 w-4 shrink-0" />
+                <div className="grid min-w-0 flex-1 gap-0.5 text-left">
+                  <span className="font-medium">
+                    {props.isBlacklistedArtist
+                      ? `Artist blacklisted: ${props.item.songArtist ?? "Unknown artist"}`
+                      : `Blacklist artist: ${props.item.songArtist ?? "Unknown artist"}`}
+                  </span>
+                  <span className="text-xs text-(--muted)">
+                    Blocks every song by this artist ID.
+                  </span>
+                </div>
+              </Button>
+              {charterCandidates.map((candidate) => {
+                const isBlacklistedCharter = props.blacklistedCharterIds.has(
+                  candidate.authorId
+                );
+
+                return (
+                  <Button
+                    key={`${props.item.id}-${candidate.id}-${candidate.authorId}`}
+                    type="button"
+                    variant="outline"
+                    className="h-auto w-full items-start justify-start gap-3 whitespace-normal px-3 py-2.5 text-left"
+                    disabled={
+                      isBlacklistedCharter || props.isBlacklistCharterPending
+                    }
+                    onClick={() => {
+                      props.onBlacklistCharter(candidate);
+                      setOpen(false);
+                    }}
+                  >
+                    <Ban className="mt-0.5 h-4 w-4 shrink-0" />
+                    <div className="grid min-w-0 flex-1 gap-0.5 text-left">
+                      <span className="font-medium">
+                        {isBlacklistedCharter
+                          ? `Charter blacklisted: ${candidate.creator ?? "Unknown"}`
+                          : `Blacklist charter: ${candidate.creator ?? "Unknown"}`}
+                      </span>
+                      <span className="text-xs text-(--muted)">
+                        Blocks every song by this charter ID.
+                      </span>
+                    </div>
+                  </Button>
+                );
+              })}
+              {!charterCandidates.length ? (
+                <div className="border border-dashed border-(--border) px-3 py-2 text-xs text-(--muted)">
+                  No charter IDs available for these versions.
+                </div>
+              ) : null}
             </div>
-          ) : null}
-        </div>
+          </>
+        )}
       </PopoverContent>
     </Popover>
   );
 }
 
-function VersionMeta(props: { label: string; value: string }) {
+function PlaylistVersionsTable(props: {
+  itemId: string;
+  candidates: PlaylistCandidate[];
+  canManageBlacklist: boolean;
+  blacklistedSongIds: Set<number>;
+  blacklistedCharterIds: Set<number>;
+  isBlacklistSongPending: boolean;
+  onBlacklistCandidateSong: (candidate: PlaylistCandidate) => void;
+}) {
   return (
-    <div className="min-w-0">
-      <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-(--muted)">
-        {props.label}
-      </p>
-      <p className="mt-1 truncate text-(--text)">{props.value}</p>
+    <div className="overflow-x-auto border border-(--border)">
+      <table className="min-w-full border-collapse text-left text-sm">
+        <thead className="bg-(--panel)">
+          <tr className="border-b border-(--border)">
+            <th className="px-4 py-2 text-[13px] font-semibold text-(--muted)">
+              Song / album
+            </th>
+            <th className="px-4 py-2 text-[13px] font-semibold text-(--muted)">
+              Tunings
+            </th>
+            <th className="px-4 py-2 text-[13px] font-semibold text-(--muted)">
+              Paths
+            </th>
+            <th className="px-4 py-2 text-[13px] font-semibold text-(--muted)">
+              Updated
+            </th>
+            <th className="px-4 py-2 text-[13px] font-semibold text-(--muted)">
+              Downloads
+            </th>
+            <th className="px-4 py-2 text-[13px] font-semibold text-(--muted)">
+              Actions
+            </th>
+          </tr>
+        </thead>
+        <tbody>
+          {props.candidates.map((candidate, index) => {
+            const isBlacklistedCandidateSong =
+              candidate.sourceId != null &&
+              props.blacklistedSongIds.has(candidate.sourceId);
+            const isBlacklistedCharter =
+              candidate.authorId != null &&
+              props.blacklistedCharterIds.has(candidate.authorId);
+
+            return (
+              <tr
+                key={`${props.itemId}-${candidate.id}-${index}`}
+                className={`border-b border-(--border) align-top ${
+                  index % 2 === 0 ? "bg-(--panel)" : "bg-(--panel-soft)"
+                } ${isBlacklistedCharter ? "opacity-55" : ""}`}
+              >
+                <td className="px-4 py-3">
+                  <div className="grid gap-0.5">
+                    <p className="font-medium text-(--text)">
+                      {candidate.title}
+                      {candidate.album ? ` · ${candidate.album}` : ""}
+                    </p>
+                    <p className="text-xs text-(--muted)">
+                      {candidate.artist ?? "Unknown artist"}
+                    </p>
+                    {candidate.creator ? (
+                      <p className="text-xs text-(--muted)">
+                        <span className="text-(--brand-deep)">Charted by</span>{" "}
+                        {candidate.creator}
+                        {isBlacklistedCharter ? " · Charter blacklisted" : ""}
+                      </p>
+                    ) : null}
+                  </div>
+                </td>
+                <td className="px-4 py-3 text-(--muted)">
+                  {candidate.tuning ?? "Unknown"}
+                </td>
+                <td className="px-4 py-3">
+                  <div className="flex flex-wrap gap-1">
+                    {(candidate.parts ?? []).map((part) => (
+                      <span
+                        key={`${candidate.id}-${part}`}
+                        className={getPlaylistPathBadgeClass(part)}
+                        title={formatPathLabel(part)}
+                      >
+                        {getPathAbbreviation(part)}
+                      </span>
+                    ))}
+                    {(candidate.parts ?? []).length === 0 ? (
+                      <span className="text-xs text-(--muted)">Unknown</span>
+                    ) : null}
+                  </div>
+                </td>
+                <td className="px-4 py-3 text-(--muted)">
+                  {candidate.sourceUpdatedAt
+                    ? formatDate(candidate.sourceUpdatedAt)
+                    : "Unknown"}
+                </td>
+                <td className="px-4 py-3 text-(--muted)">
+                  {candidate.downloads != null
+                    ? candidate.downloads.toLocaleString()
+                    : "Unknown"}
+                </td>
+                <td className="px-4 py-3">
+                  <div className="flex flex-wrap gap-1.5">
+                    {candidate.sourceUrl ? (
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        asChild
+                        className="h-7 px-2 text-[11px]"
+                      >
+                        <a
+                          href={candidate.sourceUrl}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="no-underline"
+                        >
+                          <Download className="h-3.5 w-3.5" />
+                          Download
+                        </a>
+                      </Button>
+                    ) : null}
+                    {props.canManageBlacklist ? (
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="secondary"
+                        className="h-7 px-2 text-[11px]"
+                        disabled={
+                          isBlacklistedCandidateSong ||
+                          candidate.sourceId == null ||
+                          props.isBlacklistSongPending
+                        }
+                        onClick={() =>
+                          props.onBlacklistCandidateSong(candidate)
+                        }
+                      >
+                        <Ban className="h-3.5 w-3.5" />
+                        {isBlacklistedCandidateSong
+                          ? "Blacklisted"
+                          : "Blacklist"}
+                      </Button>
+                    ) : null}
+                  </div>
+                </td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
     </div>
+  );
+}
+
+function getPathAbbreviation(path: string) {
+  switch (path.trim().toLowerCase()) {
+    case "lead":
+      return "L";
+    case "rhythm":
+      return "R";
+    case "bass":
+      return "B";
+    case "lyrics":
+    case "voice":
+    case "vocals":
+      return "V";
+    default:
+      return path.slice(0, 1).toUpperCase();
+  }
+}
+
+function getPlaylistPathBadgeClass(path: string) {
+  switch (path.trim().toLowerCase()) {
+    case "lead":
+      return "inline-flex h-6 min-w-6 items-center justify-center border border-emerald-700/50 bg-emerald-950 px-1.5 text-[10px] font-semibold uppercase tracking-[0.08em] text-emerald-100";
+    case "rhythm":
+      return "inline-flex h-6 min-w-6 items-center justify-center border border-sky-700/50 bg-sky-950 px-1.5 text-[10px] font-semibold uppercase tracking-[0.08em] text-sky-100";
+    case "bass":
+      return "inline-flex h-6 min-w-6 items-center justify-center border border-orange-700/50 bg-orange-950 px-1.5 text-[10px] font-semibold uppercase tracking-[0.08em] text-orange-100";
+    case "lyrics":
+    case "voice":
+    case "vocals":
+      return "inline-flex h-6 min-w-6 items-center justify-center border border-violet-700/50 bg-violet-950 px-1.5 text-[10px] font-semibold uppercase tracking-[0.08em] text-violet-100";
+    default:
+      return "inline-flex h-6 min-w-6 items-center justify-center border border-(--border) bg-(--panel-strong) px-1.5 text-[10px] font-semibold uppercase tracking-[0.08em] text-(--text)";
+  }
+}
+
+export function PlaylistQueueItemPreview() {
+  const [item, setItem] = useState<PlaylistItem>(PLAYLIST_PREVIEW_ITEM);
+  const [removed, setRemoved] = useState(false);
+  const [isBlacklistedArtist, setIsBlacklistedArtist] = useState(false);
+  const [isBlacklistedSongGroup, setIsBlacklistedSongGroup] = useState(false);
+  const [blacklistedSongIds, setBlacklistedSongIds] = useState<Set<number>>(
+    new Set()
+  );
+  const [blacklistedCharterIds, setBlacklistedCharterIds] = useState<
+    Set<number>
+  >(new Set());
+
+  if (removed) {
+    return (
+      <div className="grid gap-3 border border-dashed border-(--border) bg-(--panel) px-4 py-5">
+        <p className="text-sm text-(--muted)">
+          The demo row is removed from the playlist.
+        </p>
+        <div>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={() => {
+              setRemoved(false);
+              setItem(PLAYLIST_PREVIEW_ITEM);
+            }}
+          >
+            Restore demo row
+          </Button>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <PlaylistQueueItem
+      item={item}
+      index={0}
+      draggingItemId={null}
+      dropTargetState={null}
+      currentItemId={item.status === "current" ? item.id : null}
+      isDeletingItem={false}
+      isSetCurrentPending={false}
+      isReturnToQueuePending={false}
+      isMarkPlayedPending={false}
+      isChangeRequestKindPending={false}
+      isReorderPending={false}
+      useTouchReorderControls={false}
+      reorderableIndex={0}
+      reorderableCount={1}
+      canManageBlacklist
+      isBlacklistedArtist={isBlacklistedArtist}
+      isBlacklistedSong={
+        item.songCatalogSourceId != null &&
+        blacklistedSongIds.has(item.songCatalogSourceId)
+      }
+      isBlacklistedSongGroup={isBlacklistedSongGroup}
+      isBlacklistArtistPending={false}
+      isBlacklistSongPending={false}
+      isBlacklistSongGroupPending={false}
+      isBlacklistCharterPending={false}
+      availableVipTokenCount={3}
+      blacklistedSongIds={blacklistedSongIds}
+      blacklistedCharterIds={blacklistedCharterIds}
+      onDragStart={() => {}}
+      onDragEnd={() => {}}
+      onDragHover={() => {}}
+      onDragLeave={() => {}}
+      onReorder={() => {}}
+      onMoveItem={() => {}}
+      onSetCurrent={() =>
+        setItem((current) => ({
+          ...current,
+          status: "current",
+        }))
+      }
+      onReturnToQueue={() =>
+        setItem((current) => ({
+          ...current,
+          status: "queued",
+        }))
+      }
+      onMarkPlayed={() => setRemoved(true)}
+      onDelete={() => setRemoved(true)}
+      onChangeRequestKind={(requestKind) =>
+        setItem((current) => ({
+          ...current,
+          requestKind,
+        }))
+      }
+      onBlacklistSong={() => {
+        if (item.songCatalogSourceId == null) {
+          return;
+        }
+
+        const sourceId = item.songCatalogSourceId;
+        setBlacklistedSongIds((current) => new Set([...current, sourceId]));
+      }}
+      onBlacklistCandidateSong={(candidate) => {
+        if (candidate.sourceId == null) {
+          return;
+        }
+
+        const sourceId = candidate.sourceId;
+        setBlacklistedSongIds((current) => new Set([...current, sourceId]));
+      }}
+      onBlacklistSongGroup={() => setIsBlacklistedSongGroup(true)}
+      onBlacklistArtist={() => setIsBlacklistedArtist(true)}
+      onBlacklistCharter={(candidate) => {
+        if (candidate.authorId == null) {
+          return;
+        }
+
+        const authorId = candidate.authorId;
+        setBlacklistedCharterIds((current) => new Set([...current, authorId]));
+      }}
+    />
   );
 }
 

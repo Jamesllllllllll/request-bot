@@ -24,6 +24,7 @@ vi.mock("~/lib/db/repositories", () => ({
   getChannelBySlug: vi.fn(),
   getChannelSettingsByChannelId: vi.fn(),
   getPlaylistByChannelId: vi.fn(),
+  searchCatalogSongs: vi.fn(),
   getUserById: vi.fn(),
   getVipTokenBalance: vi.fn(),
   grantVipToken: vi.fn(),
@@ -64,6 +65,7 @@ import {
   grantVipToken,
   isBlockedUser,
   parseAuthorizationScopes,
+  searchCatalogSongs,
 } from "~/lib/db/repositories";
 import {
   getViewerRequestState,
@@ -108,6 +110,7 @@ describe("viewer request service", () => {
     displayName: "Streamer",
     ownerUserId: "owner-1",
     twitchChannelId: "broadcaster-1",
+    isLive: true,
   };
 
   const baseViewer = {
@@ -307,6 +310,82 @@ describe("viewer request service", () => {
     });
   });
 
+  it("returns offline access when the channel is not live", async () => {
+    vi.mocked(getChannelBySlug).mockResolvedValue({
+      ...baseChannel,
+      isLive: false,
+    } as never);
+
+    await expect(
+      getViewerRequestState({
+        env,
+        request,
+        slug: "streamer",
+      })
+    ).resolves.toEqual({
+      viewer: {
+        twitchUserId: "viewer-1",
+        login: "viewer_one",
+        displayName: "Viewer One",
+        profileImageUrl: "https://example.com/viewer.png",
+        isSubscriber: false,
+        subscriptionVerified: false,
+        vipTokensAvailable: 2,
+        activeRequestLimit: 1,
+        access: {
+          allowed: false,
+          reason: "You can add requests when the stream goes live.",
+        },
+      },
+    });
+  });
+
+  it("rejects submit mutations while the channel is offline", async () => {
+    vi.mocked(getChannelBySlug).mockResolvedValue({
+      ...baseChannel,
+      isLive: false,
+    } as never);
+
+    await expect(
+      performViewerRequestMutation({
+        env,
+        request,
+        slug: "streamer",
+        mutation: {
+          action: "submit",
+          songId: "song-1",
+          requestKind: "regular",
+          replaceExisting: false,
+        },
+      })
+    ).rejects.toMatchObject({
+      status: 403,
+      message: "You can add requests when the stream goes live.",
+    });
+  });
+
+  it("allows requests while offline testing is enabled", async () => {
+    vi.mocked(getChannelBySlug).mockResolvedValue({
+      ...baseChannel,
+      isLive: false,
+      botReadyState: "active_offline_testing",
+    } as never);
+
+    await expect(
+      getViewerRequestState({
+        env,
+        request,
+        slug: "streamer",
+      })
+    ).resolves.toMatchObject({
+      viewer: {
+        access: {
+          allowed: true,
+        },
+      },
+    });
+  });
+
   it("submits a regular request through the playlist backend", async () => {
     const result = await performViewerRequestMutation({
       env,
@@ -348,6 +427,52 @@ describe("viewer request service", () => {
       expect.objectContaining({
         outcome: "accepted",
         matchedSongId: "song-1",
+      })
+    );
+  });
+
+  it("uses artist search for random custom requests", async () => {
+    vi.mocked(searchCatalogSongs)
+      .mockResolvedValueOnce({
+        results: [baseSong],
+        total: 1,
+        hiddenBlacklistedCount: 0,
+        page: 1,
+        pageSize: 1,
+      } as never)
+      .mockResolvedValueOnce({
+        results: [baseSong],
+        total: 1,
+        hiddenBlacklistedCount: 0,
+        page: 1,
+        pageSize: 1,
+      } as never);
+
+    await expect(
+      performViewerRequestMutation({
+        env,
+        request,
+        slug: "streamer",
+        mutation: {
+          action: "submit",
+          query: "bruno mars",
+          requestMode: "random",
+          requestKind: "regular",
+          replaceExisting: false,
+        },
+      })
+    ).resolves.toEqual({
+      ok: true,
+      message: 'Added "The Smashing Pumpkins - Cherub Rock" to the playlist.',
+    });
+
+    expect(searchCatalogSongs).toHaveBeenCalledWith(
+      env,
+      expect.objectContaining({
+        query: "bruno mars",
+        field: "artist",
+        page: 1,
+        pageSize: 1,
       })
     );
   });

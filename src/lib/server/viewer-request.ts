@@ -25,6 +25,10 @@ import { requestLogs, setlistArtists } from "~/lib/db/schema";
 import type { AppEnv } from "~/lib/env";
 import type { PlaylistMutationResult } from "~/lib/playlist/types";
 import {
+  ADD_REQUESTS_WHEN_LIVE_MESSAGE,
+  areChannelRequestsOpen,
+} from "~/lib/request-availability";
+import {
   STREAMER_CHOICE_TITLE,
   STREAMER_CHOICE_WARNING_CODE,
 } from "~/lib/request-modes";
@@ -329,6 +333,7 @@ async function loadViewerRequestContext(
   };
 
   const access = resolveViewerAccess({
+    requestsOpen: areChannelRequestsOpen(channel),
     settings,
     requester,
     subscriptionVerified: subscription.verified,
@@ -356,6 +361,7 @@ async function loadViewerRequestContext(
 }
 
 function resolveViewerAccess(input: {
+  requestsOpen: boolean;
   settings: ViewerChannelState["settings"];
   requester: RequesterContext;
   subscriptionVerified: boolean;
@@ -365,6 +371,13 @@ function resolveViewerAccess(input: {
     return {
       allowed: false,
       reason: blockedViewerRequestReason,
+    };
+  }
+
+  if (!input.requestsOpen) {
+    return {
+      allowed: false,
+      reason: ADD_REQUESTS_WHEN_LIVE_MESSAGE,
     };
   }
 
@@ -473,6 +486,7 @@ function buildViewerCatalogSearchInput(input: {
 
   return {
     query: input.query,
+    field: "artist",
     page: input.page,
     pageSize: input.pageSize,
     sortBy: "relevance" as const,

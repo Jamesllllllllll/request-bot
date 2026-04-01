@@ -4,6 +4,30 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-04-01
+
+### Added
+- RockList.Live branding updates across the app and docs, plus clearer deployment/domain guidance for the public site and Twitch panel.
+- Twitch panel extension refinements for moderator workflows, tester access, request actions, and closer parity with the web playlist manager.
+- Expanded VIP token automation, including StreamElements tip rewards, shared resub-message rewards, raid rewards, relay URL setup, clearer public messaging, and richer dashboard configuration.
+- Public playlist header controls for live status, request status, manager request toggling, VIP token balance/help, and tighter custom-request flows.
+- Multi-version playlist-management helpers and tests to support richer version tables, download actions, and moderation controls across web and panel surfaces.
+- Website internationalization scaffolding and locale support for the main app.
+
+### Changed
+- Dashboard settings were reorganized with clearer heading hierarchy, collapsible filter sections, compact VIP automation cards, improved notices, and cleaner owner/moderator controls.
+- Playlist management rows were redesigned for desktop and mobile, including better action grouping, version-table presentation, compact metadata, and touch-friendly reorder controls.
+- Public search now behaves more like a filtered catalog by default, with compact applied-filter summaries, better preferred-path messaging, and clearer request warnings.
+- Public playlist and moderator surfaces now align more closely with the Twitch panel, including request actions, blacklist flows, and version-aware song management.
+- Sentry handling was tightened so local development disables runtime capture cleanly, while production tracing now includes Twitch chat reply timing spans.
+
+### Fixed
+- Catalog search now falls back cleanly when FTS `MATCH` fails instead of returning a server error for some artist searches.
+- Artist-based custom requests now use artist search correctly, including multi-word artist names such as `Bruno Mars`.
+- Search validation once again allows filtered browsing with no text query, so playlist pages load their filtered song catalog on first open.
+- Multi-tuning request checks no longer reject songs incorrectly when all listed tunings are allowed, and several playlist/search filter edge cases now respect the current channel settings more reliably.
+- The local max playlist size default is now consistent at `50`, avoiding local resets back to the older `250` default.
+
 ## [0.2.0] - 2026-03-27
 
 ### Added

@@ -132,6 +132,9 @@ const defaultForm: DashboardSettingsFormData = {
   showPlaylistPositions: false,
   commandPrefix: "!sr",
 };
+const settingsComparisonKeys = Object.keys(defaultForm) as Array<
+  keyof DashboardSettingsFormData
+>;
 
 const twitchExtensionInstallUrl =
   "https://dashboard.twitch.tv/extensions/gojrfj73vbfx7fww479a77kpvyrz91-0.0.1";
@@ -1800,11 +1803,14 @@ function normalizeSettingsFormData(
 
 function getSettingsComparisonSnapshot(settings: DashboardSettingsFormData) {
   const normalized = normalizeSettingsFormData(settings);
+  const comparable = Object.fromEntries(
+    settingsComparisonKeys.map((key) => [key, normalized[key]])
+  ) as DashboardSettingsFormData;
 
   return JSON.stringify({
-    ...normalized,
-    allowedTunings: [...normalized.allowedTunings].sort(),
-    requiredPaths: [...normalized.requiredPaths].sort(),
+    ...comparable,
+    allowedTunings: [...comparable.allowedTunings].sort(),
+    requiredPaths: [...comparable.requiredPaths].sort(),
   });
 }
 

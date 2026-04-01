@@ -1,0 +1,79 @@
+{
+  "meta": {
+    "title": "Recherche de morceaux"
+  },
+  "page": {
+    "title": "Recherche",
+    "infoNote": "Cette demo contient seulement {count} morceaux.",
+    "placeholder": "Rechercher par titre, artiste ou album"
+  },
+  "summary": {
+    "note": "Note :",
+    "foundCount": "{count} morceaux trouves",
+    "filters": "Filtres",
+    "moreCount": "+{count} de plus",
+    "changeFilters": "Modifier les filtres"
+  },
+  "controls": {
+    "searchField": "Champ de recherche",
+    "allFields": "Tous les champs",
+    "titleOnly": "Titre uniquement",
+    "artistOnly": "Artiste uniquement",
+    "albumOnly": "Album uniquement",
+    "creatorOnly": "Createur uniquement",
+    "showFilters": "Afficher les filtres",
+    "hideFilters": "Masquer les filtres",
+    "title": "Titre",
+    "artist": "Artiste",
+    "album": "Album",
+    "creator": "Createur",
+    "tuning": "Accordage",
+    "path": "Partie",
+    "year": "Annee",
+    "actions": "Actions",
+    "clearAdvancedFilters": "Effacer les filtres",
+    "matchAny": "Correspond a l'un",
+    "matchAll": "Correspond a tous"
+  },
+  "columns": {
+    "song": "Morceau",
+    "paths": "Parties",
+    "stats": "Infos",
+    "actions": "Actions"
+  },
+  "states": {
+    "loading": "Chargement des morceaux...",
+    "queryTooShort": "Les termes de recherche doivent contenir au moins 3 caracteres.",
+    "emptyFiltered": "Aucun morceau ne correspond encore a ces filtres. Essayez d'elargir la recherche ou de supprimer un filtre avance.",
+    "emptyCatalog": "Aucun morceau n'est encore disponible dans le catalogue de demo.",
+    "blacklisted": "Liste noire",
+    "blacklistedWithReasons": "Liste noire - {reasons}",
+    "unknownArtist": "Artiste inconnu",
+    "chartedBy": "Chart par {creator}",
+    "updated": "Mis a jour {date}"
+  },
+  "errors": {
+    "filterOptionsFailed": "Le chargement des options de filtre a echoue.",
+    "searchFailed": "La recherche a echoue."
+  },
+  "commands": {
+    "copySr": "Copier la commande !sr",
+    "copiedSr": "Commande !sr copiee",
+    "copyEdit": "Copier la commande !edit",
+    "copiedEdit": "Commande !edit copiee",
+    "copyVip": "Copier la commande !vip",
+    "copiedVip": "Commande !vip copiee"
+  },
+  "paths": {
+    "lead": "Lead",
+    "rhythm": "Rythmique",
+    "bass": "Basse",
+    "lyrics": "Paroles"
+  },
+  "multiSelect": {
+    "selected": "{count} selectionnes",
+    "select": "Selectionner {label}",
+    "filter": "Filtrer {label}...",
+    "noMatches": "Aucun resultat."
+  }
+}

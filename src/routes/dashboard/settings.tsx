@@ -1,6 +1,6 @@
 // Route: Renders request behavior and channel configuration settings.
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, Link } from "@tanstack/react-router";
 import { ChevronDown, Copy } from "lucide-react";
 import { type ReactNode, useEffect, useId, useState } from "react";
 import { DashboardPageHeader } from "~/components/dashboard-page-header";
@@ -21,12 +21,15 @@ import {
   CollapsibleTrigger,
 } from "~/components/ui/collapsible";
 import { Input } from "~/components/ui/input";
-import { getBotStatusLabel } from "~/lib/bot-status";
+import { getBotStatusKey } from "~/lib/bot-status";
 import { pathOptions, tuningOptions } from "~/lib/channel-options";
-import { pageTitle } from "~/lib/page-title";
+import { useAppLocale, useLocaleTranslation } from "~/lib/i18n/client";
+import { formatNumber } from "~/lib/i18n/format";
+import { getLocalizedPageTitle } from "~/lib/i18n/metadata";
 import { DEFAULT_MAX_QUEUE_SIZE } from "~/lib/settings-defaults";
 import { getErrorMessage } from "~/lib/utils";
 import type { SettingsInputData } from "~/lib/validation";
+import { viewerSessionQueryOptions } from "~/lib/viewer-session-query";
 
 type DashboardSettingsFormData = Omit<
   SettingsInputData,
@@ -140,14 +143,26 @@ const twitchExtensionBetaUserIds = new Set([
 ]);
 
 export const Route = createFileRoute("/dashboard/settings")({
-  head: () => ({
-    meta: [{ title: pageTitle("Settings") }],
+  head: async () => ({
+    meta: [
+      {
+        title: await getLocalizedPageTitle({
+          namespace: "dashboard",
+          key: "settings.header.title",
+        }),
+      },
+    ],
   }),
   component: DashboardSettingsPage,
 });
 
 function DashboardSettingsPage() {
+  const { t } = useLocaleTranslation("dashboard");
+  const { locale } = useAppLocale();
   const queryClient = useQueryClient();
+  const cachedSettingsData = queryClient.getQueryData<DashboardSettingsData>([
+    "dashboard-settings",
+  ]);
   const [saveWarning, setSaveWarning] = useState<string | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [savedIndicatorPhase, setSavedIndicatorPhase] = useState<
@@ -162,6 +177,7 @@ function DashboardSettingsPage() {
       });
       return response.json() as Promise<ViewerSessionData>;
     },
+    ...viewerSessionQueryOptions,
   });
   const viewer = sessionQuery.data?.viewer ?? null;
   const hasOwnerChannel = !!viewer?.channel;
@@ -181,25 +197,42 @@ function DashboardSettingsPage() {
       if (!response.ok) {
         throw new Error(
           body && "message" in body
-            ? (body.message ?? "Failed to load settings.")
-            : "Failed to load settings."
+            ? (body.message ?? t("settings.states.failedToLoad"))
+            : t("settings.states.failedToLoad")
         );
       }
 
       return body as DashboardSettingsData;
     },
     enabled: !sessionQuery.isLoading && hasOwnerChannel,
+    staleTime: 5 * 60_000,
+    gcTime: 10 * 60_000,
+    refetchOnWindowFocus: false,
+    placeholderData: (previousData) => previousData,
   });
-  const [form, setForm] = useState<DashboardSettingsFormData>(defaultForm);
+  const [form, setForm] = useState<DashboardSettingsFormData>(() =>
+    cachedSettingsData?.settings
+      ? normalizeSettingsFormData(cachedSettingsData.settings)
+      : defaultForm
+  );
+  const [hasHydratedForm, setHasHydratedForm] = useState(
+    () => cachedSettingsData !== undefined
+  );
   const [officialDlcOpen, setOfficialDlcOpen] = useState(false);
   const [allowedTuningsOpen, setAllowedTuningsOpen] = useState(false);
   const [requiredPathsOpen, setRequiredPathsOpen] = useState(false);
 
   useEffect(() => {
-    if (settingsQuery.data?.settings) {
+    if (hasHydratedForm || settingsQuery.data === undefined) {
+      return;
+    }
+
+    if (settingsQuery.data.settings) {
       setForm(normalizeSettingsFormData(settingsQuery.data.settings));
     }
-  }, [settingsQuery.data]);
+
+    setHasHydratedForm(true);
+  }, [hasHydratedForm, settingsQuery.data]);
 
   useEffect(() => {
     if (savedIndicatorPhase === "hidden") {
@@ -246,8 +279,8 @@ function DashboardSettingsPage() {
       if (!response.ok) {
         throw new Error(
           body && "message" in body
-            ? (body.message ?? "Settings could not be saved.")
-            : "Settings could not be saved."
+            ? (body.message ?? t("settings.states.failedToSave"))
+            : t("settings.states.failedToSave")
         );
       }
 
@@ -284,7 +317,7 @@ function DashboardSettingsPage() {
       ]);
     },
     onError: (error) => {
-      setSaveError(getErrorMessage(error) || "Settings could not be saved.");
+      setSaveError(getErrorMessage(error) || t("settings.states.failedToSave"));
     },
   });
 
@@ -323,6 +356,7 @@ function DashboardSettingsPage() {
       : null;
   const reserveSaveNoticeSpace = !!saveWarning || !!saveError;
   const pathSummary = buildRequiredPathsSummary(
+    t,
     form.requiredPaths,
     form.requiredPathsMatchMode
   );
@@ -388,12 +422,12 @@ function DashboardSettingsPage() {
   return (
     <div className="page-section-stack dashboard-settings grid gap-6">
       <DashboardPageHeader
-        title="Settings"
-        description="Owner-only channel configuration for requests, moderators, and the stream overlay."
+        title={t("settings.header.title")}
+        description={t("settings.header.description")}
         meta={
           canSeeTwitchExtensionInstall ? (
             <p className="max-w-2xl text-sm leading-7 text-(--muted)">
-              Beta testers can install the Twitch extension panel on Twitch.
+              {t("settings.header.betaNote")}
             </p>
           ) : null
         }
@@ -402,9 +436,9 @@ function DashboardSettingsPage() {
             <div className="flex flex-wrap gap-2">
               {hasOwnerChannel ? (
                 <Button asChild variant="outline">
-                  <a href="/dashboard/panel-preview" className="no-underline">
-                    Preview mod panel
-                  </a>
+                  <Link to="/dashboard/panel-preview" className="no-underline">
+                    {t("settings.header.previewPanel")}
+                  </Link>
                 </Button>
               ) : null}
               {canSeeTwitchExtensionInstall ? (
@@ -415,7 +449,7 @@ function DashboardSettingsPage() {
                     rel="noreferrer"
                     className="no-underline"
                   >
-                    Install Twitch extension beta
+                    {t("settings.header.installExtension")}
                   </a>
                 </Button>
               ) : null}
@@ -426,7 +460,7 @@ function DashboardSettingsPage() {
           hasOwnerChannel ? (
             <div className="flex flex-wrap items-center gap-3">
               <Badge variant={status === "active" ? "default" : "outline"}>
-                {getBotStatusLabel(status)}
+                {t(`botStatus.${getBotStatusKey(status)}`)}
               </Badge>
             </div>
           ) : null
@@ -436,7 +470,9 @@ function DashboardSettingsPage() {
       {sessionQuery.isLoading ? (
         <Card className="dashboard-settings__section">
           <CardContent className="pt-6">
-            <p className="text-sm text-(--muted)">Loading settings access...</p>
+            <p className="text-sm text-(--muted)">
+              {t("settings.states.loadingAccess")}
+            </p>
           </CardContent>
         </Card>
       ) : null}
@@ -445,11 +481,10 @@ function DashboardSettingsPage() {
         <Card className="dashboard-settings__section">
           <CardHeader>
             <CardTitle as="h2" className="text-xl leading-tight md:text-2xl">
-              Owner settings only
+              {t("settings.ownerOnly.title")}
             </CardTitle>
             <CardDescription>
-              This area is only available for channels you own. Use the channel
-              page for moderation work on channels you manage.
+              {t("settings.ownerOnly.description")}
             </CardDescription>
           </CardHeader>
           <CardContent className="grid gap-3">
@@ -468,16 +503,19 @@ function DashboardSettingsPage() {
                     </p>
                   </div>
                   <Button asChild variant="outline">
-                    <a href={`/${channel.slug}`} className="no-underline">
-                      Open channel page
-                    </a>
+                    <Link
+                      to="/$slug"
+                      params={{ slug: channel.slug }}
+                      className="no-underline"
+                    >
+                      {t("settings.ownerOnly.openChannel")}
+                    </Link>
                   </Button>
                 </div>
               ))
             ) : (
               <p className="text-sm leading-7 text-(--muted)">
-                Sign in with a streamer account that owns a channel to manage
-                owner settings here.
+                {t("settings.ownerOnly.signInHint")}
               </p>
             )}
           </CardContent>
@@ -486,7 +524,10 @@ function DashboardSettingsPage() {
 
       {!sessionQuery.isLoading && hasOwnerChannel && settingsQuery.error ? (
         <Banner tone="danger">
-          {getErrorMessage(settingsQuery.error, "Failed to load settings.")}
+          {getErrorMessage(
+            settingsQuery.error,
+            t("settings.states.failedToLoad")
+          )}
         </Banner>
       ) : null}
 
@@ -507,7 +548,7 @@ function DashboardSettingsPage() {
               >
                 <div className="grid gap-1">
                   <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-(--muted)">
-                    Settings
+                    {t("settings.header.title")}
                   </p>
                   <p
                     className={`text-sm font-medium ${
@@ -519,14 +560,14 @@ function DashboardSettingsPage() {
                     }`}
                   >
                     {settingsQuery.isLoading
-                      ? "Loading settings..."
+                      ? t("settings.states.loading")
                       : saveError
-                        ? "Save failed. Review the message below and try again."
+                        ? t("settings.states.saveFailed")
                         : mutation.isPending
-                          ? "Saving settings..."
+                          ? t("settings.states.saving")
                           : hasUnsavedChanges
-                            ? "You have unsaved changes."
-                            : "All changes are saved."}
+                            ? t("settings.states.unsavedChanges")
+                            : t("settings.states.allChangesSaved")}
                   </p>
                 </div>
 
@@ -541,7 +582,7 @@ function DashboardSettingsPage() {
                           : "opacity-100"
                     }`}
                   >
-                    Saved
+                    {t("settings.states.saved")}
                   </span>
                   <Button
                     onClick={() => mutation.mutate()}
@@ -552,7 +593,9 @@ function DashboardSettingsPage() {
                         : "outline"
                     }
                   >
-                    {mutation.isPending ? "Saving..." : "Save settings"}
+                    {mutation.isPending
+                      ? t("settings.states.savingButton")
+                      : t("settings.actions.saveSettings")}
                   </Button>
                 </div>
               </div>
@@ -575,61 +618,56 @@ function DashboardSettingsPage() {
                   as="h2"
                   className="text-xl leading-tight md:text-2xl"
                 >
-                  Channel setup
+                  {t("settings.sections.channelSetup.title")}
                 </CardTitle>
                 <CardDescription>
-                  Control the main playlist toggles, chat command, and
-                  viewer-facing playlist behavior.
+                  {t("settings.sections.channelSetup.description")}
                 </CardDescription>
               </CardHeader>
               <CardContent className="grid gap-4 lg:grid-cols-[minmax(0,1.1fr)_minmax(0,0.9fr)]">
                 <div className="grid gap-4">
                   {status === "broadcaster_auth_required" ? (
                     <div className="border border-amber-500/30 bg-amber-500/10 p-4 text-sm text-amber-200">
-                      Twitch permissions need to be refreshed before the bot can
-                      run.{" "}
+                      {t("settings.sections.channelSetup.reconnectNotice")}{" "}
                       <a
                         href="/auth/twitch/start?redirectTo=%2Fdashboard%2Fsettings"
                         className="font-semibold underline"
                       >
-                        Reconnect Twitch
+                        {t("settings.actions.reconnectTwitch")}
                       </a>
                       .
                     </div>
                   ) : null}
                   <div className="grid gap-3 border border-(--border) bg-(--panel-soft) p-4">
                     <h3 className="text-sm font-semibold text-(--text)">
-                      Main toggles
+                      {t("settings.sections.channelSetup.mainToggles")}
                     </h3>
                     <PermissionRow
-                      label="Enable bot on this channel"
+                      label={t("settings.sections.channelSetup.enableBot")}
                       checked={form.botChannelEnabled}
                       onChange={(value) =>
                         setBoolean("botChannelEnabled", value)
                       }
                     />
                     <div className="border border-dashed border-(--border) bg-(--panel-muted) p-3 text-sm leading-6 text-(--muted)">
-                      Turn this off when you do not want request-bot actions,
-                      including awarding VIP tokens for subscriptions, raids,
-                      etc.
+                      {t("settings.sections.channelSetup.enableBotHelp")}
                     </div>
                     <PermissionRow
-                      label="Enable requests"
+                      label={t("settings.sections.channelSetup.enableRequests")}
                       checked={form.requestsEnabled}
                       onChange={(value) => setBoolean("requestsEnabled", value)}
                     />
                     <div className="border border-dashed border-(--border) bg-(--panel-muted) p-3 text-sm leading-6 text-(--muted)">
-                      Turning requests off keeps playlist management available
-                      to you and your moderators, but viewers cannot add songs.
+                      {t("settings.sections.channelSetup.enableRequestsHelp")}
                     </div>
                   </div>
 
                   <div className="grid gap-3 border border-(--border) bg-(--panel-soft) p-4">
                     <h3 className="text-sm font-semibold text-(--text)">
-                      Playlist display
+                      {t("settings.sections.channelSetup.playlistDisplay")}
                     </h3>
                     <PermissionRow
-                      label="Show playlist positions"
+                      label={t("settings.sections.channelSetup.showPositions")}
                       checked={form.showPlaylistPositions}
                       onChange={(value) =>
                         setBoolean("showPlaylistPositions", value)
@@ -640,8 +678,10 @@ function DashboardSettingsPage() {
 
                 <div className="grid gap-4">
                   <FieldBlock
-                    label="Command prefix"
-                    description="Use the command viewers type in chat."
+                    label={t("settings.sections.channelSetup.commandPrefix")}
+                    description={t(
+                      "settings.sections.channelSetup.commandPrefixHelp"
+                    )}
                   >
                     <div className="max-w-32">
                       <Input
@@ -657,11 +697,15 @@ function DashboardSettingsPage() {
                     </div>
                   </FieldBlock>
                   <FieldBlock
-                    label="Request modifiers"
-                    description="Let chat request bass arrangements with the *bass modifier."
+                    label={t("settings.sections.channelSetup.requestModifiers")}
+                    description={t(
+                      "settings.sections.channelSetup.requestModifiersHelp"
+                    )}
                   >
                     <PermissionRow
-                      label="Allow the *bass modifier in chat commands"
+                      label={t(
+                        "settings.sections.channelSetup.allowBassModifier"
+                      )}
                       checked={form.allowRequestPathModifiers}
                       onChange={(value) =>
                         setBoolean("allowRequestPathModifiers", value)
@@ -669,8 +713,12 @@ function DashboardSettingsPage() {
                     />
                   </FieldBlock>
                   <FieldBlock
-                    label="Duplicate cooldown (minutes)"
-                    description="Set how long the same song waits before it can be requested again."
+                    label={t(
+                      "settings.sections.channelSetup.duplicateCooldown"
+                    )}
+                    description={t(
+                      "settings.sections.channelSetup.duplicateCooldownHelp"
+                    )}
                   >
                     <div className="max-w-40">
                       <Input
@@ -697,22 +745,22 @@ function DashboardSettingsPage() {
                   as="h2"
                   className="text-xl leading-tight md:text-2xl"
                 >
-                  Who can request
+                  {t("settings.sections.requestAccess.title")}
                 </CardTitle>
                 <CardDescription>
-                  Choose which viewers can add songs to your playlist.
+                  {t("settings.sections.requestAccess.description")}
                 </CardDescription>
               </CardHeader>
               <CardContent className="grid gap-3">
                 <PermissionRow
-                  label="Anyone can request"
+                  label={t("settings.sections.requestAccess.anyone")}
                   checked={form.allowAnyoneToRequest}
                   onChange={(value) =>
                     setBoolean("allowAnyoneToRequest", value)
                   }
                 />
                 <PermissionRow
-                  label="Subscribers can request"
+                  label={t("settings.sections.requestAccess.subscribers")}
                   checked={
                     form.allowAnyoneToRequest
                       ? true
@@ -724,7 +772,7 @@ function DashboardSettingsPage() {
                   disabled={form.allowAnyoneToRequest}
                 />
                 <PermissionRow
-                  label="Channel VIPs can request"
+                  label={t("settings.sections.requestAccess.vips")}
                   checked={
                     form.allowAnyoneToRequest ? true : form.allowVipsToRequest
                   }
@@ -740,28 +788,30 @@ function DashboardSettingsPage() {
                   as="h2"
                   className="text-xl leading-tight md:text-2xl"
                 >
-                  Search and request filters
+                  {t("settings.sections.filters.title")}
                 </CardTitle>
                 <CardDescription>
-                  These rules limit what appears in search and what viewers can
-                  request on your channel page.
+                  {t("settings.sections.filters.description")}
                 </CardDescription>
               </CardHeader>
               <CardContent className="grid gap-4">
                 <FilterSection
-                  title="Official DLC"
-                  description="Limit search results and requests to official DLC."
+                  title={t("settings.sections.filters.officialDlc.title")}
+                  description={t(
+                    "settings.sections.filters.officialDlc.description"
+                  )}
                   open={officialDlcOpen}
                   onOpenChange={setOfficialDlcOpen}
                 >
                   <div className="grid gap-3">
                     <div className="border border-sky-500/30 bg-sky-500/10 px-3 py-2 text-sm text-sky-200">
-                      Official DLC filters are not available yet. This section
-                      previews settings that appear here in a future update.
+                      {t("settings.sections.filters.officialDlc.notice")}
                     </div>
                     <div className="grid gap-3 border border-(--border) bg-(--panel-muted) p-3">
                       <PermissionRow
-                        label="Only include official DLC"
+                        label={t(
+                          "settings.sections.filters.officialDlc.onlyOfficial"
+                        )}
                         checked={form.onlyOfficialDlc}
                         onChange={(value) =>
                           setBoolean("onlyOfficialDlc", value)
@@ -769,7 +819,9 @@ function DashboardSettingsPage() {
                         disabled
                       />
                       <PermissionRow
-                        label="Only include official DLC that I own"
+                        label={t(
+                          "settings.sections.filters.officialDlc.onlyOwned"
+                        )}
                         checked={false}
                         onChange={() => {}}
                         disabled
@@ -779,10 +831,12 @@ function DashboardSettingsPage() {
                     <div className="grid gap-3 border border-(--border) bg-(--panel-muted) p-3">
                       <div className="flex flex-wrap items-center justify-between gap-3">
                         <p className="text-sm font-medium text-(--text)">
-                          Owned official DLC
+                          {t(
+                            "settings.sections.filters.officialDlc.ownedTitle"
+                          )}
                         </p>
                         <Button type="button" variant="outline" disabled>
-                          Import from CustomsForge Song Manager
+                          {t("settings.sections.filters.officialDlc.import")}
                         </Button>
                       </div>
                       <div className="divide-y divide-(--border) border border-(--border)">
@@ -807,7 +861,13 @@ function DashboardSettingsPage() {
                                     : "border-(--border) bg-(--panel) text-(--muted)"
                                 }`}
                               >
-                                {owned ? "Owned" : "Not owned"}
+                                {owned
+                                  ? t(
+                                      "settings.sections.filters.officialDlc.owned"
+                                    )
+                                  : t(
+                                      "settings.sections.filters.officialDlc.notOwned"
+                                    )}
                               </span>
                             </div>
                           )
@@ -818,14 +878,16 @@ function DashboardSettingsPage() {
                 </FilterSection>
 
                 <FilterSection
-                  title="Allowed tunings"
-                  description="Click any tuning to allow or block it."
+                  title={t("settings.sections.filters.allowedTunings.title")}
+                  description={t(
+                    "settings.sections.filters.allowedTunings.description"
+                  )}
                   open={allowedTuningsOpen}
                   onOpenChange={setAllowedTuningsOpen}
                 >
                   <div className="flex flex-wrap items-start justify-between gap-4">
                     <div className="min-w-0 flex-1 grid gap-4">
-                      {groupTuningOptions(tuningOptions).map((group) => (
+                      {groupTuningOptions(t, tuningOptions).map((group) => (
                         <div key={group.label} className="grid gap-2">
                           <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-(--muted)">
                             {group.label}
@@ -866,14 +928,16 @@ function DashboardSettingsPage() {
                         }))
                       }
                     >
-                      Allow all
+                      {t("settings.sections.filters.allowedTunings.allowAll")}
                     </Button>
                   </div>
                 </FilterSection>
 
                 <FilterSection
-                  title="Required paths"
-                  description="Choose the paths a song needs before it appears in search or can be requested."
+                  title={t("settings.sections.filters.requiredPaths.title")}
+                  description={t(
+                    "settings.sections.filters.requiredPaths.description"
+                  )}
                   open={requiredPathsOpen}
                   onOpenChange={setRequiredPathsOpen}
                 >
@@ -893,7 +957,7 @@ function DashboardSettingsPage() {
                             : "border-(--border) bg-(--panel-muted) text-(--muted)"
                         }`}
                       >
-                        Match any selected path
+                        {t("settings.sections.filters.requiredPaths.matchAny")}
                       </button>
                       <button
                         type="button"
@@ -909,7 +973,7 @@ function DashboardSettingsPage() {
                             : "border-(--border) bg-(--panel-muted) text-(--muted)"
                         }`}
                       >
-                        Match all selected paths
+                        {t("settings.sections.filters.requiredPaths.matchAll")}
                       </button>
                     </div>
                     <div className="flex flex-wrap gap-2">
@@ -936,7 +1000,7 @@ function DashboardSettingsPage() {
                                 : "border-(--border) bg-(--panel-muted) text-(--muted)"
                             }`}
                           >
-                            {formatPathOptionLabel(option)}
+                            {formatPathOptionLabel(t, option)}
                           </button>
                         );
                       })}
@@ -962,47 +1026,50 @@ function DashboardSettingsPage() {
                   as="h2"
                   className="text-xl leading-tight md:text-2xl"
                 >
-                  Queue and rate limits
+                  {t("settings.sections.queueLimits.title")}
                 </CardTitle>
                 <CardDescription>
-                  Set the playlist size and decide how often regular or VIP
-                  requests can be added.
+                  {t("settings.sections.queueLimits.description")}
                 </CardDescription>
               </CardHeader>
               <CardContent className="grid gap-4 lg:grid-cols-2">
                 <div className="grid min-w-0 content-start gap-3 border border-(--border) bg-(--panel-soft) p-4">
                   <h3 className="text-sm font-semibold text-(--text)">
-                    Queue limits
+                    {t("settings.sections.queueLimits.queueLimits")}
                   </h3>
                   <div className="divide-y divide-(--border)">
                     <CompactNumberRow
-                      label="Maximum playlist size"
+                      label={t("settings.sections.queueLimits.maxPlaylist")}
                       value={form.maxQueueSize}
                       onChange={(value) => setNumber("maxQueueSize", value)}
                     />
                     <CompactNumberRow
-                      label="Max requests per viewer"
+                      label={t("settings.sections.queueLimits.maxPerViewer")}
                       value={form.maxViewerRequestsAtOnce}
                       onChange={(value) =>
                         setNumber("maxViewerRequestsAtOnce", value)
                       }
                     />
                     <CompactNumberRow
-                      label="Max requests per subscriber"
+                      label={t(
+                        "settings.sections.queueLimits.maxPerSubscriber"
+                      )}
                       value={form.maxSubscriberRequestsAtOnce}
                       onChange={(value) =>
                         setNumber("maxSubscriberRequestsAtOnce", value)
                       }
                     />
                     <CompactNumberRow
-                      label="Max VIP requests per viewer"
+                      label={t("settings.sections.queueLimits.maxVipPerViewer")}
                       value={form.maxVipViewerRequestsAtOnce}
                       onChange={(value) =>
                         setNumber("maxVipViewerRequestsAtOnce", value)
                       }
                     />
                     <CompactNumberRow
-                      label="Max VIP requests per subscriber"
+                      label={t(
+                        "settings.sections.queueLimits.maxVipPerSubscriber"
+                      )}
                       value={form.maxVipSubscriberRequestsAtOnce}
                       onChange={(value) =>
                         setNumber("maxVipSubscriberRequestsAtOnce", value)
@@ -1013,7 +1080,7 @@ function DashboardSettingsPage() {
 
                 <div className="grid min-w-0 content-start gap-3 border border-(--border) bg-(--panel-soft) p-4">
                   <h3 className="text-sm font-semibold text-(--text)">
-                    Request rate limits
+                    {t("settings.sections.queueLimits.rateLimits")}
                   </h3>
 
                   <div
@@ -1022,10 +1089,10 @@ function DashboardSettingsPage() {
                     }`}
                   >
                     <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-(--muted)">
-                      Regular
+                      {t("settings.sections.queueLimits.regular")}
                     </p>
                     <PermissionRow
-                      label="Enable regular request rate limit"
+                      label={t("settings.sections.queueLimits.enableRegular")}
                       checked={form.limitRegularRequestsEnabled}
                       onChange={(value) =>
                         setBoolean("limitRegularRequestsEnabled", value)
@@ -1033,7 +1100,9 @@ function DashboardSettingsPage() {
                     />
                     <div className="divide-y divide-(--border)">
                       <CompactNumberRow
-                        label="Regular requests allowed"
+                        label={t(
+                          "settings.sections.queueLimits.regularAllowed"
+                        )}
                         value={form.regularRequestsPerPeriod}
                         onChange={(value) =>
                           setNumber("regularRequestsPerPeriod", value)
@@ -1041,7 +1110,7 @@ function DashboardSettingsPage() {
                         disabled={!form.limitRegularRequestsEnabled}
                       />
                       <CompactNumberRow
-                        label="Regular period (seconds)"
+                        label={t("settings.sections.queueLimits.regularPeriod")}
                         value={form.regularRequestPeriodSeconds}
                         onChange={(value) =>
                           setNumber("regularRequestPeriodSeconds", value)
@@ -1057,10 +1126,10 @@ function DashboardSettingsPage() {
                     }`}
                   >
                     <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-(--muted)">
-                      VIP
+                      {t("settings.sections.queueLimits.vip")}
                     </p>
                     <PermissionRow
-                      label="Enable VIP request rate limit"
+                      label={t("settings.sections.queueLimits.enableVip")}
                       checked={form.limitVipRequestsEnabled}
                       onChange={(value) =>
                         setBoolean("limitVipRequestsEnabled", value)
@@ -1068,7 +1137,7 @@ function DashboardSettingsPage() {
                     />
                     <div className="mt-3 divide-y divide-(--border)">
                       <CompactNumberRow
-                        label="VIP requests allowed"
+                        label={t("settings.sections.queueLimits.vipAllowed")}
                         value={form.vipRequestsPerPeriod}
                         onChange={(value) =>
                           setNumber("vipRequestsPerPeriod", value)
@@ -1076,7 +1145,7 @@ function DashboardSettingsPage() {
                         disabled={!form.limitVipRequestsEnabled}
                       />
                       <CompactNumberRow
-                        label="VIP period (seconds)"
+                        label={t("settings.sections.queueLimits.vipPeriod")}
                         value={form.vipRequestPeriodSeconds}
                         onChange={(value) =>
                           setNumber("vipRequestPeriodSeconds", value)
@@ -1095,11 +1164,10 @@ function DashboardSettingsPage() {
                   as="h2"
                   className="text-xl leading-tight md:text-2xl"
                 >
-                  VIP token automation
+                  {t("settings.sections.vipAutomation.title")}
                 </CardTitle>
                 <CardDescription>
-                  Automatically reward VIP tokens for new subs, gifted subs,
-                  raids, cheers, and StreamElements tips.
+                  {t("settings.sections.vipAutomation.description")}
                 </CardDescription>
               </CardHeader>
               <CardContent className="grid gap-6">
@@ -1107,17 +1175,19 @@ function DashboardSettingsPage() {
                   <div className="grid min-w-0 gap-4">
                     <div className="grid min-w-0 gap-3 border border-(--border) bg-(--panel-soft) p-4">
                       <h3 className="text-sm font-semibold text-(--text)">
-                        Subscribes
+                        {t("settings.sections.vipAutomation.subscribes")}
                       </h3>
                       <PermissionRow
-                        label="Give 1 VIP token for a new paid sub"
+                        label={t("settings.sections.vipAutomation.newSub")}
                         checked={form.autoGrantVipTokenToSubscribers}
                         onChange={(value) =>
                           setBoolean("autoGrantVipTokenToSubscribers", value)
                         }
                       />
                       <PermissionRow
-                        label="Give 1 VIP token for a shared sub renewal message"
+                        label={t(
+                          "settings.sections.vipAutomation.sharedRenewal"
+                        )}
                         checked={
                           form.autoGrantVipTokensForSharedSubRenewalMessage
                         }
@@ -1129,25 +1199,25 @@ function DashboardSettingsPage() {
                         }
                       />
                       <div className="border border-dashed border-(--border) bg-(--panel-muted) p-3 text-sm leading-6 text-(--muted)">
-                        Quiet sub renewals do not award automatically. Twitch
-                        only sends a renewal event here when the viewer shares
-                        the resub message in chat.
+                        {t("settings.sections.vipAutomation.sharedRenewalHelp")}
                       </div>
                     </div>
 
                     <div className="grid min-w-0 gap-3 border border-(--border) bg-(--panel-soft) p-4">
                       <h3 className="text-sm font-semibold text-(--text)">
-                        Gifted subs
+                        {t("settings.sections.vipAutomation.giftedSubs")}
                       </h3>
                       <PermissionRow
-                        label="Give 1 VIP token to the gifter for each gifted sub"
+                        label={t("settings.sections.vipAutomation.subGifter")}
                         checked={form.autoGrantVipTokensToSubGifters}
                         onChange={(value) =>
                           setBoolean("autoGrantVipTokensToSubGifters", value)
                         }
                       />
                       <PermissionRow
-                        label="Give 1 VIP token to each gifted sub recipient"
+                        label={t(
+                          "settings.sections.vipAutomation.subRecipient"
+                        )}
                         checked={form.autoGrantVipTokensToGiftRecipients}
                         onChange={(value) =>
                           setBoolean(
@@ -1166,18 +1236,20 @@ function DashboardSettingsPage() {
                       }`}
                     >
                       <h3 className="text-sm font-semibold text-(--text)">
-                        Raids
+                        {t("settings.sections.vipAutomation.raids")}
                       </h3>
                       <PermissionRow
-                        label="Give 1 VIP token to the streamer who raids this channel"
+                        label={t("settings.sections.vipAutomation.raidReward")}
                         checked={form.autoGrantVipTokensForRaiders}
                         onChange={(value) =>
                           setBoolean("autoGrantVipTokensForRaiders", value)
                         }
                       />
                       <FieldBlock
-                        label="Minimum raid size"
-                        description="Set 1 to reward every raid."
+                        label={t("settings.sections.vipAutomation.minimumRaid")}
+                        description={t(
+                          "settings.sections.vipAutomation.minimumRaidHelp"
+                        )}
                       >
                         <div className="max-w-32">
                           <Input
@@ -1195,8 +1267,7 @@ function DashboardSettingsPage() {
                         </div>
                       </FieldBlock>
                       <div className="border border-dashed border-(--border) bg-(--panel-muted) p-3 text-sm leading-6 text-(--muted)">
-                        Twitch only sends raid rewards here when the raid shows
-                        up in chat.
+                        {t("settings.sections.vipAutomation.raidNotice")}
                       </div>
                     </div>
                   </div>
@@ -1210,10 +1281,12 @@ function DashboardSettingsPage() {
                       }`}
                     >
                       <h3 className="text-sm font-semibold text-(--text)">
-                        Cheers
+                        {t("settings.sections.vipAutomation.cheers")}
                       </h3>
                       <PermissionRow
-                        label="Give VIP tokens for cheers"
+                        label={t(
+                          "settings.sections.vipAutomation.cheersToggle"
+                        )}
                         checked={form.autoGrantVipTokensForCheers}
                         onChange={(value) =>
                           setBoolean("autoGrantVipTokensForCheers", value)
@@ -1225,7 +1298,9 @@ function DashboardSettingsPage() {
                         <div className="grid gap-3 md:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]">
                           <div className="grid gap-1.5">
                             <p className="text-sm font-medium text-(--text)">
-                              Cheer conversion
+                              {t(
+                                "settings.sections.vipAutomation.cheerConversion"
+                              )}
                             </p>
                             <div className="flex flex-wrap items-center gap-2">
                               <div className="w-24 shrink-0">
@@ -1247,13 +1322,17 @@ function DashboardSettingsPage() {
                                 htmlFor="cheer-bits-per-vip-token"
                                 className="text-sm text-(--muted)"
                               >
-                                bits per 1 VIP token
+                                {t(
+                                  "settings.sections.vipAutomation.bitsPerToken"
+                                )}
                               </label>
                             </div>
                           </div>
                           <div className="grid gap-1.5">
                             <p className="text-sm font-medium text-(--text)">
-                              Minimum cheer to earn a partial token
+                              {t(
+                                "settings.sections.vipAutomation.minimumCheer"
+                              )}
                             </p>
                             <div className="flex flex-wrap gap-2">
                               {[25, 50, 75, 100].map((percent) => (
@@ -1281,35 +1360,47 @@ function DashboardSettingsPage() {
                         </div>
                         <div className="grid gap-1.5 border border-dashed border-(--border) bg-(--panel-muted) p-3">
                           <p className="text-sm font-medium text-(--text)">
-                            Live example
+                            {t("settings.sections.vipAutomation.liveExample")}
                           </p>
                           {form.cheerBitsPerVipToken > 0 ? (
                             <>
                               <p className="text-sm leading-6 text-(--muted)">
-                                Minimum cheer:{" "}
-                                {formatSettingsNumber(cheerMinimumBits)} bits
-                                grants{" "}
-                                {formatSettingsNumber(
-                                  cheerMinimumPartialTokens
-                                )}{" "}
-                                of a VIP token at the{" "}
-                                {form.cheerMinimumTokenPercent}% threshold.
+                                {t(
+                                  "settings.sections.vipAutomation.minimumCheerExample",
+                                  {
+                                    bits: formatSettingsNumber(
+                                      locale,
+                                      cheerMinimumBits
+                                    ),
+                                    tokenCount: formatSettingsNumber(
+                                      locale,
+                                      cheerMinimumPartialTokens
+                                    ),
+                                    percent: form.cheerMinimumTokenPercent,
+                                  }
+                                )}
                               </p>
                               <p className="text-sm leading-6 text-(--muted)">
-                                {formatSettingsNumber(
-                                  form.cheerBitsPerVipToken
-                                )}{" "}
-                                bits grants 1 VIP token.{" "}
-                                {formatSettingsNumber(
-                                  form.cheerBitsPerVipToken * 5
-                                )}{" "}
-                                bits grants 5 VIP tokens.
+                                {t(
+                                  "settings.sections.vipAutomation.bitsExample",
+                                  {
+                                    oneTokenBits: formatSettingsNumber(
+                                      locale,
+                                      form.cheerBitsPerVipToken
+                                    ),
+                                    fiveTokenBits: formatSettingsNumber(
+                                      locale,
+                                      form.cheerBitsPerVipToken * 5
+                                    ),
+                                  }
+                                )}
                               </p>
                             </>
                           ) : (
                             <p className="text-sm leading-6 text-(--muted)">
-                              Set the bits per VIP token above 0 to preview the
-                              minimum cheer threshold.
+                              {t(
+                                "settings.sections.vipAutomation.bitsExampleEmpty"
+                              )}
                             </p>
                           )}
                         </div>
@@ -1324,10 +1415,10 @@ function DashboardSettingsPage() {
                       }`}
                     >
                       <h3 className="text-sm font-semibold text-(--text)">
-                        Tips
+                        {t("settings.sections.vipAutomation.tips")}
                       </h3>
                       <PermissionRow
-                        label="Give VIP tokens for StreamElements tips"
+                        label={t("settings.sections.vipAutomation.tipsToggle")}
                         checked={form.autoGrantVipTokensForStreamElementsTips}
                         onChange={(value) =>
                           setBoolean(
@@ -1341,8 +1432,12 @@ function DashboardSettingsPage() {
                       >
                         <div className="grid gap-4 md:grid-cols-[minmax(0,0.8fr)_minmax(0,1.2fr)]">
                           <FieldBlock
-                            label="Tip amount per 1 VIP token"
-                            description="A $25 tip grants 5 VIP tokens when this is set to 5."
+                            label={t(
+                              "settings.sections.vipAutomation.tipAmount"
+                            )}
+                            description={t(
+                              "settings.sections.vipAutomation.tipAmountHelp"
+                            )}
                           >
                             <div className="max-w-40">
                               <Input
@@ -1363,8 +1458,12 @@ function DashboardSettingsPage() {
                             </div>
                           </FieldBlock>
                           <FieldBlock
-                            label="Relay URL"
-                            description="Use this URL in the Streamer.bot step that forwards your StreamElements tip event."
+                            label={t(
+                              "settings.sections.vipAutomation.relayUrl"
+                            )}
+                            description={t(
+                              "settings.sections.vipAutomation.relayUrlHelp"
+                            )}
                           >
                             <div className="grid min-w-0 grid-cols-[minmax(0,1fr)_auto] items-stretch gap-2">
                               <Input
@@ -1380,32 +1479,40 @@ function DashboardSettingsPage() {
                                 className="self-stretch"
                               >
                                 <Copy className="h-4 w-4" />
-                                {relayUrlCopied ? "Copied" : "Copy URL"}
+                                {relayUrlCopied
+                                  ? t("settings.actions.copied")
+                                  : t("settings.actions.copyUrl")}
                               </Button>
                             </div>
                           </FieldBlock>
                         </div>
                         <div className="grid gap-2 border border-(--border) bg-(--panel-muted) p-3">
                           <p className="text-sm font-medium text-(--text)">
-                            Setup
+                            {t("settings.sections.vipAutomation.setup")}
                           </p>
                           <p className="text-sm leading-6 text-(--muted)">
-                            StreamElements can keep showing tip alerts in OBS
-                            the way you already use them. VIP token rewards need
-                            Streamer.bot to forward the tip event here.
+                            {t("settings.sections.vipAutomation.setupHelp")}
                           </p>
                           <ol className="grid gap-1.5 pl-5 text-sm leading-6 text-(--muted) list-decimal">
-                            <li>Connect Streamer.bot to StreamElements.</li>
                             <li>
-                              Use the StreamElements Tip trigger in
-                              Streamer.bot.
+                              {t(
+                                "settings.sections.vipAutomation.setupSteps.connect"
+                              )}
                             </li>
                             <li>
-                              Send that tip event to the Relay URL shown here.
+                              {t(
+                                "settings.sections.vipAutomation.setupSteps.trigger"
+                              )}
                             </li>
                             <li>
-                              Without Streamer.bot, tips still show in OBS, but
-                              they do not add VIP tokens here.
+                              {t(
+                                "settings.sections.vipAutomation.setupSteps.send"
+                              )}
+                            </li>
+                            <li>
+                              {t(
+                                "settings.sections.vipAutomation.setupSteps.note"
+                              )}
                             </li>
                           </ol>
                         </div>
@@ -1422,33 +1529,32 @@ function DashboardSettingsPage() {
                   as="h2"
                   className="text-xl leading-tight md:text-2xl"
                 >
-                  Blacklist and setlist rules
+                  {t("settings.sections.rules.title")}
                 </CardTitle>
                 <CardDescription>
-                  Blacklist and setlist entries are managed on the channel page.
-                  These toggles control how those rules are enforced.
+                  {t("settings.sections.rules.description")}
                 </CardDescription>
               </CardHeader>
               <CardContent className="grid gap-3">
                 <PermissionRow
-                  label="Enable blacklist"
+                  label={t("settings.sections.rules.enableBlacklist")}
                   checked={form.blacklistEnabled}
                   onChange={(value) => setBoolean("blacklistEnabled", value)}
                 />
                 <PermissionRow
-                  label="Let setlist bypass blacklist"
+                  label={t("settings.sections.rules.bypassBlacklist")}
                   checked={form.letSetlistBypassBlacklist}
                   onChange={(value) =>
                     setBoolean("letSetlistBypassBlacklist", value)
                   }
                 />
                 <PermissionRow
-                  label="Enable setlist"
+                  label={t("settings.sections.rules.enableSetlist")}
                   checked={form.setlistEnabled}
                   onChange={(value) => setBoolean("setlistEnabled", value)}
                 />
                 <PermissionRow
-                  label="Subscribers must follow setlist"
+                  label={t("settings.sections.rules.subscribersFollowSetlist")}
                   checked={form.subscribersMustFollowSetlist}
                   onChange={(value) =>
                     setBoolean("subscribersMustFollowSetlist", value)
@@ -1463,51 +1569,60 @@ function DashboardSettingsPage() {
                   as="h2"
                   className="text-xl leading-tight md:text-2xl"
                 >
-                  Moderator permissions
+                  {t("settings.sections.moderatorPermissions.title")}
                 </CardTitle>
                 <CardDescription>
-                  Moderators always see VIP tokens. Turn other
-                  channel-management actions on or off here.
+                  {t("settings.sections.moderatorPermissions.description")}
                 </CardDescription>
               </CardHeader>
               <CardContent className="grid gap-3">
                 <PermissionRow
-                  label="Manage requests"
+                  label={t(
+                    "settings.sections.moderatorPermissions.manageRequests"
+                  )}
                   checked={form.moderatorCanManageRequests}
                   onChange={(value) =>
                     setBoolean("moderatorCanManageRequests", value)
                   }
                 />
                 <PermissionRow
-                  label="Manage blacklist"
+                  label={t(
+                    "settings.sections.moderatorPermissions.manageBlacklist"
+                  )}
                   checked={form.moderatorCanManageBlacklist}
                   onChange={(value) =>
                     setBoolean("moderatorCanManageBlacklist", value)
                   }
                 />
                 <PermissionRow
-                  label="Manage setlist"
+                  label={t(
+                    "settings.sections.moderatorPermissions.manageSetlist"
+                  )}
                   checked={form.moderatorCanManageSetlist}
                   onChange={(value) =>
                     setBoolean("moderatorCanManageSetlist", value)
                   }
                 />
                 <PermissionRow
-                  label="Manage blocked viewers"
+                  label={t(
+                    "settings.sections.moderatorPermissions.manageBlockedViewers"
+                  )}
                   checked={form.moderatorCanManageBlockedChatters}
                   onChange={(value) =>
                     setBoolean("moderatorCanManageBlockedChatters", value)
                   }
                 />
                 <PermissionRow
-                  label="Manage VIP tokens"
+                  label={t(
+                    "settings.sections.moderatorPermissions.manageVipTokens"
+                  )}
                   checked={form.moderatorCanManageVipTokens}
                   onChange={(value) =>
                     setBoolean("moderatorCanManageVipTokens", value)
                   }
                 />
                 <PermissionRow
-                  label="Manage tags"
+                  label={t("settings.sections.moderatorPermissions.manageTags")}
                   checked={form.moderatorCanManageTags}
                   onChange={(value) =>
                     setBoolean("moderatorCanManageTags", value)
@@ -1563,6 +1678,8 @@ function FilterSection(props: {
   onOpenChange: (open: boolean) => void;
   children: ReactNode;
 }) {
+  const { t } = useLocaleTranslation("dashboard");
+
   return (
     <Collapsible
       open={props.open}
@@ -1583,7 +1700,9 @@ function FilterSection(props: {
             </p>
           </div>
           <span className="flex shrink-0 items-center gap-2 pt-0.5 text-xs font-semibold uppercase tracking-[0.16em] text-(--muted)">
-            {props.open ? "Hide" : "Show"}
+            {props.open
+              ? t("settings.actions.hide")
+              : t("settings.actions.show")}
             <ChevronDown
               className={`h-4 w-4 transition-transform ${
                 props.open ? "rotate-180" : ""
@@ -1661,10 +1780,10 @@ function getCheerMinimumBitsPreview(
   return Math.ceil(Math.max(0, bitsPerVipToken) * (minimumTokenPercent / 100));
 }
 
-function formatSettingsNumber(value: number) {
-  return new Intl.NumberFormat("en-US", {
+function formatSettingsNumber(locale: string, value: number) {
+  return formatNumber(locale as never, value, {
     maximumFractionDigits: 2,
-  }).format(value);
+  });
 }
 
 function normalizeSettingsFormData(
@@ -1689,8 +1808,10 @@ function getSettingsComparisonSnapshot(settings: DashboardSettingsFormData) {
   });
 }
 
-function formatPathOptionLabel(value: string) {
-  return value === "voice" ? "Lyrics" : value;
+function formatPathOptionLabel(t: (key: string) => string, value: string) {
+  return value === "voice"
+    ? t("settings.sections.filters.requiredPaths.paths.lyrics")
+    : value;
 }
 
 function getPathBadgeTone(value: string) {
@@ -1726,6 +1847,7 @@ function getPathExampleTone(value: string) {
 }
 
 function buildRequiredPathsSummary(
+  t: (key: string, options?: Record<string, unknown>) => string,
   requiredPaths: string[],
   matchMode: "any" | "all"
 ) {
@@ -1733,8 +1855,7 @@ function buildRequiredPathsSummary(
 
   if (requiredPaths.length === 0) {
     return {
-      summary:
-        "No path filter is active. Songs can match with any path combination.",
+      summary: t("settings.sections.filters.requiredPaths.none"),
       example: null,
     };
   }
@@ -1743,17 +1864,19 @@ function buildRequiredPathsSummary(
     return {
       summary: (
         <>
-          Songs must include {renderPathLabel(requiredPaths[0])}. They can still
-          include any other paths.
+          {t("settings.sections.filters.requiredPaths.singlePrefix")}{" "}
+          {renderPathLabel(t, requiredPaths[0])}.{" "}
+          {t("settings.sections.filters.requiredPaths.singleSuffix")}
         </>
       ),
       example: (
         <>
-          Example: a song with{" "}
+          {t("settings.sections.filters.requiredPaths.exampleLabel")}{" "}
           {renderPathExampleSequence(
+            t,
             extraPath ? [requiredPaths[0], extraPath] : [requiredPaths[0]]
           )}{" "}
-          still matches.
+          {t("settings.sections.filters.requiredPaths.singleExample")}
         </>
       ),
     };
@@ -1764,18 +1887,19 @@ function buildRequiredPathsSummary(
     return {
       summary: (
         <>
-          Songs match if they include at least one of{" "}
-          {renderPathSummaryList(requiredPaths)}. They can still include any
-          other paths.
+          {t("settings.sections.filters.requiredPaths.matchAnyPrefix")}{" "}
+          {renderPathSummaryList(t, requiredPaths)}.{" "}
+          {t("settings.sections.filters.requiredPaths.matchAnySuffix")}
         </>
       ),
       example: (
         <>
-          Example: a song with{" "}
+          {t("settings.sections.filters.requiredPaths.exampleLabel")}{" "}
           {renderPathExampleSequence(
+            t,
             extraPath ? [selectedPath, extraPath] : [selectedPath]
           )}{" "}
-          still matches because it includes one selected path.
+          {t("settings.sections.filters.requiredPaths.matchAnyExample")}
         </>
       ),
     };
@@ -1784,24 +1908,28 @@ function buildRequiredPathsSummary(
   return {
     summary: (
       <>
-        Songs match only if they include all of{" "}
-        {renderPathSummaryList(requiredPaths)}. They can still include any other
-        paths.
+        {t("settings.sections.filters.requiredPaths.matchAllPrefix")}{" "}
+        {renderPathSummaryList(t, requiredPaths)}.{" "}
+        {t("settings.sections.filters.requiredPaths.matchAllSuffix")}
       </>
     ),
     example: (
       <>
-        Example: a song with{" "}
+        {t("settings.sections.filters.requiredPaths.exampleLabel")}{" "}
         {renderPathExampleSequence(
+          t,
           extraPath ? [...requiredPaths, extraPath] : requiredPaths
         )}{" "}
-        still matches because it includes every selected path.
+        {t("settings.sections.filters.requiredPaths.matchAllExample")}
       </>
     ),
   };
 }
 
-function renderPathExampleSequence(values: string[]) {
+function renderPathExampleSequence(
+  t: (key: string) => string,
+  values: string[]
+) {
   const content: ReactNode[] = [];
 
   values.forEach((value, index) => {
@@ -1813,13 +1941,13 @@ function renderPathExampleSequence(values: string[]) {
       );
     }
 
-    content.push(renderPathExampleLabel(value, "", `${value}-${index}`));
+    content.push(renderPathExampleLabel(t, value, "", `${value}-${index}`));
   });
 
   return content;
 }
 
-function renderPathSummaryList(values: string[]) {
+function renderPathSummaryList(t: (key: string) => string, values: string[]) {
   const content: ReactNode[] = [];
 
   values.forEach((value, index) => {
@@ -1838,13 +1966,18 @@ function renderPathSummaryList(values: string[]) {
       );
     }
 
-    content.push(renderPathLabel(value, "", `summary-${value}-${index}`));
+    content.push(renderPathLabel(t, value, "", `summary-${value}-${index}`));
   });
 
   return content;
 }
 
-function renderPathLabel(value: string, suffix = "", key?: string) {
+function renderPathLabel(
+  t: (key: string) => string,
+  value: string,
+  suffix = "",
+  key?: string
+) {
   return (
     <span
       key={key}
@@ -1852,25 +1985,33 @@ function renderPathLabel(value: string, suffix = "", key?: string) {
         value
       )}`}
     >
-      {formatPathOptionLabel(value).toUpperCase()}
+      {formatPathOptionLabel(t, value).toUpperCase()}
       {suffix}
     </span>
   );
 }
 
-function renderPathExampleLabel(value: string, suffix = "", key?: string) {
-  return renderPathLabel(value, suffix, key);
+function renderPathExampleLabel(
+  t: (key: string) => string,
+  value: string,
+  suffix = "",
+  key?: string
+) {
+  return renderPathLabel(t, value, suffix, key);
 }
 
 function getExampleExtraPath(requiredPaths: string[]) {
   return pathOptions.find((option) => !requiredPaths.includes(option));
 }
 
-function groupTuningOptions(options: readonly string[]) {
+function groupTuningOptions(
+  t: (key: string) => string,
+  options: readonly string[]
+) {
   const groups = new Map<string, string[]>();
 
   for (const option of options) {
-    const group = getTuningGroupLabel(option);
+    const group = getTuningGroupLabel(t, option);
     const existing = groups.get(group);
 
     if (existing) {
@@ -1887,13 +2028,13 @@ function groupTuningOptions(options: readonly string[]) {
   }));
 }
 
-function getTuningGroupLabel(option: string) {
+function getTuningGroupLabel(t: (key: string) => string, option: string) {
   if (option.startsWith("Open ")) {
-    return "Open";
+    return t("settings.sections.filters.allowedTunings.groups.open");
   }
 
   if (option === "Octave" || option === "Celtic" || option === "Other") {
-    return "Other";
+    return t("settings.sections.filters.allowedTunings.groups.other");
   }
 
   if (option.startsWith("High F") || option.startsWith("Low F")) {
@@ -1904,11 +2045,16 @@ function getTuningGroupLabel(option: string) {
     return "G";
   }
 
-  const [firstToken = "Other"] = option.split(" ");
+  const [
+    firstToken = t("settings.sections.filters.allowedTunings.groups.other"),
+  ] = option.split(" ");
 
   if (firstToken === "Drop") {
     return "D";
   }
 
-  return firstToken.replace(/[^A-G]/g, "") || "Other";
+  return (
+    firstToken.replace(/[^A-G]/g, "") ||
+    t("settings.sections.filters.allowedTunings.groups.other")
+  );
 }

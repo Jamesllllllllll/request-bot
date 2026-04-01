@@ -117,6 +117,8 @@ export function formatPlaylistItemSummaryLine(
   >,
   options?: {
     hasMultipleVersions?: boolean;
+    chartedByLabel?: string;
+    unknownArtistLabel?: string;
   }
 ) {
   return (
@@ -124,10 +126,12 @@ export function formatPlaylistItemSummaryLine(
       item.songArtist,
       item.songAlbum,
       !options?.hasMultipleVersions && item.songCreator
-        ? `Charted by ${item.songCreator}`
+        ? `${options?.chartedByLabel ?? "Charted by"} ${item.songCreator}`
         : null,
     ]
       .filter(Boolean)
-      .join(" · ") || "Unknown artist"
+      .join(" · ") ||
+    options?.unknownArtistLabel ||
+    "Unknown artist"
   );
 }

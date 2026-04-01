@@ -1,37 +1,37 @@
-export function getBotStatusLabel(status: string) {
+export function getBotStatusKey(status: string) {
   switch (status) {
     case "active":
-      return "Active";
+      return "active";
     case "active_offline_testing":
-      return "Offline testing enabled";
+      return "activeOfflineTesting";
     case "waiting_for_live":
-      return "Waiting to go live";
+      return "waitingForLive";
     case "bot_auth_required":
-      return "Bot auth required";
+      return "botAuthRequired";
     case "broadcaster_auth_required":
-      return "Broadcaster auth required";
+      return "broadcasterAuthRequired";
     case "subscription_error":
-      return "Subscription error";
+      return "subscriptionError";
     default:
-      return "Disabled";
+      return "disabled";
   }
 }
 
-export function getBotStatusMessage(status: string) {
+export function getBotStatusMessageKey(status: string) {
   switch (status) {
     case "active":
-      return "Ready for chat requests.";
+      return "active";
     case "active_offline_testing":
-      return "Offline testing is on.";
+      return "activeOfflineTesting";
     case "waiting_for_live":
-      return "The bot starts when you go live.";
+      return "waitingForLive";
     case "bot_auth_required":
-      return "An admin needs to connect the bot.";
+      return "botAuthRequired";
     case "broadcaster_auth_required":
-      return "Reconnect Twitch.";
+      return "broadcasterAuthRequired";
     case "subscription_error":
-      return "There was a Twitch subscription issue.";
+      return "subscriptionError";
     default:
-      return "The bot is off.";
+      return "disabled";
   }
 }

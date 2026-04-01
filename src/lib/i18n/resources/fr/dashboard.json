@@ -1,0 +1,314 @@
+{
+  "nav": {
+    "channels": "Chaines",
+    "settings": "Reglages",
+    "admin": "Admin"
+  },
+  "botStatus": {
+    "active": "Actif",
+    "activeOfflineTesting": "Test hors ligne active",
+    "waitingForLive": "En attente du direct",
+    "botAuthRequired": "Auth du bot requise",
+    "broadcasterAuthRequired": "Auth du diffuseur requise",
+    "subscriptionError": "Erreur d'abonnement",
+    "disabled": "Desactive"
+  },
+  "overview": {
+    "title": "Compte",
+    "description": "Acces a la chaine et reglages du proprietaire.",
+    "cards": {
+      "openPlaylist": "Ouvrir votre playlist",
+      "manageSettings": "Gerer les reglages de la chaine"
+    },
+    "indicators": {
+      "channelStatus": "Etat de la chaine",
+      "requests": "Demandes",
+      "bot": "Bot"
+    },
+    "status": {
+      "live": "En direct",
+      "offline": "Hors ligne",
+      "unavailable": "Indisponible",
+      "enabled": "Active",
+      "paused": "En pause"
+    },
+    "moderatedChannels": {
+      "title": "Chaines en ligne que vous moderez",
+      "reconnect": "Reconnectez Twitch pour actualiser votre acces aux chaines moderees.",
+      "openChannel": "Ouvrir la chaine",
+      "empty": "Aucune chaine moderee n'est en direct pour le moment."
+    },
+    "notesTitle": "Notes",
+    "notes": {
+      "enableBot": {
+        "title": "Activer le bot",
+        "body": "Activez le controle du bot dans Reglages avant d'utiliser les demandes sur votre chaine."
+      },
+      "offlineTesting": {
+        "title": "Le test hors ligne est actif",
+        "body": "Les demandes restent disponibles pendant vos tests hors ligne."
+      },
+      "goLive": {
+        "title": "Passez en direct pour accepter des demandes",
+        "body": "Les demandes sont prevues pour fonctionner quand votre chaine est en direct."
+      },
+      "requestsPaused": {
+        "title": "Les demandes sont en pause",
+        "body": "Reactivez les demandes dans Reglages quand vous voulez que les viewers ajoutent a nouveau des morceaux."
+      },
+      "channelReady": {
+        "title": "La chaine est prete",
+        "body": "Votre stream est en direct et les demandes sont disponibles."
+      },
+      "checkStatus": {
+        "title": "Verifier l'etat de la chaine",
+        "body": "Assurez-vous que le bot est connecte avant d'accepter des demandes."
+      }
+    }
+  },
+  "settings": {
+    "header": {
+      "title": "Reglages",
+      "description": "Configuration de la chaine reservee au proprietaire pour les demandes, les moderateurs et l'overlay du stream.",
+      "betaNote": "Les beta testeurs peuvent installer le panneau d'extension Twitch.",
+      "previewPanel": "Apercu du panneau modo",
+      "installExtension": "Installer la beta de l'extension Twitch"
+    },
+    "states": {
+      "failedToLoad": "Impossible de charger les reglages.",
+      "failedToSave": "Les reglages n'ont pas pu etre enregistres.",
+      "loadingAccess": "Chargement de l'acces aux reglages...",
+      "loading": "Chargement des reglages...",
+      "saveFailed": "L'enregistrement a echoue. Verifiez le message ci-dessous puis reessayez.",
+      "saving": "Enregistrement des reglages...",
+      "unsavedChanges": "Vous avez des modifications non enregistrees.",
+      "allChangesSaved": "Toutes les modifications sont enregistrees.",
+      "saved": "Enregistre",
+      "savingButton": "Enregistrement..."
+    },
+    "actions": {
+      "saveSettings": "Enregistrer les reglages",
+      "reconnectTwitch": "Reconnecter Twitch",
+      "copyUrl": "Copier l'URL",
+      "copied": "Copie",
+      "show": "Afficher",
+      "hide": "Masquer"
+    },
+    "ownerOnly": {
+      "title": "Reglages du proprietaire uniquement",
+      "description": "Cette zone est reservee aux chaines que vous possedez. Utilisez la page de chaine pour la moderation des chaines que vous gererez.",
+      "openChannel": "Ouvrir la page de chaine",
+      "signInHint": "Connectez-vous avec un compte streamer proprietaire d'une chaine pour gerer ces reglages ici."
+    },
+    "sections": {
+      "channelSetup": {
+        "title": "Configuration de la chaine",
+        "description": "Controlez les interrupteurs principaux de la playlist, la commande de chat et le comportement de playlist visible par les viewers.",
+        "reconnectNotice": "Les permissions Twitch doivent etre actualisees avant que le bot puisse fonctionner.",
+        "mainToggles": "Interrupteurs principaux",
+        "enableBot": "Activer le bot sur cette chaine",
+        "enableBotHelp": "Desactivez ceci quand vous ne voulez pas d'actions request-bot, y compris l'attribution de tokens VIP pour les abonnements, raids, etc.",
+        "enableRequests": "Activer les demandes",
+        "enableRequestsHelp": "Desactiver les demandes vous laisse, vous et vos moderateurs, gerer la playlist, mais les viewers ne peuvent plus ajouter de morceaux.",
+        "playlistDisplay": "Affichage de la playlist",
+        "showPositions": "Afficher les positions de la playlist",
+        "commandPrefix": "Prefixe de commande",
+        "commandPrefixHelp": "Utilisez la commande que les viewers tapent dans le chat.",
+        "requestModifiers": "Modificateurs de demande",
+        "requestModifiersHelp": "Permet au chat de demander des arrangements basse avec le modificateur *bass.",
+        "allowBassModifier": "Autoriser le modificateur *bass dans les commandes de chat",
+        "duplicateCooldown": "Delai des doublons (minutes)",
+        "duplicateCooldownHelp": "Definissez combien de temps un meme morceau doit attendre avant de pouvoir etre redemande."
+      },
+      "requestAccess": {
+        "title": "Qui peut demander",
+        "description": "Choisissez quels viewers peuvent ajouter des morceaux a votre playlist.",
+        "anyone": "Tout le monde peut demander",
+        "subscribers": "Les abonnes peuvent demander",
+        "vips": "Les VIP de la chaine peuvent demander"
+      },
+      "filters": {
+        "title": "Filtres de recherche et de demande",
+        "description": "Ces regles limitent ce qui apparait dans la recherche et ce que les viewers peuvent demander sur votre page de chaine.",
+        "officialDlc": {
+          "title": "DLC officiel",
+          "description": "Limitez les resultats de recherche et les demandes au DLC officiel.",
+          "notice": "Les filtres de DLC officiel ne sont pas encore disponibles. Cette section montre un apercu des reglages qui apparaitront ici dans une future mise a jour.",
+          "onlyOfficial": "Inclure uniquement le DLC officiel",
+          "onlyOwned": "Inclure uniquement le DLC officiel que je possede",
+          "ownedTitle": "DLC officiel possede",
+          "import": "Importer depuis CustomsForge Song Manager",
+          "owned": "Possede",
+          "notOwned": "Non possede"
+        },
+        "allowedTunings": {
+          "title": "Accordages autorises",
+          "description": "Cliquez sur n'importe quel accordage pour l'autoriser ou le bloquer.",
+          "allowAll": "Tout autoriser",
+          "groups": {
+            "open": "Ouverts",
+            "other": "Autres"
+          }
+        },
+        "requiredPaths": {
+          "title": "Chemins requis",
+          "description": "Choisissez les chemins dont un morceau a besoin avant d'apparaitre dans la recherche ou d'etre demande.",
+          "matchAny": "Correspondre a n'importe quel chemin selectionne",
+          "matchAll": "Correspondre a tous les chemins selectionnes",
+          "none": "Aucun filtre de chemin n'est actif. Les morceaux peuvent correspondre avec n'importe quelle combinaison de chemins.",
+          "singlePrefix": "Les morceaux doivent inclure",
+          "singleSuffix": "Ils peuvent tout de meme inclure d'autres chemins.",
+          "exampleLabel": "Exemple : un morceau avec",
+          "singleExample": "correspond toujours.",
+          "matchAnyPrefix": "Les morceaux correspondent s'ils incluent au moins un de",
+          "matchAnySuffix": "Ils peuvent tout de meme inclure d'autres chemins.",
+          "matchAnyExample": "correspond toujours car il inclut un chemin selectionne.",
+          "matchAllPrefix": "Les morceaux correspondent seulement s'ils incluent tous ces chemins",
+          "matchAllSuffix": "Ils peuvent tout de meme inclure d'autres chemins.",
+          "matchAllExample": "correspond toujours car il inclut tous les chemins selectionnes.",
+          "paths": {
+            "lyrics": "Paroles"
+          }
+        }
+      },
+      "queueLimits": {
+        "title": "Limites de file et de rythme",
+        "description": "Definissez la taille de la playlist et la frequence a laquelle des demandes normales ou VIP peuvent etre ajoutees.",
+        "queueLimits": "Limites de file",
+        "maxPlaylist": "Taille maximale de la playlist",
+        "maxPerViewer": "Max de demandes par viewer",
+        "maxPerSubscriber": "Max de demandes par abonne",
+        "maxVipPerViewer": "Max de demandes VIP par viewer",
+        "maxVipPerSubscriber": "Max de demandes VIP par abonne",
+        "rateLimits": "Limites de rythme",
+        "regular": "Normal",
+        "enableRegular": "Activer la limite de rythme pour les demandes normales",
+        "regularAllowed": "Demandes normales autorisees",
+        "regularPeriod": "Periode normale (secondes)",
+        "vip": "VIP",
+        "enableVip": "Activer la limite de rythme pour les demandes VIP",
+        "vipAllowed": "Demandes VIP autorisees",
+        "vipPeriod": "Periode VIP (secondes)"
+      },
+      "vipAutomation": {
+        "title": "Automatisation des tokens VIP",
+        "description": "Attribuez automatiquement des tokens VIP pour les nouveaux abonnements, les abonnements offerts, les raids, les cheers et les tips StreamElements.",
+        "subscribes": "Abonnements",
+        "newSub": "Donner 1 token VIP pour un nouvel abonnement payant",
+        "sharedRenewal": "Donner 1 token VIP pour un message partage de renouvellement",
+        "sharedRenewalHelp": "Les renouvellements silencieux ne donnent rien automatiquement. Twitch envoie cet evenement ici uniquement quand le viewer partage le message de resub dans le chat.",
+        "giftedSubs": "Abonnements offerts",
+        "subGifter": "Donner 1 token VIP au gifter pour chaque abonnement offert",
+        "subRecipient": "Donner 1 token VIP a chaque destinataire d'abonnement offert",
+        "raids": "Raids",
+        "raidReward": "Donner 1 token VIP au streamer qui raid cette chaine",
+        "minimumRaid": "Taille minimale du raid",
+        "minimumRaidHelp": "Mettez 1 pour recompenser tous les raids.",
+        "raidNotice": "Twitch envoie les recompenses de raid ici uniquement quand le raid apparait dans le chat.",
+        "cheers": "Cheers",
+        "cheersToggle": "Donner des tokens VIP pour les cheers",
+        "cheerConversion": "Conversion des cheers",
+        "bitsPerToken": "bits pour 1 token VIP",
+        "minimumCheer": "Cheer minimum pour gagner une fraction de token",
+        "liveExample": "Exemple en direct",
+        "minimumCheerExample": "Cheer minimum : {bits} bits donnent {tokenCount} d'un token VIP avec le seuil de {percent}%.",
+        "bitsExample": "{oneTokenBits} bits donnent 1 token VIP. {fiveTokenBits} bits donnent 5 tokens VIP.",
+        "bitsExampleEmpty": "Definissez un nombre de bits par token VIP superieur a 0 pour voir le seuil minimum du cheer.",
+        "tips": "Tips",
+        "tipsToggle": "Donner des tokens VIP pour les tips StreamElements",
+        "tipAmount": "Montant du tip pour 1 token VIP",
+        "tipAmountHelp": "Un tip de 25 $ donne 5 tokens VIP quand ceci est regle sur 5.",
+        "relayUrl": "URL du relais",
+        "relayUrlHelp": "Utilisez cette URL dans l'etape Streamer.bot qui transfere votre evenement de tip StreamElements ici.",
+        "setup": "Configuration",
+        "setupHelp": "StreamElements peut continuer a afficher les alertes de tip dans OBS comme aujourd'hui. Les recompenses de tokens VIP ont besoin que Streamer.bot transfere l'evenement ici.",
+        "setupSteps": {
+          "connect": "Connectez Streamer.bot a StreamElements.",
+          "trigger": "Utilisez le declencheur StreamElements Tip dans Streamer.bot.",
+          "send": "Envoyez cet evenement de tip a l'URL du relais affichee ici.",
+          "note": "Sans Streamer.bot, les tips apparaissent toujours dans OBS, mais ils n'ajoutent pas de tokens VIP ici."
+        }
+      },
+      "rules": {
+        "title": "Regles de blacklist et de setlist",
+        "description": "Les entrees de blacklist et de setlist sont gerees sur la page de chaine. Ces interrupteurs controlent la facon dont ces regles sont appliquees.",
+        "enableBlacklist": "Activer la blacklist",
+        "bypassBlacklist": "Autoriser la setlist a contourner la blacklist",
+        "enableSetlist": "Activer la setlist",
+        "subscribersFollowSetlist": "Les abonnes doivent suivre la setlist"
+      },
+      "moderatorPermissions": {
+        "title": "Permissions des moderateurs",
+        "description": "Les moderateurs voient toujours les tokens VIP. Activez ou desactivez ici les autres actions de gestion de chaine.",
+        "manageRequests": "Gerer les demandes",
+        "manageBlacklist": "Gerer la blacklist",
+        "manageSetlist": "Gerer la setlist",
+        "manageBlockedViewers": "Gerer les viewers bloques",
+        "manageVipTokens": "Gerer les tokens VIP",
+        "manageTags": "Gerer les tags"
+      }
+    }
+  },
+  "overlay": {
+    "title": "Overlay du stream",
+    "description": "Affichez votre playlist sur le stream avec une source navigateur.",
+    "channelFallback": "Votre chaine",
+    "states": {
+      "failedToLoad": "Impossible de charger les reglages de l'overlay.",
+      "failedPreview": "Impossible de charger l'apercu de la playlist.",
+      "failedToSave": "Les reglages de l'overlay n'ont pas pu etre enregistres.",
+      "saved": "Reglages de l'overlay enregistres.",
+      "copied": "URL de l'overlay copiee."
+    },
+    "url": {
+      "title": "URL de l'overlay",
+      "copy": "Copier l'URL",
+      "open": "Ouvrir l'overlay"
+    },
+    "layout": {
+      "title": "Disposition et comportement",
+      "showCreator": "Afficher le charter",
+      "showAlbum": "Afficher l'album",
+      "animateNowPlaying": "Animer le morceau en cours"
+    },
+    "theme": {
+      "title": "Theme",
+      "accent": "Accent",
+      "vipBadge": "Badge VIP",
+      "text": "Texte",
+      "mutedText": "Texte secondaire",
+      "requestBackground": "Fond de l'element de demande",
+      "backgroundColor": "Couleur de fond",
+      "backgroundColorHelp": "Pour un fond transparent, reglez l'opacite du fond a 0.",
+      "border": "Bordure"
+    },
+    "sizing": {
+      "title": "Densite et tailles",
+      "backgroundOpacity": "Opacite du fond de l'overlay",
+      "backgroundOpacityHelp": "Reglez ceci sur 0 pour un fond totalement transparent derriere les elements de la playlist.",
+      "cornerRadius": "Rayon des coins",
+      "itemGap": "Ecart entre les elements",
+      "itemPadding": "Padding des elements",
+      "titleFontSize": "Taille de police du titre",
+      "metaFontSize": "Taille de police des metas",
+      "value": "Valeur"
+    },
+    "actions": {
+      "restoreDefaults": "Restaurer les valeurs par defaut",
+      "saveChanges": "Enregistrer les modifications",
+      "saving": "Enregistrement...",
+      "cancel": "Annuler"
+    },
+    "preview": {
+      "title": "Apercu",
+      "live": "Direct",
+      "sample": "Exemple",
+      "channelTitle": "Playlist de {channel}"
+    },
+    "restoreDialog": {
+      "title": "Restaurer les valeurs par defaut ?",
+      "description": "Cela reinitialise l'editeur d'overlay au theme par defaut. Les modifications non enregistrees seront perdues.",
+      "confirm": "Restaurer les valeurs par defaut"
+    }
+  }
+}

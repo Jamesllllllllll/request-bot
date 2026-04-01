@@ -1,0 +1,314 @@
+{
+  "nav": {
+    "channels": "Channels",
+    "settings": "Settings",
+    "admin": "Admin"
+  },
+  "botStatus": {
+    "active": "Active",
+    "activeOfflineTesting": "Offline testing enabled",
+    "waitingForLive": "Waiting to go live",
+    "botAuthRequired": "Bot auth required",
+    "broadcasterAuthRequired": "Broadcaster auth required",
+    "subscriptionError": "Subscription error",
+    "disabled": "Disabled"
+  },
+  "overview": {
+    "title": "Account",
+    "description": "Channel access and owner settings.",
+    "cards": {
+      "openPlaylist": "Open your playlist",
+      "manageSettings": "Manage channel settings"
+    },
+    "indicators": {
+      "channelStatus": "Channel Status",
+      "requests": "Requests",
+      "bot": "Bot"
+    },
+    "status": {
+      "live": "Live",
+      "offline": "Offline",
+      "unavailable": "Unavailable",
+      "enabled": "Enabled",
+      "paused": "Paused"
+    },
+    "moderatedChannels": {
+      "title": "Online channels you moderate",
+      "reconnect": "Reconnect Twitch to refresh your moderated channel access.",
+      "openChannel": "Open channel",
+      "empty": "No moderated channels are live right now."
+    },
+    "notesTitle": "Notes",
+    "notes": {
+      "enableBot": {
+        "title": "Enable the bot",
+        "body": "Turn on bot control in Settings before using requests on your channel."
+      },
+      "offlineTesting": {
+        "title": "Offline testing is on",
+        "body": "Requests stay available while you test the bot offline."
+      },
+      "goLive": {
+        "title": "Go live to start taking requests",
+        "body": "Requests are meant to run while your channel is live."
+      },
+      "requestsPaused": {
+        "title": "Requests are paused",
+        "body": "Re-enable requests in Settings when you want viewers to add songs again."
+      },
+      "channelReady": {
+        "title": "Channel is ready",
+        "body": "Your stream is live and requests are available."
+      },
+      "checkStatus": {
+        "title": "Check channel status",
+        "body": "Make sure the bot is connected before you start taking requests."
+      }
+    }
+  },
+  "settings": {
+    "header": {
+      "title": "Settings",
+      "description": "Owner-only channel configuration for requests, moderators, and the stream overlay.",
+      "betaNote": "Beta testers can install the Twitch extension panel on Twitch.",
+      "previewPanel": "Preview mod panel",
+      "installExtension": "Install Twitch extension beta"
+    },
+    "states": {
+      "failedToLoad": "Failed to load settings.",
+      "failedToSave": "Settings could not be saved.",
+      "loadingAccess": "Loading settings access...",
+      "loading": "Loading settings...",
+      "saveFailed": "Save failed. Review the message below and try again.",
+      "saving": "Saving settings...",
+      "unsavedChanges": "You have unsaved changes.",
+      "allChangesSaved": "All changes are saved.",
+      "saved": "Saved",
+      "savingButton": "Saving..."
+    },
+    "actions": {
+      "saveSettings": "Save settings",
+      "reconnectTwitch": "Reconnect Twitch",
+      "copyUrl": "Copy URL",
+      "copied": "Copied",
+      "show": "Show",
+      "hide": "Hide"
+    },
+    "ownerOnly": {
+      "title": "Owner settings only",
+      "description": "This area is only available for channels you own. Use the channel page for moderation work on channels you manage.",
+      "openChannel": "Open channel page",
+      "signInHint": "Sign in with a streamer account that owns a channel to manage owner settings here."
+    },
+    "sections": {
+      "channelSetup": {
+        "title": "Channel setup",
+        "description": "Control the main playlist toggles, chat command, and viewer-facing playlist behavior.",
+        "reconnectNotice": "Twitch permissions need to be refreshed before the bot can run.",
+        "mainToggles": "Main toggles",
+        "enableBot": "Enable bot on this channel",
+        "enableBotHelp": "Turn this off when you do not want request-bot actions, including awarding VIP tokens for subscriptions, raids, etc.",
+        "enableRequests": "Enable requests",
+        "enableRequestsHelp": "Turning requests off keeps playlist management available to you and your moderators, but viewers cannot add songs.",
+        "playlistDisplay": "Playlist display",
+        "showPositions": "Show playlist positions",
+        "commandPrefix": "Command prefix",
+        "commandPrefixHelp": "Use the command viewers type in chat.",
+        "requestModifiers": "Request modifiers",
+        "requestModifiersHelp": "Let chat request bass arrangements with the *bass modifier.",
+        "allowBassModifier": "Allow the *bass modifier in chat commands",
+        "duplicateCooldown": "Duplicate cooldown (minutes)",
+        "duplicateCooldownHelp": "Set how long the same song waits before it can be requested again."
+      },
+      "requestAccess": {
+        "title": "Who can request",
+        "description": "Choose which viewers can add songs to your playlist.",
+        "anyone": "Anyone can request",
+        "subscribers": "Subscribers can request",
+        "vips": "Channel VIPs can request"
+      },
+      "filters": {
+        "title": "Search and request filters",
+        "description": "These rules limit what appears in search and what viewers can request on your channel page.",
+        "officialDlc": {
+          "title": "Official DLC",
+          "description": "Limit search results and requests to official DLC.",
+          "notice": "Official DLC filters are not available yet. This section previews settings that appear here in a future update.",
+          "onlyOfficial": "Only include official DLC",
+          "onlyOwned": "Only include official DLC that I own",
+          "ownedTitle": "Owned official DLC",
+          "import": "Import from CustomsForge Song Manager",
+          "owned": "Owned",
+          "notOwned": "Not owned"
+        },
+        "allowedTunings": {
+          "title": "Allowed tunings",
+          "description": "Click any tuning to allow or block it.",
+          "allowAll": "Allow all",
+          "groups": {
+            "open": "Open",
+            "other": "Other"
+          }
+        },
+        "requiredPaths": {
+          "title": "Required paths",
+          "description": "Choose the paths a song needs before it appears in search or can be requested.",
+          "matchAny": "Match any selected path",
+          "matchAll": "Match all selected paths",
+          "none": "No path filter is active. Songs can match with any path combination.",
+          "singlePrefix": "Songs must include",
+          "singleSuffix": "They can still include any other paths.",
+          "exampleLabel": "Example: a song with",
+          "singleExample": "still matches.",
+          "matchAnyPrefix": "Songs match if they include at least one of",
+          "matchAnySuffix": "They can still include any other paths.",
+          "matchAnyExample": "still matches because it includes one selected path.",
+          "matchAllPrefix": "Songs match only if they include all of",
+          "matchAllSuffix": "They can still include any other paths.",
+          "matchAllExample": "still matches because it includes every selected path.",
+          "paths": {
+            "lyrics": "Lyrics"
+          }
+        }
+      },
+      "queueLimits": {
+        "title": "Queue and rate limits",
+        "description": "Set the playlist size and decide how often regular or VIP requests can be added.",
+        "queueLimits": "Queue limits",
+        "maxPlaylist": "Maximum playlist size",
+        "maxPerViewer": "Max requests per viewer",
+        "maxPerSubscriber": "Max requests per subscriber",
+        "maxVipPerViewer": "Max VIP requests per viewer",
+        "maxVipPerSubscriber": "Max VIP requests per subscriber",
+        "rateLimits": "Request rate limits",
+        "regular": "Regular",
+        "enableRegular": "Enable regular request rate limit",
+        "regularAllowed": "Regular requests allowed",
+        "regularPeriod": "Regular period (seconds)",
+        "vip": "VIP",
+        "enableVip": "Enable VIP request rate limit",
+        "vipAllowed": "VIP requests allowed",
+        "vipPeriod": "VIP period (seconds)"
+      },
+      "vipAutomation": {
+        "title": "VIP token automation",
+        "description": "Automatically reward VIP tokens for new subs, gifted subs, raids, cheers, and StreamElements tips.",
+        "subscribes": "Subscribes",
+        "newSub": "Give 1 VIP token for a new paid sub",
+        "sharedRenewal": "Give 1 VIP token for a shared sub renewal message",
+        "sharedRenewalHelp": "Quiet sub renewals do not award automatically. Twitch only sends a renewal event here when the viewer shares the resub message in chat.",
+        "giftedSubs": "Gifted subs",
+        "subGifter": "Give 1 VIP token to the gifter for each gifted sub",
+        "subRecipient": "Give 1 VIP token to each gifted sub recipient",
+        "raids": "Raids",
+        "raidReward": "Give 1 VIP token to the streamer who raids this channel",
+        "minimumRaid": "Minimum raid size",
+        "minimumRaidHelp": "Set 1 to reward every raid.",
+        "raidNotice": "Twitch only sends raid rewards here when the raid shows up in chat.",
+        "cheers": "Cheers",
+        "cheersToggle": "Give VIP tokens for cheers",
+        "cheerConversion": "Cheer conversion",
+        "bitsPerToken": "bits per 1 VIP token",
+        "minimumCheer": "Minimum cheer to earn a partial token",
+        "liveExample": "Live example",
+        "minimumCheerExample": "Minimum cheer: {bits} bits grants {tokenCount} of a VIP token at the {percent}% threshold.",
+        "bitsExample": "{oneTokenBits} bits grants 1 VIP token. {fiveTokenBits} bits grants 5 VIP tokens.",
+        "bitsExampleEmpty": "Set the bits per VIP token above 0 to preview the minimum cheer threshold.",
+        "tips": "Tips",
+        "tipsToggle": "Give VIP tokens for StreamElements tips",
+        "tipAmount": "Tip amount per 1 VIP token",
+        "tipAmountHelp": "A $25 tip grants 5 VIP tokens when this is set to 5.",
+        "relayUrl": "Relay URL",
+        "relayUrlHelp": "Use this URL in the Streamer.bot step that forwards your StreamElements tip event.",
+        "setup": "Setup",
+        "setupHelp": "StreamElements can keep showing tip alerts in OBS the way you already use them. VIP token rewards need Streamer.bot to forward the tip event here.",
+        "setupSteps": {
+          "connect": "Connect Streamer.bot to StreamElements.",
+          "trigger": "Use the StreamElements Tip trigger in Streamer.bot.",
+          "send": "Send that tip event to the Relay URL shown here.",
+          "note": "Without Streamer.bot, tips still show in OBS, but they do not add VIP tokens here."
+        }
+      },
+      "rules": {
+        "title": "Blacklist and setlist rules",
+        "description": "Blacklist and setlist entries are managed on the channel page. These toggles control how those rules are enforced.",
+        "enableBlacklist": "Enable blacklist",
+        "bypassBlacklist": "Let setlist bypass blacklist",
+        "enableSetlist": "Enable setlist",
+        "subscribersFollowSetlist": "Subscribers must follow setlist"
+      },
+      "moderatorPermissions": {
+        "title": "Moderator permissions",
+        "description": "Moderators always see VIP tokens. Turn other channel-management actions on or off here.",
+        "manageRequests": "Manage requests",
+        "manageBlacklist": "Manage blacklist",
+        "manageSetlist": "Manage setlist",
+        "manageBlockedViewers": "Manage blocked viewers",
+        "manageVipTokens": "Manage VIP tokens",
+        "manageTags": "Manage tags"
+      }
+    }
+  },
+  "overlay": {
+    "title": "Stream overlay",
+    "description": "Display your playlist on your stream using a browser source.",
+    "channelFallback": "Your channel",
+    "states": {
+      "failedToLoad": "Failed to load overlay settings.",
+      "failedPreview": "Failed to load playlist preview.",
+      "failedToSave": "Overlay settings could not be saved.",
+      "saved": "Overlay settings saved.",
+      "copied": "Overlay URL copied."
+    },
+    "url": {
+      "title": "Overlay URL",
+      "copy": "Copy URL",
+      "open": "Open overlay"
+    },
+    "layout": {
+      "title": "Layout and behavior",
+      "showCreator": "Show creator",
+      "showAlbum": "Show album",
+      "animateNowPlaying": "Animate now playing"
+    },
+    "theme": {
+      "title": "Theme",
+      "accent": "Accent",
+      "vipBadge": "VIP badge",
+      "text": "Text",
+      "mutedText": "Muted text",
+      "requestBackground": "Request item background",
+      "backgroundColor": "Background color",
+      "backgroundColorHelp": "For a transparent background, set background opacity to 0.",
+      "border": "Border"
+    },
+    "sizing": {
+      "title": "Density and sizing",
+      "backgroundOpacity": "Overlay background opacity",
+      "backgroundOpacityHelp": "Set this to 0 for a fully transparent background behind the playlist items.",
+      "cornerRadius": "Corner radius",
+      "itemGap": "Item gap",
+      "itemPadding": "Item padding",
+      "titleFontSize": "Title font size",
+      "metaFontSize": "Meta font size",
+      "value": "Value"
+    },
+    "actions": {
+      "restoreDefaults": "Restore defaults",
+      "saveChanges": "Save changes",
+      "saving": "Saving...",
+      "cancel": "Cancel"
+    },
+    "preview": {
+      "title": "Preview",
+      "live": "Live",
+      "sample": "Sample",
+      "channelTitle": "Playlist for {channel}"
+    },
+    "restoreDialog": {
+      "title": "Restore defaults?",
+      "description": "This resets the overlay editor to the default theme. Unsaved changes will be lost.",
+      "confirm": "Restore defaults"
+    }
+  }
+}

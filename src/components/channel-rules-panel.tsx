@@ -3,6 +3,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Button } from "~/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "~/components/ui/card";
 import { Input } from "~/components/ui/input";
+import { useLocaleTranslation } from "~/lib/i18n/client";
 import { getErrorMessage } from "~/lib/utils";
 
 type ArtistMatch = {
@@ -54,6 +55,7 @@ export function ChannelRulesPanel(props: {
   }>;
   setlistArtists: Array<{ artistId: number; artistName: string }>;
 }) {
+  const { t } = useLocaleTranslation("playlist");
   const queryClient = useQueryClient();
   const [artistQuery, setArtistQuery] = useState("");
   const [charterQuery, setCharterQuery] = useState("");
@@ -96,7 +98,7 @@ export function ChannelRulesPanel(props: {
       } | null;
 
       if (!response.ok) {
-        throw new Error(payload?.error ?? "Unable to update channel rules.");
+        throw new Error(payload?.error ?? t("rules.states.updateFailed"));
       }
 
       return payload;
@@ -148,7 +150,9 @@ export function ChannelRulesPanel(props: {
         }
       } catch (error) {
         if (!cancelled) {
-          setSearchError(getErrorMessage(error) || "Search failed.");
+          setSearchError(
+            getErrorMessage(error) || t("rules.states.searchFailed")
+          );
         }
       }
     }
@@ -244,8 +248,10 @@ export function ChannelRulesPanel(props: {
       <div className="grid gap-2 px-8 max-[960px]:px-6">
         <h2 className="text-3xl font-semibold tracking-tight text-(--text)">
           {props.channelDisplayName
-            ? `${props.channelDisplayName}'s channel rules`
-            : "Channel rules"}
+            ? t("rules.sectionTitleWithChannel", {
+                channel: props.channelDisplayName,
+              })
+            : t("rules.sectionTitle")}
         </h2>
       </div>
 
@@ -261,14 +267,14 @@ export function ChannelRulesPanel(props: {
             <>
               {showBlacklistedArtistsCard ? (
                 <SearchManageCard
-                  title="Blacklisted artists"
+                  title={t("rules.blacklistedArtists")}
                   inputValue={artistQuery}
                   onInputChange={setArtistQuery}
-                  placeholder="Search artists by name"
+                  placeholder={t("rules.searchArtists")}
                   matches={visibleArtistMatches.map((artist) => ({
                     key: `artist-match-${artist.artistId}`,
                     label: artist.artistName,
-                    meta: `${artist.trackCount} tracks`,
+                    meta: t("rules.trackCount", { count: artist.trackCount }),
                     onAdd: () =>
                       mutateRules.mutate({
                         action: "addBlacklistedArtist",
@@ -279,7 +285,7 @@ export function ChannelRulesPanel(props: {
                   currentItems={props.artists.map((item) => ({
                     key: `artist-current-${item.artistId}`,
                     label: item.artistName,
-                    hoverDetail: `Artist ID ${item.artistId}`,
+                    hoverDetail: t("rules.artistId", { id: item.artistId }),
                     onRemove: () =>
                       mutateRules.mutate({
                         action: "removeBlacklistedArtist",
@@ -287,7 +293,7 @@ export function ChannelRulesPanel(props: {
                       }),
                   }))}
                   isPending={mutateRules.isPending}
-                  emptyCurrentLabel="No blacklisted artists."
+                  emptyCurrentLabel={t("rules.noBlacklistedArtists")}
                   canManage={props.canManageBlacklist}
                   hideReadOnlyRemoveAction
                 />
@@ -295,14 +301,14 @@ export function ChannelRulesPanel(props: {
 
               {showBlacklistedChartersCard ? (
                 <SearchManageCard
-                  title="Blacklisted charters"
+                  title={t("rules.blacklistedCharters")}
                   inputValue={charterQuery}
                   onInputChange={setCharterQuery}
-                  placeholder="Search charters by name"
+                  placeholder={t("rules.searchCharters")}
                   matches={visibleCharterMatches.map((charter) => ({
                     key: `charter-match-${charter.charterId}`,
                     label: charter.charterName,
-                    meta: `${charter.trackCount} tracks`,
+                    meta: t("rules.trackCount", { count: charter.trackCount }),
                     onAdd: () =>
                       mutateRules.mutate({
                         action: "addBlacklistedCharter",
@@ -313,7 +319,7 @@ export function ChannelRulesPanel(props: {
                   currentItems={props.charters.map((item) => ({
                     key: `charter-current-${item.charterId}`,
                     label: item.charterName,
-                    hoverDetail: `Charter ID ${item.charterId}`,
+                    hoverDetail: t("rules.charterId", { id: item.charterId }),
                     onRemove: () =>
                       mutateRules.mutate({
                         action: "removeBlacklistedCharter",
@@ -321,7 +327,7 @@ export function ChannelRulesPanel(props: {
                       }),
                   }))}
                   isPending={mutateRules.isPending}
-                  emptyCurrentLabel="No blacklisted charters."
+                  emptyCurrentLabel={t("rules.noBlacklistedCharters")}
                   canManage={props.canManageBlacklist}
                   hideReadOnlyRemoveAction
                 />
@@ -329,16 +335,19 @@ export function ChannelRulesPanel(props: {
 
               {showBlacklistedSongsCard ? (
                 <SearchManageCard
-                  title="Blacklisted songs"
+                  title={t("rules.blacklistedSongs")}
                   inputValue={songGroupQuery}
                   onInputChange={setSongGroupQuery}
-                  placeholder="Search songs by title"
+                  placeholder={t("rules.searchSongs")}
                   matches={visibleSongGroupMatches.map((song) => ({
                     key: `song-group-match-${song.groupedProjectId}`,
                     label: song.artistName
                       ? `${song.songTitle} - ${song.artistName}`
                       : song.songTitle,
-                    meta: `${song.versionCount} version${song.versionCount === 1 ? "" : "s"} - Song group ${song.groupedProjectId}`,
+                    meta: t("rules.versionCount", {
+                      count: song.versionCount,
+                      groupId: song.groupedProjectId,
+                    }),
                     onAdd: () =>
                       mutateRules.mutate({
                         action: "addBlacklistedSongGroup",
@@ -353,7 +362,9 @@ export function ChannelRulesPanel(props: {
                     label: item.artistName
                       ? `${item.songTitle} - ${item.artistName}`
                       : item.songTitle,
-                    hoverDetail: `Song group ${item.groupedProjectId}`,
+                    hoverDetail: t("rules.songGroupId", {
+                      groupId: item.groupedProjectId,
+                    }),
                     onRemove: () =>
                       mutateRules.mutate({
                         action: "removeBlacklistedSongGroup",
@@ -361,7 +372,7 @@ export function ChannelRulesPanel(props: {
                       }),
                   }))}
                   isPending={mutateRules.isPending}
-                  emptyCurrentLabel="No blacklisted songs."
+                  emptyCurrentLabel={t("rules.noBlacklistedSongs")}
                   canManage={props.canManageBlacklist}
                   hideReadOnlyRemoveAction
                 />
@@ -369,7 +380,7 @@ export function ChannelRulesPanel(props: {
 
               {showBlacklistedVersionsCard ? (
                 <SearchManageCard
-                  title="Blacklisted versions"
+                  title={t("rules.blacklistedVersions")}
                   inputValue=""
                   onInputChange={() => {}}
                   placeholder=""
@@ -379,7 +390,7 @@ export function ChannelRulesPanel(props: {
                     label: item.artistName
                       ? `${item.songTitle} - ${item.artistName}`
                       : item.songTitle,
-                    hoverDetail: `Version ID ${item.songId}`,
+                    hoverDetail: t("rules.versionId", { id: item.songId }),
                     onRemove: () =>
                       mutateRules.mutate({
                         action: "removeBlacklistedSong",
@@ -387,7 +398,7 @@ export function ChannelRulesPanel(props: {
                       }),
                   }))}
                   isPending={mutateRules.isPending}
-                  emptyCurrentLabel="No blacklisted versions."
+                  emptyCurrentLabel={t("rules.noBlacklistedVersions")}
                   canManage={props.canManageBlacklist}
                   showSearch={false}
                   hideReadOnlyRemoveAction
@@ -398,14 +409,14 @@ export function ChannelRulesPanel(props: {
 
           {showSetlistArtistsCard ? (
             <SearchManageCard
-              title="Setlist artists"
+              title={t("rules.setlistArtists")}
               inputValue={setlistQuery}
               onInputChange={setSetlistQuery}
-              placeholder="Search artists by name"
+              placeholder={t("rules.searchArtists")}
               matches={visibleSetlistMatches.map((artist) => ({
                 key: `setlist-match-${artist.artistId}`,
                 label: artist.artistName,
-                meta: `${artist.trackCount} tracks`,
+                meta: t("rules.trackCount", { count: artist.trackCount }),
                 onAdd: () =>
                   mutateRules.mutate({
                     action: "addSetlistArtist",
@@ -416,7 +427,7 @@ export function ChannelRulesPanel(props: {
               currentItems={props.setlistArtists.map((item) => ({
                 key: `setlist-current-${item.artistId}`,
                 label: item.artistName,
-                hoverDetail: `Artist ID ${item.artistId}`,
+                hoverDetail: t("rules.artistId", { id: item.artistId }),
                 onRemove: () =>
                   mutateRules.mutate({
                     action: "removeSetlistArtist",
@@ -424,7 +435,7 @@ export function ChannelRulesPanel(props: {
                   }),
               }))}
               isPending={mutateRules.isPending}
-              emptyCurrentLabel="No setlist artists."
+              emptyCurrentLabel={t("rules.noSetlistArtists")}
               canManage={props.canManageSetlist}
             />
           ) : null}
@@ -463,6 +474,7 @@ function SearchManageCard(props: {
   showSearch?: boolean;
   hideReadOnlyRemoveAction?: boolean;
 }) {
+  const { t } = useLocaleTranslation("playlist");
   const normalizedLength = props.inputValue.trim().length;
   const canManage = props.canManage !== false;
   const showSearch = props.showSearch !== false;
@@ -482,9 +494,7 @@ function SearchManageCard(props: {
               placeholder={props.placeholder}
             />
             {normalizedLength > 0 && normalizedLength < 2 ? (
-              <p className="text-sm text-(--muted)">
-                Type at least 2 characters to search.
-              </p>
+              <p className="text-sm text-(--muted)">{t("rules.searchMin")}</p>
             ) : null}
           </>
         ) : null}
@@ -509,14 +519,12 @@ function SearchManageCard(props: {
                     onClick={match.onAdd}
                     disabled={props.isPending}
                   >
-                    Add
+                    {t("rules.add")}
                   </Button>
                 </div>
               ))
             ) : (
-              <p className="text-sm text-(--muted)">
-                No matching entries to add.
-              </p>
+              <p className="text-sm text-(--muted)">{t("rules.noMatches")}</p>
             )}
           </div>
         ) : null}
@@ -554,7 +562,7 @@ function SearchManageCard(props: {
                       onClick={item.onRemove}
                       disabled={props.isPending || !canManage}
                     >
-                      Remove
+                      {t("rules.remove")}
                     </Button>
                   ) : null}
                 </div>

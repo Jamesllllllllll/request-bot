@@ -6,7 +6,8 @@ import { useEffect, useMemo } from "react";
 import { BlacklistPanel } from "~/components/blacklist-panel";
 import { PublicPlayedHistoryCard } from "~/components/public-played-history-card";
 import { getBlacklistReasons as getChannelBlacklistReasons } from "~/lib/channel-blacklist";
-import { formatSlugTitle, pageTitle } from "~/lib/page-title";
+import { getLocalizedPageTitle } from "~/lib/i18n/metadata";
+import { formatSlugTitle } from "~/lib/page-title";
 import { getPickNumbersForQueuedItems } from "~/lib/pick-order";
 import { cn, decodeHtmlEntities } from "~/lib/utils";
 
@@ -75,8 +76,18 @@ const publicPlaylistItemTransition = {
 };
 
 export const Route = createFileRoute("/channel/$slug")({
-  head: ({ params }) => ({
-    meta: [{ title: pageTitle(`${formatSlugTitle(params.slug)} Playlist`) }],
+  head: async ({ params }) => ({
+    meta: [
+      {
+        title: await getLocalizedPageTitle({
+          namespace: "playlist",
+          key: "page.title",
+          options: {
+            channel: formatSlugTitle(params.slug),
+          },
+        }),
+      },
+    ],
   }),
   component: ChannelPage,
 });

@@ -7,7 +7,9 @@ import {
   useRouterState,
 } from "@tanstack/react-router";
 import { Activity, Settings2, Wrench } from "lucide-react";
+import { useLocaleTranslation } from "~/lib/i18n/client";
 import { cn } from "~/lib/utils";
+import { viewerSessionQueryOptions } from "~/lib/viewer-session-query";
 
 export const Route = createFileRoute("/dashboard")({
   component: DashboardLayout,
@@ -25,25 +27,8 @@ type DashboardRoutePath =
   | "/dashboard/settings"
   | "/dashboard/admin";
 
-const accountNav: DashboardNavItem[] = [
-  {
-    to: "/dashboard" as const,
-    label: "Channels",
-    icon: Activity,
-    exact: true,
-  },
-];
-
-const adminNav: DashboardNavItem[] = [
-  {
-    to: "/dashboard/admin" as const,
-    label: "Admin",
-    icon: Wrench,
-    exact: true,
-  },
-];
-
 function DashboardLayout() {
+  const { t } = useLocaleTranslation("dashboard");
   const pathname = useRouterState({
     select: (state) => state.location.pathname,
   });
@@ -70,8 +55,25 @@ function DashboardLayout() {
         };
       }>;
     },
+    ...viewerSessionQueryOptions,
   });
 
+  const accountNav: DashboardNavItem[] = [
+    {
+      to: "/dashboard" as const,
+      label: t("nav.channels"),
+      icon: Activity,
+      exact: true,
+    },
+  ];
+  const adminNav: DashboardNavItem[] = [
+    {
+      to: "/dashboard/admin" as const,
+      label: t("nav.admin"),
+      icon: Wrench,
+      exact: true,
+    },
+  ];
   const isAdmin = !!data?.viewer?.user?.isAdmin;
   const hasOwnerChannel = !!data?.viewer?.channel;
   const primaryNav: DashboardNavItem[] = hasOwnerChannel
@@ -79,7 +81,7 @@ function DashboardLayout() {
         ...accountNav,
         {
           to: "/dashboard/settings" as const,
-          label: "Settings",
+          label: t("nav.settings"),
           icon: Settings2,
         },
       ]

@@ -1,0 +1,79 @@
+{
+  "meta": {
+    "title": "Buscar musicas"
+  },
+  "page": {
+    "title": "Buscar",
+    "infoNote": "Esta demo contem apenas {count} musicas.",
+    "placeholder": "Busque por titulo, artista ou album"
+  },
+  "summary": {
+    "note": "Nota:",
+    "foundCount": "{count} musicas encontradas",
+    "filters": "Filtros",
+    "moreCount": "+{count} a mais",
+    "changeFilters": "Alterar filtros"
+  },
+  "controls": {
+    "searchField": "Campo de busca",
+    "allFields": "Todos os campos",
+    "titleOnly": "Apenas titulo",
+    "artistOnly": "Apenas artista",
+    "albumOnly": "Apenas album",
+    "creatorOnly": "Apenas criador",
+    "showFilters": "Mostrar filtros",
+    "hideFilters": "Ocultar filtros",
+    "title": "Titulo",
+    "artist": "Artista",
+    "album": "Album",
+    "creator": "Criador",
+    "tuning": "Afinacao",
+    "path": "Parte",
+    "year": "Ano",
+    "actions": "Acoes",
+    "clearAdvancedFilters": "Limpar filtros",
+    "matchAny": "Corresponde a qualquer um",
+    "matchAll": "Corresponde a todos"
+  },
+  "columns": {
+    "song": "Musica",
+    "paths": "Partes",
+    "stats": "Estatisticas",
+    "actions": "Acoes"
+  },
+  "states": {
+    "loading": "Carregando musicas...",
+    "queryTooShort": "Os termos de busca precisam ter pelo menos 3 caracteres.",
+    "emptyFiltered": "Nenhuma musica corresponde a esses filtros ainda. Tente ampliar a busca ou limpar um dos filtros avancados.",
+    "emptyCatalog": "Ainda nao ha musicas disponiveis no catalogo de demo.",
+    "blacklisted": "Bloqueada",
+    "blacklistedWithReasons": "Bloqueada - {reasons}",
+    "unknownArtist": "Artista desconhecido",
+    "chartedBy": "Chart por {creator}",
+    "updated": "Atualizado {date}"
+  },
+  "errors": {
+    "filterOptionsFailed": "Nao foi possivel carregar as opcoes de filtro.",
+    "searchFailed": "A busca falhou."
+  },
+  "commands": {
+    "copySr": "Copiar comando !sr",
+    "copiedSr": "Comando !sr copiado",
+    "copyEdit": "Copiar comando !edit",
+    "copiedEdit": "Comando !edit copiado",
+    "copyVip": "Copiar comando !vip",
+    "copiedVip": "Comando !vip copiado"
+  },
+  "paths": {
+    "lead": "Lead",
+    "rhythm": "Rhythm",
+    "bass": "Baixo",
+    "lyrics": "Letra"
+  },
+  "multiSelect": {
+    "selected": "{count} selecionados",
+    "select": "Selecionar {label}",
+    "filter": "Filtrar {label}...",
+    "noMatches": "Nenhum resultado encontrado."
+  }
+}

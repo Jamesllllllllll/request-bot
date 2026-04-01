@@ -1458,6 +1458,7 @@ function VipTokenInfoContent(props: {
   return (
     <div className="grid gap-4 p-4 mt-1 text-sm leading-6 text-(--muted) bg-(--panel-soft)">
       {props.balanceSummary ? <p>{props.balanceSummary}</p> : null}
+      <p className="font-semibold text-(--text)">{redemptionDetails.summary}</p>
       <div className="grid gap-2">
         <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-(--text)">
           {t("vipInfo.earn")}
@@ -1475,19 +1476,6 @@ function VipTokenInfoContent(props: {
           <div className="grid gap-1">
             {props.vipAutomationDetails.notes.map((note) => (
               <p key={note}>{note}</p>
-            ))}
-          </div>
-        ) : null}
-      </div>
-      <div className="grid gap-2">
-        <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-(--text)">
-          {t("vipInfo.use")}
-        </p>
-        <p>{redemptionDetails.summary}</p>
-        {redemptionDetails.uses.length ? (
-          <div className="grid gap-1">
-            {redemptionDetails.uses.map((use) => (
-              <p key={use}>{use}</p>
             ))}
           </div>
         ) : null}

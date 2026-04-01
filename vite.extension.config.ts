@@ -28,6 +28,7 @@ export default defineConfig(({ mode }) => {
   return {
     root: panelRoot,
     envDir: repoRoot,
+    publicDir: fileURLToPath(new URL("./public", import.meta.url)),
     base: "./",
     define: {
       "import.meta.env.VITE_TWITCH_EXTENSION_API_BASE_URL":
@@ -44,6 +45,21 @@ export default defineConfig(({ mode }) => {
         new URL("./dist/twitch-extension/panel", import.meta.url)
       ),
       emptyOutDir: true,
+      rollupOptions: {
+        output: {
+          manualChunks(id) {
+            if (
+              id.includes("node_modules/react/") ||
+              id.includes("node_modules/react-dom/") ||
+              id.includes("node_modules/scheduler/")
+            ) {
+              return "react-vendor";
+            }
+
+            return undefined;
+          },
+        },
+      },
     },
   };
 });

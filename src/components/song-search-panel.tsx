@@ -1,4 +1,4 @@
-import { keepPreviousData, useQuery } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import {
   Check,
   ChevronDown,
@@ -7,14 +7,7 @@ import {
   SlidersHorizontal,
   X,
 } from "lucide-react";
-import {
-  Fragment,
-  type ReactNode,
-  startTransition,
-  useEffect,
-  useMemo,
-  useState,
-} from "react";
+import { Fragment, type ReactNode, useEffect, useMemo, useState } from "react";
 import { Badge } from "~/components/ui/badge";
 import { Button } from "~/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "~/components/ui/card";
@@ -394,7 +387,6 @@ export function SongSearchPanel(props: {
   const searchQuery = useQuery<SearchResponse>({
     queryKey: ["song-search", searchParams.toString()],
     enabled: !queryTooShort,
-    placeholderData: keepPreviousData,
     queryFn: async (): Promise<SearchResponse> => {
       const response = await fetch(`/api/search?${searchParams.toString()}`);
       const body = (await response.json().catch(() => null)) as
@@ -416,7 +408,7 @@ export function SongSearchPanel(props: {
   const { data, error, isLoading } = searchQuery;
   const isResultsTransitioning = searchQuery.isFetching;
 
-  const results = !queryTooShort ? (data?.results ?? []) : [];
+  const results = !queryTooShort && !error ? (data?.results ?? []) : [];
   const visibleResults = useMemo(
     () =>
       props.resultFilter
@@ -488,60 +480,50 @@ export function SongSearchPanel(props: {
     key: keyof typeof advancedFilters,
     value: string | string[] | number[]
   ) {
-    startTransition(() => {
-      setAdvancedFilters((current) => ({
-        ...current,
-        [key]: value,
-      }));
-    });
+    setAdvancedFilters((current) => ({
+      ...current,
+      [key]: value,
+    }));
   }
 
   function clearAdvancedFilters() {
-    startTransition(() => {
-      setAdvancedFilters({
-        title: "",
-        artist: "",
-        album: "",
-        creator: "",
-        tuning: [],
-        parts: [],
-        partsMatchMode: "any",
-        year: [],
-      });
+    setAdvancedFilters({
+      title: "",
+      artist: "",
+      album: "",
+      creator: "",
+      tuning: [],
+      parts: [],
+      partsMatchMode: "any",
+      year: [],
     });
   }
 
   function toggleAdvancedPart(part: string) {
-    startTransition(() => {
-      setAdvancedFilters((current) => ({
-        ...current,
-        parts: current.parts.includes(part)
-          ? current.parts.filter((value) => value !== part)
-          : [...current.parts, part],
-      }));
-    });
+    setAdvancedFilters((current) => ({
+      ...current,
+      parts: current.parts.includes(part)
+        ? current.parts.filter((value) => value !== part)
+        : [...current.parts, part],
+    }));
   }
 
   function toggleAdvancedTuning(tuning: string) {
-    startTransition(() => {
-      setAdvancedFilters((current) => ({
-        ...current,
-        tuning: current.tuning.includes(tuning)
-          ? current.tuning.filter((value) => value !== tuning)
-          : [...current.tuning, tuning],
-      }));
-    });
+    setAdvancedFilters((current) => ({
+      ...current,
+      tuning: current.tuning.includes(tuning)
+        ? current.tuning.filter((value) => value !== tuning)
+        : [...current.tuning, tuning],
+    }));
   }
 
   function toggleAdvancedYear(year: number) {
-    startTransition(() => {
-      setAdvancedFilters((current) => ({
-        ...current,
-        year: current.year.includes(year)
-          ? current.year.filter((value) => value !== year)
-          : [...current.year, year],
-      }));
-    });
+    setAdvancedFilters((current) => ({
+      ...current,
+      year: current.year.includes(year)
+        ? current.year.filter((value) => value !== year)
+        : [...current.year, year],
+    }));
   }
 
   function renderPagination(position: "top" | "bottom") {

@@ -1,6 +1,6 @@
 import { env } from "cloudflare:workers";
 import { createServerFn } from "@tanstack/react-start";
-import { getRequest, getRequestIP } from "@tanstack/start-server-core";
+import { getRequest, getRequestIP } from "@tanstack/react-start/server";
 import type { z } from "zod";
 import { getSessionUserId } from "~/lib/auth/session.server";
 import {

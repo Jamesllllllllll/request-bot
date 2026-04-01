@@ -1,0 +1,19 @@
+{
+  "brand": {
+    "name": "RockList.Live"
+  },
+  "nav": {
+    "search": "Recherche",
+    "account": "Compte"
+  },
+  "auth": {
+    "goToPlaylist": "Aller a votre playlist.",
+    "logOut": "Se deconnecter",
+    "signIn": "Se connecter avec Twitch",
+    "permissionsRefresh": "Les autorisations Twitch doivent etre actualisees pour ce compte.",
+    "reconnect": "Reconnecter Twitch"
+  },
+  "language": {
+    "label": "Langue"
+  }
+}

@@ -11,6 +11,8 @@ import {
   PaginationNext,
   PaginationPrevious,
 } from "~/components/ui/pagination";
+import { useAppLocale, useLocaleTranslation } from "~/lib/i18n/client";
+import { formatNumber } from "~/lib/i18n/format";
 import { usePaginatedContentTransition } from "~/lib/paginated-content-transition";
 import { decodeHtmlEntities } from "~/lib/utils";
 
@@ -45,6 +47,8 @@ export function PublicPlayedHistoryCard(props: {
   slug: string;
   channelDisplayName?: string | null;
 }) {
+  const { t } = useLocaleTranslation("playlist");
+  const { locale } = useAppLocale();
   const [historyOpen, setHistoryOpen] = useState(false);
   const [historyPage, setHistoryPage] = useState(1);
   const [searchQuery, setSearchQuery] = useState("");
@@ -158,8 +162,10 @@ export function PublicPlayedHistoryCard(props: {
           <div className="min-w-0">
             <CardTitle className="break-words">
               {props.channelDisplayName
-                ? `${props.channelDisplayName}'s played history`
-                : "Played history"}
+                ? t("history.titleWithChannel", {
+                    channel: props.channelDisplayName,
+                  })
+                : t("history.title")}
             </CardTitle>
           </div>
         </div>
@@ -171,12 +177,12 @@ export function PublicPlayedHistoryCard(props: {
           {historyOpen ? (
             <>
               <ChevronUp className="h-4 w-4" />
-              Hide history
+              {t("history.hide")}
             </>
           ) : (
             <>
               <ChevronDown className="h-4 w-4" />
-              Show history
+              {t("history.show")}
             </>
           )}
         </Button>
@@ -189,7 +195,7 @@ export function PublicPlayedHistoryCard(props: {
                 className="text-xs font-semibold uppercase tracking-[0.2em] text-(--muted)"
                 htmlFor={`played-history-search-${props.slug}`}
               >
-                Song Search
+                {t("history.songSearch")}
               </label>
               <div className="relative">
                 <Search className="pointer-events-none absolute top-1/2 left-3 h-4 w-4 -translate-y-1/2 text-(--muted)" />
@@ -197,7 +203,7 @@ export function PublicPlayedHistoryCard(props: {
                   id={`played-history-search-${props.slug}`}
                   value={searchQuery}
                   onChange={(event) => setSearchQuery(event.target.value)}
-                  placeholder="Song, artist, album, or charter"
+                  placeholder={t("history.searchPlaceholder")}
                   className="pr-10 pl-10!"
                 />
                 {searchQuery ? (
@@ -205,7 +211,7 @@ export function PublicPlayedHistoryCard(props: {
                     type="button"
                     onClick={() => setSearchQuery("")}
                     className="absolute top-1/2 right-3 -translate-y-1/2 text-(--muted) transition-colors hover:text-(--text)"
-                    aria-label="Clear search"
+                    aria-label={t("history.clearSearch")}
                   >
                     <X className="h-4 w-4" />
                   </button>
@@ -218,7 +224,7 @@ export function PublicPlayedHistoryCard(props: {
                 className="text-xs font-semibold uppercase tracking-[0.2em] text-(--muted)"
                 htmlFor={`played-history-requester-${props.slug}`}
               >
-                Requester
+                {t("history.requester")}
               </label>
               <div className="relative">
                 <Input
@@ -228,7 +234,7 @@ export function PublicPlayedHistoryCard(props: {
                     setRequesterInput(event.target.value);
                     setSelectedRequester(null);
                   }}
-                  placeholder="Search a requester"
+                  placeholder={t("history.requesterPlaceholder")}
                 />
                 {requesterInput ? (
                   <button
@@ -238,7 +244,7 @@ export function PublicPlayedHistoryCard(props: {
                       setSelectedRequester(null);
                     }}
                     className="absolute top-1/2 right-3 -translate-y-1/2 text-(--muted) transition-colors hover:text-(--text)"
-                    aria-label="Clear requester"
+                    aria-label={t("history.clearRequester")}
                   >
                     <X className="h-4 w-4" />
                   </button>
@@ -247,9 +253,11 @@ export function PublicPlayedHistoryCard(props: {
               {selectedRequester ? (
                 <div className="inline-flex w-fit items-center gap-2 border border-(--border) bg-(--panel-soft) px-3 py-1.5 text-sm text-(--text)">
                   <span>
-                    {formatRequesterLabel(selectedRequester)}
+                    {formatRequesterLabel(selectedRequester, t)}
                     {selectedRequester.requestCount
-                      ? ` · ${selectedRequester.requestCount} request${selectedRequester.requestCount === 1 ? "" : "s"}`
+                      ? ` · ${t("history.requestCount", {
+                          count: selectedRequester.requestCount,
+                        })}`
                       : ""}
                   </span>
                   <button
@@ -259,7 +267,7 @@ export function PublicPlayedHistoryCard(props: {
                       setRequesterInput("");
                     }}
                     className="text-(--muted) transition-colors hover:text-(--text)"
-                    aria-label="Clear requester filter"
+                    aria-label={t("history.clearRequesterFilter")}
                   >
                     <X className="h-4 w-4" />
                   </button>
@@ -273,25 +281,26 @@ export function PublicPlayedHistoryCard(props: {
                       type="button"
                       onClick={() => {
                         setSelectedRequester(requester);
-                        setRequesterInput(formatRequesterLabel(requester));
+                        setRequesterInput(formatRequesterLabel(requester, t));
                       }}
                       className={`grid w-full gap-1 px-4 py-3 text-left transition-colors hover:bg-(--panel-strong) ${
                         index > 0 ? "border-t border-(--border)" : ""
                       }`}
                     >
                       <span className="font-medium text-(--text)">
-                        {formatRequesterLabel(requester)}
+                        {formatRequesterLabel(requester, t)}
                       </span>
                       <span className="text-sm text-(--muted)">
-                        {requester.requestCount} request
-                        {requester.requestCount === 1 ? "" : "s"}
+                        {t("history.requestCount", {
+                          count: requester.requestCount,
+                        })}
                       </span>
                     </button>
                   ))}
                 </div>
               ) : requesterResultsQuery.isLoading ? (
                 <p className="text-sm text-(--muted)">
-                  Searching requesters...
+                  {t("history.searchingRequesters")}
                 </p>
               ) : null}
             </div>
@@ -302,17 +311,13 @@ export function PublicPlayedHistoryCard(props: {
               className={`paginated-transition-frame ${historyTransitionClassName}`.trim()}
             >
               {playedHistoryQuery.isLoading ? (
-                <p className="text-sm text-(--muted)">
-                  Loading played history...
-                </p>
+                <p className="text-sm text-(--muted)">{t("history.loading")}</p>
               ) : null}
 
               {!playedHistoryQuery.isLoading &&
               (playedHistoryQuery.data?.results.length ?? 0) === 0 ? (
                 <p className="text-sm text-(--muted)">
-                  {hasFilters
-                    ? "No played songs matched those filters."
-                    : "No songs have been marked played yet."}
+                  {hasFilters ? t("history.emptyFiltered") : t("history.empty")}
                 </p>
               ) : null}
 
@@ -330,14 +335,23 @@ export function PublicPlayedHistoryCard(props: {
                       <p className="font-medium text-(--text)">
                         {decodeHtmlEntities(song.songTitle)}
                         {song.songArtist
-                          ? ` by ${decodeHtmlEntities(song.songArtist)}`
+                          ? t("history.byArtist", {
+                              artist: decodeHtmlEntities(song.songArtist),
+                            })
                           : ""}
                       </p>
                       <p className="mt-1 text-sm text-(--muted)">
                         {(song.requestedByDisplayName ?? song.requestedByLogin)
-                          ? `Requested by ${song.requestedByDisplayName ?? song.requestedByLogin} · `
+                          ? `${t("history.requestedBy", {
+                              requester:
+                                song.requestedByDisplayName ??
+                                song.requestedByLogin,
+                            })} · `
                           : ""}
-                        {new Date(song.playedAt).toLocaleString()}
+                        {new Intl.DateTimeFormat(locale, {
+                          dateStyle: "medium",
+                          timeStyle: "short",
+                        }).format(new Date(song.playedAt))}
                       </p>
                     </div>
                   ))}
@@ -351,7 +365,9 @@ export function PublicPlayedHistoryCard(props: {
             playedHistoryQuery.data.hasNextPage) ? (
             <div className="flex flex-wrap items-center justify-between gap-4 pt-2">
               <p className="text-sm text-(--muted)">
-                Page {playedHistoryQuery.data.page}
+                {t("history.page", {
+                  page: formatNumber(locale, playedHistoryQuery.data.page),
+                })}
               </p>
               <Pagination className="mx-0 w-auto justify-end">
                 <PaginationContent>
@@ -391,8 +407,13 @@ export function PublicPlayedHistoryCard(props: {
   );
 }
 
-function formatRequesterLabel(requester: PlayedHistoryRequester) {
+function formatRequesterLabel(
+  requester: PlayedHistoryRequester,
+  t: (key: string, options?: Record<string, unknown>) => string
+) {
   return (
-    requester.requesterDisplayName ?? requester.requesterLogin ?? "Unknown"
+    requester.requesterDisplayName ??
+    requester.requesterLogin ??
+    t("history.unknownRequester")
   );
 }

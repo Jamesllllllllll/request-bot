@@ -5,8 +5,9 @@ import { ExternalLink, Mic2, Radio, Settings2, StickyNote } from "lucide-react";
 import { DashboardPageHeader } from "~/components/dashboard-page-header";
 import { Button } from "~/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "~/components/ui/card";
-import { getBotStatusLabel } from "~/lib/bot-status";
-import { pageTitle } from "~/lib/page-title";
+import { getBotStatusKey } from "~/lib/bot-status";
+import { useLocaleTranslation } from "~/lib/i18n/client";
+import { getLocalizedPageTitle } from "~/lib/i18n/metadata";
 
 type DashboardOverviewData = {
   settings: {
@@ -42,13 +43,21 @@ type DashboardOverviewData = {
 };
 
 export const Route = createFileRoute("/dashboard/")({
-  head: () => ({
-    meta: [{ title: pageTitle("Account") }],
+  head: async () => ({
+    meta: [
+      {
+        title: await getLocalizedPageTitle({
+          namespace: "dashboard",
+          key: "overview.title",
+        }),
+      },
+    ],
   }),
   component: DashboardOverviewPage,
 });
 
 function DashboardOverviewPage() {
+  const { t } = useLocaleTranslation("dashboard");
   const { data } = useQuery<DashboardOverviewData>({
     queryKey: ["dashboard-overview"],
     queryFn: async () => {
@@ -85,6 +94,7 @@ function DashboardOverviewPage() {
   const notes =
     channel && settings
       ? getOverviewNotes({
+          t,
           botStatus,
           botChannelEnabled: !!settings.botChannelEnabled,
           requestsEnabled: !!settings.requestsEnabled,
@@ -93,25 +103,29 @@ function DashboardOverviewPage() {
       : [];
   const channelStatus = channel
     ? {
-        value: channel.isLive ? "Live" : "Offline",
+        value: channel.isLive
+          ? t("overview.status.live")
+          : t("overview.status.offline"),
         tone: channel.isLive ? ("good" as const) : ("warn" as const),
       }
     : {
-        value: "Unavailable",
+        value: t("overview.status.unavailable"),
         tone: "neutral" as const,
       };
   const requestsStatus = settings
     ? {
-        value: settings.requestsEnabled ? "Enabled" : "Paused",
+        value: settings.requestsEnabled
+          ? t("overview.status.enabled")
+          : t("overview.status.paused"),
         tone: settings.requestsEnabled ? ("good" as const) : ("warn" as const),
       }
     : {
-        value: "Unavailable",
+        value: t("overview.status.unavailable"),
         tone: "neutral" as const,
       };
   const botStatusSummary = channel
     ? {
-        value: getBotStatusLabel(botStatus),
+        value: t(`botStatus.${getBotStatusKey(botStatus)}`),
         tone:
           botStatus === "active" || botStatus === "active_offline_testing"
             ? ("good" as const)
@@ -120,29 +134,30 @@ function DashboardOverviewPage() {
               : ("neutral" as const),
       }
     : {
-        value: "Unavailable",
+        value: t("overview.status.unavailable"),
         tone: "neutral" as const,
       };
 
   return (
     <div className="page-section-stack grid gap-6 [container-type:inline-size]">
       <DashboardPageHeader
-        title="Account"
-        description="Channel access and owner settings."
+        title={t("overview.title")}
+        description={t("overview.description")}
         meta={
           <div className="grid gap-3 md:grid-cols-2">
             {publicSlug ? (
-              <ExternalCard
-                href={`/${publicSlug}`}
+              <InternalCard
+                to="/$slug"
+                params={{ slug: publicSlug }}
                 icon={Radio}
-                title="Open your playlist"
+                title={t("overview.cards.openPlaylist")}
               />
             ) : null}
             {data?.session?.viewer?.channel ? (
-              <ExternalCard
-                href="/dashboard/settings"
+              <InternalCard
+                to="/dashboard/settings"
                 icon={Settings2}
-                title="Manage channel settings"
+                title={t("overview.cards.manageSettings")}
               />
             ) : null}
           </div>
@@ -150,17 +165,17 @@ function DashboardOverviewPage() {
         aside={
           <div className="grid min-w-[14rem] gap-2">
             <StatusIndicator
-              label="Channel Status"
+              label={t("overview.indicators.channelStatus")}
               value={channelStatus.value}
               tone={channelStatus.tone}
             />
             <StatusIndicator
-              label="Requests"
+              label={t("overview.indicators.requests")}
               value={requestsStatus.value}
               tone={requestsStatus.tone}
             />
             <StatusIndicator
-              label="Bot"
+              label={t("overview.indicators.bot")}
               value={botStatusSummary.value}
               tone={botStatusSummary.tone}
             />
@@ -172,13 +187,13 @@ function DashboardOverviewPage() {
         <Card>
           <CardHeader>
             <CardTitle className="text-2xl">
-              Online channels you moderate
+              {t("overview.moderatedChannels.title")}
             </CardTitle>
           </CardHeader>
           <CardContent className="grid gap-3">
             {needsModeratorScopeReconnect ? (
               <div className="border border-amber-500/30 bg-amber-500/10 px-4 py-4 text-sm text-amber-100">
-                Reconnect Twitch to refresh your moderated channel access.
+                {t("overview.moderatedChannels.reconnect")}
               </div>
             ) : null}
             {onlineManageableChannels.map((managedChannel) => (
@@ -198,7 +213,9 @@ function DashboardOverviewPage() {
                           : "border-(--border) bg-(--panel) text-(--muted)"
                       }`}
                     >
-                      {managedChannel.isLive ? "Live" : "Offline"}
+                      {managedChannel.isLive
+                        ? t("overview.status.live")
+                        : t("overview.status.offline")}
                     </span>
                   </div>
                   <p className="mt-1 text-sm text-(--muted)">
@@ -213,7 +230,7 @@ function DashboardOverviewPage() {
                       className="no-underline"
                     >
                       <Mic2 className="mr-2 h-4 w-4" />
-                      Open channel
+                      {t("overview.moderatedChannels.openChannel")}
                     </Link>
                   </Button>
                 </div>
@@ -222,7 +239,7 @@ function DashboardOverviewPage() {
             {!needsModeratorScopeReconnect &&
             onlineManageableChannels.length === 0 ? (
               <p className="text-sm text-(--muted)">
-                No moderated channels are live right now.
+                {t("overview.moderatedChannels.empty")}
               </p>
             ) : null}
           </CardContent>
@@ -233,7 +250,9 @@ function DashboardOverviewPage() {
         <section className="grid gap-6">
           <Card>
             <CardHeader>
-              <CardTitle className="text-2xl">Notes</CardTitle>
+              <CardTitle className="text-2xl">
+                {t("overview.notesTitle")}
+              </CardTitle>
             </CardHeader>
             <CardContent className="grid gap-3">
               {notes.map((note, index) => (
@@ -267,6 +286,7 @@ function DashboardOverviewPage() {
 }
 
 function getOverviewNotes(input: {
+  t: (key: string) => string;
   botStatus: string;
   botChannelEnabled: boolean;
   requestsEnabled: boolean;
@@ -275,8 +295,8 @@ function getOverviewNotes(input: {
   if (!input.botChannelEnabled) {
     return [
       {
-        title: "Enable the bot",
-        body: "Turn on bot control in Settings before using requests on your channel.",
+        title: input.t("overview.notes.enableBot.title"),
+        body: input.t("overview.notes.enableBot.body"),
       },
     ];
   }
@@ -284,8 +304,8 @@ function getOverviewNotes(input: {
   if (input.botStatus === "active_offline_testing") {
     return [
       {
-        title: "Offline testing is on",
-        body: "Requests stay available while you test the bot offline.",
+        title: input.t("overview.notes.offlineTesting.title"),
+        body: input.t("overview.notes.offlineTesting.body"),
       },
     ];
   }
@@ -293,8 +313,8 @@ function getOverviewNotes(input: {
   if (!input.isLive) {
     return [
       {
-        title: "Go live to start taking requests",
-        body: "Requests are meant to run while your channel is live.",
+        title: input.t("overview.notes.goLive.title"),
+        body: input.t("overview.notes.goLive.body"),
       },
     ];
   }
@@ -302,8 +322,8 @@ function getOverviewNotes(input: {
   if (!input.requestsEnabled) {
     return [
       {
-        title: "Requests are paused",
-        body: "Re-enable requests in Settings when you want viewers to add songs again.",
+        title: input.t("overview.notes.requestsPaused.title"),
+        body: input.t("overview.notes.requestsPaused.body"),
       },
     ];
   }
@@ -314,16 +334,16 @@ function getOverviewNotes(input: {
   ) {
     return [
       {
-        title: "Channel is ready",
-        body: "Your stream is live and requests are available.",
+        title: input.t("overview.notes.channelReady.title"),
+        body: input.t("overview.notes.channelReady.body"),
       },
     ];
   }
 
   return [
     {
-      title: "Check channel status",
-      body: "Make sure the bot is connected before you start taking requests.",
+      title: input.t("overview.notes.checkStatus.title"),
+      body: input.t("overview.notes.checkStatus.body"),
     },
   ];
 }
@@ -352,8 +372,9 @@ function StatusIndicator(props: {
   );
 }
 
-function ExternalCard(props: {
-  href: string;
+function InternalCard(props: {
+  to: "/dashboard/settings" | "/$slug";
+  params?: { slug: string };
   icon: React.ComponentType<{ className?: string }>;
   title: string;
   description?: string;
@@ -361,8 +382,9 @@ function ExternalCard(props: {
   const Icon = props.icon;
 
   return (
-    <a
-      href={props.href}
+    <Link
+      to={props.to}
+      params={props.params}
       className="group border border-(--border) bg-(--panel-soft) p-4 no-underline transition-all hover:border-(--brand) hover:bg-(--panel-muted)"
     >
       <div className="flex items-center justify-between gap-3">
@@ -379,6 +401,6 @@ function ExternalCard(props: {
           {props.description}
         </p>
       ) : null}
-    </a>
+    </Link>
   );
 }

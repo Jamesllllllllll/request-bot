@@ -15,6 +15,7 @@ import {
 } from "~/components/ui/card";
 import { Checkbox } from "~/components/ui/checkbox";
 import { Input } from "~/components/ui/input";
+import { useLocaleTranslation } from "~/lib/i18n/client";
 import { getErrorMessage, hexToRgba } from "~/lib/utils";
 import type { OverlaySettingsInputData } from "~/lib/validation";
 
@@ -71,9 +72,17 @@ const defaultOverlayForm: OverlaySettingsInputData = {
 };
 
 export function OverlaySettingsPanel() {
+  const { t } = useLocaleTranslation("dashboard");
   const queryClient = useQueryClient();
-  const [form, setForm] =
-    useState<OverlaySettingsInputData>(defaultOverlayForm);
+  const cachedOverlayData = queryClient.getQueryData<OverlaySettingsResponse>([
+    "dashboard-overlay",
+  ]);
+  const [form, setForm] = useState<OverlaySettingsInputData>(
+    () => cachedOverlayData?.settings ?? defaultOverlayForm
+  );
+  const [hasHydratedForm, setHasHydratedForm] = useState(
+    () => cachedOverlayData !== undefined
+  );
   const [previewMode, setPreviewMode] = useState<"live" | "sample">("live");
   const [previewModeTouched, setPreviewModeTouched] = useState(false);
   const [showRestoreDialog, setShowRestoreDialog] = useState(false);
@@ -92,13 +101,17 @@ export function OverlaySettingsPanel() {
       if (!response.ok) {
         throw new Error(
           body && "message" in body
-            ? (body.message ?? "Failed to load overlay settings.")
-            : "Failed to load overlay settings."
+            ? (body.message ?? t("overlay.states.failedToLoad"))
+            : t("overlay.states.failedToLoad")
         );
       }
 
       return body as OverlaySettingsResponse;
     },
+    staleTime: 5 * 60_000,
+    gcTime: 10 * 60_000,
+    refetchOnWindowFocus: false,
+    placeholderData: (previousData) => previousData,
   });
 
   const playlistQuery = useQuery<PlaylistData>({
@@ -119,7 +132,7 @@ export function OverlaySettingsPanel() {
         .catch(() => null)) as ChannelPlaylistPreviewResponse | null;
 
       if (!response.ok) {
-        throw new Error("Failed to load playlist preview.");
+        throw new Error(t("overlay.states.failedPreview"));
       }
 
       return {
@@ -132,10 +145,16 @@ export function OverlaySettingsPanel() {
   });
 
   useEffect(() => {
-    if (overlayQuery.data?.settings) {
+    if (hasHydratedForm || overlayQuery.data === undefined) {
+      return;
+    }
+
+    if (overlayQuery.data.settings) {
       setForm(overlayQuery.data.settings);
     }
-  }, [overlayQuery.data]);
+
+    setHasHydratedForm(true);
+  }, [hasHydratedForm, overlayQuery.data]);
 
   const saveMutation = useMutation({
     mutationFn: async () => {
@@ -151,9 +170,7 @@ export function OverlaySettingsPanel() {
       } | null;
 
       if (!response.ok) {
-        throw new Error(
-          body?.message ?? "Overlay settings could not be saved."
-        );
+        throw new Error(body?.message ?? t("overlay.states.failedToSave"));
       }
 
       return body;
@@ -163,7 +180,7 @@ export function OverlaySettingsPanel() {
       setErrorMessage(null);
     },
     onSuccess: async (payload) => {
-      setMessage(payload?.message ?? "Overlay settings saved.");
+      setMessage(payload?.message ?? t("overlay.states.saved"));
       await queryClient.invalidateQueries({ queryKey: ["dashboard-overlay"] });
     },
     onError: (error) => {
@@ -179,7 +196,8 @@ export function OverlaySettingsPanel() {
   const savedForm = overlayQuery.data?.settings ?? defaultOverlayForm;
   const hasUnsavedChanges = JSON.stringify(form) !== JSON.stringify(savedForm);
   const overlayUrl = overlayQuery.data?.overlayUrl ?? "";
-  const channelName = overlayQuery.data?.channel.displayName ?? "Your channel";
+  const channelName =
+    overlayQuery.data?.channel.displayName ?? t("overlay.channelFallback");
   const liveItems = playlistQuery.data?.items ?? [];
   const sampleItems = useMemo<PlaylistData["items"]>(
     () => [
@@ -247,7 +265,7 @@ export function OverlaySettingsPanel() {
     }
 
     await navigator.clipboard.writeText(overlayUrl);
-    setMessage("Overlay URL copied.");
+    setMessage(t("overlay.states.copied"));
     setErrorMessage(null);
   }
 
@@ -282,10 +300,8 @@ export function OverlaySettingsPanel() {
   return (
     <Card id="overlay" className="dashboard-overlay__section">
       <CardHeader>
-        <CardTitle>Stream overlay</CardTitle>
-        <CardDescription>
-          Display your playlist on your stream using a browser source.
-        </CardDescription>
+        <CardTitle>{t("overlay.title")}</CardTitle>
+        <CardDescription>{t("overlay.description")}</CardDescription>
       </CardHeader>
       <CardContent className="grid gap-6">
         {message ? <Banner tone="success">{message}</Banner> : null}
@@ -298,7 +314,7 @@ export function OverlaySettingsPanel() {
           <div className="grid gap-6">
             <Card className="dashboard-overlay__section">
               <CardHeader>
-                <CardTitle>Overlay URL</CardTitle>
+                <CardTitle>{t("overlay.url.title")}</CardTitle>
               </CardHeader>
               <CardContent className="grid gap-4">
                 <Input value={overlayUrl} readOnly />
@@ -309,12 +325,12 @@ export function OverlaySettingsPanel() {
                     disabled={!overlayUrl}
                   >
                     <Copy className="h-4 w-4" />
-                    Copy URL
+                    {t("overlay.url.copy")}
                   </Button>
                   {overlayUrl ? (
                     <Button asChild variant="outline">
                       <a href={overlayUrl} target="_blank" rel="noreferrer">
-                        Open overlay
+                        {t("overlay.url.open")}
                       </a>
                     </Button>
                   ) : null}
@@ -324,21 +340,21 @@ export function OverlaySettingsPanel() {
 
             <Card className="dashboard-overlay__section">
               <CardHeader>
-                <CardTitle>Layout and behavior</CardTitle>
+                <CardTitle>{t("overlay.layout.title")}</CardTitle>
               </CardHeader>
               <CardContent className="overflow-hidden border border-(--border) p-0">
                 <ToggleRow
-                  label="Show creator"
+                  label={t("overlay.layout.showCreator")}
                   checked={form.overlayShowCreator}
                   onChange={(value) => setBoolean("overlayShowCreator", value)}
                 />
                 <ToggleRow
-                  label="Show album"
+                  label={t("overlay.layout.showAlbum")}
                   checked={form.overlayShowAlbum}
                   onChange={(value) => setBoolean("overlayShowAlbum", value)}
                 />
                 <ToggleRow
-                  label="Animate now playing"
+                  label={t("overlay.layout.animateNowPlaying")}
                   checked={form.overlayAnimateNowPlaying}
                   onChange={(value) =>
                     setBoolean("overlayAnimateNowPlaying", value)
@@ -349,44 +365,44 @@ export function OverlaySettingsPanel() {
 
             <Card className="dashboard-overlay__section">
               <CardHeader>
-                <CardTitle>Theme</CardTitle>
+                <CardTitle>{t("overlay.theme.title")}</CardTitle>
               </CardHeader>
               <CardContent className="overflow-hidden border border-(--border) p-0">
                 <ColorField
-                  label="Accent"
+                  label={t("overlay.theme.accent")}
                   value={form.overlayAccentColor}
                   onChange={(value) => setColor("overlayAccentColor", value)}
                 />
                 <ColorField
-                  label="VIP badge"
+                  label={t("overlay.theme.vipBadge")}
                   value={form.overlayVipColor}
                   onChange={(value) => setColor("overlayVipColor", value)}
                 />
                 <ColorField
-                  label="Text"
+                  label={t("overlay.theme.text")}
                   value={form.overlayTextColor}
                   onChange={(value) => setColor("overlayTextColor", value)}
                 />
                 <ColorField
-                  label="Muted text"
+                  label={t("overlay.theme.mutedText")}
                   value={form.overlayMutedTextColor}
                   onChange={(value) => setColor("overlayMutedTextColor", value)}
                 />
                 <ColorField
-                  label="Request item background"
+                  label={t("overlay.theme.requestBackground")}
                   value={form.overlayPanelColor}
                   onChange={(value) => setColor("overlayPanelColor", value)}
                 />
                 <ColorField
-                  label="Background color"
-                  description="For a transparent background, set background opacity to 0."
+                  label={t("overlay.theme.backgroundColor")}
+                  description={t("overlay.theme.backgroundColorHelp")}
                   value={form.overlayBackgroundColor}
                   onChange={(value) =>
                     setColor("overlayBackgroundColor", value)
                   }
                 />
                 <ColorField
-                  label="Border"
+                  label={t("overlay.theme.border")}
                   value={form.overlayBorderColor}
                   onChange={(value) => setColor("overlayBorderColor", value)}
                 />
@@ -395,12 +411,12 @@ export function OverlaySettingsPanel() {
 
             <Card className="dashboard-overlay__section">
               <CardHeader>
-                <CardTitle>Density and sizing</CardTitle>
+                <CardTitle>{t("overlay.sizing.title")}</CardTitle>
               </CardHeader>
               <CardContent className="overflow-hidden border border-(--border) p-0">
                 <RangeField
-                  label="Overlay background opacity"
-                  description="Set this to 0 for a fully transparent background behind the playlist items."
+                  label={t("overlay.sizing.backgroundOpacity")}
+                  description={t("overlay.sizing.backgroundOpacityHelp")}
                   min={0}
                   max={100}
                   value={form.overlayBackgroundOpacity}
@@ -409,35 +425,35 @@ export function OverlaySettingsPanel() {
                   }
                 />
                 <RangeField
-                  label="Corner radius"
+                  label={t("overlay.sizing.cornerRadius")}
                   min={0}
                   max={40}
                   value={form.overlayCornerRadius}
                   onChange={(value) => setNumber("overlayCornerRadius", value)}
                 />
                 <RangeField
-                  label="Item gap"
+                  label={t("overlay.sizing.itemGap")}
                   min={0}
                   max={32}
                   value={form.overlayItemGap}
                   onChange={(value) => setNumber("overlayItemGap", value)}
                 />
                 <RangeField
-                  label="Item padding"
+                  label={t("overlay.sizing.itemPadding")}
                   min={8}
                   max={32}
                   value={form.overlayItemPadding}
                   onChange={(value) => setNumber("overlayItemPadding", value)}
                 />
                 <RangeField
-                  label="Title font size"
+                  label={t("overlay.sizing.titleFontSize")}
                   min={16}
                   max={48}
                   value={form.overlayTitleFontSize}
                   onChange={(value) => setNumber("overlayTitleFontSize", value)}
                 />
                 <RangeField
-                  label="Meta font size"
+                  label={t("overlay.sizing.metaFontSize")}
                   min={10}
                   max={24}
                   value={form.overlayMetaFontSize}
@@ -451,7 +467,7 @@ export function OverlaySettingsPanel() {
                 variant="outline"
                 onClick={() => setShowRestoreDialog(true)}
               >
-                Restore defaults
+                {t("overlay.actions.restoreDefaults")}
               </Button>
             </div>
           </div>
@@ -460,13 +476,15 @@ export function OverlaySettingsPanel() {
             <Card className="dashboard-overlay__section overflow-hidden">
               <CardHeader className="gap-4">
                 <div className="flex flex-wrap items-center justify-between gap-3">
-                  <CardTitle>Preview</CardTitle>
+                  <CardTitle>{t("overlay.preview.title")}</CardTitle>
                   <Button
                     variant={hasUnsavedChanges ? "default" : "outline"}
                     onClick={() => saveMutation.mutate()}
                     disabled={saveMutation.isPending || !hasUnsavedChanges}
                   >
-                    {saveMutation.isPending ? "Saving..." : "Save changes"}
+                    {saveMutation.isPending
+                      ? t("overlay.actions.saving")
+                      : t("overlay.actions.saveChanges")}
                   </Button>
                   <div className="inline-flex border border-(--border) bg-(--panel-soft) p-1">
                     <button
@@ -481,7 +499,7 @@ export function OverlaySettingsPanel() {
                         setPreviewModeTouched(true);
                       }}
                     >
-                      Live
+                      {t("overlay.preview.live")}
                     </button>
                     <button
                       type="button"
@@ -495,7 +513,7 @@ export function OverlaySettingsPanel() {
                         setPreviewModeTouched(true);
                       }}
                     >
-                      Sample
+                      {t("overlay.preview.sample")}
                     </button>
                   </div>
                 </div>
@@ -513,7 +531,9 @@ export function OverlaySettingsPanel() {
                   <div className="overflow-hidden">
                     <StreamOverlay
                       preview
-                      channelName={`${channelName}'s Playlist`}
+                      channelName={t("overlay.preview.channelTitle", {
+                        channel: channelName,
+                      })}
                       items={previewItems}
                       theme={previewTheme}
                     />
@@ -529,21 +549,20 @@ export function OverlaySettingsPanel() {
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4">
           <div className="w-full max-w-md border border-(--border-strong) bg-(--panel-strong) p-6 shadow-(--shadow)">
             <h2 className="text-2xl font-semibold text-(--text)">
-              Restore defaults?
+              {t("overlay.restoreDialog.title")}
             </h2>
             <p className="mt-3 text-sm leading-7 text-(--muted)">
-              This resets the overlay editor to the default theme. Unsaved
-              changes will be lost.
+              {t("overlay.restoreDialog.description")}
             </p>
             <div className="mt-6 flex justify-end gap-3">
               <Button
                 variant="outline"
                 onClick={() => setShowRestoreDialog(false)}
               >
-                Cancel
+                {t("overlay.actions.cancel")}
               </Button>
               <Button variant="default" onClick={restoreDefaults}>
-                Restore defaults
+                {t("overlay.restoreDialog.confirm")}
               </Button>
             </div>
           </div>
@@ -620,13 +639,15 @@ function RangeField(props: {
   value: number;
   onChange: (value: number) => void;
 }) {
+  const { t } = useLocaleTranslation("dashboard");
+
   return (
     <div className="grid gap-2 px-4 py-3 odd:bg-(--panel-soft) even:bg-(--panel-muted)">
       <div className="flex items-center justify-between gap-3">
         <p className="text-sm font-medium text-(--text)">{props.label}</p>
         <div className="flex items-center justify-between gap-3">
           <span className="text-xs font-semibold uppercase tracking-[0.16em] text-(--muted)">
-            Value
+            {t("overlay.sizing.value")}
           </span>
           <span className="text-sm text-(--text)">{props.value}</span>
         </div>

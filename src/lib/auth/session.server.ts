@@ -1,4 +1,5 @@
 import type { AppEnv } from "~/lib/env";
+import { localeCookieMaxAgeSeconds, localeCookieName } from "~/lib/i18n/config";
 import { createId, sha256 } from "~/lib/utils";
 
 const sessionCookieName = "rb_session";
@@ -64,6 +65,18 @@ export function buildSessionCookie(sessionId: string, env: AppEnv) {
 
 export function clearSessionCookie(env: AppEnv) {
   return `${sessionCookieName}=; Path=/; HttpOnly; SameSite=Lax;${secureFlag(env)} Max-Age=0`;
+}
+
+export function getLocaleCookie(request: Request) {
+  return parseCookie(request, localeCookieName);
+}
+
+export function buildLocaleCookie(locale: string, env: AppEnv) {
+  return `${localeCookieName}=${encodeURIComponent(locale)}; Path=/; SameSite=Lax;${secureFlag(env)} Max-Age=${localeCookieMaxAgeSeconds}`;
+}
+
+export function clearLocaleCookie(env: AppEnv) {
+  return `${localeCookieName}=; Path=/; SameSite=Lax;${secureFlag(env)} Max-Age=0`;
 }
 
 export async function createOauthStateCookie(env: AppEnv) {

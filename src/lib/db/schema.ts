@@ -16,6 +16,7 @@ export const users = sqliteTable("users", {
   login: text("login").notNull(),
   displayName: text("display_name").notNull(),
   profileImageUrl: text("profile_image_url"),
+  preferredLocale: text("preferred_locale"),
   isAdmin: integer("is_admin", { mode: "boolean" }).notNull().default(false),
   createdAt: integer("created_at").notNull().default(sql`(unixepoch() * 1000)`),
   updatedAt: integer("updated_at").notNull().default(sql`(unixepoch() * 1000)`),

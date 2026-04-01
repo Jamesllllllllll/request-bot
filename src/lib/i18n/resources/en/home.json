@@ -1,0 +1,45 @@
+{
+  "meta": {
+    "title": "Home"
+  },
+  "hero": {
+    "eyebrow": "Playlist management for Rocksmith streamers",
+    "title": "Search songs or manage your channel."
+  },
+  "actions": {
+    "findSong": "Find a song to request",
+    "searchSongs": "Search songs",
+    "manageChannel": "Manage your channel",
+    "openSettings": "Open settings"
+  },
+  "about": {
+    "eyebrow": "What is RockList.Live?",
+    "body": "RockList.Live helps Rocksmith streamers take requests, manage the playlist, and keep the show moving."
+  },
+  "features": {
+    "surfaceRequestsTitle": "Requests from every surface",
+    "surfaceRequestsBody": "Viewers add songs on the playlist page, in chat, or from the Twitch panel.",
+    "moderationTitle": "Moderator support",
+    "moderationBody": "Moderators manage requests and handle VIP bumps while the stream is live.",
+    "queueTitle": "Keep the queue moving",
+    "queueBody": "Edit, sort, and track requests without losing the next song.",
+    "rulesTitle": "Set the rules",
+    "rulesBody": "Control blacklists, setlists, moderation, and request settings for your channel."
+  },
+  "live": {
+    "eyebrow": "Live now",
+    "title": "Current streamers",
+    "showLive": "Show live",
+    "showDemo": "Show demo",
+    "demoOnly": "The streamers shown here are for demo purposes only.",
+    "activeCount": "{count} active",
+    "empty": "No streamers are live with the bot active yet.",
+    "previewAlt": "{displayName} live stream preview",
+    "status": "Live",
+    "nowPlaying": "Now playing",
+    "upNext": "Up next",
+    "nextRequest": "Next request",
+    "openPlaylist": "Open playlist",
+    "watchOnTwitch": "Watch on Twitch"
+  }
+}

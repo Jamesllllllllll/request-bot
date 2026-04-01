@@ -12,7 +12,9 @@ import {
 import { useEffect, useState } from "react";
 import { Button } from "~/components/ui/button";
 import { Skeleton } from "~/components/ui/skeleton";
-import { pageTitle } from "~/lib/page-title";
+import { useLocaleTranslation } from "~/lib/i18n/client";
+import { getLocalizedPageTitle } from "~/lib/i18n/metadata";
+import { viewerSessionQueryOptions } from "~/lib/viewer-session-query";
 
 type HomeLiveChannel = {
   id: string;
@@ -46,13 +48,21 @@ type HomeLiveChannelsCache = {
 };
 
 export const Route = createFileRoute("/")({
-  head: () => ({
-    meta: [{ title: pageTitle("Home") }],
+  head: async () => ({
+    meta: [
+      {
+        title: await getLocalizedPageTitle({
+          namespace: "home",
+          key: "meta.title",
+        }),
+      },
+    ],
   }),
   component: HomePage,
 });
 
 function HomePage() {
+  const { t } = useLocaleTranslation(["common", "home"]);
   const [showDemoChannels, setShowDemoChannels] = useState(import.meta.env.DEV);
   const [cachedLiveChannels] = useState(() => readHomeLiveChannelsCache());
   const { data: sessionData } = useQuery({
@@ -81,6 +91,7 @@ function HomePage() {
         };
       }>;
     },
+    ...viewerSessionQueryOptions,
   });
   const liveChannelsQuery = useQuery({
     queryKey: ["home-live-channels"],
@@ -129,9 +140,11 @@ function HomePage() {
   const isDisplayedChannelsLoading = showDemoChannels
     ? demoChannelsQuery.isLoading
     : liveChannelsQuery.isLoading;
-  const toggleLabel = showDemoChannels ? "Show Live" : "Show Demo";
+  const toggleLabel = showDemoChannels
+    ? t("live.showLive", { ns: "home" })
+    : t("live.showDemo", { ns: "home" });
   const sourceLabel = showDemoChannels
-    ? "The streamers shown here are for demo purposes only."
+    ? t("live.demoOnly", { ns: "home" })
     : null;
   const [featuredChannel, ...secondaryChannels] = displayedChannels;
 
@@ -139,36 +152,47 @@ function HomePage() {
     <section className="page-section-stack grid gap-6 pb-6 [container-type:inline-size] xl:grid-cols-[0.72fr_1.28fr]">
       <div className="surface-grid surface-noise border border-(--border-strong) bg-(--panel) p-6 shadow-none md:p-8 max-[720px]:border-x-0 max-[720px]:border-t-0 max-[720px]:bg-transparent max-[720px]:px-0 max-[720px]:pb-4 max-[720px]:pt-0 max-[720px]:shadow-none max-[720px]:[background-image:none]">
         <p className="text-xs font-semibold uppercase tracking-[0.34em] text-(--brand-deep)">
-          Playlist Managment for Rocksmith Streamers
+          {t("hero.eyebrow", { ns: "home" })}
         </p>
         <h1 className="mt-4 max-w-3xl text-5xl font-semibold tracking-[-0.04em] text-(--text) md:text-6xl max-[960px]:text-[clamp(2.5rem,6.8vw,4.4rem)] max-[720px]:text-[clamp(2.2rem,9vw,3.1rem)]">
-          Search songs or manage your channel.
+          {t("hero.title", { ns: "home" })}
         </h1>
 
         <div className="mt-8 grid gap-4 md:grid-cols-2 xl:grid-cols-1">
           <FeatureBlock
             icon={Search}
-            title="Find a song to request"
+            title={t("actions.findSong", { ns: "home" })}
             action={
-              <Button asChild size="lg">
-                <Link to="/search" className="no-underline">
-                  Search songs
+              <Button
+                asChild
+                size="lg"
+                className="flex h-auto min-h-12 w-full whitespace-normal px-4 py-3 text-center leading-5"
+              >
+                <Link to="/search" className="w-full no-underline">
+                  {t("actions.searchSongs", { ns: "home" })}
                 </Link>
               </Button>
             }
           />
           <FeatureBlock
             icon={Settings2}
-            title="Manage your channel"
+            title={t("actions.manageChannel", { ns: "home" })}
             action={
-              <Button asChild size="lg">
+              <Button
+                asChild
+                size="lg"
+                className="flex h-auto min-h-12 w-full whitespace-normal px-4 py-3 text-center leading-5"
+              >
                 {defaultManageableChannel ? (
-                  <Link to="/dashboard/settings" className="no-underline">
-                    Open settings
+                  <Link
+                    to="/dashboard/settings"
+                    className="w-full no-underline"
+                  >
+                    {t("actions.openSettings", { ns: "home" })}
                   </Link>
                 ) : (
-                  <a href="/auth/twitch/start" className="no-underline">
-                    Sign in with Twitch
+                  <a href="/auth/twitch/start" className="w-full no-underline">
+                    {t("auth.signIn", { ns: "common" })}
                   </a>
                 )}
               </Button>
@@ -179,33 +203,32 @@ function HomePage() {
         <div className="mt-8 grid gap-4 border-t border-(--border) pt-6">
           <div>
             <p className="text-xs font-semibold uppercase tracking-[0.24em] text-(--brand-deep)">
-              What Is RockList.Live?
+              {t("about.eyebrow", { ns: "home" })}
             </p>
             <p className="mt-3 text-lg leading-8 text-(--text)">
-              RockList.Live helps Rocksmith streamers take requests, manage the
-              playlist, and keep the show moving.
+              {t("about.body", { ns: "home" })}
             </p>
           </div>
           <div className="overflow-hidden border border-(--border)">
             <FeatureListRow
               icon={Search}
-              title="Requests from every surface"
-              description="Viewers add songs on the playlist page, in chat, or from the Twitch panel."
+              title={t("features.surfaceRequestsTitle", { ns: "home" })}
+              description={t("features.surfaceRequestsBody", { ns: "home" })}
             />
             <FeatureListRow
               icon={Radio}
-              title="Moderator support"
-              description="Moderators manage requests and handle VIP bumps while the stream is live."
+              title={t("features.moderationTitle", { ns: "home" })}
+              description={t("features.moderationBody", { ns: "home" })}
             />
             <FeatureListRow
               icon={ListMusic}
-              title="Keep the queue moving"
-              description="Edit, sort, and track requests without losing the next song."
+              title={t("features.queueTitle", { ns: "home" })}
+              description={t("features.queueBody", { ns: "home" })}
             />
             <FeatureListRow
               icon={Settings2}
-              title="Set the rules"
-              description="Control blacklists, setlists, moderation, and request settings for your channel."
+              title={t("features.rulesTitle", { ns: "home" })}
+              description={t("features.rulesBody", { ns: "home" })}
             />
           </div>
         </div>
@@ -216,10 +239,10 @@ function HomePage() {
           <div className="flex items-start justify-between gap-4">
             <div>
               <p className="text-xs font-semibold uppercase tracking-[0.24em] text-(--brand-deep)">
-                Live now
+                {t("live.eyebrow", { ns: "home" })}
               </p>
               <h2 className="mt-3 text-4xl font-semibold text-(--text)">
-                Current streamers
+                {t("live.title", { ns: "home" })}
               </h2>
             </div>
             <div className="grid justify-items-end gap-2 text-right">
@@ -237,7 +260,10 @@ function HomePage() {
                   <Skeleton className="h-7 w-24 border border-(--border) bg-(--panel-soft)" />
                 ) : (
                   <div className="border border-(--border) bg-(--panel-soft) px-3 py-1 text-xs uppercase tracking-[0.22em] text-(--muted)">
-                    {displayedChannels.length} active
+                    {t("live.activeCount", {
+                      ns: "home",
+                      count: displayedChannels.length,
+                    })}
                   </div>
                 )}
               </div>
@@ -268,7 +294,7 @@ function HomePage() {
               </>
             ) : (
               <div className="border border-dashed border-(--border) bg-(--panel-soft) px-4 py-5 text-sm leading-7 text-(--muted)">
-                No streamers are live with the bot active yet.
+                {t("live.empty", { ns: "home" })}
               </div>
             )}
           </div>
@@ -279,6 +305,7 @@ function HomePage() {
 }
 
 function FeaturedLiveChannelCard(props: { channel: HomeLiveChannel }) {
+  const { t } = useLocaleTranslation("home");
   const { channel } = props;
   const playlistHref =
     channel.playlistHref === undefined
@@ -291,7 +318,7 @@ function FeaturedLiveChannelCard(props: { channel: HomeLiveChannel }) {
         <div className="border-b border-(--border)">
           <img
             src={channel.streamThumbnailUrl}
-            alt={`${channel.displayName} live stream preview`}
+            alt={t("live.previewAlt", { displayName: channel.displayName })}
             className="block aspect-video max-h-[420px] w-full object-cover"
             loading="eager"
             fetchPriority="high"
@@ -313,7 +340,7 @@ function FeaturedLiveChannelCard(props: { channel: HomeLiveChannel }) {
           </div>
           <div className="mt-1 inline-flex items-center gap-2 border border-emerald-500/30 bg-emerald-500/10 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.2em] text-emerald-200">
             <Radio className="h-3.5 w-3.5" />
-            Live
+            {t("live.status")}
           </div>
         </div>
         {channel.currentItem || channel.nextItem ? (
@@ -321,7 +348,7 @@ function FeaturedLiveChannelCard(props: { channel: HomeLiveChannel }) {
             {channel.currentItem ? (
               <QueueSnippet
                 icon={Radio}
-                label="Now playing"
+                label={t("live.nowPlaying")}
                 title={channel.currentItem.title}
                 artist={channel.currentItem.artist}
               />
@@ -329,7 +356,9 @@ function FeaturedLiveChannelCard(props: { channel: HomeLiveChannel }) {
             {channel.nextItem ? (
               <QueueSnippet
                 icon={ListMusic}
-                label={channel.currentItem ? "Up next" : "Next request"}
+                label={t(
+                  channel.currentItem ? "live.upNext" : "live.nextRequest"
+                )}
                 title={channel.nextItem.title}
                 artist={channel.nextItem.artist}
               />
@@ -338,18 +367,30 @@ function FeaturedLiveChannelCard(props: { channel: HomeLiveChannel }) {
         ) : null}
         <div className="mt-6 flex flex-wrap gap-4">
           {playlistHref ? (
-            <Button asChild variant="default" size="sm">
-              <a
-                href={playlistHref}
-                {...(channel.playlistExternal
-                  ? { target: "_blank", rel: "noreferrer" }
-                  : {})}
-                className="no-underline"
-              >
-                Open playlist
-                <ArrowRight className="h-4 w-4" />
-              </a>
-            </Button>
+            channel.playlistExternal ? (
+              <Button asChild variant="default" size="sm">
+                <a
+                  href={playlistHref}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="no-underline"
+                >
+                  {t("live.openPlaylist")}
+                  <ArrowRight className="h-4 w-4" />
+                </a>
+              </Button>
+            ) : (
+              <Button asChild variant="default" size="sm">
+                <Link
+                  to="/$slug"
+                  params={{ slug: channel.slug }}
+                  className="no-underline"
+                >
+                  {t("live.openPlaylist")}
+                  <ArrowRight className="h-4 w-4" />
+                </Link>
+              </Button>
+            )
           ) : null}
           <Button asChild variant="outline" size="sm">
             <a
@@ -358,7 +399,7 @@ function FeaturedLiveChannelCard(props: { channel: HomeLiveChannel }) {
               rel="noreferrer"
               className="no-underline"
             >
-              Watch on Twitch
+              {t("live.watchOnTwitch")}
               <ExternalLink className="h-4 w-4" />
             </a>
           </Button>
@@ -369,6 +410,7 @@ function FeaturedLiveChannelCard(props: { channel: HomeLiveChannel }) {
 }
 
 function CompactLiveChannelCard(props: { channel: HomeLiveChannel }) {
+  const { t } = useLocaleTranslation("home");
   const { channel } = props;
   const playlistHref =
     channel.playlistHref === undefined
@@ -384,7 +426,7 @@ function CompactLiveChannelCard(props: { channel: HomeLiveChannel }) {
               .replace("640x360", "480x270")
               .replace("{width}", "480")
               .replace("{height}", "270")}
-            alt={`${channel.displayName} live stream preview`}
+            alt={t("live.previewAlt", { displayName: channel.displayName })}
             className="block aspect-video w-full object-cover"
             loading="lazy"
             decoding="async"
@@ -408,7 +450,9 @@ function CompactLiveChannelCard(props: { channel: HomeLiveChannel }) {
         <div className="mt-5 grid gap-2 border border-(--border) bg-(--panel) p-4">
           <QueueSnippet
             icon={channel.currentItem ? Radio : ListMusic}
-            label={channel.currentItem ? "Now playing" : "Next request"}
+            label={t(
+              channel.currentItem ? "live.nowPlaying" : "live.nextRequest"
+            )}
             title={channel.currentItem?.title ?? channel.nextItem?.title ?? ""}
             artist={channel.currentItem?.artist ?? channel.nextItem?.artist}
           />
@@ -416,18 +460,30 @@ function CompactLiveChannelCard(props: { channel: HomeLiveChannel }) {
       ) : null}
       <div className="mt-5 flex flex-wrap gap-4">
         {playlistHref ? (
-          <Button asChild variant="default" size="sm">
-            <a
-              href={playlistHref}
-              {...(channel.playlistExternal
-                ? { target: "_blank", rel: "noreferrer" }
-                : {})}
-              className="no-underline"
-            >
-              Open playlist
-              <ArrowRight className="h-4 w-4" />
-            </a>
-          </Button>
+          channel.playlistExternal ? (
+            <Button asChild variant="default" size="sm">
+              <a
+                href={playlistHref}
+                target="_blank"
+                rel="noreferrer"
+                className="no-underline"
+              >
+                {t("live.openPlaylist")}
+                <ArrowRight className="h-4 w-4" />
+              </a>
+            </Button>
+          ) : (
+            <Button asChild variant="default" size="sm">
+              <Link
+                to="/$slug"
+                params={{ slug: channel.slug }}
+                className="no-underline"
+              >
+                {t("live.openPlaylist")}
+                <ArrowRight className="h-4 w-4" />
+              </Link>
+            </Button>
+          )
         ) : null}
         <Button asChild variant="outline" size="sm">
           <a
@@ -436,7 +492,7 @@ function CompactLiveChannelCard(props: { channel: HomeLiveChannel }) {
             rel="noreferrer"
             className="no-underline"
           >
-            Watch on Twitch
+            {t("live.watchOnTwitch")}
             <ExternalLink className="h-4 w-4" />
           </a>
         </Button>
@@ -552,14 +608,16 @@ function FeatureBlock(props: {
 
   return (
     <div className="border border-(--border) bg-(--panel-soft) p-4">
-      <div className="flex items-center justify-between gap-3">
+      <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)] items-center gap-4">
         <div className="flex min-w-0 items-center gap-3">
           <div className="flex h-10 w-10 shrink-0 items-center justify-center border border-(--border) bg-(--panel-muted) text-(--brand)">
             <Icon className="h-[18px] w-[18px]" />
           </div>
-          <p className="text-base font-semibold text-(--text)">{props.title}</p>
+          <p className="text-base font-semibold leading-6 text-(--text)">
+            {props.title}
+          </p>
         </div>
-        {props.action}
+        <div className="min-w-0">{props.action}</div>
       </div>
     </div>
   );

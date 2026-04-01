@@ -1,0 +1,126 @@
+{
+  "page": {
+    "title": "Admin",
+    "description": "Manage shared bot access and offline testing controls.",
+    "noAccess": "You do not have access to the admin dashboard.",
+    "authNotice": "Complete Twitch auth as",
+    "botAccount": "Bot account",
+    "botMismatch": "Connected as {connected}. Expected {expected}. Reconnect to switch accounts."
+  },
+  "states": {
+    "offlineTestingFailed": "Offline testing setting could not be updated.",
+    "botUpdateFailed": "Bot account could not be updated.",
+    "updated": "Updated."
+  },
+  "status": {
+    "connected": "Connected",
+    "needsAuth": "Needs auth",
+    "enabled": "Enabled",
+    "disabled": "Disabled"
+  },
+  "actions": {
+    "connectBot": "Connect {username}",
+    "reconnectBot": "Reconnect bot",
+    "reconnecting": "Reconnecting...",
+    "enable": "Enable",
+    "enabling": "Enabling...",
+    "disable": "Disable",
+    "disabling": "Disabling..."
+  },
+  "metrics": {
+    "requestIssues": {
+      "label": "Request issues total",
+      "description": "Blocked, rejected, and error results across all request logs."
+    },
+    "auditRows": {
+      "label": "Audit rows total",
+      "description": "Recorded admin and channel-management actions."
+    }
+  },
+  "offlineTesting": {
+    "title": "Offline bot testing"
+  },
+  "prototype": {
+    "title": "Playlist row prototype",
+    "description": "Preview of a more condensed playlist item with always-visible song versions.",
+    "cardTitle": "Condensed multi-version playlist item",
+    "cardDescription": "This preview uses the same playlist-item component as the live playlist page, with a demo song that has two versions."
+  },
+  "logs": {
+    "title": "Request logs",
+    "description": "Newest request attempts across chat and viewer request flows. Each row shows the request, who sent it, the result, and any recorded match or reason.",
+    "loading": "Loading request logs...",
+    "empty": "No request logs yet."
+  },
+  "audits": {
+    "title": "Audit records",
+    "description": "Newest admin and channel-management actions recorded for this channel. Each row shows what changed, who triggered it, and the key saved values.",
+    "loading": "Loading audit records...",
+    "empty": "No audit records yet."
+  },
+  "pagination": {
+    "show": "Show",
+    "previous": "Previous",
+    "next": "Next",
+    "updating": "Updating...",
+    "showingEmpty": "Showing 0 results",
+    "showingRange": "Showing {start}-{end} of {total}"
+  },
+  "table": {
+    "loading": "Loading...",
+    "unknownTime": "Unknown time",
+    "noExtraValues": "No extra values were recorded.",
+    "none": "None",
+    "yes": "Yes",
+    "no": "No"
+  },
+  "requestLog": {
+    "columns": {
+      "time": "Time",
+      "request": "Request",
+      "requester": "Requester",
+      "result": "Result",
+      "details": "Details"
+    },
+    "query": "Query: {query}",
+    "unknownUser": "Unknown user",
+    "matched": "Matched: {title}{artist}",
+    "reason": "Reason: {reason}",
+    "noMatchOrReason": "No match or reason was recorded."
+  },
+  "auditLog": {
+    "columns": {
+      "time": "Time",
+      "action": "Action",
+      "entity": "Entity",
+      "actor": "Actor",
+      "details": "Details"
+    }
+  },
+  "labels": {
+    "accepted": "Accepted",
+    "blocked": "Blocked",
+    "error": "Error",
+    "system": "System",
+    "auto_grant_vip_tokens_cheer": "Auto-grant VIP tokens: cheer",
+    "auto_grant_vip_tokens_gift_recipient": "Auto-grant VIP tokens: gifted sub recipient",
+    "auto_grant_vip_tokens_new_subscriber": "Auto-grant VIP tokens: new paid sub",
+    "auto_grant_vip_tokens_raid": "Auto-grant VIP tokens: raid",
+    "auto_grant_vip_tokens_shared_sub_renewal_message": "Auto-grant VIP tokens: shared sub renewal message",
+    "auto_grant_vip_tokens_streamelements_tip": "Auto-grant VIP tokens: StreamElements tip",
+    "auto_grant_vip_tokens_sub_gifter": "Auto-grant VIP tokens: gifted sub gifter",
+    "grantedTokenCount": "Tokens granted",
+    "minimumRaidViewerCount": "Minimum raid size",
+    "totalGiftedSubs": "Gifted subs",
+    "twitchMessageId": "EventSub message ID",
+    "vip_token": "VIP token"
+  },
+  "auditSources": {
+    "channelCheer": "Cheer",
+    "channelRaid": "Raid",
+    "channelSubscribe": "Channel subscribe",
+    "channelSubscriptionGift": "Gifted sub",
+    "channelSubscriptionMessage": "Shared sub renewal message",
+    "streamElementsTip": "StreamElements tip"
+  }
+}

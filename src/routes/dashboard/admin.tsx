@@ -8,7 +8,7 @@ import {
   useReactTable,
 } from "@tanstack/react-table";
 import { ScrollText, ShieldAlert } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { DashboardPageHeader } from "~/components/dashboard-page-header";
 import { PlaylistQueueItemPreview } from "~/components/playlist-management-surface";
 import { Button } from "~/components/ui/button";
@@ -20,7 +20,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from "~/components/ui/select";
-import { pageTitle } from "~/lib/page-title";
+import { useAppLocale, useLocaleTranslation } from "~/lib/i18n/client";
+import { getLocalizedPageTitle } from "~/lib/i18n/metadata";
 
 type RequestLogRow = {
   id: string;
@@ -114,13 +115,22 @@ async function fetchAuditLogsPage(offset: number, limit: number) {
 }
 
 export const Route = createFileRoute("/dashboard/admin")({
-  head: () => ({
-    meta: [{ title: pageTitle("Admin") }],
+  head: async () => ({
+    meta: [
+      {
+        title: await getLocalizedPageTitle({
+          namespace: "admin",
+          key: "page.title",
+        }),
+      },
+    ],
   }),
   component: DashboardAdminPage,
 });
 
 function DashboardAdminPage() {
+  const { t } = useLocaleTranslation("admin");
+  const { locale } = useAppLocale();
   const queryClient = useQueryClient();
   const [togglingOfflineTesting, setTogglingOfflineTesting] = useState(false);
   const [updatingBotAuth, setUpdatingBotAuth] = useState(false);
@@ -250,14 +260,12 @@ function DashboardAdminPage() {
         warning?: string | null;
       } | null;
       if (!response.ok) {
-        throw new Error(
-          payload?.message ?? "Offline testing setting could not be updated."
-        );
+        throw new Error(payload?.message ?? t("states.offlineTestingFailed"));
       }
       setActionMessage(
         payload?.warning
-          ? `${payload.message ?? "Updated."} ${payload.warning}`
-          : (payload?.message ?? "Updated.")
+          ? `${payload.message ?? t("states.updated")} ${payload.warning}`
+          : (payload?.message ?? t("states.updated"))
       );
       await Promise.all([
         refetch(),
@@ -269,7 +277,7 @@ function DashboardAdminPage() {
       setActionError(
         error instanceof Error
           ? error.message
-          : "Offline testing setting could not be updated."
+          : t("states.offlineTestingFailed")
       );
     } finally {
       setTogglingOfflineTesting(false);
@@ -291,7 +299,7 @@ function DashboardAdminPage() {
     } | null;
 
     if (!response.ok) {
-      throw new Error(payload?.message ?? "Bot account could not be updated.");
+      throw new Error(payload?.message ?? t("states.botUpdateFailed"));
     }
 
     return payload;
@@ -311,9 +319,7 @@ function DashboardAdminPage() {
       window.location.href = "/auth/twitch/bot/start";
     } catch (error) {
       setActionError(
-        error instanceof Error
-          ? error.message
-          : "Bot account could not be updated."
+        error instanceof Error ? error.message : t("states.botUpdateFailed")
       );
       setUpdatingBotAuth(false);
     }
@@ -322,9 +328,9 @@ function DashboardAdminPage() {
   if (data?.error) {
     return (
       <div className="grid gap-6">
-        <DashboardPageHeader title="Admin" />
+        <DashboardPageHeader title={t("page.title")} />
         <div className="border border-(--border) bg-(--panel) p-5 text-sm text-(--muted)">
-          You do not have access to the admin dashboard.
+          {t("page.noAccess")}
         </div>
       </div>
     );
@@ -347,30 +353,40 @@ function DashboardAdminPage() {
   const logsRangeLabel = getAdminRangeLabel(
     logsQuery.data?.total ?? 0,
     logsQuery.data?.offset ?? logsOffset,
-    logs.length
+    logs.length,
+    t
   );
   const auditsRangeLabel = getAdminRangeLabel(
     auditsQuery.data?.total ?? 0,
     auditsQuery.data?.offset ?? auditsOffset,
-    audits.length
+    audits.length,
+    t
   );
   const showPlaylistPrototype = import.meta.env.DEV;
+  const requestLogColumns = useMemo(
+    () => getRequestLogColumns(t, locale),
+    [locale, t]
+  );
+  const auditLogColumns = useMemo(
+    () => getAuditLogColumns(t, locale),
+    [locale, t]
+  );
 
   return (
     <div className="page-section-stack dashboard-admin grid gap-6">
       <DashboardPageHeader
-        title="Admin"
-        description="Manage shared bot access and offline testing controls."
+        title={t("page.title")}
+        description={t("page.description")}
         actions={
           !data?.bot?.connected ? (
             <>
               <div className="self-start border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-100">
-                Complete Twitch auth as{" "}
+                {t("page.authNotice")}{" "}
                 <span className="font-semibold">{configuredBotUsername}</span>
               </div>
               <Button asChild>
                 <a href="/auth/twitch/bot/start" className="no-underline">
-                  {`Connect ${configuredBotUsername}`}
+                  {t("actions.connectBot", { username: configuredBotUsername })}
                 </a>
               </Button>
             </>
@@ -381,7 +397,9 @@ function DashboardAdminPage() {
                 onClick={() => void reconnectBot()}
                 disabled={updatingBotAuth}
               >
-                {updatingBotAuth ? "Reconnecting..." : "Reconnect bot"}
+                {updatingBotAuth
+                  ? t("actions.reconnecting")
+                  : t("actions.reconnectBot")}
               </Button>
             </div>
           )
@@ -389,18 +407,21 @@ function DashboardAdminPage() {
         aside={
           <div className="grid w-full min-w-0 gap-3 md:max-w-sm">
             <AdminStatusCard
-              label="Bot account"
-              value={data?.bot?.connected ? "Connected" : "Needs auth"}
+              label={t("page.botAccount")}
+              value={
+                data?.bot?.connected
+                  ? t("status.connected")
+                  : t("status.needsAuth")
+              }
               detail={connectedBotLabel}
               tone={data?.bot?.connected ? "good" : "warn"}
             />
             {botUsernameMismatch ? (
               <div className="border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm break-words text-amber-100">
-                Connected as{" "}
-                <span className="font-semibold">{connectedBotLabel}</span>.
-                Expected{" "}
-                <span className="font-semibold">{configuredBotUsername}</span>.
-                Reconnect to switch accounts.
+                {t("page.botMismatch", {
+                  connected: connectedBotLabel,
+                  expected: configuredBotUsername,
+                })}
               </div>
             ) : null}
           </div>
@@ -422,19 +443,21 @@ function DashboardAdminPage() {
       <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
         <AdminMetric
           icon={ShieldAlert}
-          label="Request issues total"
+          label={t("metrics.requestIssues.label")}
           value={String(recentFailures)}
-          description="Blocked, rejected, and error results across all request logs."
+          description={t("metrics.requestIssues.description")}
         />
         <AdminMetric
           icon={ScrollText}
-          label="Audit rows total"
+          label={t("metrics.auditRows.label")}
           value={String(auditsQuery.data?.total ?? 0)}
-          description="Recorded admin and channel-management actions."
+          description={t("metrics.auditRows.description")}
         />
         <div className="border border-(--border) bg-(--panel) p-5 shadow-(--shadow-soft)">
           <div>
-            <p className="text-sm text-(--muted)">Offline bot testing</p>
+            <p className="text-sm text-(--muted)">
+              {t("offlineTesting.title")}
+            </p>
             <p
               className={`mt-2 text-xl font-semibold ${
                 data?.settings?.adminForceBotWhileOffline
@@ -443,8 +466,8 @@ function DashboardAdminPage() {
               }`}
             >
               {data?.settings?.adminForceBotWhileOffline
-                ? "Enabled"
-                : "Disabled"}
+                ? t("status.enabled")
+                : t("status.disabled")}
             </p>
           </div>
           <div className="dashboard-admin__offline-actions mt-4 flex flex-wrap gap-3">
@@ -458,8 +481,8 @@ function DashboardAdminPage() {
             >
               {togglingOfflineTesting &&
               !data?.settings?.adminForceBotWhileOffline
-                ? "Enabling..."
-                : "Enable"}
+                ? t("actions.enabling")
+                : t("actions.enable")}
             </Button>
             <Button
               type="button"
@@ -472,8 +495,8 @@ function DashboardAdminPage() {
             >
               {togglingOfflineTesting &&
               data?.settings?.adminForceBotWhileOffline
-                ? "Disabling..."
-                : "Disable"}
+                ? t("actions.disabling")
+                : t("actions.disable")}
             </Button>
           </div>
         </div>
@@ -483,11 +506,10 @@ function DashboardAdminPage() {
         <section className="grid gap-4">
           <div className="grid gap-1">
             <h2 className="text-2xl font-semibold text-(--text)">
-              Playlist row prototype
+              {t("prototype.title")}
             </h2>
             <p className="text-sm text-(--muted)">
-              Preview of a more condensed playlist item with always-visible song
-              versions.
+              {t("prototype.description")}
             </p>
           </div>
           <DevPlaylistPrototypeCard />
@@ -498,13 +520,9 @@ function DashboardAdminPage() {
         <div className="flex flex-wrap items-end justify-between gap-3">
           <div className="grid gap-1">
             <h2 className="text-2xl font-semibold text-(--text)">
-              Request logs
+              {t("logs.title")}
             </h2>
-            <p className="text-sm text-(--muted)">
-              Newest request attempts across chat and viewer request flows. Each
-              row shows the request, who sent it, the result, and any recorded
-              match or reason.
-            </p>
+            <p className="text-sm text-(--muted)">{t("logs.description")}</p>
           </div>
           <AdminPaginationControls
             total={logsQuery.data?.total ?? 0}
@@ -531,8 +549,8 @@ function DashboardAdminPage() {
           data={logs}
           columns={requestLogColumns}
           isLoading={logsQuery.isPending}
-          loadingMessage="Loading request logs..."
-          emptyMessage="No request logs yet."
+          loadingMessage={t("logs.loading")}
+          emptyMessage={t("logs.empty")}
         />
       </section>
 
@@ -540,13 +558,9 @@ function DashboardAdminPage() {
         <div className="flex flex-wrap items-end justify-between gap-3">
           <div className="grid gap-1">
             <h2 className="text-2xl font-semibold text-(--text)">
-              Audit records
+              {t("audits.title")}
             </h2>
-            <p className="text-sm text-(--muted)">
-              Newest admin and channel-management actions recorded for this
-              channel. Each row shows what changed, who triggered it, and the
-              key saved values.
-            </p>
+            <p className="text-sm text-(--muted)">{t("audits.description")}</p>
           </div>
           <AdminPaginationControls
             total={auditsQuery.data?.total ?? 0}
@@ -573,8 +587,8 @@ function DashboardAdminPage() {
           data={audits}
           columns={auditLogColumns}
           isLoading={auditsQuery.isPending}
-          loadingMessage="Loading audit records..."
-          emptyMessage="No audit records yet."
+          loadingMessage={t("audits.loading")}
+          emptyMessage={t("audits.empty")}
         />
       </section>
     </div>
@@ -634,13 +648,14 @@ function AdminMetric(props: {
 }
 
 function DevPlaylistPrototypeCard() {
+  const { t } = useLocaleTranslation("admin");
+
   return (
     <Card>
       <CardHeader className="grid gap-2">
-        <CardTitle>Condensed multi-version playlist item</CardTitle>
+        <CardTitle>{t("prototype.cardTitle")}</CardTitle>
         <p className="text-sm text-(--muted)">
-          This preview uses the same playlist-item component as the live
-          playlist page, with a demo song that has two versions.
+          {t("prototype.cardDescription")}
         </p>
       </CardHeader>
       <CardContent>
@@ -662,15 +677,17 @@ function AdminPaginationControls(props: {
   onPrevious: () => void;
   onNext: () => void;
 }) {
+  const { t } = useLocaleTranslation("admin");
+
   return (
     <div className="flex flex-wrap items-center justify-end gap-3">
       <p className="text-sm text-(--muted)">
         {props.rangeLabel}
-        {props.isFetching ? " Updating..." : ""}
+        {props.isFetching ? ` ${t("pagination.updating")}` : ""}
       </p>
       <div className="flex items-center gap-2">
         <span className="text-xs font-semibold uppercase tracking-[0.16em] text-(--muted)">
-          Show
+          {t("pagination.show")}
         </span>
         <Select
           value={String(props.limit)}
@@ -697,7 +714,7 @@ function AdminPaginationControls(props: {
           disabled={props.isFetching || !props.hasPrevious}
           onClick={props.onPrevious}
         >
-          Previous
+          {t("pagination.previous")}
         </Button>
         <Button
           type="button"
@@ -706,7 +723,7 @@ function AdminPaginationControls(props: {
           disabled={props.isFetching || !props.hasNext}
           onClick={props.onNext}
         >
-          Next
+          {t("pagination.next")}
         </Button>
       </div>
     </div>
@@ -720,6 +737,7 @@ function AdminTable<TData>(props: {
   loadingMessage?: string;
   emptyMessage: string;
 }) {
+  const { t } = useLocaleTranslation("admin");
   const table = useReactTable({
     data: props.data,
     columns: props.columns,
@@ -729,7 +747,7 @@ function AdminTable<TData>(props: {
   if (props.isLoading && props.data.length === 0) {
     return (
       <div className="border border-(--border) bg-(--panel-soft) px-5 py-4 text-sm text-(--muted)">
-        {props.loadingMessage ?? "Loading..."}
+        {props.loadingMessage ?? t("table.loading")}
       </div>
     );
   }
@@ -785,145 +803,161 @@ function AdminTable<TData>(props: {
   );
 }
 
-const requestLogColumns: ColumnDef<RequestLogRow>[] = [
-  {
-    header: "Time",
-    accessorKey: "createdAt",
-    cell: ({ row }) => (
-      <div className="min-w-[10rem] text-xs text-(--muted)">
-        {formatAdminTimestamp(row.original.createdAt)}
-      </div>
-    ),
-  },
-  {
-    header: "Request",
-    accessorKey: "rawMessage",
-    cell: ({ row }) => (
-      <div className="grid gap-1 min-w-[18rem]">
-        <p className="font-medium text-(--text)">{row.original.rawMessage}</p>
-        {row.original.normalizedQuery &&
-        row.original.normalizedQuery !== row.original.rawMessage ? (
-          <p className="text-xs text-(--muted)">
-            Query: {row.original.normalizedQuery}
-          </p>
-        ) : null}
-      </div>
-    ),
-  },
-  {
-    header: "Requester",
-    id: "requester",
-    cell: ({ row }) => {
-      const requesterLabel =
-        row.original.requesterDisplayName ??
-        row.original.requesterLogin ??
-        "Unknown user";
-
-      return (
-        <div className="min-w-[10rem]">
-          <p className="font-medium text-(--text)">{requesterLabel}</p>
-          {row.original.requesterLogin &&
-          row.original.requesterDisplayName &&
-          row.original.requesterLogin !== row.original.requesterDisplayName ? (
+function getRequestLogColumns(
+  t: (key: string, options?: Record<string, unknown>) => string,
+  locale: string
+): ColumnDef<RequestLogRow>[] {
+  return [
+    {
+      header: t("requestLog.columns.time"),
+      accessorKey: "createdAt",
+      cell: ({ row }) => (
+        <div className="min-w-[10rem] text-xs text-(--muted)">
+          {formatAdminTimestamp(row.original.createdAt, locale, t)}
+        </div>
+      ),
+    },
+    {
+      header: t("requestLog.columns.request"),
+      accessorKey: "rawMessage",
+      cell: ({ row }) => (
+        <div className="grid gap-1 min-w-[18rem]">
+          <p className="font-medium text-(--text)">{row.original.rawMessage}</p>
+          {row.original.normalizedQuery &&
+          row.original.normalizedQuery !== row.original.rawMessage ? (
             <p className="text-xs text-(--muted)">
-              @{row.original.requesterLogin}
+              {t("requestLog.query", { query: row.original.normalizedQuery })}
             </p>
           ) : null}
         </div>
-      );
+      ),
     },
-  },
-  {
-    header: "Result",
-    accessorKey: "outcome",
-    cell: ({ row }) => <OutcomeBadge outcome={row.original.outcome} />,
-  },
-  {
-    header: "Details",
-    id: "details",
-    cell: ({ row }) => (
-      <div className="grid min-w-[18rem] gap-1">
-        {row.original.matchedSongTitle ? (
-          <p className="text-(--text)">
-            Matched: {row.original.matchedSongTitle}
-            {row.original.matchedSongArtist
-              ? ` - ${row.original.matchedSongArtist}`
-              : ""}
-          </p>
-        ) : null}
-        {row.original.outcomeReason ? (
-          <p className="text-(--muted)">Reason: {row.original.outcomeReason}</p>
-        ) : !row.original.matchedSongTitle ? (
-          <p className="text-(--muted)">No match or reason was recorded.</p>
-        ) : null}
-      </div>
-    ),
-  },
-];
+    {
+      header: t("requestLog.columns.requester"),
+      id: "requester",
+      cell: ({ row }) => {
+        const requesterLabel =
+          row.original.requesterDisplayName ??
+          row.original.requesterLogin ??
+          t("requestLog.unknownUser");
 
-const auditLogColumns: ColumnDef<AuditLogRow>[] = [
-  {
-    header: "Time",
-    accessorKey: "createdAt",
-    cell: ({ row }) => (
-      <div className="min-w-[10rem] text-xs text-(--muted)">
-        {formatAdminTimestamp(row.original.createdAt)}
-      </div>
-    ),
-  },
-  {
-    header: "Action",
-    accessorKey: "action",
-    cell: ({ row }) => (
-      <div className="min-w-[14rem]">
-        <p className="font-medium text-(--text)">
-          {formatAdminLabel(row.original.action)}
-        </p>
-      </div>
-    ),
-  },
-  {
-    header: "Entity",
-    id: "entity",
-    cell: ({ row }) => (
-      <div className="min-w-[12rem]">
-        <p className="font-medium text-(--text)">
-          {formatAdminLabel(row.original.entityType)}
-        </p>
-        {row.original.entityId ? (
-          <p className="text-xs text-(--muted)">{row.original.entityId}</p>
-        ) : null}
-      </div>
-    ),
-  },
-  {
-    header: "Actor",
-    id: "actor",
-    cell: ({ row }) => (
-      <div className="min-w-[10rem]">
-        <p className="font-medium text-(--text)">
-          {formatAdminLabel(row.original.actorType ?? "system")}
-        </p>
-        {row.original.actorUserId ? (
-          <p className="text-xs text-(--muted)">{row.original.actorUserId}</p>
-        ) : null}
-      </div>
-    ),
-  },
-  {
-    header: "Details",
-    id: "details",
-    cell: ({ row }) => (
-      <div className="min-w-[18rem] text-(--muted)">
-        {summarizeAuditPayload(row.original.payloadJson) ??
-          "No extra values were recorded."}
-      </div>
-    ),
-  },
-];
+        return (
+          <div className="min-w-[10rem]">
+            <p className="font-medium text-(--text)">{requesterLabel}</p>
+            {row.original.requesterLogin &&
+            row.original.requesterDisplayName &&
+            row.original.requesterLogin !==
+              row.original.requesterDisplayName ? (
+              <p className="text-xs text-(--muted)">
+                @{row.original.requesterLogin}
+              </p>
+            ) : null}
+          </div>
+        );
+      },
+    },
+    {
+      header: t("requestLog.columns.result"),
+      accessorKey: "outcome",
+      cell: ({ row }) => <OutcomeBadge outcome={row.original.outcome} />,
+    },
+    {
+      header: t("requestLog.columns.details"),
+      id: "details",
+      cell: ({ row }) => (
+        <div className="grid min-w-[18rem] gap-1">
+          {row.original.matchedSongTitle ? (
+            <p className="text-(--text)">
+              {t("requestLog.matched", {
+                title: row.original.matchedSongTitle,
+                artist: row.original.matchedSongArtist
+                  ? ` - ${row.original.matchedSongArtist}`
+                  : "",
+              })}
+            </p>
+          ) : null}
+          {row.original.outcomeReason ? (
+            <p className="text-(--muted)">
+              {t("requestLog.reason", { reason: row.original.outcomeReason })}
+            </p>
+          ) : !row.original.matchedSongTitle ? (
+            <p className="text-(--muted)">{t("requestLog.noMatchOrReason")}</p>
+          ) : null}
+        </div>
+      ),
+    },
+  ];
+}
+
+function getAuditLogColumns(
+  t: (key: string, options?: Record<string, unknown>) => string,
+  locale: string
+): ColumnDef<AuditLogRow>[] {
+  return [
+    {
+      header: t("auditLog.columns.time"),
+      accessorKey: "createdAt",
+      cell: ({ row }) => (
+        <div className="min-w-[10rem] text-xs text-(--muted)">
+          {formatAdminTimestamp(row.original.createdAt, locale, t)}
+        </div>
+      ),
+    },
+    {
+      header: t("auditLog.columns.action"),
+      accessorKey: "action",
+      cell: ({ row }) => (
+        <div className="min-w-[14rem]">
+          <p className="font-medium text-(--text)">
+            {formatAdminLabel(row.original.action, t)}
+          </p>
+        </div>
+      ),
+    },
+    {
+      header: t("auditLog.columns.entity"),
+      id: "entity",
+      cell: ({ row }) => (
+        <div className="min-w-[12rem]">
+          <p className="font-medium text-(--text)">
+            {formatAdminLabel(row.original.entityType, t)}
+          </p>
+          {row.original.entityId ? (
+            <p className="text-xs text-(--muted)">{row.original.entityId}</p>
+          ) : null}
+        </div>
+      ),
+    },
+    {
+      header: t("auditLog.columns.actor"),
+      id: "actor",
+      cell: ({ row }) => (
+        <div className="min-w-[10rem]">
+          <p className="font-medium text-(--text)">
+            {formatAdminLabel(row.original.actorType ?? "system", t)}
+          </p>
+          {row.original.actorUserId ? (
+            <p className="text-xs text-(--muted)">{row.original.actorUserId}</p>
+          ) : null}
+        </div>
+      ),
+    },
+    {
+      header: t("auditLog.columns.details"),
+      id: "details",
+      cell: ({ row }) => (
+        <div className="min-w-[18rem] text-(--muted)">
+          {summarizeAuditPayload(row.original.payloadJson, t) ??
+            t("table.noExtraValues")}
+        </div>
+      ),
+    },
+  ];
+}
 
 function OutcomeBadge(props: { outcome: string }) {
-  const label = formatAdminLabel(props.outcome);
+  const { t } = useLocaleTranslation("admin");
+  const label = formatAdminLabel(props.outcome, t);
   const toneClass =
     props.outcome === "accepted"
       ? "border-emerald-400/30 bg-emerald-500/10 text-emerald-300"
@@ -942,34 +976,52 @@ function OutcomeBadge(props: { outcome: string }) {
   );
 }
 
-function getAdminRangeLabel(total: number, offset: number, rowCount: number) {
+function getAdminRangeLabel(
+  total: number,
+  offset: number,
+  rowCount: number,
+  t: (key: string, options?: Record<string, unknown>) => string
+) {
   if (total === 0 || rowCount === 0) {
-    return "Showing 0 results";
+    return t("pagination.showingEmpty");
   }
 
   const start = offset + 1;
   const end = offset + rowCount;
-  return `Showing ${start}-${end} of ${total}`;
+  return t("pagination.showingRange", { start, end, total });
 }
 
-function formatAdminTimestamp(value: number | undefined | null) {
-  return value ? new Date(value).toLocaleString() : "Unknown time";
-}
-
-function formatAdminLabel(value: string) {
-  const override = adminLabelOverrides[value];
-  if (override) {
-    return override;
-  }
-
+function formatAdminTimestamp(
+  value: number | undefined | null,
+  locale: string,
+  t: (key: string, options?: Record<string, unknown>) => string
+) {
   return value
-    .replace(/[_-]+/g, " ")
-    .replace(/\s+/g, " ")
-    .trim()
-    .replace(/\b\w/g, (match) => match.toUpperCase());
+    ? new Intl.DateTimeFormat(locale, {
+        dateStyle: "medium",
+        timeStyle: "short",
+      }).format(new Date(value))
+    : t("table.unknownTime");
 }
 
-function summarizeAuditPayload(payloadJson: string | null | undefined) {
+function formatAdminLabel(
+  value: string,
+  t: (key: string, options?: Record<string, unknown>) => string
+) {
+  return t(`labels.${value}`, {
+    defaultValue: value
+      .replace(/([a-z0-9])([A-Z])/g, "$1 $2")
+      .replace(/[_-]+/g, " ")
+      .replace(/\s+/g, " ")
+      .trim()
+      .replace(/\b\w/g, (match) => match.toUpperCase()),
+  });
+}
+
+function summarizeAuditPayload(
+  payloadJson: string | null | undefined,
+  t: (key: string, options?: Record<string, unknown>) => string
+) {
   if (!payloadJson) {
     return null;
   }
@@ -1018,7 +1070,7 @@ function summarizeAuditPayload(payloadJson: string | null | undefined) {
       .slice(0, 3)
       .map(
         ([key, value]) =>
-          `${formatAdminLabel(key)}: ${formatAuditValue(key, value)}`
+          `${formatAdminLabel(key, t)}: ${formatAuditValue(key, value, t)}`
       )
       .join(" • ");
 
@@ -1028,47 +1080,33 @@ function summarizeAuditPayload(payloadJson: string | null | undefined) {
   }
 }
 
-const adminLabelOverrides: Record<string, string> = {
-  auto_grant_vip_tokens_cheer: "Auto-grant VIP tokens: cheer",
-  auto_grant_vip_tokens_gift_recipient:
-    "Auto-grant VIP tokens: gifted sub recipient",
-  auto_grant_vip_tokens_new_subscriber: "Auto-grant VIP tokens: new paid sub",
-  auto_grant_vip_tokens_raid: "Auto-grant VIP tokens: raid",
-  auto_grant_vip_tokens_shared_sub_renewal_message:
-    "Auto-grant VIP tokens: shared sub renewal message",
-  auto_grant_vip_tokens_streamelements_tip:
-    "Auto-grant VIP tokens: StreamElements tip",
-  auto_grant_vip_tokens_sub_gifter: "Auto-grant VIP tokens: gifted sub gifter",
-  grantedTokenCount: "Tokens granted",
-  minimumRaidViewerCount: "Minimum raid size",
-  totalGiftedSubs: "Gifted subs",
-  twitchMessageId: "EventSub message ID",
-  vip_token: "VIP token",
-};
-
-const auditSourceLabelOverrides: Record<string, string> = {
-  "channel.cheer": "Cheer",
-  "channel.raid": "Raid",
-  "channel.subscribe": "Channel subscribe",
-  "channel.subscription.gift": "Gifted sub",
-  "channel.subscription.message": "Shared sub renewal message",
-  "streamelements.tip": "StreamElements tip",
+const auditSourceLabelKeys: Record<string, string> = {
+  "channel.cheer": "channelCheer",
+  "channel.raid": "channelRaid",
+  "channel.subscribe": "channelSubscribe",
+  "channel.subscription.gift": "channelSubscriptionGift",
+  "channel.subscription.message": "channelSubscriptionMessage",
+  "streamelements.tip": "streamElementsTip",
 };
 
 function formatAuditValue(
   key: string,
-  value: string | number | boolean | null
+  value: string | number | boolean | null,
+  t: (key: string, options?: Record<string, unknown>) => string
 ) {
   if (value == null) {
-    return "None";
+    return t("table.none");
   }
 
   if (key === "source" && typeof value === "string") {
-    return auditSourceLabelOverrides[value] ?? value;
+    const sourceKey = auditSourceLabelKeys[value];
+    return sourceKey
+      ? t(`auditSources.${sourceKey}`, { defaultValue: value })
+      : value;
   }
 
   if (typeof value === "boolean") {
-    return value ? "Yes" : "No";
+    return value ? t("table.yes") : t("table.no");
   }
 
   return String(value);

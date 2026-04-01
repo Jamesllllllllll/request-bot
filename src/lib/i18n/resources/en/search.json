@@ -1,0 +1,79 @@
+{
+  "meta": {
+    "title": "Search Songs"
+  },
+  "page": {
+    "title": "Search",
+    "infoNote": "This demo only contains {count} songs.",
+    "placeholder": "Search by song title, artist or album"
+  },
+  "summary": {
+    "note": "Note:",
+    "foundCount": "Found {count} songs",
+    "filters": "Filters",
+    "moreCount": "+{count} more",
+    "changeFilters": "Change filters"
+  },
+  "controls": {
+    "searchField": "Search field",
+    "allFields": "All fields",
+    "titleOnly": "Title only",
+    "artistOnly": "Artist only",
+    "albumOnly": "Album only",
+    "creatorOnly": "Creator only",
+    "showFilters": "Show filters",
+    "hideFilters": "Hide filters",
+    "title": "Title",
+    "artist": "Artist",
+    "album": "Album",
+    "creator": "Creator",
+    "tuning": "Tuning",
+    "path": "Path",
+    "year": "Year",
+    "actions": "Actions",
+    "clearAdvancedFilters": "Clear filters",
+    "matchAny": "Match any",
+    "matchAll": "Match all"
+  },
+  "columns": {
+    "song": "Song",
+    "paths": "Paths",
+    "stats": "Stats",
+    "actions": "Actions"
+  },
+  "states": {
+    "loading": "Loading songs...",
+    "queryTooShort": "Search terms must be at least 3 characters.",
+    "emptyFiltered": "No songs matched those filters yet. Try broadening the search field or clearing one of the advanced inputs.",
+    "emptyCatalog": "No songs are available in the demo catalog yet.",
+    "blacklisted": "Blacklisted",
+    "blacklistedWithReasons": "Blacklisted - {reasons}",
+    "unknownArtist": "Unknown artist",
+    "chartedBy": "Charted by {creator}",
+    "updated": "Updated {date}"
+  },
+  "errors": {
+    "filterOptionsFailed": "Filter options failed to load.",
+    "searchFailed": "Search failed."
+  },
+  "commands": {
+    "copySr": "Copy !sr command",
+    "copiedSr": "Copied !sr command",
+    "copyEdit": "Copy !edit command",
+    "copiedEdit": "Copied !edit command",
+    "copyVip": "Copy !vip command",
+    "copiedVip": "Copied !vip command"
+  },
+  "paths": {
+    "lead": "Lead",
+    "rhythm": "Rhythm",
+    "bass": "Bass",
+    "lyrics": "Lyrics"
+  },
+  "multiSelect": {
+    "selected": "{count} selected",
+    "select": "Select {label}",
+    "filter": "Filter {label}...",
+    "noMatches": "No matches found."
+  }
+}

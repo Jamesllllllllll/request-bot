@@ -5,6 +5,8 @@ import { Badge } from "~/components/ui/badge";
 import { Button } from "~/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "~/components/ui/card";
 import { Input } from "~/components/ui/input";
+import { useAppLocale, useLocaleTranslation } from "~/lib/i18n/client";
+import { formatNumber } from "~/lib/i18n/format";
 import { getErrorMessage } from "~/lib/utils";
 import {
   clampVipTokenCount,
@@ -49,6 +51,8 @@ export function ChannelCommunityPanel(props: {
   }>;
   vipTokens: VipTokenRowData[];
 }) {
+  const { t } = useLocaleTranslation("playlist");
+  const { locale } = useAppLocale();
   const queryClient = useQueryClient();
   const [blockedLookupQuery, setBlockedLookupQuery] = useState("");
   const [debouncedBlockedLookupQuery, setDebouncedBlockedLookupQuery] =
@@ -163,7 +167,7 @@ export function ChannelCommunityPanel(props: {
 
       await mutation.mutateAsync(payload);
       setPendingVipFocusLogin(normalizedLogin);
-      setVipTokenNotice("Added 1 token");
+      setVipTokenNotice(t("community.vip.noticeAddedSingle"));
     } catch {}
   }
 
@@ -199,9 +203,7 @@ export function ChannelCommunityPanel(props: {
       } | null;
 
       if (!response.ok) {
-        throw new Error(
-          payload?.error ?? "Unable to update channel community settings."
-        );
+        throw new Error(payload?.error ?? t("community.states.updateFailed"));
       }
 
       return payload;
@@ -260,7 +262,7 @@ export function ChannelCommunityPanel(props: {
       } catch (error) {
         if (!cancelled) {
           setBlockedSearchError(
-            getErrorMessage(error) || "User lookup failed."
+            getErrorMessage(error) || t("community.states.lookupFailed")
           );
         }
       }
@@ -314,7 +316,9 @@ export function ChannelCommunityPanel(props: {
         }
       } catch (error) {
         if (!cancelled) {
-          setVipSearchError(getErrorMessage(error) || "User lookup failed.");
+          setVipSearchError(
+            getErrorMessage(error) || t("community.states.lookupFailed")
+          );
         }
       }
     }
@@ -392,7 +396,7 @@ export function ChannelCommunityPanel(props: {
     <section className="grid gap-6 max-[960px]:gap-4 max-[960px]:border-t max-[960px]:border-(--border) max-[960px]:pt-4">
       <div className="px-8 max-[960px]:px-6">
         <h2 className="text-3xl font-semibold tracking-tight text-(--text)">
-          Moderator controls
+          {t("community.title")}
         </h2>
       </div>
 
@@ -401,7 +405,7 @@ export function ChannelCommunityPanel(props: {
           {props.canManageBlockedChatters ? (
             <Card className="max-[960px]:rounded-none max-[960px]:border-x-0 max-[960px]:bg-transparent max-[960px]:shadow-none max-[960px]:[background-image:none]">
               <CardHeader className="max-[960px]:px-0">
-                <CardTitle>Blocked viewers</CardTitle>
+                <CardTitle>{t("community.blocks.title")}</CardTitle>
               </CardHeader>
               <CardContent className="grid gap-4 max-[960px]:px-0">
                 <div className="flex flex-wrap items-center gap-3">
@@ -411,7 +415,7 @@ export function ChannelCommunityPanel(props: {
                       setBlockedLookupQuery(event.target.value);
                       setSelectedBlockedUser(null);
                     }}
-                    placeholder="Search Twitch username to block"
+                    placeholder={t("community.blocks.searchPlaceholder")}
                     className="min-w-[16rem] flex-1"
                   />
                   <Button
@@ -425,31 +429,31 @@ export function ChannelCommunityPanel(props: {
                         twitchUserId: selectedBlockedUser.id,
                         login: selectedBlockedUser.login,
                         displayName: selectedBlockedUser.displayName,
-                        reason: "Blocked from making requests in this channel.",
+                        reason: t("community.blocks.defaultReason"),
                       });
                     }}
                     disabled={mutation.isPending || !selectedBlockedUser}
                     className="max-[520px]:w-full"
                   >
-                    Block viewer
+                    {t("community.blocks.blockViewer")}
                   </Button>
                 </div>
                 {blockedLookupQuery.trim().replace(/^@+/, "").length > 0 &&
                 blockedLookupQuery.trim().replace(/^@+/, "").length < 4 ? (
                   <p className="text-sm text-(--muted)">
-                    Type at least 4 characters to search Twitch usernames.
+                    {t("community.blocks.searchMin")}
                   </p>
                 ) : null}
                 {needsBlockedChatterScopeReconnect ? (
                   <div className="flex flex-wrap items-center justify-between gap-3 border border-amber-500/30 bg-amber-500/10 px-4 py-3">
                     <p className="text-sm text-amber-100">
-                      Reconnect Twitch to prioritize viewers currently in chat.
+                      {t("community.reconnectMessage")}
                     </p>
                     <Button asChild size="sm" variant="outline">
                       <a
                         href={`/auth/twitch/start?redirectTo=${encodeURIComponent(`/${props.slug}`)}`}
                       >
-                        Reconnect Twitch
+                        {t("community.reconnect")}
                       </a>
                     </Button>
                   </div>
@@ -466,12 +470,13 @@ export function ChannelCommunityPanel(props: {
                         <div className="flex items-center justify-between gap-3 border-b border-(--border) bg-(--panel) px-4 py-3">
                           <p className="text-xs uppercase tracking-[0.16em] text-(--muted)">
                             {blockedPreferredSource === "chatters"
-                              ? "Current chatters first"
-                              : "Twitch matches"}
+                              ? t("community.currentChattersFirst")
+                              : t("community.twitchMatches")}
                           </p>
                           <Badge variant="outline">
-                            {blockedLookupResults.length} result
-                            {blockedLookupResults.length === 1 ? "" : "s"}
+                            {t("community.resultCount", {
+                              count: blockedLookupResults.length,
+                            })}
                           </Badge>
                         </div>
                         {blockedLookupResults.map((user, index) => {
@@ -505,11 +510,13 @@ export function ChannelCommunityPanel(props: {
                               <div className="flex items-center gap-2">
                                 {user.isCurrentChatter ? (
                                   <Badge className="border-emerald-500/40 bg-emerald-500/15 text-emerald-200">
-                                    In chat
+                                    {t("community.inChat")}
                                   </Badge>
                                 ) : null}
                                 {isBlockedSelected ? (
-                                  <Badge variant="outline">Selected</Badge>
+                                  <Badge variant="outline">
+                                    {t("community.selected")}
+                                  </Badge>
                                 ) : null}
                               </div>
                             </button>
@@ -518,15 +525,13 @@ export function ChannelCommunityPanel(props: {
                       </div>
                     ) : (
                       <p className="px-4 py-3 text-sm text-(--muted)">
-                        No matching Twitch usernames.
+                        {t("community.noMatchingUsers")}
                       </p>
                     )}
                   </div>
                 ) : null}
                 <p className="text-sm text-(--muted)">
-                  Blocked viewers can still talk in Twitch chat, but they cannot
-                  add or edit requests from chat, the website, or the extension
-                  panel.
+                  {t("community.blocks.description")}
                 </p>
                 {props.blocks.length > 0 ? (
                   <div className="overflow-hidden border border-(--border)">
@@ -553,7 +558,7 @@ export function ChannelCommunityPanel(props: {
                           </p>
                           <p className="text-sm text-(--muted)">
                             {block.reason ??
-                              "Blocked from making requests in this channel."}
+                              t("community.blocks.defaultReason")}
                           </p>
                         </div>
                         <Button
@@ -567,13 +572,15 @@ export function ChannelCommunityPanel(props: {
                           }
                           disabled={mutation.isPending}
                         >
-                          Unblock
+                          {t("community.blocks.unblock")}
                         </Button>
                       </div>
                     ))}
                   </div>
                 ) : (
-                  <p className="text-sm text-(--muted)">No blocked viewers.</p>
+                  <p className="text-sm text-(--muted)">
+                    {t("community.blocks.empty")}
+                  </p>
                 )}
               </CardContent>
             </Card>
@@ -582,7 +589,7 @@ export function ChannelCommunityPanel(props: {
           {props.canViewVipTokens ? (
             <Card className="max-[960px]:rounded-none max-[960px]:border-x-0 max-[960px]:bg-transparent max-[960px]:shadow-none max-[960px]:[background-image:none]">
               <CardHeader className="max-[960px]:px-0">
-                <CardTitle>VIP tokens</CardTitle>
+                <CardTitle>{t("community.vip.title")}</CardTitle>
               </CardHeader>
               <CardContent className="grid gap-4 max-[960px]:px-0">
                 {props.canManageVipTokens ? (
@@ -594,7 +601,7 @@ export function ChannelCommunityPanel(props: {
                           setVipLookupQuery(event.target.value);
                           setSelectedVipUser(null);
                         }}
-                        placeholder="Search Twitch username to grant a token"
+                        placeholder={t("community.vip.searchPlaceholder")}
                         className="min-w-[16rem] flex-1"
                       />
                       <Button
@@ -604,27 +611,26 @@ export function ChannelCommunityPanel(props: {
                         disabled={mutation.isPending || !selectedVipUser}
                         className="max-[520px]:w-full"
                       >
-                        Grant token
+                        {t("community.vip.grant")}
                       </Button>
                     </div>
                     {hasShortVipLookupQuery ? (
                       <p className="text-sm text-(--muted)">
                         {hasLocalVipLookupMatches
-                          ? "Existing VIP token holders appear below. Type at least 4 characters to search all Twitch usernames."
-                          : "Type at least 4 characters to search Twitch usernames."}
+                          ? t("community.vip.searchMinExisting")
+                          : t("community.vip.searchMin")}
                       </p>
                     ) : null}
                     {needsVipChatterScopeReconnect ? (
                       <div className="flex flex-wrap items-center justify-between gap-3 border border-amber-500/30 bg-amber-500/10 px-4 py-3">
                         <p className="text-sm text-amber-100">
-                          Reconnect Twitch to prioritize viewers currently in
-                          chat.
+                          {t("community.reconnectMessage")}
                         </p>
                         <Button asChild size="sm" variant="outline">
                           <a
                             href={`/auth/twitch/start?redirectTo=${encodeURIComponent(`/${props.slug}`)}`}
                           >
-                            Reconnect Twitch
+                            {t("community.reconnect")}
                           </a>
                         </Button>
                       </div>
@@ -642,16 +648,15 @@ export function ChannelCommunityPanel(props: {
                               <p className="text-xs uppercase tracking-[0.16em] text-(--muted)">
                                 {hasShortVipLookupQuery &&
                                 hasLocalVipLookupMatches
-                                  ? "VIP token holders first"
+                                  ? t("community.vip.tokenHoldersFirst")
                                   : vipPreferredSource === "chatters"
-                                    ? "Current chatters first"
-                                    : "Twitch matches"}
+                                    ? t("community.currentChattersFirst")
+                                    : t("community.twitchMatches")}
                               </p>
                               <Badge variant="outline">
-                                {prioritizedVipLookupResults.length} result
-                                {prioritizedVipLookupResults.length === 1
-                                  ? ""
-                                  : "s"}
+                                {t("community.resultCount", {
+                                  count: prioritizedVipLookupResults.length,
+                                })}
                               </Badge>
                             </div>
                             {prioritizedVipLookupResults.map((user, index) => {
@@ -691,22 +696,34 @@ export function ChannelCommunityPanel(props: {
                                   <div className="flex items-center gap-2">
                                     {existingVipToken ? (
                                       <Badge className="border-sky-500/40 bg-sky-500/15 text-sky-100">
-                                        {formatVipTokenCount(
-                                          existingVipToken.availableCount
-                                        )}{" "}
-                                        token
                                         {existingVipToken.availableCount === 1
-                                          ? ""
-                                          : "s"}
+                                          ? t(
+                                              "community.vip.tokenCountSingle",
+                                              {
+                                                count: formatVipTokenCount(
+                                                  existingVipToken.availableCount
+                                                ),
+                                              }
+                                            )
+                                          : t(
+                                              "community.vip.tokenCountPlural",
+                                              {
+                                                count: formatVipTokenCount(
+                                                  existingVipToken.availableCount
+                                                ),
+                                              }
+                                            )}
                                       </Badge>
                                     ) : null}
                                     {user.isCurrentChatter ? (
                                       <Badge className="border-emerald-500/40 bg-emerald-500/15 text-emerald-200">
-                                        In chat
+                                        {t("community.inChat")}
                                       </Badge>
                                     ) : null}
                                     {isVipSelected ? (
-                                      <Badge variant="outline">Selected</Badge>
+                                      <Badge variant="outline">
+                                        {t("community.selected")}
+                                      </Badge>
                                     ) : null}
                                   </div>
                                 </button>
@@ -715,7 +732,7 @@ export function ChannelCommunityPanel(props: {
                           </div>
                         ) : (
                           <p className="px-4 py-3 text-sm text-(--muted)">
-                            No matching Twitch usernames.
+                            {t("community.noMatchingUsers")}
                           </p>
                         )}
                       </div>
@@ -723,8 +740,7 @@ export function ChannelCommunityPanel(props: {
                   </>
                 ) : (
                   <p className="text-sm text-(--muted)">
-                    You can view VIP balances, but only the broadcaster or an
-                    allowed moderator can change them.
+                    {t("community.vip.viewOnly")}
                   </p>
                 )}
                 <div className="min-h-5" aria-live="polite" role="status">
@@ -745,10 +761,10 @@ export function ChannelCommunityPanel(props: {
                         <thead>
                           <tr className="border-b border-(--border) bg-(--panel)">
                             <th className="px-4 py-3 text-left font-semibold text-(--muted)">
-                              Username
+                              {t("community.vip.username")}
                             </th>
                             <th className="px-4 py-3 text-left font-semibold text-(--muted)">
-                              Tokens
+                              {t("community.vip.tokens")}
                             </th>
                             <th className="w-12 px-4 py-3" />
                           </tr>
@@ -778,8 +794,14 @@ export function ChannelCommunityPanel(props: {
                       {props.vipTokens.length > VIP_TOKEN_PAGE_SIZE ? (
                         <div className="flex flex-wrap items-center justify-between gap-3 border-t border-(--border) bg-(--panel) px-4 py-3">
                           <p className="text-sm text-(--muted)">
-                            Showing {vipTokenRangeStart}-{vipTokenRangeEnd} of{" "}
-                            {props.vipTokens.length}
+                            {t("community.vip.showingRange", {
+                              start: formatNumber(locale, vipTokenRangeStart),
+                              end: formatNumber(locale, vipTokenRangeEnd),
+                              total: formatNumber(
+                                locale,
+                                props.vipTokens.length
+                              ),
+                            })}
                           </p>
                           <div className="flex items-center gap-2">
                             <Button
@@ -793,10 +815,13 @@ export function ChannelCommunityPanel(props: {
                               }
                               disabled={vipTokenPage === 1}
                             >
-                              Previous
+                              {t("community.vip.previous")}
                             </Button>
                             <Badge variant="outline">
-                              Page {vipTokenPage} of {totalVipTokenPages}
+                              {t("community.vip.pageOf", {
+                                page: formatNumber(locale, vipTokenPage),
+                                total: formatNumber(locale, totalVipTokenPages),
+                              })}
                             </Badge>
                             <Button
                               type="button"
@@ -809,7 +834,7 @@ export function ChannelCommunityPanel(props: {
                               }
                               disabled={vipTokenPage === totalVipTokenPages}
                             >
-                              Next
+                              {t("community.vip.next")}
                             </Button>
                           </div>
                         </div>
@@ -817,7 +842,7 @@ export function ChannelCommunityPanel(props: {
                     </>
                   ) : (
                     <p className="px-4 py-3 text-sm text-(--muted)">
-                      No VIP tokens yet.
+                      {t("community.vip.empty")}
                     </p>
                   )}
                 </div>
@@ -843,6 +868,7 @@ function VipTokenRow(props: {
   onShowNotice(message: string): void;
   onSave(input: { login: string; count: number }): Promise<void>;
 }) {
+  const { t } = useLocaleTranslation("playlist");
   const [draftCount, setDraftCount] = useState(
     formatVipTokenCount(props.token.availableCount)
   );
@@ -894,7 +920,7 @@ function VipTokenRow(props: {
         setHasLocalEdits(false);
         setSaveState("saved");
         if (delta !== 0) {
-          props.onShowNotice(formatVipTokenDeltaNotice(delta));
+          props.onShowNotice(formatVipTokenDeltaNotice(delta, t));
         }
         window.setTimeout(() => {
           setSaveState((current) => (current === "saved" ? "idle" : current));
@@ -1109,18 +1135,24 @@ function buildPrioritizedVipLookupResults(input: {
   });
 }
 
-function formatVipTokenDeltaNotice(delta: number) {
+function formatVipTokenDeltaNotice(
+  delta: number,
+  t: (key: string, options?: Record<string, unknown>) => string
+) {
   const normalizedDelta = normalizeVipTokenCount(delta);
   const formattedDelta = formatVipTokenCount(Math.abs(normalizedDelta));
-  const tokenLabel = formattedDelta === "1" ? "VIP token" : "VIP tokens";
 
   if (normalizedDelta > 0) {
-    return `Added ${formattedDelta} ${tokenLabel}`;
+    return normalizedDelta === 1
+      ? t("community.vip.noticeAddedSingle")
+      : t("community.vip.noticeAddedMultiple", { count: formattedDelta });
   }
 
   if (normalizedDelta < 0) {
-    return `Removed ${formattedDelta} ${tokenLabel}`;
+    return normalizedDelta === -1
+      ? t("community.vip.noticeRemovedSingle")
+      : t("community.vip.noticeRemovedMultiple", { count: formattedDelta });
   }
 
-  return "Saved VIP tokens";
+  return t("community.vip.noticeSaved");
 }

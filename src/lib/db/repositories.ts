@@ -1,3 +1,4 @@
+import "@tanstack/react-start/server-only";
 import { and, asc, desc, eq, inArray, sql } from "drizzle-orm";
 import { tuningOptions } from "~/lib/channel-options";
 import type { AppEnv } from "~/lib/env";
@@ -337,6 +338,20 @@ export async function upsertUserProfile(
   }
 
   return user;
+}
+
+export async function updateUserPreferredLocale(
+  env: AppEnv,
+  userId: string,
+  preferredLocale: string
+) {
+  await getDb(env)
+    .update(users)
+    .set({
+      preferredLocale,
+      updatedAt: Date.now(),
+    })
+    .where(eq(users.id, userId));
 }
 
 export async function saveTwitchAuthorization(

@@ -1,6 +1,6 @@
 # RockList.Live
 
-RockList.Live is a Twitch song request app for music and Rocksmith streams. Viewers browse public playlists, sign in with Twitch, and add or manage their own requests from channel pages. Streamers and moderators manage request rules, queue behavior, overlays, and channel access from the dashboard.
+RockList.Live is a Twitch song request app for music and Rocksmith streams. Viewers browse public playlists, sign in with Twitch, and add or manage their own requests from channel pages. Streamers and moderators manage request rules, queue behavior, VIP token rewards, overlays, and channel access from the dashboard and Twitch panel.
 
 It runs on TanStack Start, Cloudflare Workers, D1, Durable Objects, Queues, KV, and TypeScript.
 
@@ -10,24 +10,32 @@ It runs on TanStack Start, Cloudflare Workers, D1, Durable Objects, Queues, KV, 
 - [docs/local-development.md](/docs/local-development.md)
 - [docs/deployment-workflow.md](/docs/deployment-workflow.md)
 - [docs/bot-operations.md](/docs/bot-operations.md)
-- [docs/web-viewer-requests-feature-request.md](/docs/web-viewer-requests-feature-request.md)
-- [docs/web-viewer-requests-implementation-plan.md](/docs/web-viewer-requests-implementation-plan.md)
-- [docs/twitch-panel-extension-feature-request.md](/docs/twitch-panel-extension-feature-request.md)
-- [docs/twitch-panel-extension-implementation-plan.md](/docs/twitch-panel-extension-implementation-plan.md)
-- [docs/twitch-panel-extension-local-test.md](/docs/twitch-panel-extension-local-test.md)
-- [docs/twitch-panel-extension-beta-rollout-checklist.md](/docs/twitch-panel-extension-beta-rollout-checklist.md)
+- [docs/README.md](/docs/README.md)
 
 ## What The App Includes
 
+### Viewer Experience
+
 - Home page cards for live channels, plus a demo mode that shows Rocksmith-tagged Twitch streams with `Watch on Twitch` and `Open playlist` actions
-- Song search with direct viewer request actions, copyable chat commands, catalog metadata, caching, and D1-backed rate limiting
-- Public channel pages with playlist, played history, signed-in viewer request controls, VIP token balance, and request timestamps
-- Twitch panel extension with playlist viewing, viewer request actions, and owner/moderator controls for play-now, shuffle, reorder, delete, and request-type changes
-- Dashboard pages for account access, owner settings, admin controls, and playlist management
+- Song search with direct viewer request actions, custom artist requests, copyable chat commands, catalog metadata, caching, and D1-backed rate limiting
+- Public channel pages with playlist, played history, signed-in viewer request controls, live/request status badges, VIP token balance/help, and request timestamps
+
+### Streamer And Moderator Tools
+
+- Dashboard pages for account access, owner settings, admin controls, playlist management, and richer moderator tools
 - Channel rules with setlists plus distinct artist, charter, song, and version blacklists
+- Multi-version playlist metadata with version tables, download actions, and whole-song or version-specific moderation flows
 - OBS-ready stream overlay settings with live preview, chroma-key background controls, and album/creator display toggles
+
+### Twitch And Reward Automation
+
+- Twitch panel extension with playlist viewing, viewer request actions, and owner/moderator controls for play-now, reorder, remove, request-type changes, and other queue actions
 - Shared bot-account OAuth, per-channel bot opt-in, and live-aware EventSub subscription management
-- VIP token tracking with manual grants plus automatic rewards for sub gifts, gift recipients, and cheers
+- VIP token tracking with manual grants plus automatic rewards for new subs, shared resub messages, gifted subs, gift recipients, cheers, raids, and StreamElements tips
+
+### Platform And Quality
+
+- Internationalization scaffolding for localized website copy
 - Durable Object playlist serialization, Queue-based reply delivery, and Cloudflare-backed persistence
 - Vitest, Playwright, and GitHub Actions verification
 
@@ -40,6 +48,7 @@ The app supports a shared Twitch bot account:
 - streamers opt their own channel into bot presence from Dashboard Settings
 - the app keeps `stream.online` and `stream.offline` subscriptions for opted-in channels
 - when a channel is live, the app ensures `channel.chat.message` is subscribed for the broadcaster + bot-user pair
+- when VIP token automation is enabled, the app also manages the Twitch EventSub subscriptions needed for sub, gift, cheer, and raid reward flows
 - when a channel goes offline, the chat subscription is removed
 
 Detailed operator notes live in [docs/bot-operations.md](/docs/bot-operations.md).
@@ -113,6 +122,8 @@ To test the Twitch panel extension locally, also set:
 
 - `TWITCH_EXTENSION_CLIENT_ID`
 - `TWITCH_EXTENSION_SECRET`
+
+For a fuller panel setup and testing flow, see [docs/twitch-panel-extension-local-test.md](/docs/twitch-panel-extension-local-test.md).
 
 Use these Twitch values:
 

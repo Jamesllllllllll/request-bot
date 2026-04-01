@@ -237,11 +237,19 @@ export async function getViewerRequestStateForChannelViewer(input: {
   env: AppEnv;
   channel: ViewerChannel;
   viewer: ViewerIdentity;
+  requesterOverride?: Partial<
+    Pick<RequesterContext, "isBroadcaster" | "isModerator">
+  >;
+  ignoreRequestsDisabled?: boolean;
 }): Promise<ViewerRequestStatePayload> {
   const context = await loadViewerRequestContext(
     input.env,
     input.channel,
-    input.viewer
+    input.viewer,
+    {
+      requesterOverride: input.requesterOverride,
+      ignoreRequestsDisabled: input.ignoreRequestsDisabled,
+    }
   );
 
   return {
@@ -265,11 +273,19 @@ export async function performViewerRequestMutationForChannelViewer(input: {
   viewer: ViewerIdentity;
   mutation: ViewerRequestMutationInput;
   source?: ViewerRequestSource;
+  requesterOverride?: Partial<
+    Pick<RequesterContext, "isBroadcaster" | "isModerator">
+  >;
+  ignoreRequestsDisabled?: boolean;
 }) {
   const context = await loadViewerRequestContext(
     input.env,
     input.channel,
-    input.viewer
+    input.viewer,
+    {
+      requesterOverride: input.requesterOverride,
+      ignoreRequestsDisabled: input.ignoreRequestsDisabled,
+    }
   );
 
   if (input.mutation.action === "remove") {
@@ -287,7 +303,13 @@ export async function performViewerRequestMutationForChannelViewer(input: {
 async function loadViewerRequestContext(
   env: AppEnv,
   channel: ViewerChannel,
-  viewer: ViewerIdentity
+  viewer: ViewerIdentity,
+  options?: {
+    requesterOverride?: Partial<
+      Pick<RequesterContext, "isBroadcaster" | "isModerator">
+    >;
+    ignoreRequestsDisabled?: boolean;
+  }
 ): Promise<ViewerRequestContext> {
   const [
     settings,
@@ -325,16 +347,20 @@ async function loadViewerRequestContext(
 
   const requester: RequesterContext = {
     isBroadcaster:
-      viewer.userId === channel.ownerUserId ||
-      viewer.twitchUserId === channel.twitchChannelId,
-    isModerator: false,
+      options?.requesterOverride?.isBroadcaster ??
+      (viewer.userId === channel.ownerUserId ||
+        viewer.twitchUserId === channel.twitchChannelId),
+    isModerator: options?.requesterOverride?.isModerator ?? false,
     isVip: false,
     isSubscriber: subscription.isSubscriber,
   };
+  const accessSettings = options?.ignoreRequestsDisabled
+    ? { ...settings, requestsEnabled: true }
+    : settings;
 
   const access = resolveViewerAccess({
     requestsOpen: areChannelRequestsOpen(channel),
-    settings,
+    settings: accessSettings,
     requester,
     subscriptionVerified: subscription.verified,
     blocked,

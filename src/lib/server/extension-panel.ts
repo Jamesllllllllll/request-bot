@@ -53,6 +53,26 @@ type ExtensionPlaylistMutationInput =
   | { action: "markPlayed"; itemId: string }
   | { action: "deleteItem"; itemId: string }
   | {
+      action: "manualAdd";
+      songId: string;
+      requesterLogin?: string;
+      requesterTwitchUserId?: string;
+      requesterDisplayName?: string;
+      title: string;
+      authorId?: number;
+      groupedProjectId?: number;
+      artist?: string;
+      album?: string;
+      creator?: string;
+      tuning?: string;
+      parts?: string[];
+      durationText?: string;
+      source: string;
+      sourceUrl?: string;
+      sourceId?: number;
+      candidateMatchesJson?: string;
+    }
+  | {
       action: "changeRequestKind";
       itemId: string;
       requestKind: "regular" | "vip";
@@ -83,6 +103,7 @@ type ExtensionPanelLiveState = {
     botReadyState?: string | null;
   };
   settings: {
+    requestsEnabled: boolean;
     showPlaylistPositions: boolean;
     autoGrantVipTokenToSubscribers: boolean;
     autoGrantVipTokensForSharedSubRenewalMessage: boolean;
@@ -114,6 +135,33 @@ type ExtensionPanelLiveState = {
     canRemoveOwnRequest: boolean;
   };
 };
+
+function getExtensionViewerRequestAccessOverride(
+  accessRole: ExtensionPanelManagement["accessRole"]
+) {
+  if (accessRole === "owner") {
+    return {
+      requesterOverride: {
+        isBroadcaster: true,
+      },
+      ignoreRequestsDisabled: true,
+    } as const;
+  }
+
+  if (accessRole === "moderator") {
+    return {
+      requesterOverride: {
+        isModerator: true,
+      },
+      ignoreRequestsDisabled: true,
+    } as const;
+  }
+
+  return {
+    requesterOverride: undefined,
+    ignoreRequestsDisabled: false,
+  } as const;
+}
 
 function getEmptyExtensionPanelManagement(): ExtensionPanelManagement {
   return {
@@ -179,6 +227,7 @@ export async function getExtensionBootstrapState(input: {
         connected: false,
         channel: null,
         settings: {
+          requestsEnabled: true,
           showPlaylistPositions: false,
           autoGrantVipTokenToSubscribers: false,
           autoGrantVipTokensForSharedSubRenewalMessage: false,
@@ -245,6 +294,9 @@ export async function getExtensionBootstrapState(input: {
         linkedViewer,
       })
     );
+    const viewerRequestAccessOverride = getExtensionViewerRequestAccessOverride(
+      management.accessRole
+    );
 
     const viewerState = linkedViewer
       ? await timer.measure("viewerRequestState", async () =>
@@ -252,6 +304,9 @@ export async function getExtensionBootstrapState(input: {
             env: input.env,
             channel,
             viewer: linkedViewer,
+            requesterOverride: viewerRequestAccessOverride.requesterOverride,
+            ignoreRequestsDisabled:
+              viewerRequestAccessOverride.ignoreRequestsDisabled,
           })
         )
       : { viewer: null };
@@ -479,17 +534,28 @@ export async function performExtensionViewerRequestMutation(input: {
     input.env,
     input.auth.channelId
   );
-  const viewer = await requireLinkedViewerIdentity(
+  const linkedViewer = await requireLinkedViewerIdentity(
     input.env,
     input.auth.viewerUserId
+  );
+  const management = await resolveExtensionPanelManagement({
+    env: input.env,
+    auth: input.auth,
+    channel,
+    linkedViewer,
+  });
+  const viewerRequestAccessOverride = getExtensionViewerRequestAccessOverride(
+    management.accessRole
   );
 
   return performViewerRequestMutationForChannelViewer({
     env: input.env,
     channel,
-    viewer,
+    viewer: linkedViewer,
     mutation: input.mutation,
     source: "extension",
+    requesterOverride: viewerRequestAccessOverride.requesterOverride,
+    ignoreRequestsDisabled: viewerRequestAccessOverride.ignoreRequestsDisabled,
   });
 }
 
@@ -593,6 +659,7 @@ async function getExtensionPanelLiveState(input: {
       botReadyState: input.channel.botReadyState,
     },
     settings: {
+      requestsEnabled: !!settings?.requestsEnabled,
       showPlaylistPositions: !!settings?.showPlaylistPositions,
       autoGrantVipTokenToSubscribers:
         !!settings?.autoGrantVipTokenToSubscribers,

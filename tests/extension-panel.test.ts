@@ -296,6 +296,18 @@ describe("extension panel service", () => {
         },
       },
     });
+
+    expect(getViewerRequestStateForChannelViewer).toHaveBeenCalledWith({
+      env,
+      channel: baseChannel,
+      viewer: expect.objectContaining({
+        twitchUserId: "viewer-1",
+      }),
+      requesterOverride: {
+        isModerator: true,
+      },
+      ignoreRequestsDisabled: true,
+    });
   });
 
   it("disables viewer request actions in bootstrap when the viewer is blocked", async () => {
@@ -594,6 +606,50 @@ describe("extension panel service", () => {
         itemId: "item-1",
       },
       source: "extension",
+      requesterOverride: undefined,
+      ignoreRequestsDisabled: false,
+    });
+  });
+
+  it("passes moderator request overrides into extension viewer mutations", async () => {
+    await expect(
+      performExtensionViewerRequestMutation({
+        env,
+        auth: {
+          ...auth,
+          role: "moderator",
+        },
+        mutation: {
+          action: "submit",
+          query: "bruno mars",
+          requestMode: "random",
+          requestKind: "regular",
+          replaceExisting: false,
+        },
+      })
+    ).resolves.toEqual({
+      ok: true,
+      message: "Added request.",
+    });
+
+    expect(performViewerRequestMutationForChannelViewer).toHaveBeenCalledWith({
+      env,
+      channel: baseChannel,
+      viewer: expect.objectContaining({
+        twitchUserId: "viewer-1",
+      }),
+      mutation: {
+        action: "submit",
+        query: "bruno mars",
+        requestMode: "random",
+        requestKind: "regular",
+        replaceExisting: false,
+      },
+      source: "extension",
+      requesterOverride: {
+        isModerator: true,
+      },
+      ignoreRequestsDisabled: true,
     });
   });
 

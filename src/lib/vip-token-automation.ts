@@ -26,9 +26,6 @@ export function getVipTokenAutomationDetails(
 
   if (input.autoGrantVipTokensForSharedSubRenewalMessage) {
     earningRules.push("Shared sub renewal message = 1 VIP token");
-    notes.push(
-      "Quiet sub renewals only count when the viewer shares the resub message in chat."
-    );
   }
 
   if (input.autoGrantVipTokensToSubGifters) {
@@ -52,7 +49,7 @@ export function getVipTokenAutomationDetails(
       const minimumTokenCount = normalizeVipTokenCount(
         minimumBits / bitsPerVipToken
       );
-      notes.push(
+      earningRules.push(
         `Minimum cheer: ${formatNumber(minimumBits)} bits = ${formatVipTokenCount(minimumTokenCount)} VIP token${minimumTokenCount === 1 ? "" : "s"}.`
       );
     }
@@ -67,7 +64,6 @@ export function getVipTokenAutomationDetails(
         ? `Raid with ${formatNumber(minimumRaidViewerCount)}+ viewers = 1 VIP token`
         : "Raid this channel = 1 VIP token"
     );
-    notes.push("Raid rewards only count when Twitch sends the raid into chat.");
   }
 
   if (input.autoGrantVipTokensForStreamElementsTips) {

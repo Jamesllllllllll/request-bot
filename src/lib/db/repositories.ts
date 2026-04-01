@@ -1335,13 +1335,123 @@ function buildMatchLike(
     return sql`0`;
   }
 
-  return sql.join(
+  return sql`(${sql.join(
     variants.map(
       (variant) =>
         sql`lower(coalesce(${column}, '')) LIKE ${`%${escapeLikeValue(variant)}%`}`
     ),
     sql` OR `
-  );
+  )})`;
+}
+
+function buildCompactMatchLike(
+  column:
+    | typeof catalogSongs.title
+    | typeof catalogSongs.artistName
+    | typeof catalogSongs.albumName
+    | typeof catalogSongs.creatorName
+    | typeof catalogSongs.tuningSummary
+    | typeof catalogSongs.partsJson,
+  query: string
+) {
+  const normalized = normalizeSearchPhrase(query);
+  const compact = normalized.replace(/[^a-z0-9]+/g, "");
+  const variants = uniqueCompact([normalized, compact]).slice(0, 2);
+  if (!variants.length) {
+    return sql`0`;
+  }
+
+  return sql`(${sql.join(
+    variants.map(
+      (variant) =>
+        sql`lower(coalesce(${column}, '')) LIKE ${`%${escapeLikeValue(variant)}%`}`
+    ),
+    sql` OR `
+  )})`;
+}
+
+function buildSimpleAnyFieldCondition(query: string, tokens: string[]) {
+  const phraseCondition = sql`
+    ${buildCompactMatchLike(catalogSongs.title, query)}
+    OR ${buildCompactMatchLike(catalogSongs.artistName, query)}
+    OR ${buildCompactMatchLike(catalogSongs.albumName, query)}
+    OR ${buildCompactMatchLike(catalogSongs.creatorName, query)}
+  `;
+  const limitedTokens = [...new Set(tokens.slice(0, 4))];
+
+  if (!limitedTokens.length) {
+    return phraseCondition;
+  }
+
+  return sql`
+    (${phraseCondition})
+    OR (${sql.join(
+      limitedTokens.map(
+        (token) => sql`
+          (
+            ${buildCompactMatchLike(catalogSongs.title, token)}
+            OR ${buildCompactMatchLike(catalogSongs.artistName, token)}
+            OR ${buildCompactMatchLike(catalogSongs.albumName, token)}
+            OR ${buildCompactMatchLike(catalogSongs.creatorName, token)}
+          )
+        `
+      ),
+      sql` AND `
+    )})
+  `;
+}
+
+function buildSimpleFieldRelevance(
+  column:
+    | typeof catalogSongs.title
+    | typeof catalogSongs.artistName
+    | typeof catalogSongs.albumName
+    | typeof catalogSongs.creatorName,
+  query: string,
+  exactWeight: number,
+  tokenWeight: number,
+  tokens: string[]
+) {
+  const limitedTokens = [...new Set(tokens.slice(0, 3))];
+  const tokenSql = limitedTokens.length
+    ? sql.join(
+        limitedTokens.map(
+          (token) =>
+            sql`CASE WHEN ${buildCompactMatchLike(column, token)} THEN ${tokenWeight} ELSE 0 END`
+        ),
+        sql` + `
+      )
+    : sql`0`;
+
+  return sql`
+    CASE WHEN ${buildCompactMatchLike(column, query)} THEN ${exactWeight} ELSE 0 END +
+    ${tokenSql}
+  `;
+}
+
+function buildSimpleAnyFieldRelevance(query: string, tokens: string[]) {
+  const limitedTokens = [...new Set(tokens.slice(0, 3))];
+  const tokenSql = limitedTokens.length
+    ? sql.join(
+        limitedTokens.map(
+          (token) => sql`
+            CASE WHEN ${buildCompactMatchLike(catalogSongs.artistName, token)} THEN 8 ELSE 0 END +
+            CASE WHEN ${buildCompactMatchLike(catalogSongs.title, token)} THEN 7 ELSE 0 END +
+            CASE WHEN ${buildCompactMatchLike(catalogSongs.albumName, token)} THEN 4 ELSE 0 END +
+            CASE WHEN ${buildCompactMatchLike(catalogSongs.creatorName, token)} THEN 3 ELSE 0 END
+          `
+        ),
+        sql` + `
+      )
+    : sql`0`;
+
+  return sql`
+    CASE WHEN ${buildCompactMatchLike(catalogSongs.artistName, query)} THEN 40 ELSE 0 END +
+    CASE WHEN ${buildCompactMatchLike(catalogSongs.title, query)} THEN 36 ELSE 0 END +
+    CASE WHEN ${buildCompactMatchLike(catalogSongs.albumName, query)} THEN 20 ELSE 0 END +
+    CASE WHEN ${buildCompactMatchLike(catalogSongs.creatorName, query)} THEN 12 ELSE 0 END +
+    ${tokenSql}
+  `;
 }
 
 export async function searchCatalogSongs(
@@ -1618,10 +1728,28 @@ export async function searchCatalogSongs(
 
   const initialFtsEnabled = field === "any" && ftsQuery.length > 0;
 
-  const runCatalogSongSearch = async (ftsEnabled: boolean) => {
+  const runCatalogSongSearch = async (
+    ftsEnabled: boolean,
+    simplified = false
+  ) => {
     const basicCondition = (() => {
       if (!query) {
         return sql`0`;
+      }
+
+      if (simplified) {
+        switch (field) {
+          case "title":
+            return buildCompactMatchLike(catalogSongs.title, query);
+          case "artist":
+            return buildCompactMatchLike(catalogSongs.artistName, query);
+          case "album":
+            return buildCompactMatchLike(catalogSongs.albumName, query);
+          case "creator":
+            return buildCompactMatchLike(catalogSongs.creatorName, query);
+          default:
+            return buildSimpleAnyFieldCondition(query, tokens);
+        }
       }
 
       switch (field) {
@@ -1663,53 +1791,87 @@ export async function searchCatalogSongs(
         ? sql`(${filteredBaseWhereCondition}) AND (${sql.join(blacklistConditions, sql` AND `)})`
         : filteredBaseWhereCondition;
     const relevanceSql = query
-      ? field === "artist"
-        ? sql`
-            ${primaryFieldScore(catalogSongs.artistName, 90, 45)} +
-            ${artistTokenScore} +
-            CASE WHEN ${buildMatchLike(catalogSongs.artistName, query)} THEN 20 ELSE 0 END
-          `
-        : field === "title"
+      ? simplified
+        ? field === "artist"
+          ? buildSimpleFieldRelevance(
+              catalogSongs.artistName,
+              query,
+              44,
+              10,
+              tokens
+            )
+          : field === "title"
+            ? buildSimpleFieldRelevance(
+                catalogSongs.title,
+                query,
+                44,
+                10,
+                tokens
+              )
+            : field === "album"
+              ? buildSimpleFieldRelevance(
+                  catalogSongs.albumName,
+                  query,
+                  32,
+                  8,
+                  tokens
+                )
+              : field === "creator"
+                ? buildSimpleFieldRelevance(
+                    catalogSongs.creatorName,
+                    query,
+                    32,
+                    8,
+                    tokens
+                  )
+                : buildSimpleAnyFieldRelevance(query, tokens)
+        : field === "artist"
           ? sql`
-              ${primaryFieldScore(catalogSongs.title, 90, 45)} +
-              ${titleTokenScore} +
-              CASE WHEN ${buildMatchLike(catalogSongs.title, query)} THEN 20 ELSE 0 END
+              ${primaryFieldScore(catalogSongs.artistName, 90, 45)} +
+              ${artistTokenScore} +
+              CASE WHEN ${buildMatchLike(catalogSongs.artistName, query)} THEN 20 ELSE 0 END
             `
-          : field === "album"
+          : field === "title"
             ? sql`
-                ${primaryFieldScore(catalogSongs.albumName, 80, 35)} +
-                ${albumTokenScore} +
-                CASE WHEN ${buildMatchLike(catalogSongs.albumName, query)} THEN 24 ELSE 0 END
+                ${primaryFieldScore(catalogSongs.title, 90, 45)} +
+                ${titleTokenScore} +
+                CASE WHEN ${buildMatchLike(catalogSongs.title, query)} THEN 20 ELSE 0 END
               `
-            : field === "creator"
+            : field === "album"
               ? sql`
-                  ${primaryFieldScore(catalogSongs.creatorName, 80, 35)} +
-                  ${creatorTokenScore} +
-                  CASE WHEN ${buildMatchLike(catalogSongs.creatorName, query)} THEN 24 ELSE 0 END
+                  ${primaryFieldScore(catalogSongs.albumName, 80, 35)} +
+                  ${albumTokenScore} +
+                  CASE WHEN ${buildMatchLike(catalogSongs.albumName, query)} THEN 24 ELSE 0 END
                 `
-              : field === "tuning"
+              : field === "creator"
                 ? sql`
-                    ${primaryFieldScore(catalogSongs.tuningSummary, 70, 30)} +
-                    CASE WHEN ${buildMatchLike(catalogSongs.tuningSummary, query)} THEN 18 ELSE 0 END
+                    ${primaryFieldScore(catalogSongs.creatorName, 80, 35)} +
+                    ${creatorTokenScore} +
+                    CASE WHEN ${buildMatchLike(catalogSongs.creatorName, query)} THEN 24 ELSE 0 END
                   `
-                : field === "parts"
+                : field === "tuning"
                   ? sql`
-                      CASE WHEN ${buildMatchLike(catalogSongs.partsJson, query)} THEN 30 ELSE 0 END
+                      ${primaryFieldScore(catalogSongs.tuningSummary, 70, 30)} +
+                      CASE WHEN ${buildMatchLike(catalogSongs.tuningSummary, query)} THEN 18 ELSE 0 END
                     `
-                  : sql`
-                      CASE WHEN ${ftsEnabled ? sql`catalog_songs.rowid IN (SELECT rowid FROM fts_matches)` : sql`0`} THEN 80 ELSE 0 END +
-                      CASE WHEN ${titleTokenPresence} > 0 AND ${artistTokenPresence} > 0 THEN 45 ELSE 0 END +
-                      ${splitArtistTitleBonus} +
-                      ${primaryFieldScore(catalogSongs.title, 62, 34)} +
-                      ${primaryFieldScore(catalogSongs.artistName, 52, 28)} +
-                      ${primaryFieldScore(catalogSongs.albumName, 28, 12)} +
-                      ${titleTokenScore} +
-                      ${artistTokenScore} +
-                      ${albumTokenScore} +
-                      ${creatorTokenScore} +
-                      CASE WHEN ${buildMatchLike(catalogSongs.albumName, query)} THEN 8 ELSE 0 END +
-                      CASE WHEN ${buildMatchLike(catalogSongs.creatorName, query)} THEN 6 ELSE 0 END
-                    `
+                  : field === "parts"
+                    ? sql`
+                        CASE WHEN ${buildMatchLike(catalogSongs.partsJson, query)} THEN 30 ELSE 0 END
+                      `
+                    : sql`
+                        CASE WHEN ${ftsEnabled ? sql`catalog_songs.rowid IN (SELECT rowid FROM fts_matches)` : sql`0`} THEN 80 ELSE 0 END +
+                        CASE WHEN ${titleTokenPresence} > 0 AND ${artistTokenPresence} > 0 THEN 45 ELSE 0 END +
+                        ${splitArtistTitleBonus} +
+                        ${primaryFieldScore(catalogSongs.title, 62, 34)} +
+                        ${primaryFieldScore(catalogSongs.artistName, 52, 28)} +
+                        ${primaryFieldScore(catalogSongs.albumName, 28, 12)} +
+                        ${titleTokenScore} +
+                        ${artistTokenScore} +
+                        ${albumTokenScore} +
+                        ${creatorTokenScore} +
+                        CASE WHEN ${buildMatchLike(catalogSongs.albumName, query)} THEN 8 ELSE 0 END +
+                        CASE WHEN ${buildMatchLike(catalogSongs.creatorName, query)} THEN 6 ELSE 0 END
+                      `
       : sql`0`;
 
     const totalResultPromise = db.all<{ count: number }>(sql`
@@ -1853,18 +2015,34 @@ export async function searchCatalogSongs(
   try {
     return await runCatalogSongSearch(initialFtsEnabled);
   } catch (error) {
-    if (!initialFtsEnabled || !shouldRetryCatalogSearchWithoutFts(error)) {
-      throw error;
+    let lastError = error;
+
+    if (initialFtsEnabled && shouldRetryCatalogSearchWithoutFts(error)) {
+      console.warn("Catalog search FTS failed, retrying without MATCH", {
+        query,
+        field,
+        ftsQuery,
+        error: error instanceof Error ? error.message : String(error),
+      });
+
+      try {
+        return await runCatalogSongSearch(false);
+      } catch (retryError) {
+        lastError = retryError;
+      }
     }
 
-    console.warn("Catalog search FTS failed, retrying without MATCH", {
+    if (field !== "any" || tokens.length < 2) {
+      throw lastError;
+    }
+
+    console.warn("Catalog search retrying with simplified multi-token query", {
       query,
       field,
-      ftsQuery,
-      error: error instanceof Error ? error.message : String(error),
+      error: lastError instanceof Error ? lastError.message : String(lastError),
     });
 
-    return runCatalogSongSearch(false);
+    return runCatalogSongSearch(false, true);
   }
 }
 

@@ -1,0 +1,45 @@
+{
+  "meta": {
+    "title": "Inicio"
+  },
+  "hero": {
+    "eyebrow": "Gerenciamento de playlist para streamers de Rocksmith",
+    "title": "Busque musicas ou gerencie seu canal."
+  },
+  "actions": {
+    "findSong": "Encontrar uma musica para pedir",
+    "searchSongs": "Buscar musicas",
+    "manageChannel": "Gerenciar seu canal",
+    "openSettings": "Abrir configuracoes"
+  },
+  "about": {
+    "eyebrow": "O que e RockList.Live?",
+    "body": "RockList.Live ajuda streamers de Rocksmith a receber pedidos, gerenciar a playlist e manter a live fluindo."
+  },
+  "features": {
+    "surfaceRequestsTitle": "Pedidos de todas as superficies",
+    "surfaceRequestsBody": "Os viewers adicionam musicas na pagina da playlist, no chat ou pelo painel da Twitch.",
+    "moderationTitle": "Suporte para moderadores",
+    "moderationBody": "Os moderadores gerenciam pedidos e prioridades VIP enquanto a live esta no ar.",
+    "queueTitle": "Mantenha a fila andando",
+    "queueBody": "Edite, organize e acompanhe pedidos sem perder a proxima musica.",
+    "rulesTitle": "Defina as regras",
+    "rulesBody": "Controle listas de bloqueio, setlists, moderacao e configuracoes de pedido do seu canal."
+  },
+  "live": {
+    "eyebrow": "Ao vivo agora",
+    "title": "Streamers atuais",
+    "showLive": "Mostrar ao vivo",
+    "showDemo": "Mostrar demo",
+    "demoOnly": "Os streamers mostrados aqui sao apenas para demonstracao.",
+    "activeCount": "{count} ativos",
+    "empty": "Ainda nao ha streamers ao vivo com o bot ativo.",
+    "previewAlt": "Previa da live de {displayName}",
+    "status": "Ao vivo",
+    "nowPlaying": "Tocando agora",
+    "upNext": "Em seguida",
+    "nextRequest": "Proximo pedido",
+    "openPlaylist": "Abrir playlist",
+    "watchOnTwitch": "Assistir na Twitch"
+  }
+}

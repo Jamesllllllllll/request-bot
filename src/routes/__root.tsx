@@ -17,6 +17,7 @@ import {
   Radio,
   Settings2,
 } from "lucide-react";
+import { LanguagePicker } from "~/components/language-picker";
 import { Button } from "~/components/ui/button";
 import {
   Tooltip,
@@ -25,13 +26,31 @@ import {
   TooltipTrigger,
 } from "~/components/ui/tooltip";
 import "~/app.css";
+import { AppI18nProvider, useLocaleTranslation } from "~/lib/i18n/client";
+import { getInitialLocale } from "~/lib/i18n/get-initial-locale";
+import { getViewerSession } from "~/lib/server/viewer";
+import type { ViewerSessionData } from "~/lib/server/viewer-session-data";
+import { viewerSessionQueryOptions } from "~/lib/viewer-session-query";
 import type { AppRouterContext } from "~/router";
 
 export const Route = createRootRouteWithContext<AppRouterContext>()({
+  loader: async () => {
+    const [locale, initialViewerSession] = await Promise.all([
+      getInitialLocale(),
+      getViewerSession(),
+    ]);
+
+    return {
+      locale,
+      initialViewerSession,
+    };
+  },
+  staleTime: Number.POSITIVE_INFINITY,
   component: RootComponent,
 });
 
 function RootComponent() {
+  const { locale } = Route.useLoaderData();
   const router = useRouter();
   const queryClient = router.options.context.queryClient;
   const pathname = useRouterState({
@@ -40,7 +59,7 @@ function RootComponent() {
   const isExtensionRoute = pathname.startsWith("/extension/");
 
   return (
-    <html lang="en">
+    <html lang={locale}>
       <head>
         {isExtensionRoute ? (
           <script
@@ -54,7 +73,9 @@ function RootComponent() {
       </head>
       <body>
         <QueryClientProvider client={queryClient}>
-          <AppShell />
+          <AppI18nProvider initialLocale={locale}>
+            <AppShell />
+          </AppI18nProvider>
           {isExtensionRoute ? null : <TanStackRouterDevtools />}
         </QueryClientProvider>
         <Scripts />
@@ -64,41 +85,25 @@ function RootComponent() {
 }
 
 function AppShell() {
+  const { initialViewerSession } = Route.useLoaderData();
   const pathname = useRouterState({
     select: (state) => state.location.pathname,
   });
+  const { t } = useLocaleTranslation("common");
   const isOverlayRoute = pathname.includes("/stream-playlist/");
   const isExtensionRoute = pathname.startsWith("/extension/");
   const shouldBypassShell = isOverlayRoute || isExtensionRoute;
-  const { data } = useQuery({
+  const { data } = useQuery<ViewerSessionData>({
     queryKey: ["viewer-session"],
     enabled: !shouldBypassShell,
+    initialData: initialViewerSession,
     queryFn: async () => {
       const response = await fetch("/api/session", {
         credentials: "include",
       });
-      return response.json() as Promise<{
-        viewer: null | {
-          user: {
-            displayName: string;
-            login: string;
-            profileImageUrl?: string | null;
-            isAdmin?: boolean;
-          };
-          channel: {
-            slug: string;
-          } | null;
-          manageableChannels?: Array<{
-            slug: string;
-            displayName: string;
-            login: string;
-            isLive: boolean;
-          }>;
-          needsBroadcasterScopeReconnect?: boolean;
-          needsModeratorScopeReconnect?: boolean;
-        };
-      }>;
+      return response.json() as Promise<ViewerSessionData>;
     },
+    ...viewerSessionQueryOptions,
   });
 
   const viewer = data?.viewer ?? null;
@@ -129,17 +134,18 @@ function AppShell() {
           </div>
 
           <div className="flex min-w-0 flex-1 flex-wrap items-center justify-end gap-3 max-[960px]:flex-[0_1_auto] max-[960px]:justify-start">
+            <LanguagePicker />
             <nav className="flex max-w-full flex-wrap items-center gap-1 border border-(--border) bg-(--panel-soft) p-0 text-sm max-[960px]:w-auto max-[960px]:self-start max-[960px]:gap-[0.35rem]">
               <NavLink
                 to="/search"
-                label="Search"
+                label={t("nav.search")}
                 icon={Radio}
                 active={pathname === "/search"}
               />
               {viewer ? (
                 <NavLink
                   to="/dashboard"
-                  label="Account"
+                  label={t("nav.account")}
                   icon={Settings2}
                   active={
                     pathname === "/dashboard" ||
@@ -201,7 +207,7 @@ function AppShell() {
                         </div>
                       </Link>
                     </TooltipTrigger>
-                    <TooltipContent>Go to your playlist.</TooltipContent>
+                    <TooltipContent>{t("auth.goToPlaylist")}</TooltipContent>
                   </Tooltip>
                 </TooltipProvider>
                 <Button
@@ -212,14 +218,16 @@ function AppShell() {
                 >
                   <a href="/auth/logout" className="no-underline">
                     <LogOut className="h-4 w-4" />
-                    <span className="max-[960px]:hidden">Log out</span>
+                    <span className="max-[960px]:hidden">
+                      {t("auth.logOut")}
+                    </span>
                   </a>
                 </Button>
               </div>
             ) : (
               <Button asChild variant="default" size="sm" className="px-4">
                 <a href="/auth/twitch/start" className="no-underline">
-                  Sign in with Twitch
+                  {t("auth.signIn")}
                 </a>
               </Button>
             )}
@@ -230,13 +238,11 @@ function AppShell() {
             <div className="flex flex-wrap items-center justify-between gap-3 border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-100">
               <div className="flex min-w-0 items-start gap-3">
                 <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
-                <p className="min-w-0">
-                  Twitch permissions need to be refreshed for this account.
-                </p>
+                <p className="min-w-0">{t("auth.permissionsRefresh")}</p>
               </div>
               <Button asChild size="sm" className="shrink-0">
                 <a href={reconnectHref} className="no-underline">
-                  Reconnect Twitch
+                  {t("auth.reconnect")}
                 </a>
               </Button>
             </div>

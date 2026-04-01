@@ -57,7 +57,7 @@ import {
   TooltipTrigger,
 } from "~/components/ui/tooltip";
 import { pathOptions } from "~/lib/channel-options";
-import { formatPathLabel } from "~/lib/request-policy";
+import { useAppLocale, useLocaleTranslation } from "~/lib/i18n/client";
 import { cn, getErrorMessage } from "~/lib/utils";
 
 type SearchField = "any" | "title" | "artist" | "album" | "creator";
@@ -98,12 +98,6 @@ type SearchFilterOptionsResponse = {
   tunings: string[];
   years: number[];
 };
-
-const updatedDateFormatter = new Intl.DateTimeFormat("en-US", {
-  month: "short",
-  day: "numeric",
-  year: "numeric",
-});
 
 export function buildRequestCommand(song: SearchSong) {
   if (song.sourceId != null) {
@@ -181,6 +175,34 @@ export function SongSearchPanel(props: {
   actionsLabel?: string;
   renderActions?: (args: SearchSongActionRenderArgs) => ReactNode;
 }) {
+  const { locale } = useAppLocale();
+  const { t } = useLocaleTranslation("search");
+  const updatedDateFormatter = useMemo(
+    () =>
+      new Intl.DateTimeFormat(locale, {
+        month: "short",
+        day: "numeric",
+        year: "numeric",
+      }),
+    [locale]
+  );
+  const getPathLabel = (path: string) => {
+    switch (path.toLowerCase()) {
+      case "lead":
+        return t("paths.lead");
+      case "rhythm":
+        return t("paths.rhythm");
+      case "bass":
+        return t("paths.bass");
+      case "voice":
+      case "vocals":
+        return t("paths.lyrics");
+      default:
+        return path;
+    }
+  };
+  const getPathShortLabel = (path: string) =>
+    getPathLabel(path).slice(0, 1).toUpperCase();
   const normalizedDefaultPathFilters = useMemo(
     () =>
       [...new Set(props.defaultPathFilters ?? [])].filter((path) =>
@@ -333,8 +355,8 @@ export function SongSearchPanel(props: {
       if (!response.ok) {
         throw new Error(
           body && "message" in body
-            ? (body.message ?? "Filter options failed to load.")
-            : "Filter options failed to load."
+            ? (body.message ?? t("errors.filterOptionsFailed"))
+            : t("errors.filterOptionsFailed")
         );
       }
 
@@ -357,8 +379,8 @@ export function SongSearchPanel(props: {
       if (!response.ok) {
         throw new Error(
           body && "message" in body
-            ? (body.message ?? "Search failed.")
-            : "Search failed."
+            ? (body.message ?? t("errors.searchFailed"))
+            : t("errors.searchFailed")
         );
       }
 
@@ -383,8 +405,8 @@ export function SongSearchPanel(props: {
       if (!response.ok) {
         throw new Error(
           body && "message" in body
-            ? (body.message ?? "Search failed.")
-            : "Search failed."
+            ? (body.message ?? t("errors.searchFailed"))
+            : t("errors.searchFailed")
         );
       }
 
@@ -541,18 +563,20 @@ export function SongSearchPanel(props: {
       >
         {showTopFilterSummary ? (
           <div className="min-w-0 flex flex-1 flex-wrap items-center gap-1.5 text-xs text-(--muted)">
-            <span className="uppercase tracking-[0.16em]">Filters</span>
+            <span className="uppercase tracking-[0.16em]">
+              {t("summary.filters")}
+            </span>
             {activePathFilters.map((path) => (
               <PathBadge
                 key={`summary-${path}`}
-                label={formatPathLabel(path).toUpperCase()}
-                shortLabel={formatPathLabel(path).slice(0, 1).toUpperCase()}
+                label={getPathLabel(path).toUpperCase()}
+                shortLabel={getPathShortLabel(path)}
                 className={getPathToneByValue(path)}
               />
             ))}
             {activeNonPathFilterCount > 0 ? (
               <span className="inline-flex items-center border border-(--border-strong) bg-(--panel) px-2 py-1 text-[11px] font-medium text-(--text)">
-                +{activeNonPathFilterCount} more
+                {t("summary.moreCount", { count: activeNonPathFilterCount })}
               </span>
             ) : null}
             {!showAdvanced ? (
@@ -561,7 +585,7 @@ export function SongSearchPanel(props: {
                 className="text-(--brand) transition hover:opacity-80"
                 onClick={() => setShowAdvanced(true)}
               >
-                Change filters
+                {t("summary.changeFilters")}
               </button>
             ) : null}
           </div>
@@ -645,8 +669,8 @@ export function SongSearchPanel(props: {
             {isDisabled
               ? disabledReason
               : copiedType === "sr"
-                ? "Copied !sr command"
-                : "Copy !sr command"}
+                ? t("commands.copiedSr")
+                : t("commands.copySr")}
           </TooltipContent>
         </Tooltip>
         <Tooltip>
@@ -670,8 +694,8 @@ export function SongSearchPanel(props: {
             {isDisabled
               ? disabledReason
               : copiedType === "edit"
-                ? "Copied !edit command"
-                : "Copy !edit command"}
+                ? t("commands.copiedEdit")
+                : t("commands.copyEdit")}
           </TooltipContent>
         </Tooltip>
         <Tooltip>
@@ -695,8 +719,8 @@ export function SongSearchPanel(props: {
             {isDisabled
               ? disabledReason
               : copiedType === "vip"
-                ? "Copied !vip command"
-                : "Copy !vip command"}
+                ? t("commands.copiedVip")
+                : t("commands.copyVip")}
           </TooltipContent>
         </Tooltip>
       </div>
@@ -729,7 +753,7 @@ export function SongSearchPanel(props: {
                 {resolvedInfoNote ? (
                   <div className="flex flex-wrap items-center gap-2 border border-sky-400/30 bg-sky-500/10 px-4 py-3 text-sm text-sky-100 max-[960px]:w-full">
                     <span className="font-semibold uppercase tracking-[0.18em] text-sky-200">
-                      Note:
+                      {t("summary.note")}
                     </span>
                     <span>{resolvedInfoNote}</span>
                   </div>
@@ -737,7 +761,7 @@ export function SongSearchPanel(props: {
                 {!queryTooShort && !error ? (
                   <div className="border border-(--border) bg-(--panel-soft) px-4 py-3 text-right max-[960px]:w-full max-[960px]:text-left">
                     <p className="text-lg font-semibold text-(--text)">
-                      Found {summaryCount} songs
+                      {t("summary.foundCount", { count: summaryCount })}
                     </p>
                   </div>
                 ) : null}
@@ -755,9 +779,7 @@ export function SongSearchPanel(props: {
                   autoCorrect="off"
                   autoCapitalize="none"
                   className="pr-4 pl-10!"
-                  placeholder={
-                    props.placeholder ?? "Search by song title, artist or album"
-                  }
+                  placeholder={props.placeholder ?? t("page.placeholder")}
                 />
               </div>
               <Select
@@ -765,14 +787,22 @@ export function SongSearchPanel(props: {
                 onValueChange={(value) => setField(value as SearchField)}
               >
                 <SelectTrigger>
-                  <SelectValue placeholder="Search field" />
+                  <SelectValue placeholder={t("controls.searchField")} />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="any">All fields</SelectItem>
-                  <SelectItem value="title">Title only</SelectItem>
-                  <SelectItem value="artist">Artist only</SelectItem>
-                  <SelectItem value="album">Album only</SelectItem>
-                  <SelectItem value="creator">Creator only</SelectItem>
+                  <SelectItem value="any">{t("controls.allFields")}</SelectItem>
+                  <SelectItem value="title">
+                    {t("controls.titleOnly")}
+                  </SelectItem>
+                  <SelectItem value="artist">
+                    {t("controls.artistOnly")}
+                  </SelectItem>
+                  <SelectItem value="album">
+                    {t("controls.albumOnly")}
+                  </SelectItem>
+                  <SelectItem value="creator">
+                    {t("controls.creatorOnly")}
+                  </SelectItem>
                 </SelectContent>
               </Select>
               <Button
@@ -781,7 +811,9 @@ export function SongSearchPanel(props: {
                 onClick={() => setShowAdvanced((current) => !current)}
               >
                 <SlidersHorizontal className="h-4 w-4" />
-                {showAdvanced ? "Hide filters" : "Show filters"}
+                {showAdvanced
+                  ? t("controls.hideFilters")
+                  : t("controls.showFilters")}
               </Button>
             </div>
 
@@ -790,7 +822,7 @@ export function SongSearchPanel(props: {
                 <div className="grid items-start gap-4 md:grid-cols-2 xl:grid-cols-4">
                   <div className="grid gap-2">
                     <Label htmlFor={`${props.title}-advanced-title`}>
-                      Title
+                      {t("controls.title")}
                     </Label>
                     <Input
                       id={`${props.title}-advanced-title`}
@@ -805,7 +837,7 @@ export function SongSearchPanel(props: {
                   </div>
                   <div className="grid gap-2">
                     <Label htmlFor={`${props.title}-advanced-artist`}>
-                      Artist
+                      {t("controls.artist")}
                     </Label>
                     <Input
                       id={`${props.title}-advanced-artist`}
@@ -820,7 +852,7 @@ export function SongSearchPanel(props: {
                   </div>
                   <div className="grid gap-2">
                     <Label htmlFor={`${props.title}-advanced-album`}>
-                      Album
+                      {t("controls.album")}
                     </Label>
                     <Input
                       id={`${props.title}-advanced-album`}
@@ -835,7 +867,7 @@ export function SongSearchPanel(props: {
                   </div>
                   <div className="grid gap-2">
                     <Label htmlFor={`${props.title}-advanced-creator`}>
-                      Creator
+                      {t("controls.creator")}
                     </Label>
                     <Input
                       id={`${props.title}-advanced-creator`}
@@ -849,9 +881,9 @@ export function SongSearchPanel(props: {
                     />
                   </div>
                   <div className="grid gap-2">
-                    <Label>Tuning</Label>
+                    <Label>{t("controls.tuning")}</Label>
                     <MultiSelectSelect
-                      label="Tuning"
+                      label={t("controls.tuning")}
                       options={filterOptionsQuery.data?.tunings ?? []}
                       selectedValues={advancedFilters.tuning}
                       onAdd={(value) => toggleAdvancedTuning(value)}
@@ -859,19 +891,14 @@ export function SongSearchPanel(props: {
                     />
                   </div>
                   <div className="grid gap-2">
-                    <Label>Path</Label>
+                    <Label>{t("controls.path")}</Label>
                     <MultiSelectSelect
-                      label="Path"
-                      options={pathOptions.map((part) => formatPathLabel(part))}
-                      selectedValues={advancedFilters.parts.map((part) =>
-                        formatPathLabel(part)
-                      )}
-                      onAdd={(value) =>
-                        toggleAdvancedPart(getPathTokenFromLabel(value))
-                      }
-                      onRemove={(value) =>
-                        toggleAdvancedPart(getPathTokenFromLabel(value))
-                      }
+                      label={t("controls.path")}
+                      options={pathOptions}
+                      selectedValues={advancedFilters.parts}
+                      onAdd={(value) => toggleAdvancedPart(value)}
+                      onRemove={(value) => toggleAdvancedPart(value)}
+                      renderValue={getPathLabel}
                       toneByValue={getPathToneByValue}
                     />
                     {advancedFilters.parts.length > 1 ? (
@@ -889,7 +916,7 @@ export function SongSearchPanel(props: {
                             updateAdvancedFilter("partsMatchMode", "any")
                           }
                         >
-                          Match any
+                          {t("controls.matchAny")}
                         </Button>
                         <Button
                           type="button"
@@ -904,15 +931,15 @@ export function SongSearchPanel(props: {
                             updateAdvancedFilter("partsMatchMode", "all")
                           }
                         >
-                          Match all
+                          {t("controls.matchAll")}
                         </Button>
                       </div>
                     ) : null}
                   </div>
                   <div className="grid gap-2">
-                    <Label>Year</Label>
+                    <Label>{t("controls.year")}</Label>
                     <MultiSelectSelect
-                      label="Year"
+                      label={t("controls.year")}
                       options={(filterOptionsQuery.data?.years ?? []).map(
                         (year) => String(year)
                       )}
@@ -924,13 +951,13 @@ export function SongSearchPanel(props: {
                     />
                   </div>
                   <div className="grid gap-2 self-start">
-                    <Label className="invisible">Actions</Label>
+                    <Label className="invisible">{t("controls.actions")}</Label>
                     <Button
                       type="button"
                       variant="outline"
                       onClick={clearAdvancedFilters}
                     >
-                      Clear advanced filters
+                      {t("controls.clearAdvancedFilters")}
                     </Button>
                   </div>
                 </div>
@@ -961,17 +988,17 @@ export function SongSearchPanel(props: {
                     resultsGridColumns
                   )}
                 >
-                  <span>Song</span>
-                  <span>Paths</span>
-                  <span>Stats</span>
+                  <span>{t("columns.song")}</span>
+                  <span>{t("columns.paths")}</span>
+                  <span>{t("columns.stats")}</span>
                   <span className="text-right">
-                    {props.actionsLabel ?? "Actions"}
+                    {props.actionsLabel ?? t("columns.actions")}
                   </span>
                 </div>
 
                 {isLoading && results.length === 0 ? (
                   <div className="px-5 py-8 text-sm text-(--muted)">
-                    Loading songs...
+                    {t("states.loading")}
                   </div>
                 ) : null}
 
@@ -983,7 +1010,7 @@ export function SongSearchPanel(props: {
                     )}
                   >
                     <span className="col-span-full normal-case tracking-normal text-sm font-normal text-(--muted)">
-                      Search terms must be at least 3 characters.
+                      {t("states.queryTooShort")}
                     </span>
                   </div>
                 ) : null}
@@ -997,8 +1024,8 @@ export function SongSearchPanel(props: {
                 {!isLoading && !queryTooShort && visibleResults.length === 0 ? (
                   <div className="px-5 py-8 text-sm text-(--muted)">
                     {hasSearchInput
-                      ? "No songs matched those filters yet. Try broadening the search field or clearing one of the advanced inputs."
-                      : "No songs are available in the demo catalog yet."}
+                      ? t("states.emptyFiltered")
+                      : t("states.emptyCatalog")}
                   </div>
                 ) : null}
 
@@ -1025,8 +1052,10 @@ export function SongSearchPanel(props: {
                   const isDisabled = resultState.disabled === true;
                   const disabledReason =
                     resultState.reasons && resultState.reasons.length > 0
-                      ? `Blacklisted - ${resultState.reasons.join(" · ")}`
-                      : "Blacklisted";
+                      ? t("states.blacklistedWithReasons", {
+                          reasons: resultState.reasons.join(" · "),
+                        })
+                      : t("states.blacklisted");
 
                   return (
                     <div
@@ -1056,7 +1085,7 @@ export function SongSearchPanel(props: {
                               ) : null}
                             </div>
                             <p className="mt-1 truncate text-sm text-(--brand-deep)">
-                              {song.artist ?? "Unknown artist"}
+                              {song.artist ?? t("states.unknownArtist")}
                             </p>
                             {song.album ? (
                               <p className="mt-1 truncate text-sm text-(--muted)">
@@ -1070,30 +1099,30 @@ export function SongSearchPanel(props: {
                             <div className="flex flex-wrap gap-2">
                               {song.parts?.includes("lead") ? (
                                 <PathBadge
-                                  label="Lead"
-                                  shortLabel="L"
+                                  label={t("paths.lead")}
+                                  shortLabel={getPathShortLabel("lead")}
                                   className="border-emerald-700/50 bg-emerald-950 text-emerald-100 hover:bg-emerald-950"
                                 />
                               ) : null}
                               {song.parts?.includes("rhythm") ? (
                                 <PathBadge
-                                  label="Rhythm"
-                                  shortLabel="R"
+                                  label={t("paths.rhythm")}
+                                  shortLabel={getPathShortLabel("rhythm")}
                                   className="border-sky-700/50 bg-sky-950 text-sky-100 hover:bg-sky-950"
                                 />
                               ) : null}
                               {song.parts?.includes("bass") ? (
                                 <PathBadge
-                                  label="Bass"
-                                  shortLabel="B"
+                                  label={t("paths.bass")}
+                                  shortLabel={getPathShortLabel("bass")}
                                   className="border-orange-700/50 bg-orange-950 text-orange-100 hover:bg-orange-950"
                                 />
                               ) : null}
                               {song.parts?.includes("voice") ||
                               song.parts?.includes("vocals") ? (
                                 <PathBadge
-                                  label="Lyrics"
-                                  shortLabel="V"
+                                  label={t("paths.lyrics")}
+                                  shortLabel={getPathShortLabel("voice")}
                                   className="border-violet-700/50 bg-violet-950 text-violet-100 hover:bg-violet-950"
                                 />
                               ) : null}
@@ -1128,7 +1157,7 @@ export function SongSearchPanel(props: {
                               ) : null}
                             </div>
                             <p className="mt-1 truncate text-sm text-(--brand-deep)">
-                              {song.artist ?? "Unknown artist"}
+                              {song.artist ?? t("states.unknownArtist")}
                             </p>
                             {song.album ? (
                               <p className="mt-1 truncate text-sm text-(--muted)">
@@ -1142,30 +1171,30 @@ export function SongSearchPanel(props: {
                             <div className="flex flex-wrap gap-2">
                               {song.parts?.includes("lead") ? (
                                 <PathBadge
-                                  label="Lead"
-                                  shortLabel="L"
+                                  label={t("paths.lead")}
+                                  shortLabel={getPathShortLabel("lead")}
                                   className="border-emerald-700/50 bg-emerald-950 text-emerald-100 hover:bg-emerald-950"
                                 />
                               ) : null}
                               {song.parts?.includes("rhythm") ? (
                                 <PathBadge
-                                  label="Rhythm"
-                                  shortLabel="R"
+                                  label={t("paths.rhythm")}
+                                  shortLabel={getPathShortLabel("rhythm")}
                                   className="border-sky-700/50 bg-sky-950 text-sky-100 hover:bg-sky-950"
                                 />
                               ) : null}
                               {song.parts?.includes("bass") ? (
                                 <PathBadge
-                                  label="Bass"
-                                  shortLabel="B"
+                                  label={t("paths.bass")}
+                                  shortLabel={getPathShortLabel("bass")}
                                   className="border-orange-700/50 bg-orange-950 text-orange-100 hover:bg-orange-950"
                                 />
                               ) : null}
                               {song.parts?.includes("voice") ||
                               song.parts?.includes("vocals") ? (
                                 <PathBadge
-                                  label="Lyrics"
-                                  shortLabel="V"
+                                  label={t("paths.lyrics")}
+                                  shortLabel={getPathShortLabel("voice")}
                                   className="border-violet-700/50 bg-violet-950 text-violet-100 hover:bg-violet-950"
                                 />
                               ) : null}
@@ -1188,15 +1217,16 @@ export function SongSearchPanel(props: {
                         ) : null}
                         {song.creator ? (
                           <p className="mt-1 truncate text-sm text-(--muted)">
-                            Charted by {song.creator}
+                            {t("states.chartedBy", { creator: song.creator })}
                           </p>
                         ) : null}
                         {song.sourceUpdatedAt ? (
                           <p className="mt-1 text-(--muted)">
-                            Updated{" "}
-                            {updatedDateFormatter.format(
-                              new Date(song.sourceUpdatedAt)
-                            )}
+                            {t("states.updated", {
+                              date: updatedDateFormatter.format(
+                                new Date(song.sourceUpdatedAt)
+                              ),
+                            })}
                           </p>
                         ) : null}
                       </div>
@@ -1263,10 +1293,6 @@ function getPathToneByValue(value: string) {
   }
 }
 
-function getPathTokenFromLabel(value: string) {
-  return value.toLowerCase() === "lyrics" ? "voice" : value.toLowerCase();
-}
-
 function haveSameSelectedValues(left: string[], right: string[]) {
   if (left.length !== right.length) {
     return false;
@@ -1282,17 +1308,20 @@ function haveSameSelectedValues(left: string[], right: string[]) {
 
 function MultiSelectSelect(props: {
   label: string;
-  options: string[];
-  selectedValues: string[];
+  options: readonly string[];
+  selectedValues: readonly string[];
   onAdd: (value: string) => void;
   onRemove: (value: string) => void;
+  renderValue?: (value: string) => string;
   toneByValue?: (value: string) => string;
 }) {
+  const { t } = useLocaleTranslation("search");
   const [open, setOpen] = useState(false);
+  const renderValue = props.renderValue ?? ((value: string) => value);
   const summary =
     props.selectedValues.length > 0
-      ? `${props.selectedValues.length} selected`
-      : `Select ${props.label.toLowerCase()}`;
+      ? t("multiSelect.selected", { count: props.selectedValues.length })
+      : t("multiSelect.select", { label: props.label });
 
   return (
     <div className="grid gap-2">
@@ -1317,18 +1346,20 @@ function MultiSelectSelect(props: {
         >
           <Command className="bg-(--panel-strong) text-(--text)">
             <CommandInput
-              placeholder={`Filter ${props.label.toLowerCase()}...`}
+              placeholder={t("multiSelect.filter", { label: props.label })}
             />
             <CommandList className="max-h-56">
-              <CommandEmpty>No matches found.</CommandEmpty>
+              <CommandEmpty>{t("multiSelect.noMatches")}</CommandEmpty>
               <CommandGroup>
                 {props.options.map((option) => {
                   const selected = props.selectedValues.includes(option);
+                  const optionLabel = renderValue(option);
 
                   return (
                     <CommandItem
                       key={option}
                       value={option}
+                      keywords={[optionLabel]}
                       onSelect={() => {
                         if (selected) {
                           props.onRemove(option);
@@ -1347,7 +1378,7 @@ function MultiSelectSelect(props: {
                         checked={selected}
                         className="pointer-events-none"
                       />
-                      <span>{option}</span>
+                      <span>{optionLabel}</span>
                     </CommandItem>
                   );
                 })}
@@ -1370,7 +1401,7 @@ function MultiSelectSelect(props: {
                   "border-(--brand) bg-(--brand)/15 text-(--text)"
               )}
             >
-              <span>{value}</span>
+              <span>{renderValue(value)}</span>
               <X className="h-3 w-3" />
             </button>
           ))}

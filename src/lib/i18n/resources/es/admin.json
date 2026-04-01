@@ -1,0 +1,126 @@
+{
+  "page": {
+    "title": "Admin",
+    "description": "Administra el acceso compartido del bot y los controles de prueba sin conexión.",
+    "noAccess": "No tienes acceso al panel de administración.",
+    "authNotice": "Completa la autenticación de Twitch como",
+    "botAccount": "Cuenta del bot",
+    "botMismatch": "Conectado como {connected}. Se esperaba {expected}. Reconecta para cambiar de cuenta."
+  },
+  "states": {
+    "offlineTestingFailed": "No se pudo actualizar la prueba sin conexión.",
+    "botUpdateFailed": "No se pudo actualizar la cuenta del bot.",
+    "updated": "Actualizado."
+  },
+  "status": {
+    "connected": "Conectado",
+    "needsAuth": "Falta autenticación",
+    "enabled": "Activado",
+    "disabled": "Desactivado"
+  },
+  "actions": {
+    "connectBot": "Conectar {username}",
+    "reconnectBot": "Reconectar bot",
+    "reconnecting": "Reconectando...",
+    "enable": "Activar",
+    "enabling": "Activando...",
+    "disable": "Desactivar",
+    "disabling": "Desactivando..."
+  },
+  "metrics": {
+    "requestIssues": {
+      "label": "Total de incidencias de solicitudes",
+      "description": "Resultados bloqueados, rechazados y con error en todos los registros de solicitudes."
+    },
+    "auditRows": {
+      "label": "Total de filas de auditoría",
+      "description": "Acciones registradas de administración y gestión del canal."
+    }
+  },
+  "offlineTesting": {
+    "title": "Prueba del bot sin conexión"
+  },
+  "prototype": {
+    "title": "Prototipo de fila de playlist",
+    "description": "Vista previa de un elemento de playlist más compacto con versiones siempre visibles.",
+    "cardTitle": "Elemento compacto de playlist con varias versiones",
+    "cardDescription": "Esta vista previa usa el mismo componente de elemento de playlist que la página en vivo, con una canción de ejemplo que tiene dos versiones."
+  },
+  "logs": {
+    "title": "Registros de solicitudes",
+    "description": "Intentos de solicitud más recientes desde chat y desde el flujo de solicitudes del espectador. Cada fila muestra la solicitud, quién la envió, el resultado y cualquier coincidencia o motivo registrado.",
+    "loading": "Cargando registros de solicitudes...",
+    "empty": "Todavía no hay registros de solicitudes."
+  },
+  "audits": {
+    "title": "Registros de auditoría",
+    "description": "Acciones administrativas y de gestión del canal registradas más recientemente para este canal. Cada fila muestra qué cambió, quién lo hizo y los valores clave guardados.",
+    "loading": "Cargando registros de auditoría...",
+    "empty": "Todavía no hay registros de auditoría."
+  },
+  "pagination": {
+    "show": "Mostrar",
+    "previous": "Anterior",
+    "next": "Siguiente",
+    "updating": "Actualizando...",
+    "showingEmpty": "Mostrando 0 resultados",
+    "showingRange": "Mostrando {start}-{end} de {total}"
+  },
+  "table": {
+    "loading": "Cargando...",
+    "unknownTime": "Hora desconocida",
+    "noExtraValues": "No se registraron valores extra.",
+    "none": "Ninguno",
+    "yes": "Sí",
+    "no": "No"
+  },
+  "requestLog": {
+    "columns": {
+      "time": "Hora",
+      "request": "Solicitud",
+      "requester": "Solicitante",
+      "result": "Resultado",
+      "details": "Detalles"
+    },
+    "query": "Consulta: {query}",
+    "unknownUser": "Usuario desconocido",
+    "matched": "Coincidencia: {title}{artist}",
+    "reason": "Motivo: {reason}",
+    "noMatchOrReason": "No se registró ninguna coincidencia ni motivo."
+  },
+  "auditLog": {
+    "columns": {
+      "time": "Hora",
+      "action": "Acción",
+      "entity": "Entidad",
+      "actor": "Actor",
+      "details": "Detalles"
+    }
+  },
+  "labels": {
+    "accepted": "Aceptado",
+    "blocked": "Bloqueado",
+    "error": "Error",
+    "system": "Sistema",
+    "auto_grant_vip_tokens_cheer": "Otorgar tokens VIP automáticamente: cheers",
+    "auto_grant_vip_tokens_gift_recipient": "Otorgar tokens VIP automáticamente: receptor de sub regalada",
+    "auto_grant_vip_tokens_new_subscriber": "Otorgar tokens VIP automáticamente: nueva sub de pago",
+    "auto_grant_vip_tokens_raid": "Otorgar tokens VIP automáticamente: raid",
+    "auto_grant_vip_tokens_shared_sub_renewal_message": "Otorgar tokens VIP automáticamente: mensaje compartido de renovación",
+    "auto_grant_vip_tokens_streamelements_tip": "Otorgar tokens VIP automáticamente: propina de StreamElements",
+    "auto_grant_vip_tokens_sub_gifter": "Otorgar tokens VIP automáticamente: quien regaló la sub",
+    "grantedTokenCount": "Tokens otorgados",
+    "minimumRaidViewerCount": "Tamaño mínimo de raid",
+    "totalGiftedSubs": "Subs regaladas",
+    "twitchMessageId": "ID de mensaje de EventSub",
+    "vip_token": "Token VIP"
+  },
+  "auditSources": {
+    "channelCheer": "Cheer",
+    "channelRaid": "Raid",
+    "channelSubscribe": "Suscripción al canal",
+    "channelSubscriptionGift": "Sub regalada",
+    "channelSubscriptionMessage": "Mensaje compartido de renovación",
+    "streamElementsTip": "Propina de StreamElements"
+  }
+}

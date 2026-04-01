@@ -1,0 +1,370 @@
+{
+  "page": {
+    "title": "Playlist de {channel}",
+    "loading": "Chargement de la playlist...",
+    "empty": "Cette playlist est vide pour le moment.",
+    "viewerStateFailed": "Le chargement de l'etat des demandes spectateur a echoue.",
+    "viewerToolsFailed": "Le chargement des outils de demande spectateur a echoue.",
+    "requestsLiveOnly": "Vous pourrez ajouter des demandes quand le stream sera en direct."
+  },
+  "states": {
+    "updateRequestToggleFailed": "Impossible de mettre a jour l'interrupteur des demandes pour le moment.",
+    "unableToAddSong": "Impossible d'ajouter le morceau.",
+    "unableToUpdateRequest": "Impossible de mettre a jour votre demande.",
+    "requestUpdated": "Demande mise a jour.",
+    "unableToRemoveRequests": "Impossible de retirer vos demandes.",
+    "requestsRemoved": "Demandes retirees."
+  },
+  "search": {
+    "title": "Rechercher pour ajouter un morceau",
+    "placeholder": "Rechercher des morceaux pour {channel}",
+    "actions": {
+      "add": "Ajouter",
+      "request": "Demander",
+      "actions": "Actions"
+    },
+    "showBlacklisted": "Afficher les morceaux blacklistes",
+    "pathWarning": "Ne correspond pas {count, plural, one {au chemin par defaut de la chaine} other {aux chemins par defaut de la chaine}} : {paths}."
+  },
+  "viewerSummary": {
+    "vipTokensLabel": "{count} tokens VIP",
+    "vipBalanceLoading": "Solde VIP...",
+    "vipTokensShort": "Tokens VIP",
+    "requestsWithLimit": "{count}/{limit} demandes",
+    "requestsNoLimit": "{count} demandes",
+    "vipBalanceSummary": "{count} tokens VIP disponibles",
+    "vipBalanceChecking": "Verification de votre solde de tokens VIP...",
+    "vipBalanceUnavailable": "Votre solde de tokens VIP est indisponible pour le moment.",
+    "replaceQueued": "Les nouveaux ajouts remplacent vos demandes en file.",
+    "vipHelp": "Aide des tokens VIP",
+    "open": "Ouvrir",
+    "noRequests": "Aucune demande dans la playlist.",
+    "removeQueued": "Retirer les demandes en file",
+    "removing": "Retrait..."
+  },
+  "badges": {
+    "vip": "VIP",
+    "regular": "Normal",
+    "nowPlaying": "En lecture",
+    "pick": "Pick {count}",
+    "requestsOn": "Les demandes sont actives",
+    "requestsOff": "Les demandes sont desactivees",
+    "turnRequestsOn": "Activer les demandes",
+    "turnRequestsOff": "Desactiver les demandes",
+    "online": "En ligne",
+    "offline": "Hors ligne",
+    "vipBalance": "Vous avez {count} tokens VIP",
+    "vipTokens": "Tokens VIP"
+  },
+  "vipInfo": {
+    "earn": "Gagner des tokens VIP",
+    "manualOnly": "Cette chaine attribue les tokens VIP manuellement pour le moment.",
+    "use": "Utiliser les tokens VIP"
+  },
+  "history": {
+    "title": "Historique joue",
+    "titleWithChannel": "Historique joue de {channel}",
+    "show": "Afficher l'historique",
+    "hide": "Masquer l'historique",
+    "songSearch": "Recherche de morceau",
+    "searchPlaceholder": "Morceau, artiste, album ou charter",
+    "clearSearch": "Effacer la recherche",
+    "requester": "Demandeur",
+    "requesterPlaceholder": "Rechercher un demandeur",
+    "clearRequester": "Effacer le demandeur",
+    "clearRequesterFilter": "Effacer le filtre de demandeur",
+    "searchingRequesters": "Recherche des demandeurs...",
+    "loading": "Chargement de l'historique joue...",
+    "emptyFiltered": "Aucun morceau joue ne correspond a ces filtres.",
+    "empty": "Aucun morceau n'a encore ete marque comme joue.",
+    "requestCount": "{count, plural, one {# demande} other {# demandes}}",
+    "byArtist": " par {artist}",
+    "requestedBy": "Demande par {requester}",
+    "page": "Page {page}",
+    "unknownRequester": "Inconnu"
+  },
+  "rules": {
+    "sectionTitle": "Regles de la chaine",
+    "sectionTitleWithChannel": "Regles de la chaine de {channel}",
+    "states": {
+      "updateFailed": "Impossible de mettre a jour les regles de la chaine.",
+      "searchFailed": "La recherche a echoue."
+    },
+    "blacklistedArtists": "Artistes blacklistes",
+    "blacklistedCharters": "Charters blacklistes",
+    "blacklistedSongs": "Morceaux blacklistes",
+    "blacklistedVersions": "Versions blacklistees",
+    "setlistArtists": "Artistes de la setlist",
+    "searchArtists": "Rechercher des artistes par nom",
+    "searchCharters": "Rechercher des charters par nom",
+    "searchSongs": "Rechercher des morceaux par titre",
+    "searchMin": "Saisissez au moins 2 caracteres pour rechercher.",
+    "noMatches": "Aucune entree correspondante a ajouter.",
+    "add": "Ajouter",
+    "remove": "Retirer",
+    "trackCount": "{count, plural, one {# morceau} other {# morceaux}}",
+    "versionCount": "{count, plural, one {# version} other {# versions}} - Groupe de morceau {groupId}",
+    "artistId": "ID artiste {id}",
+    "charterId": "ID charter {id}",
+    "songGroupId": "Groupe de morceau {groupId}",
+    "versionId": "ID version {id}",
+    "noBlacklistedArtists": "Aucun artiste blackliste.",
+    "noBlacklistedCharters": "Aucun charter blackliste.",
+    "noBlacklistedSongs": "Aucun morceau blackliste.",
+    "noBlacklistedVersions": "Aucune version blacklistee.",
+    "noSetlistArtists": "Aucun artiste de setlist."
+  },
+  "community": {
+    "title": "Controles de moderation",
+    "reconnect": "Reconnecter Twitch",
+    "reconnectMessage": "Reconnectez Twitch pour prioriser les viewers actuellement dans le chat.",
+    "currentChattersFirst": "Viewers du chat en premier",
+    "twitchMatches": "Correspondances Twitch",
+    "resultCount": "{count, plural, one {# resultat} other {# resultats}}",
+    "inChat": "Dans le chat",
+    "selected": "Selectionne",
+    "noMatchingUsers": "Aucun nom d'utilisateur Twitch correspondant.",
+    "states": {
+      "updateFailed": "Impossible de mettre a jour les reglages de communaute de la chaine.",
+      "lookupFailed": "La recherche d'utilisateur a echoue."
+    },
+    "blocks": {
+      "title": "Viewers bloques",
+      "searchPlaceholder": "Rechercher un nom Twitch a bloquer",
+      "blockViewer": "Bloquer le viewer",
+      "searchMin": "Saisissez au moins 4 caracteres pour rechercher des noms Twitch.",
+      "description": "Les viewers bloques peuvent toujours parler dans le chat Twitch, mais ils ne peuvent pas ajouter ni modifier des demandes depuis le chat, le site web ou le panneau d'extension.",
+      "defaultReason": "Bloque pour faire des demandes sur cette chaine.",
+      "unblock": "Debloquer",
+      "empty": "Aucun viewer bloque."
+    },
+    "vip": {
+      "title": "Tokens VIP",
+      "searchPlaceholder": "Rechercher un nom Twitch pour attribuer un token",
+      "grant": "Attribuer un token",
+      "searchMin": "Saisissez au moins 4 caracteres pour rechercher des noms Twitch.",
+      "searchMinExisting": "Les detenteurs de tokens VIP existants apparaissent ci-dessous. Saisissez au moins 4 caracteres pour rechercher parmi tous les noms Twitch.",
+      "tokenHoldersFirst": "Detenteurs de tokens VIP en premier",
+      "tokenCountSingle": "{count} token",
+      "tokenCountPlural": "{count} tokens",
+      "viewOnly": "Vous pouvez voir les soldes VIP, mais seul le streamer ou un moderateur autorise peut les modifier.",
+      "username": "Nom d'utilisateur",
+      "tokens": "Tokens",
+      "showingRange": "{start}-{end} sur {total}",
+      "previous": "Precedent",
+      "next": "Suivant",
+      "pageOf": "Page {page} sur {total}",
+      "empty": "Aucun token VIP pour le moment.",
+      "noticeAddedSingle": "1 token ajoute",
+      "noticeAddedMultiple": "{count} tokens VIP ajoutes",
+      "noticeRemovedSingle": "1 token retire",
+      "noticeRemovedMultiple": "{count} tokens VIP retires",
+      "noticeSaved": "Tokens VIP enregistres"
+    }
+  },
+  "viewerActions": {
+    "add": "Ajouter",
+    "addVip": "Ajouter VIP",
+    "adding": "Ajout...",
+    "alreadyVip": "Deja dans votre file comme demande VIP.",
+    "alreadyRegular": "Deja dans votre file comme demande normale.",
+    "blacklistedPrefix": "Blackliste",
+    "songUnavailable": "Ce morceau n'est pas disponible ici.",
+    "checkingAccess": "Verification de votre acces aux demandes...",
+    "cannotRequest": "Vous ne pouvez pas demander de morceaux ici.",
+    "alreadyActive": "Ce morceau est deja dans vos demandes actives.",
+    "activeLimitReached": "Vous avez deja {count, plural, one {# demande active} other {# demandes actives}}.",
+    "insufficientVipTokens": "Vous n'avez pas assez de tokens VIP."
+  },
+  "specialRequest": {
+    "titleManage": "Ajouter une demande personnalisee",
+    "titleViewer": "Demander par artiste",
+    "artist": "Artiste",
+    "artistPlaceholder": "Nom de l'artiste",
+    "artistMin": "Saisissez au moins 2 caracteres du nom d'un artiste.",
+    "chooseMode": "Choisir le mode",
+    "chooseType": "Choisir le type",
+    "random": "Aleatoire",
+    "choice": "Choix",
+    "regular": "Normal",
+    "add": "Ajouter",
+    "addVip": "Ajouter VIP",
+    "adding": "Ajout...",
+    "randomHelp": "Ajoute un morceau aleatoire parmi les morceaux correspondants pour cet artiste.",
+    "choiceHelp": "Ajoute une demande de choix du streamer pour cet artiste."
+  },
+  "manageActions": {
+    "add": "Ajouter",
+    "adding": "Ajout...",
+    "addForUser": "Ajouter pour un utilisateur",
+    "searchViewers": "Rechercher les viewers actuels",
+    "searchMin": "Saisissez au moins 2 caracteres pour rechercher les viewers actuels.",
+    "reconnectMessage": "Reconnectez Twitch pour rechercher les viewers actuellement dans le chat.",
+    "reconnect": "Reconnecter",
+    "searching": "Recherche des viewers actuels...",
+    "noMatches": "Aucun viewer actuel ne correspond a ce nom."
+  },
+  "row": {
+    "viewer": "viewer",
+    "added": "Ajoute {time}",
+    "edited": "Modifie {time}",
+    "streamerChoiceTitle": "Choix du streamer : {query}",
+    "streamerChoiceSubtitle": "Le streamer choisit le morceau exact.",
+    "relative": {
+      "now": "maintenant",
+      "minutes": "{count} min",
+      "hours": "{count} h",
+      "days": "{count} j"
+    },
+    "picks": {
+      "first": "1er pick",
+      "second": "2e pick",
+      "third": "3e pick"
+    }
+  },
+  "management": {
+    "states": {
+      "searchFailed": "La recherche a echoue.",
+      "playlistUpdateFailed": "La playlist n'a pas pu etre mise a jour.",
+      "moderationUnavailable": "Les actions de moderation ne sont pas disponibles pour cette chaine.",
+      "blacklistUpdateFailed": "La blacklist n'a pas pu etre mise a jour."
+    },
+    "header": {
+      "managing": "Gestion de {channel}",
+      "channel": "Chaine : {channel}"
+    },
+    "manual": {
+      "title": "Ajouter un morceau",
+      "requesterPlaceholder": "Nom du demandeur (optionnel)",
+      "searchPlaceholder": "Rechercher et ajouter un morceau",
+      "searchMin": "La recherche doit contenir au moins 3 caracteres.",
+      "table": {
+        "track": "Morceau",
+        "albumCreator": "Album / Charter",
+        "tuningPath": "Accordage / Chemin",
+        "add": "Ajouter"
+      },
+      "unknownArtist": "Artiste inconnu",
+      "unknownAlbum": "Album inconnu",
+      "chartedBy": "Charte par {creator}",
+      "unknownCreator": "Charter inconnu",
+      "blacklisted": "Blackliste",
+      "noTuningInfo": "Aucun accordage",
+      "noPathInfo": "Aucun chemin",
+      "addButton": "Ajouter"
+    },
+    "actions": {
+      "shuffle": "Melanger",
+      "clearPlaylist": "Vider la playlist",
+      "resetSession": "Reinitialiser la session",
+      "confirmClear": "Vider toute la playlist ? Cette action est definitive.",
+      "confirmReset": "Reinitialiser la session ? Cela videra la playlist actuelle."
+    },
+    "currentTitle": "Playlist actuelle",
+    "blacklistErrors": {
+      "missingRequestVersionId": "Cette demande n'a pas d'ID de version a blacklister.",
+      "missingVersionVersionId": "Cette version n'a pas d'ID de version a blacklister.",
+      "missingRequestSongGroupId": "Cette demande n'a pas d'ID de groupe de morceau a blacklister.",
+      "missingRequestArtistId": "Cette demande n'a pas d'ID d'artiste a blacklister.",
+      "missingVersionCharterId": "Cette version n'a pas d'ID de charter a blacklister.",
+      "unknownArtist": "Artiste inconnu",
+      "unknownCharter": "Charter inconnu"
+    },
+    "blacklistPanelDescription": "Les artistes, charters, morceaux et versions precises peuvent etre bloques pour cette chaine.",
+    "history": {
+      "title": "Historique joue",
+      "requestedBy": "Demande par {requester}",
+      "played": "Joue {time}",
+      "restore": "Restaurer",
+      "restoring": "Restauration...",
+      "empty": "Rien n'a encore ete marque comme joue."
+    },
+    "deleteDialog": {
+      "title": "Retirer cette demande de la playlist ?",
+      "descriptionWithArtist": "Cela retire \"{title}\" de {artist} de la playlist. Cette action est definitive.",
+      "descriptionWithoutArtist": "Cela retire \"{title}\" de la playlist. Cette action est definitive.",
+      "descriptionFallback": "Cela retire la demande selectionnee de la playlist. Cette action est definitive.",
+      "keep": "Garder la demande",
+      "removing": "Suppression...",
+      "remove": "Retirer la demande"
+    },
+    "queue": {
+      "empty": "Aucun morceau dans la playlist pour le moment."
+    },
+    "relative": {
+      "now": "a l'instant",
+      "minutesAgo": "{count, plural, one {il y a # minute} other {il y a # minutes}}",
+      "hoursAgo": "{count, plural, one {il y a # heure} other {il y a # heures}}",
+      "daysAgo": "{count, plural, one {il y a # jour} other {il y a # jours}}"
+    },
+    "item": {
+      "moveTop": "Deplacer en haut",
+      "moveUp": "Monter",
+      "moveDown": "Descendre",
+      "moveBottom": "Deplacer en bas",
+      "reorderAria": "Reordonner {title}",
+      "vipBadge": "VIP",
+      "playingBadge": "En lecture",
+      "warningBadge": "Alerte",
+      "versionBlacklisted": "Version blacklistee",
+      "songBlacklisted": "Morceau blackliste",
+      "artistBlacklisted": "Artiste blackliste",
+      "requestedBy": "Demande par {requester}",
+      "vipTokens": "{count} tokens VIP",
+      "added": "Ajoute {time}",
+      "requestedText": "Texte demande : {query}",
+      "saving": "Enregistrement...",
+      "makeRegular": "Passer en normal",
+      "makeVip": "Passer en VIP",
+      "returnToQueue": "Remettre en file",
+      "playNow": "Jouer maintenant",
+      "markComplete": "Marquer termine",
+      "versionsCount": "{count, plural, one {# version} other {# versions}}",
+      "downloadFromCf": "Telecharger depuis CF"
+    },
+    "actionsMenu": {
+      "openActionsAria": "Ouvrir les actions pour {title}",
+      "removing": "Suppression...",
+      "removeFromPlaylist": "Retirer de la playlist",
+      "blacklist": "Blacklist",
+      "blacklistTitle": "Actions de blacklist",
+      "back": "Retour",
+      "description": "Choisissez si vous voulez bloquer la version en file, toutes les versions de ce morceau, l'artiste ou un charter.",
+      "queuedVersionId": "ID de version en file {id}",
+      "noQueuedVersionId": "Aucun ID de version en file",
+      "versionBlocked": "Version blacklistee",
+      "blacklistQueuedVersion": "Blacklister la version en file",
+      "blockVersionDescription": "Bloque uniquement l'ID de version {id}.",
+      "blockVersionFallbackDescription": "Bloque uniquement la version exacte associee a cette demande.",
+      "songBlocked": "Morceau blackliste",
+      "blacklistSongGroup": "Blacklister toutes les versions de ce morceau",
+      "blockSongDescription": "Bloque toutes les versions groupees sous ce morceau.",
+      "artistBlocked": "Artiste blackliste : {artist}",
+      "blacklistArtist": "Blacklister l'artiste : {artist}",
+      "blockArtistDescription": "Bloque tous les morceaux de cet ID artiste.",
+      "charterBlocked": "Charter blackliste : {charter}",
+      "blacklistCharter": "Blacklister le charter : {charter}",
+      "blockCharterDescription": "Bloque tous les morceaux de cet ID charter.",
+      "noCharterIds": "Aucun ID de charter disponible pour ces versions."
+    },
+    "versionsTable": {
+      "songAlbum": "Morceau / album",
+      "tunings": "Accordages",
+      "paths": "Chemins",
+      "updated": "Mis a jour",
+      "downloads": "Telechargements",
+      "actions": "Actions",
+      "unknownArtist": "Artiste inconnu",
+      "chartedBy": "Charte par",
+      "charterBlacklisted": "Charter blackliste",
+      "unknown": "Inconnu",
+      "download": "Telecharger",
+      "blacklisted": "Blackliste",
+      "blacklist": "Blacklister"
+    },
+    "preview": {
+      "removed": "La ligne de demo a ete retiree de la playlist.",
+      "restore": "Restaurer la ligne de demo"
+    }
+  }
+}

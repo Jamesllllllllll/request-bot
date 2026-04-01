@@ -1,0 +1,45 @@
+{
+  "meta": {
+    "title": "Accueil"
+  },
+  "hero": {
+    "eyebrow": "Gestion de playlist pour les streamers Rocksmith",
+    "title": "Recherchez des morceaux ou gerez votre chaine."
+  },
+  "actions": {
+    "findSong": "Trouver un morceau a demander",
+    "searchSongs": "Rechercher des morceaux",
+    "manageChannel": "Gerer votre chaine",
+    "openSettings": "Ouvrir les parametres"
+  },
+  "about": {
+    "eyebrow": "Qu'est-ce que RockList.Live ?",
+    "body": "RockList.Live aide les streamers Rocksmith a prendre des demandes, gerer la playlist et garder le stream fluide."
+  },
+  "features": {
+    "surfaceRequestsTitle": "Des demandes depuis chaque surface",
+    "surfaceRequestsBody": "Les viewers ajoutent des morceaux sur la page de playlist, dans le chat ou depuis le panneau Twitch.",
+    "moderationTitle": "Support des moderateurs",
+    "moderationBody": "Les moderateurs gerent les demandes et les priorites VIP pendant le live.",
+    "queueTitle": "Gardez la file en mouvement",
+    "queueBody": "Modifiez, triez et suivez les demandes sans perdre le prochain morceau.",
+    "rulesTitle": "Definissez les regles",
+    "rulesBody": "Controlez les listes noires, les setlists, la moderation et les parametres de demande pour votre chaine."
+  },
+  "live": {
+    "eyebrow": "En direct",
+    "title": "Streamers actuels",
+    "showLive": "Afficher le direct",
+    "showDemo": "Afficher la demo",
+    "demoOnly": "Les streamers affiches ici le sont uniquement a des fins de demonstration.",
+    "activeCount": "{count} actifs",
+    "empty": "Aucun streamer n'est encore en direct avec le bot actif.",
+    "previewAlt": "Apercu du live de {displayName}",
+    "status": "En direct",
+    "nowPlaying": "En cours",
+    "upNext": "Ensuite",
+    "nextRequest": "Prochaine demande",
+    "openPlaylist": "Ouvrir la playlist",
+    "watchOnTwitch": "Regarder sur Twitch"
+  }
+}

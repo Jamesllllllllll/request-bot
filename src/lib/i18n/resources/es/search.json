@@ -1,0 +1,79 @@
+{
+  "meta": {
+    "title": "Buscar canciones"
+  },
+  "page": {
+    "title": "Buscar",
+    "infoNote": "Esta demo solo contiene {count} canciones.",
+    "placeholder": "Busca por título, artista o álbum"
+  },
+  "summary": {
+    "note": "Nota:",
+    "foundCount": "{count} canciones encontradas",
+    "filters": "Filtros",
+    "moreCount": "+{count} más",
+    "changeFilters": "Cambiar filtros"
+  },
+  "controls": {
+    "searchField": "Campo de búsqueda",
+    "allFields": "Todos los campos",
+    "titleOnly": "Solo título",
+    "artistOnly": "Solo artista",
+    "albumOnly": "Solo álbum",
+    "creatorOnly": "Solo creador",
+    "showFilters": "Mostrar filtros",
+    "hideFilters": "Ocultar filtros",
+    "title": "Título",
+    "artist": "Artista",
+    "album": "Álbum",
+    "creator": "Creador",
+    "tuning": "Afinación",
+    "path": "Parte",
+    "year": "Año",
+    "actions": "Acciones",
+    "clearAdvancedFilters": "Borrar filtros",
+    "matchAny": "Coincide con cualquiera",
+    "matchAll": "Coincide con todas"
+  },
+  "columns": {
+    "song": "Canción",
+    "paths": "Partes",
+    "stats": "Detalles",
+    "actions": "Acciones"
+  },
+  "states": {
+    "loading": "Cargando canciones...",
+    "queryTooShort": "La búsqueda debe tener al menos 3 caracteres.",
+    "emptyFiltered": "Todavía no hay canciones que coincidan con esos filtros. Amplía la búsqueda o borra alguno de los filtros avanzados.",
+    "emptyCatalog": "Todavía no hay canciones disponibles en el catálogo de demostración.",
+    "blacklisted": "Bloqueada",
+    "blacklistedWithReasons": "Bloqueada - {reasons}",
+    "unknownArtist": "Artista desconocido",
+    "chartedBy": "Creada por {creator}",
+    "updated": "Actualizada {date}"
+  },
+  "errors": {
+    "filterOptionsFailed": "No se pudieron cargar las opciones de filtro.",
+    "searchFailed": "La búsqueda falló."
+  },
+  "commands": {
+    "copySr": "Copiar comando !sr",
+    "copiedSr": "Comando !sr copiado",
+    "copyEdit": "Copiar comando !edit",
+    "copiedEdit": "Comando !edit copiado",
+    "copyVip": "Copiar comando !vip",
+    "copiedVip": "Comando !vip copiado"
+  },
+  "paths": {
+    "lead": "Principal",
+    "rhythm": "Ritmo",
+    "bass": "Bajo",
+    "lyrics": "Letras"
+  },
+  "multiSelect": {
+    "selected": "{count} seleccionadas",
+    "select": "Seleccionar {label}",
+    "filter": "Filtrar {label}...",
+    "noMatches": "No se encontraron coincidencias."
+  }
+}

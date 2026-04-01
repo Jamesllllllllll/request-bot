@@ -1,0 +1,370 @@
+{
+  "page": {
+    "title": "{channel}'s Playlist",
+    "loading": "Loading playlist...",
+    "empty": "This playlist is empty right now.",
+    "viewerStateFailed": "Viewer request state failed to load.",
+    "viewerToolsFailed": "Viewer request tools failed to load.",
+    "requestsLiveOnly": "You can add requests when the stream goes live."
+  },
+  "states": {
+    "updateRequestToggleFailed": "Unable to update the request toggle right now.",
+    "unableToAddSong": "Unable to add the song.",
+    "unableToUpdateRequest": "Unable to update your request.",
+    "requestUpdated": "Request updated.",
+    "unableToRemoveRequests": "Unable to remove your requests.",
+    "requestsRemoved": "Requests removed."
+  },
+  "search": {
+    "title": "Search to add a song",
+    "placeholder": "Search songs for {channel}",
+    "actions": {
+      "add": "Add",
+      "request": "Request",
+      "actions": "Actions"
+    },
+    "showBlacklisted": "Show blacklisted songs",
+    "pathWarning": "Doesn't match the channel default {count, plural, one {path} other {paths}}: {paths}."
+  },
+  "viewerSummary": {
+    "vipTokensLabel": "{count} VIP tokens",
+    "vipBalanceLoading": "VIP balance...",
+    "vipTokensShort": "VIP tokens",
+    "requestsWithLimit": "{count}/{limit} reqs",
+    "requestsNoLimit": "{count} reqs",
+    "vipBalanceSummary": "{count} VIP tokens available",
+    "vipBalanceChecking": "Checking your VIP token balance...",
+    "vipBalanceUnavailable": "Your VIP token balance is unavailable right now.",
+    "replaceQueued": "New adds replace your queued requests.",
+    "vipHelp": "VIP token help",
+    "open": "Open",
+    "noRequests": "No requests in the playlist.",
+    "removeQueued": "Remove queued requests",
+    "removing": "Removing..."
+  },
+  "badges": {
+    "vip": "VIP",
+    "regular": "Regular",
+    "nowPlaying": "Now playing",
+    "pick": "Pick {count}",
+    "requestsOn": "Requests are on",
+    "requestsOff": "Requests are off",
+    "turnRequestsOn": "Turn requests on",
+    "turnRequestsOff": "Turn requests off",
+    "online": "Online",
+    "offline": "Offline",
+    "vipBalance": "You have {count} VIP tokens",
+    "vipTokens": "VIP tokens"
+  },
+  "vipInfo": {
+    "earn": "Earn VIP tokens",
+    "manualOnly": "This channel grants VIP tokens manually right now.",
+    "use": "Use VIP tokens"
+  },
+  "history": {
+    "title": "Played history",
+    "titleWithChannel": "{channel}'s played history",
+    "show": "Show history",
+    "hide": "Hide history",
+    "songSearch": "Song search",
+    "searchPlaceholder": "Song, artist, album, or charter",
+    "clearSearch": "Clear search",
+    "requester": "Requester",
+    "requesterPlaceholder": "Search a requester",
+    "clearRequester": "Clear requester",
+    "clearRequesterFilter": "Clear requester filter",
+    "searchingRequesters": "Searching requesters...",
+    "loading": "Loading played history...",
+    "emptyFiltered": "No played songs matched those filters.",
+    "empty": "No songs have been marked played yet.",
+    "requestCount": "{count, plural, one {# request} other {# requests}}",
+    "byArtist": " by {artist}",
+    "requestedBy": "Requested by {requester}",
+    "page": "Page {page}",
+    "unknownRequester": "Unknown"
+  },
+  "rules": {
+    "sectionTitle": "Channel rules",
+    "sectionTitleWithChannel": "{channel}'s channel rules",
+    "states": {
+      "updateFailed": "Unable to update channel rules.",
+      "searchFailed": "Search failed."
+    },
+    "blacklistedArtists": "Blacklisted artists",
+    "blacklistedCharters": "Blacklisted charters",
+    "blacklistedSongs": "Blacklisted songs",
+    "blacklistedVersions": "Blacklisted versions",
+    "setlistArtists": "Setlist artists",
+    "searchArtists": "Search artists by name",
+    "searchCharters": "Search charters by name",
+    "searchSongs": "Search songs by title",
+    "searchMin": "Type at least 2 characters to search.",
+    "noMatches": "No matching entries to add.",
+    "add": "Add",
+    "remove": "Remove",
+    "trackCount": "{count, plural, one {# track} other {# tracks}}",
+    "versionCount": "{count, plural, one {# version} other {# versions}} - Song group {groupId}",
+    "artistId": "Artist ID {id}",
+    "charterId": "Charter ID {id}",
+    "songGroupId": "Song group {groupId}",
+    "versionId": "Version ID {id}",
+    "noBlacklistedArtists": "No blacklisted artists.",
+    "noBlacklistedCharters": "No blacklisted charters.",
+    "noBlacklistedSongs": "No blacklisted songs.",
+    "noBlacklistedVersions": "No blacklisted versions.",
+    "noSetlistArtists": "No setlist artists."
+  },
+  "community": {
+    "title": "Moderator controls",
+    "reconnect": "Reconnect Twitch",
+    "reconnectMessage": "Reconnect Twitch to prioritize viewers currently in chat.",
+    "currentChattersFirst": "Current chatters first",
+    "twitchMatches": "Twitch matches",
+    "resultCount": "{count, plural, one {# result} other {# results}}",
+    "inChat": "In chat",
+    "selected": "Selected",
+    "noMatchingUsers": "No matching Twitch usernames.",
+    "states": {
+      "updateFailed": "Unable to update channel community settings.",
+      "lookupFailed": "User lookup failed."
+    },
+    "blocks": {
+      "title": "Blocked viewers",
+      "searchPlaceholder": "Search Twitch username to block",
+      "blockViewer": "Block viewer",
+      "searchMin": "Type at least 4 characters to search Twitch usernames.",
+      "description": "Blocked viewers can still talk in Twitch chat, but they cannot add or edit requests from chat, the website, or the extension panel.",
+      "defaultReason": "Blocked from making requests in this channel.",
+      "unblock": "Unblock",
+      "empty": "No blocked viewers."
+    },
+    "vip": {
+      "title": "VIP tokens",
+      "searchPlaceholder": "Search Twitch username to grant a token",
+      "grant": "Grant token",
+      "searchMin": "Type at least 4 characters to search Twitch usernames.",
+      "searchMinExisting": "Existing VIP token holders appear below. Type at least 4 characters to search all Twitch usernames.",
+      "tokenHoldersFirst": "VIP token holders first",
+      "tokenCountSingle": "{count} token",
+      "tokenCountPlural": "{count} tokens",
+      "viewOnly": "You can view VIP balances, but only the broadcaster or an allowed moderator can change them.",
+      "username": "Username",
+      "tokens": "Tokens",
+      "showingRange": "Showing {start}-{end} of {total}",
+      "previous": "Previous",
+      "next": "Next",
+      "pageOf": "Page {page} of {total}",
+      "empty": "No VIP tokens yet.",
+      "noticeAddedSingle": "Added 1 token",
+      "noticeAddedMultiple": "Added {count} VIP tokens",
+      "noticeRemovedSingle": "Removed 1 token",
+      "noticeRemovedMultiple": "Removed {count} VIP tokens",
+      "noticeSaved": "Saved VIP tokens"
+    }
+  },
+  "viewerActions": {
+    "add": "Add",
+    "addVip": "Add VIP",
+    "adding": "Adding...",
+    "alreadyVip": "Already in your queue as a VIP request.",
+    "alreadyRegular": "Already in your queue as a regular request.",
+    "blacklistedPrefix": "Blacklisted",
+    "songUnavailable": "That song is unavailable here.",
+    "checkingAccess": "Checking your request access...",
+    "cannotRequest": "You cannot request songs here.",
+    "alreadyActive": "This song is already in your active requests.",
+    "activeLimitReached": "You already have {count, plural, one {# active request} other {# active requests}}.",
+    "insufficientVipTokens": "You do not have enough VIP tokens."
+  },
+  "specialRequest": {
+    "titleManage": "Add a custom request",
+    "titleViewer": "Request by artist",
+    "artist": "Artist",
+    "artistPlaceholder": "Artist name",
+    "artistMin": "Type at least 2 characters from an artist name.",
+    "chooseMode": "Choose mode",
+    "chooseType": "Choose type",
+    "random": "Random",
+    "choice": "Choice",
+    "regular": "Regular",
+    "add": "Add",
+    "addVip": "Add VIP",
+    "adding": "Adding...",
+    "randomHelp": "Adds a random song from the matching songs for this artist.",
+    "choiceHelp": "Adds a streamer choice request for this artist."
+  },
+  "manageActions": {
+    "add": "Add",
+    "adding": "Adding...",
+    "addForUser": "Add for user",
+    "searchViewers": "Search current viewers",
+    "searchMin": "Type at least 2 characters to search current viewers.",
+    "reconnectMessage": "Reconnect Twitch to search viewers currently in chat.",
+    "reconnect": "Reconnect",
+    "searching": "Searching current viewers...",
+    "noMatches": "No current viewers matched that username."
+  },
+  "row": {
+    "viewer": "viewer",
+    "added": "Added {time}",
+    "edited": "Edited {time}",
+    "streamerChoiceTitle": "Streamer choice: {query}",
+    "streamerChoiceSubtitle": "Streamer picks the exact song.",
+    "relative": {
+      "now": "now",
+      "minutes": "{count}m",
+      "hours": "{count}h",
+      "days": "{count}d"
+    },
+    "picks": {
+      "first": "1st pick",
+      "second": "2nd pick",
+      "third": "3rd pick"
+    }
+  },
+  "management": {
+    "states": {
+      "searchFailed": "Search failed.",
+      "playlistUpdateFailed": "Playlist update failed.",
+      "moderationUnavailable": "Moderation actions are unavailable for this channel.",
+      "blacklistUpdateFailed": "Blacklist update failed."
+    },
+    "header": {
+      "managing": "Managing {channel}",
+      "channel": "Channel: {channel}"
+    },
+    "manual": {
+      "title": "Add a song",
+      "requesterPlaceholder": "Requester username (optional)",
+      "searchPlaceholder": "Search and add a song",
+      "searchMin": "Search terms must be at least 3 characters.",
+      "table": {
+        "track": "Track",
+        "albumCreator": "Album / Creator",
+        "tuningPath": "Tuning / Path",
+        "add": "Add"
+      },
+      "unknownArtist": "Unknown artist",
+      "unknownAlbum": "Unknown album",
+      "chartedBy": "Charted by {creator}",
+      "unknownCreator": "Unknown creator",
+      "blacklisted": "Blacklisted",
+      "noTuningInfo": "No tuning info",
+      "noPathInfo": "No path info",
+      "addButton": "Add"
+    },
+    "actions": {
+      "shuffle": "Shuffle",
+      "clearPlaylist": "Clear playlist",
+      "resetSession": "Reset session",
+      "confirmClear": "Empty the entire playlist? This cannot be undone.",
+      "confirmReset": "Reset the session? This will clear the current playlist."
+    },
+    "currentTitle": "Current playlist",
+    "blacklistErrors": {
+      "missingRequestVersionId": "This request does not have a version ID to blacklist.",
+      "missingVersionVersionId": "This version does not have a version ID to blacklist.",
+      "missingRequestSongGroupId": "This request does not have a song group ID to blacklist.",
+      "missingRequestArtistId": "This request does not have an artist ID to blacklist.",
+      "missingVersionCharterId": "This version does not have a charter ID to blacklist.",
+      "unknownArtist": "Unknown artist",
+      "unknownCharter": "Unknown charter"
+    },
+    "blacklistPanelDescription": "Artists, charters, songs, and specific versions can be blocked for this channel.",
+    "history": {
+      "title": "Played history",
+      "requestedBy": "Requested by {requester}",
+      "played": "Played {time}",
+      "restore": "Restore",
+      "restoring": "Restoring...",
+      "empty": "Nothing has been marked played yet."
+    },
+    "deleteDialog": {
+      "title": "Remove this request from playlist?",
+      "descriptionWithArtist": "This removes \"{title}\" by {artist} from the playlist. This cannot be undone.",
+      "descriptionWithoutArtist": "This removes \"{title}\" from the playlist. This cannot be undone.",
+      "descriptionFallback": "This removes the selected request from the playlist. This cannot be undone.",
+      "keep": "Keep request",
+      "removing": "Removing...",
+      "remove": "Remove request"
+    },
+    "queue": {
+      "empty": "No songs in the playlist yet."
+    },
+    "relative": {
+      "now": "just now",
+      "minutesAgo": "{count, plural, one {# minute ago} other {# minutes ago}}",
+      "hoursAgo": "{count, plural, one {# hour ago} other {# hours ago}}",
+      "daysAgo": "{count, plural, one {# day ago} other {# days ago}}"
+    },
+    "item": {
+      "moveTop": "Move to top",
+      "moveUp": "Move up",
+      "moveDown": "Move down",
+      "moveBottom": "Move to bottom",
+      "reorderAria": "Reorder {title}",
+      "vipBadge": "VIP",
+      "playingBadge": "Playing",
+      "warningBadge": "Warning",
+      "versionBlacklisted": "Version blacklisted",
+      "songBlacklisted": "Song blacklisted",
+      "artistBlacklisted": "Artist blacklisted",
+      "requestedBy": "Requested by {requester}",
+      "vipTokens": "{count} VIP tokens",
+      "added": "Added {time}",
+      "requestedText": "Requested text: {query}",
+      "saving": "Saving...",
+      "makeRegular": "Make regular",
+      "makeVip": "Make VIP",
+      "returnToQueue": "Return to queue",
+      "playNow": "Play now",
+      "markComplete": "Mark complete",
+      "versionsCount": "{count, plural, one {# version} other {# versions}}",
+      "downloadFromCf": "Download from CF"
+    },
+    "actionsMenu": {
+      "openActionsAria": "Open actions for {title}",
+      "removing": "Removing...",
+      "removeFromPlaylist": "Remove from playlist",
+      "blacklist": "Blacklist",
+      "blacklistTitle": "Blacklist actions",
+      "back": "Back",
+      "description": "Choose whether to block the queued version, every version of this song, the artist, or a charter.",
+      "queuedVersionId": "Queued version ID {id}",
+      "noQueuedVersionId": "No queued version ID",
+      "versionBlocked": "Version blacklisted",
+      "blacklistQueuedVersion": "Blacklist queued version",
+      "blockVersionDescription": "Blocks only version ID {id}.",
+      "blockVersionFallbackDescription": "Blocks only the exact version attached to this request.",
+      "songBlocked": "Song blacklisted",
+      "blacklistSongGroup": "Blacklist all versions of this song",
+      "blockSongDescription": "Blocks every version grouped under this song.",
+      "artistBlocked": "Artist blacklisted: {artist}",
+      "blacklistArtist": "Blacklist artist: {artist}",
+      "blockArtistDescription": "Blocks every song by this artist ID.",
+      "charterBlocked": "Charter blacklisted: {charter}",
+      "blacklistCharter": "Blacklist charter: {charter}",
+      "blockCharterDescription": "Blocks every song by this charter ID.",
+      "noCharterIds": "No charter IDs available for these versions."
+    },
+    "versionsTable": {
+      "songAlbum": "Song / album",
+      "tunings": "Tunings",
+      "paths": "Paths",
+      "updated": "Updated",
+      "downloads": "Downloads",
+      "actions": "Actions",
+      "unknownArtist": "Unknown artist",
+      "chartedBy": "Charted by",
+      "charterBlacklisted": "Charter blacklisted",
+      "unknown": "Unknown",
+      "download": "Download",
+      "blacklisted": "Blacklisted",
+      "blacklist": "Blacklist"
+    },
+    "preview": {
+      "removed": "The demo row is removed from the playlist.",
+      "restore": "Restore demo row"
+    }
+  }
+}

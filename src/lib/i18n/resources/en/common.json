@@ -15,5 +15,10 @@
   },
   "language": {
     "label": "Language"
+  },
+  "translationHelp": {
+    "button": "Help us translate!",
+    "title": "Help us translate!",
+    "messageLead": "This website was translated with AI. If you notice anything wrong, please reach out to"
   }
 }

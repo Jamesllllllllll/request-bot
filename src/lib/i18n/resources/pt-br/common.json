@@ -15,5 +15,10 @@
   },
   "language": {
     "label": "Idioma"
+  },
+  "translationHelp": {
+    "button": "Ajude a traduzir",
+    "title": "Ajude a traduzir",
+    "messageLead": "Este site foi traduzido com IA. Se voce notar algo errado, escreva para"
   }
 }

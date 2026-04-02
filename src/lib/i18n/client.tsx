@@ -3,9 +3,9 @@ import ICU from "i18next-icu";
 import {
   createContext,
   type PropsWithChildren,
-  startTransition,
   useContext,
   useEffect,
+  useRef,
   useState,
 } from "react";
 import {
@@ -13,10 +13,7 @@ import {
   initReactI18next,
   useTranslation,
 } from "react-i18next";
-import {
-  persistExplicitDeviceLocale,
-  persistExplicitLocaleCookie,
-} from "./detect";
+import { persistExplicitDeviceLocale } from "./detect";
 import { getI18nInitOptions } from "./init";
 import type { AppLocale } from "./locales";
 
@@ -36,28 +33,60 @@ function createI18n(locale: AppLocale) {
   return instance;
 }
 
+function syncLocale(i18n: I18nInstance, locale: AppLocale) {
+  if (typeof document !== "undefined") {
+    document.documentElement.lang = locale;
+  }
+
+  void i18n.changeLanguage(locale);
+}
+
+export function getSyncedLocaleFromInitial(input: {
+  currentLocale: AppLocale;
+  previousInitialLocale: AppLocale;
+  nextInitialLocale: AppLocale;
+}) {
+  return input.previousInitialLocale !== input.nextInitialLocale
+    ? input.nextInitialLocale
+    : input.currentLocale;
+}
+
 export function AppI18nProvider(
   props: PropsWithChildren<{ initialLocale: AppLocale }>
 ) {
   const [locale, setLocaleState] = useState<AppLocale>(props.initialLocale);
   const [isSavingLocale, setIsSavingLocale] = useState(false);
   const [i18n] = useState<I18nInstance>(() => createI18n(props.initialLocale));
+  const previousInitialLocaleRef = useRef<AppLocale>(props.initialLocale);
 
   useEffect(() => {
-    document.documentElement.lang = locale;
-    void i18n.changeLanguage(locale);
+    syncLocale(i18n, locale);
   }, [i18n, locale]);
+
+  useEffect(() => {
+    const nextLocale = getSyncedLocaleFromInitial({
+      currentLocale: locale,
+      previousInitialLocale: previousInitialLocaleRef.current,
+      nextInitialLocale: props.initialLocale,
+    });
+    previousInitialLocaleRef.current = props.initialLocale;
+
+    if (nextLocale === locale) {
+      return;
+    }
+
+    syncLocale(i18n, nextLocale);
+    setLocaleState(nextLocale);
+  }, [locale, props.initialLocale]);
 
   async function setLocale(nextLocale: AppLocale) {
     if (nextLocale === locale) {
       return;
     }
 
-    startTransition(() => {
-      setLocaleState(nextLocale);
-    });
+    syncLocale(i18n, nextLocale);
+    setLocaleState(nextLocale);
     persistExplicitDeviceLocale(nextLocale);
-    persistExplicitLocaleCookie(nextLocale);
     setIsSavingLocale(true);
 
     try {

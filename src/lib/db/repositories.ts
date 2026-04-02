@@ -2711,6 +2711,7 @@ export async function updateSettings(
   env: AppEnv,
   channelId: string,
   input: {
+    defaultLocale: string;
     botChannelEnabled: boolean;
     moderatorCanManageRequests: boolean;
     moderatorCanManageBlacklist: boolean;
@@ -2764,6 +2765,7 @@ export async function updateSettings(
   await getDb(env)
     .update(channelSettings)
     .set({
+      defaultLocale: input.defaultLocale,
       botChannelEnabled: input.botChannelEnabled,
       moderatorCanManageRequests: input.moderatorCanManageRequests,
       moderatorCanManageBlacklist: input.moderatorCanManageBlacklist,

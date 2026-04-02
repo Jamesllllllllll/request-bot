@@ -5,7 +5,10 @@ import {
   grantVipToken,
 } from "~/lib/db/repositories";
 import type { AppEnv } from "~/lib/env";
-import { formatVipTokenCount, normalizeVipTokenCount } from "~/lib/vip-tokens";
+import { formatCurrency, formatNumber } from "~/lib/i18n/format";
+import type { AppLocale } from "~/lib/i18n/locales";
+import { getServerTranslation } from "~/lib/i18n/server";
+import { normalizeVipTokenCount } from "~/lib/vip-tokens";
 
 export interface StreamElementsTipChannel {
   id: string;
@@ -15,6 +18,7 @@ export interface StreamElementsTipChannel {
 }
 
 export interface StreamElementsTipSettings {
+  defaultLocale: string;
   autoGrantVipTokensForStreamElementsTips: boolean;
   streamElementsTipAmountPerVipToken: number;
 }
@@ -95,26 +99,39 @@ function normalizeTwitchLogin(value: string | null) {
   return TWITCH_LOGIN_PATTERN.test(normalized) ? normalized : null;
 }
 
-function formatPluralizedTokens(count: number) {
-  const formatted = formatVipTokenCount(count);
-  return `${formatted} VIP token${count === 1 ? "" : "s"}`;
+function mention(login: string) {
+  return `@${login}`;
 }
 
-function formatTipAmount(amount: number, currency: string | null) {
+function formatTokenCount(locale: AppLocale, count: number) {
+  return formatNumber(locale, normalizeVipTokenCount(count), {
+    maximumFractionDigits: 2,
+  });
+}
+
+function formatTipAmount(
+  locale: AppLocale,
+  amount: number,
+  currency: string | null
+) {
   if (currency) {
     try {
-      return new Intl.NumberFormat("en-US", {
-        style: "currency",
-        currency: currency.toUpperCase(),
+      return formatCurrency(locale, amount, currency.toUpperCase(), {
         minimumFractionDigits: amount % 1 === 0 ? 0 : 2,
         maximumFractionDigits: 2,
-      }).format(amount);
+      });
     } catch {
-      return `${amount.toFixed(amount % 1 === 0 ? 0 : 2)} ${currency.toUpperCase()}`;
+      return `${formatNumber(locale, amount, {
+        minimumFractionDigits: amount % 1 === 0 ? 0 : 2,
+        maximumFractionDigits: 2,
+      })} ${currency.toUpperCase()}`;
     }
   }
 
-  return amount.toFixed(amount % 1 === 0 ? 0 : 2);
+  return formatNumber(locale, amount, {
+    minimumFractionDigits: amount % 1 === 0 ? 0 : 2,
+    maximumFractionDigits: 2,
+  });
 }
 
 function extractEnvelope(input: Record<string, unknown>) {
@@ -243,6 +260,7 @@ export async function processStreamElementsTip(input: {
   if (!settings?.autoGrantVipTokensForStreamElementsTips) {
     return { body: "Ignored", status: 202 };
   }
+  const { locale, t } = getServerTranslation(settings.defaultLocale, "bot");
 
   if (
     input.tip.status &&
@@ -311,7 +329,12 @@ export async function processStreamElementsTip(input: {
   await input.deps.sendChatReply(input.env, {
     channelId: input.channel.id,
     broadcasterUserId: input.channel.twitchChannelId,
-    message: `Added ${formatPluralizedTokens(tokenCount)} to @${input.tip.login} for a ${formatTipAmount(input.tip.amount, input.tip.currency)} StreamElements tip.`,
+    message: t("replies.autoGrantStreamElementsTip", {
+      mention: mention(input.tip.login),
+      count: tokenCount,
+      countText: formatTokenCount(locale, tokenCount),
+      amount: formatTipAmount(locale, input.tip.amount, input.tip.currency),
+    }),
   });
 
   return { body: "Accepted", status: 202 };
@@ -326,6 +349,7 @@ export function createStreamElementsTipDependencies(): StreamElementsTipDependen
       }
 
       return {
+        defaultLocale: settings.defaultLocale,
         autoGrantVipTokensForStreamElementsTips:
           settings.autoGrantVipTokensForStreamElementsTips,
         streamElementsTipAmountPerVipToken:

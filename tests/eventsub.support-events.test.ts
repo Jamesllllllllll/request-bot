@@ -19,6 +19,7 @@ function createDeps(
       twitchChannelId: "broadcaster-1",
     }),
     getChannelSettingsByChannelId: vi.fn().mockResolvedValue({
+      defaultLocale: "en",
       autoGrantVipTokenToSubscribers: true,
       autoGrantVipTokensForSharedSubRenewalMessage: true,
       autoGrantVipTokensToSubGifters: true,
@@ -199,6 +200,7 @@ describe("support EventSub automation", () => {
   it("grants one VIP token to the streamer who raids the channel", async () => {
     const deps = createDeps({
       getChannelSettingsByChannelId: vi.fn().mockResolvedValue({
+        defaultLocale: "en",
         autoGrantVipTokenToSubscribers: true,
         autoGrantVipTokensForSharedSubRenewalMessage: true,
         autoGrantVipTokensToSubGifters: true,
@@ -249,6 +251,7 @@ describe("support EventSub automation", () => {
   it("ignores raids below the minimum configured size", async () => {
     const deps = createDeps({
       getChannelSettingsByChannelId: vi.fn().mockResolvedValue({
+        defaultLocale: "en",
         autoGrantVipTokenToSubscribers: true,
         autoGrantVipTokensForSharedSubRenewalMessage: true,
         autoGrantVipTokensToSubGifters: true,
@@ -287,6 +290,7 @@ describe("support EventSub automation", () => {
   it("ignores cheers below the configured minimum partial threshold", async () => {
     const deps = createDeps({
       getChannelSettingsByChannelId: vi.fn().mockResolvedValue({
+        defaultLocale: "en",
         autoGrantVipTokenToSubscribers: true,
         autoGrantVipTokensForSharedSubRenewalMessage: true,
         autoGrantVipTokensToSubGifters: true,
@@ -327,6 +331,7 @@ describe("support EventSub automation", () => {
   it("grants proportional fractional VIP tokens for cheers above the threshold", async () => {
     const deps = createDeps({
       getChannelSettingsByChannelId: vi.fn().mockResolvedValue({
+        defaultLocale: "en",
         autoGrantVipTokenToSubscribers: true,
         autoGrantVipTokensForSharedSubRenewalMessage: true,
         autoGrantVipTokensToSubGifters: true,
@@ -371,6 +376,52 @@ describe("support EventSub automation", () => {
       env,
       expect.objectContaining({
         message: "Added 1.1 VIP tokens to @viewer_one for cheering 220 bits.",
+      })
+    );
+  });
+
+  it("localizes support event chat replies using the channel default locale", async () => {
+    const deps = createDeps({
+      getChannelSettingsByChannelId: vi.fn().mockResolvedValue({
+        defaultLocale: "es",
+        autoGrantVipTokenToSubscribers: true,
+        autoGrantVipTokensForSharedSubRenewalMessage: true,
+        autoGrantVipTokensToSubGifters: true,
+        autoGrantVipTokensToGiftRecipients: true,
+        autoGrantVipTokensForCheers: true,
+        autoGrantVipTokensForRaiders: true,
+        cheerBitsPerVipToken: 200,
+        cheerMinimumTokenPercent: 25,
+        raidMinimumViewerCount: 1,
+      }),
+    });
+
+    const result = await processEventSubChannelCheer({
+      env,
+      deps,
+      messageId: "msg-4-es",
+      event: {
+        is_anonymous: false,
+        user_id: "viewer-1",
+        user_login: "viewer_one",
+        user_name: "Viewer One",
+        broadcaster_user_id: "broadcaster-1",
+        broadcaster_user_login: "streamer",
+        broadcaster_user_name: "Streamer",
+        message: "Cheer220",
+        bits: 220,
+      },
+    });
+
+    expect(result).toEqual({
+      body: "Accepted",
+      status: 202,
+    });
+    expect(deps.sendChatReply).toHaveBeenCalledWith(
+      env,
+      expect.objectContaining({
+        message:
+          "Se agregaron 1,1 tokens VIP a @viewer_one por enviar 220 bits.",
       })
     );
   });

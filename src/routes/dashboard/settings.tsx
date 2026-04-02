@@ -5,6 +5,7 @@ import { ChevronDown, Copy } from "lucide-react";
 import { type ReactNode, useEffect, useId, useState } from "react";
 import { DashboardPageHeader } from "~/components/dashboard-page-header";
 import { OverlaySettingsPanel } from "~/components/overlay-settings-panel";
+import { TranslationHelpButton } from "~/components/translation-help-button";
 import { Badge } from "~/components/ui/badge";
 import { Button } from "~/components/ui/button";
 import {
@@ -21,10 +22,18 @@ import {
   CollapsibleTrigger,
 } from "~/components/ui/collapsible";
 import { Input } from "~/components/ui/input";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "~/components/ui/select";
 import { getBotStatusKey } from "~/lib/bot-status";
 import { pathOptions, tuningOptions } from "~/lib/channel-options";
 import { useAppLocale, useLocaleTranslation } from "~/lib/i18n/client";
 import { formatNumber } from "~/lib/i18n/format";
+import { defaultLocale, localeOptions } from "~/lib/i18n/locales";
 import { getLocalizedPageTitle } from "~/lib/i18n/metadata";
 import { DEFAULT_MAX_QUEUE_SIZE } from "~/lib/settings-defaults";
 import { getErrorMessage } from "~/lib/utils";
@@ -85,6 +94,7 @@ const mockOwnedOfficialDlcRows = [
 ] as const;
 
 const defaultForm: DashboardSettingsFormData = {
+  defaultLocale,
   botChannelEnabled: false,
   moderatorCanManageRequests: true,
   moderatorCanManageBlacklist: true,
@@ -161,6 +171,7 @@ export const Route = createFileRoute("/dashboard/settings")({
 
 function DashboardSettingsPage() {
   const { t } = useLocaleTranslation("dashboard");
+  const { t: tBot } = useLocaleTranslation("bot");
   const { locale } = useAppLocale();
   const queryClient = useQueryClient();
   const cachedSettingsData = queryClient.getQueryData<DashboardSettingsData>([
@@ -680,6 +691,37 @@ function DashboardSettingsPage() {
                 </div>
 
                 <div className="grid gap-4">
+                  <FieldBlock
+                    label={tBot("dashboard.botLanguage")}
+                    description={tBot("dashboard.botLanguageHelp")}
+                  >
+                    <div className="grid gap-3">
+                      <Select
+                        value={form.defaultLocale}
+                        onValueChange={(value) =>
+                          setForm((current) => ({
+                            ...current,
+                            defaultLocale:
+                              value as DashboardSettingsFormData["defaultLocale"],
+                          }))
+                        }
+                      >
+                        <SelectTrigger
+                          aria-label={tBot("dashboard.botLanguage")}
+                        >
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {localeOptions.map((option) => (
+                            <SelectItem key={option.value} value={option.value}>
+                              {option.nativeLabel}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      <TranslationHelpButton align="start" className="w-fit" />
+                    </div>
+                  </FieldBlock>
                   <FieldBlock
                     label={t("settings.sections.channelSetup.commandPrefix")}
                     description={t(

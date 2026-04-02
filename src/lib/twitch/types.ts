@@ -171,6 +171,24 @@ export interface EventSubCheerEvent {
   bits: number;
 }
 
+export interface EventSubChannelPointRewardRedemptionEvent {
+  id: string;
+  broadcaster_user_id: string;
+  broadcaster_user_login: string;
+  broadcaster_user_name: string;
+  user_id: string;
+  user_login: string;
+  user_name: string;
+  user_input?: string;
+  status: string;
+  reward: {
+    id: string;
+    title: string;
+    cost: number;
+    prompt?: string;
+  };
+}
+
 export interface EventSubRaidEvent {
   from_broadcaster_user_id: string;
   from_broadcaster_user_login: string;
@@ -220,4 +238,22 @@ export interface TwitchEventSubListResponse {
   pagination?: {
     cursor?: string;
   };
+}
+
+export interface TwitchCustomReward {
+  id: string;
+  broadcaster_id: string;
+  broadcaster_login: string;
+  broadcaster_name: string;
+  title: string;
+  prompt: string;
+  cost: number;
+  is_enabled: boolean;
+  is_paused?: boolean;
+  is_in_stock?: boolean;
+  should_redemptions_skip_request_queue?: boolean;
+}
+
+export interface TwitchCustomRewardsResponse {
+  data: TwitchCustomReward[];
 }

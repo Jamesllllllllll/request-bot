@@ -8,6 +8,7 @@ describe("getVipTokenAutomationDetails", () => {
       autoGrantVipTokensForCheers: true,
       cheerBitsPerVipToken: 200,
       cheerMinimumTokenPercent: 25,
+      autoGrantVipTokensForChannelPointRewards: true,
       autoGrantVipTokensForStreamElementsTips: true,
       streamElementsTipAmountPerVipToken: 5,
       autoGrantVipTokensForSharedSubRenewalMessage: true,
@@ -17,6 +18,7 @@ describe("getVipTokenAutomationDetails", () => {
       "Shared sub renewal message = 1 VIP token",
       "Cheer 200 bits = 1 VIP token",
       "Minimum cheer: 50 bits = 0.25 VIP tokens.",
+      "Redeem the channel point reward = 1 VIP token",
       "StreamElements tip $5 = 1 VIP token",
     ]);
   });
@@ -28,6 +30,7 @@ describe("getVipTokenAutomationDetails", () => {
         autoGrantVipTokensForCheers: true,
         cheerBitsPerVipToken: 200,
         cheerMinimumTokenPercent: 25,
+        autoGrantVipTokensForChannelPointRewards: true,
         autoGrantVipTokensForStreamElementsTips: true,
         streamElementsTipAmountPerVipToken: 5,
         autoGrantVipTokensForSharedSubRenewalMessage: true,
@@ -42,6 +45,7 @@ describe("getVipTokenAutomationDetails", () => {
       "Mensaje compartido de renovación de suscripción = 1 token VIP",
       "Cheer de 200 bits = 1 token VIP",
       "Cheer mínimo: 50 bits = 0,25 tokens VIP.",
+      "Canjear la recompensa de puntos del canal = 1 token VIP",
       "Propina de StreamElements de 5 US$ = 1 token VIP",
     ]);
   });

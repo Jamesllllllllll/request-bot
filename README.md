@@ -31,7 +31,7 @@ It runs on TanStack Start, Cloudflare Workers, D1, Durable Objects, Queues, KV, 
 
 - Twitch panel extension with playlist viewing, viewer request actions, and owner/moderator controls for play-now, reorder, remove, request-type changes, and other queue actions
 - Shared bot-account OAuth, per-channel bot opt-in, and live-aware EventSub subscription management
-- VIP token tracking with manual grants plus automatic rewards for new subs, shared resub messages, gifted subs, gift recipients, cheers, raids, and StreamElements tips
+- VIP token tracking with manual grants plus automatic rewards for new subs, shared resub messages, gifted subs, gift recipients, cheers, app-owned channel point rewards, raids, and StreamElements tips
 
 ### Platform And Quality
 
@@ -95,7 +95,7 @@ TWITCH_EVENTSUB_SECRET=local-dev-eventsub-secret
 TWITCH_EXTENSION_SECRET=
 SESSION_SECRET=local-dev-session-secret
 TWITCH_BOT_USERNAME=requestbot
-TWITCH_SCOPES=openid user:read:moderated_channels moderator:read:chatters channel:bot channel:read:subscriptions bits:read
+TWITCH_SCOPES=openid user:read:moderated_channels moderator:read:chatters channel:bot channel:read:subscriptions bits:read channel:manage:redemptions
 ADMIN_TWITCH_USER_IDS=
 VITE_ALLOWED_HOSTS=
 ```
@@ -108,7 +108,7 @@ For basic local development, set:
 - `TWITCH_EVENTSUB_SECRET`
 - `SESSION_SECRET`
 - `TWITCH_BOT_USERNAME`
-- `TWITCH_SCOPES=openid user:read:moderated_channels moderator:read:chatters channel:bot channel:read:subscriptions bits:read`
+- `TWITCH_SCOPES=openid user:read:moderated_channels moderator:read:chatters channel:bot channel:read:subscriptions bits:read channel:manage:redemptions`
 - `VITE_ALLOWED_HOSTS=` if you need extra Vite hostnames
 - `VITE_TWITCH_EXTENSION_API_BASE_URL=` if you want the standalone extension build to call a different app origin
 
@@ -135,7 +135,9 @@ If you build the panel as a standalone Twitch extension artifact, set `VITE_TWIT
 
 `ADMIN_TWITCH_USER_IDS` should contain the Twitch user ID for the admin account that is allowed to connect the shared bot account and access admin pages.
 
-Broadcaster connections need `channel:bot`, `channel:read:subscriptions`, and `bits:read` in `TWITCH_SCOPES`. If the connected Twitch account is missing those permissions, reconnect Twitch from the app so bot replies and VIP token automation can use them.
+Broadcaster connections need `channel:bot`, `channel:read:subscriptions`, `bits:read`, and `channel:manage:redemptions` in `TWITCH_SCOPES`. If the connected Twitch account is missing those permissions, reconnect Twitch from the app so bot replies, VIP token automation, and app-owned channel point rewards can use them.
+
+App-owned channel point rewards also require a Twitch Affiliate or Partner channel. Twitch rejects custom reward create/update calls for channels that do not have channel points.
 
 Sentry stays off locally unless you explicitly set a DSN:
 
@@ -568,7 +570,7 @@ gh secret set CLOUDFLARE_D1_DATABASE_ID
 gh secret set CLOUDFLARE_SESSION_KV_ID
 gh secret set APP_URL --body "https://your-app-host"
 gh variable set TWITCH_BOT_USERNAME --body "your_bot_username"
-gh variable set TWITCH_SCOPES --body "openid user:read:moderated_channels moderator:read:chatters channel:bot channel:read:subscriptions bits:read"
+gh variable set TWITCH_SCOPES --body "openid user:read:moderated_channels moderator:read:chatters channel:bot channel:read:subscriptions bits:read channel:manage:redemptions"
 ```
 
 For the full deploy and GitHub workflow details, use [docs/deployment-workflow.md](/docs/deployment-workflow.md).

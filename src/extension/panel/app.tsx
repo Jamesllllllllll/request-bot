@@ -51,7 +51,6 @@ import {
   SelectContent,
   SelectItem,
   SelectTrigger,
-  SelectValue,
 } from "~/components/ui/select";
 import { Skeleton } from "~/components/ui/skeleton";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "~/components/ui/tabs";
@@ -82,7 +81,11 @@ import {
   mockModeratorViewerProfile,
   type PanelDemoPlaylist,
 } from "./demo";
-import { readPanelStoredLocale, resolveExtensionPanelLocale } from "./locale";
+import {
+  persistPanelStoredLocale,
+  readPanelStoredLocale,
+  resolveExtensionPanelLocale,
+} from "./locale";
 import {
   getTwitchExtensionHelper,
   loadTwitchExtensionHelper,
@@ -629,6 +632,11 @@ function ExtensionPanelAppContent(props: {
     bootstrap?.viewer.profile?.preferredLocale,
     props.onResolvedLocaleChange,
   ]);
+
+  async function setPanelLocale(nextLocale: AppLocale) {
+    persistPanelStoredLocale(nextLocale);
+    await setLocale(nextLocale);
+  }
 
   function showTransientNotice(
     tone: TransientPanelNotice["tone"],
@@ -1229,7 +1237,7 @@ function ExtensionPanelAppContent(props: {
                   </div>
                   <PanelLanguageSelect
                     locale={locale}
-                    onLocaleChange={setLocale}
+                    onLocaleChange={setPanelLocale}
                     isSavingLocale={isSavingLocale}
                   />
                 </div>
@@ -3954,8 +3962,8 @@ function PanelRequestsStatusBar({
     <div
       className={
         requestsEnabled
-          ? "border-b border-(--border-strong) bg-emerald-950/80 px-3 py-1.5 text-center text-[10px] font-semibold uppercase tracking-[0.16em] text-emerald-100"
-          : "border-b border-(--border-strong) bg-rose-950/60 px-3 py-1.5 text-center text-[10px] font-semibold uppercase tracking-[0.16em] text-rose-100"
+          ? "border-b border-(--border-strong) bg-emerald-950/80 px-3 py-[3px] text-center text-[9px] leading-[1em] font-semibold uppercase tracking-[0.16em] text-emerald-100"
+          : "border-b border-(--border-strong) bg-rose-950/60 px-3 py-[3px] text-center text-[9px] leading-[1em] font-semibold uppercase tracking-[0.16em] text-rose-100"
       }
     >
       {t("requests.status", {
@@ -4001,12 +4009,19 @@ function getPanelPlaylistFooterLabel(
     : t("footer.openPlaylist");
 }
 
+function getPanelLocaleShortLabel(locale: AppLocale) {
+  return locale === "pt-BR" ? "PT" : locale.slice(0, 2).toUpperCase();
+}
+
 function PanelLanguageSelect(props: {
   locale: AppLocale;
   onLocaleChange: (locale: AppLocale) => Promise<void>;
   isSavingLocale: boolean;
 }) {
   const { t } = useLocaleTranslation("common");
+  const selectedOption =
+    localeOptions.find((option) => option.value === props.locale) ?? null;
+  const selectedLabel = getPanelLocaleShortLabel(props.locale);
 
   return (
     <Select
@@ -4015,15 +4030,22 @@ function PanelLanguageSelect(props: {
       disabled={props.isSavingLocale}
     >
       <SelectTrigger
-        aria-label={t("language.label")}
-        className="h-7 min-w-[7.75rem] gap-2 px-2 text-[11px] shadow-none"
+        aria-label={`${t("language.label")}: ${selectedOption?.nativeLabel ?? selectedLabel}`}
+        title={selectedOption?.nativeLabel ?? selectedLabel}
+        className="h-6 w-11 min-w-0 shrink-0 gap-1 self-start border-(--border-strong) bg-(--panel-soft) px-1.5 text-[10px] font-semibold uppercase tracking-[0.18em] shadow-none [&>svg]:h-3 [&>svg]:w-3 [&>svg]:opacity-55"
       >
-        <SelectValue />
+        <span className="text-center">{selectedLabel}</span>
       </SelectTrigger>
-      <SelectContent>
+      <SelectContent align="end" className="min-w-[3.75rem]">
         {localeOptions.map((option) => (
-          <SelectItem key={option.value} value={option.value}>
-            {option.nativeLabel}
+          <SelectItem
+            key={option.value}
+            value={option.value}
+            textValue={option.nativeLabel}
+            title={option.nativeLabel}
+            className="py-1.5 pl-8 pr-2 text-[10px] font-semibold uppercase tracking-[0.18em]"
+          >
+            {getPanelLocaleShortLabel(option.value)}
           </SelectItem>
         ))}
       </SelectContent>
@@ -4034,10 +4056,15 @@ function PanelLanguageSelect(props: {
 function PreviewPanelLanguageSelect() {
   const { locale, setLocale, isSavingLocale } = useAppLocale();
 
+  async function setPreviewPanelLocale(nextLocale: AppLocale) {
+    persistPanelStoredLocale(nextLocale);
+    await setLocale(nextLocale);
+  }
+
   return (
     <PanelLanguageSelect
       locale={locale}
-      onLocaleChange={setLocale}
+      onLocaleChange={setPreviewPanelLocale}
       isSavingLocale={isSavingLocale}
     />
   );

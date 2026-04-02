@@ -20,6 +20,7 @@
     "ruleGiftRecipient": "Receive a gifted sub = 1 VIP token",
     "ruleCheer": "Cheer {bits} bits = 1 VIP token",
     "ruleMinimumCheer": "Minimum cheer: {bits} bits = {tokens} {count, plural, one {VIP token} other {VIP tokens}}.",
+    "ruleChannelPoints": "Redeem the channel point reward = 1 VIP token",
     "ruleRaidSingle": "Raid this channel = 1 VIP token",
     "ruleRaidMultiple": "Raid with {viewers}+ viewers = 1 VIP token",
     "ruleTip": "StreamElements tip {amount} = 1 VIP token"

@@ -1,6 +1,7 @@
 import {
   claimEventSubDelivery,
   createAuditLog,
+  getActiveBroadcasterAuthorizationForChannel,
   getChannelByTwitchChannelId,
   getChannelSettingsByChannelId,
   grantVipToken,
@@ -9,7 +10,10 @@ import type { AppEnv } from "~/lib/env";
 import { formatNumber } from "~/lib/i18n/format";
 import type { AppLocale } from "~/lib/i18n/locales";
 import { getServerTranslation } from "~/lib/i18n/server";
+import { updateCustomRewardRedemptionStatus } from "~/lib/twitch/api";
+import { vipTokenChannelPointRewardSubscriptionType } from "~/lib/twitch/channel-point-rewards";
 import type {
+  EventSubChannelPointRewardRedemptionEvent,
   EventSubCheerEvent,
   EventSubRaidEvent,
   EventSubSubscribeEvent,
@@ -31,10 +35,13 @@ export interface EventSubSupportSettings {
   autoGrantVipTokensToSubGifters: boolean;
   autoGrantVipTokensToGiftRecipients: boolean;
   autoGrantVipTokensForCheers: boolean;
+  autoGrantVipTokensForChannelPointRewards: boolean;
   autoGrantVipTokensForRaiders: boolean;
   cheerBitsPerVipToken: number;
+  channelPointRewardCost: number;
   cheerMinimumTokenPercent: 25 | 50 | 75 | 100;
   raidMinimumViewerCount: number;
+  twitchChannelPointRewardId: string;
 }
 
 export interface EventSubSupportDependencies {
@@ -69,6 +76,16 @@ export interface EventSubSupportDependencies {
     env: AppEnv,
     input: { channelId: string; broadcasterUserId: string; message: string }
   ): Promise<unknown>;
+  updateChannelPointRewardRedemptionStatus(
+    env: AppEnv,
+    input: {
+      channelId: string;
+      broadcasterUserId: string;
+      rewardId: string;
+      redemptionId: string;
+      status: "CANCELED" | "FULFILLED";
+    }
+  ): Promise<void>;
 }
 
 type EventSubSupportResult =
@@ -109,6 +126,37 @@ async function claimDeliveryIfNeeded(input: {
     messageId: input.messageId,
     subscriptionType: input.subscriptionType,
   });
+}
+
+async function tryUpdateChannelPointRewardRedemptionStatus(input: {
+  env: AppEnv;
+  deps: EventSubSupportDependencies;
+  channelId: string;
+  broadcasterUserId: string;
+  rewardId: string;
+  redemptionId: string;
+  status: "CANCELED" | "FULFILLED";
+}) {
+  try {
+    await input.deps.updateChannelPointRewardRedemptionStatus(input.env, {
+      channelId: input.channelId,
+      broadcasterUserId: input.broadcasterUserId,
+      rewardId: input.rewardId,
+      redemptionId: input.redemptionId,
+      status: input.status,
+    });
+    return true;
+  } catch (error) {
+    console.error("Failed to update channel point redemption status", {
+      channelId: input.channelId,
+      broadcasterUserId: input.broadcasterUserId,
+      rewardId: input.rewardId,
+      redemptionId: input.redemptionId,
+      status: input.status,
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return false;
+  }
 }
 
 export async function processEventSubSubscriptionGift(input: {
@@ -438,6 +486,151 @@ export async function processEventSubChannelCheer(input: {
   return { body: "Accepted", status: 202 };
 }
 
+export async function processEventSubChannelPointRewardRedemption(input: {
+  env: AppEnv;
+  deps: EventSubSupportDependencies;
+  messageId: string | null;
+  event: EventSubChannelPointRewardRedemptionEvent;
+}): Promise<EventSubSupportResult> {
+  const channel = await input.deps.getChannelByTwitchChannelId(
+    input.env,
+    input.event.broadcaster_user_id
+  );
+  if (!channel) {
+    return { body: "Channel not found", status: 202 };
+  }
+
+  const settings = await input.deps.getChannelSettingsByChannelId(
+    input.env,
+    channel.id
+  );
+  if (!settings) {
+    return { body: "Ignored", status: 202 };
+  }
+
+  const claimed = await claimDeliveryIfNeeded({
+    env: input.env,
+    deps: input.deps,
+    channelId: channel.id,
+    messageId: input.messageId,
+    subscriptionType: vipTokenChannelPointRewardSubscriptionType,
+  });
+  if (!claimed) {
+    return { body: "Duplicate", status: 202 };
+  }
+
+  if (
+    !settings.autoGrantVipTokensForChannelPointRewards ||
+    !settings.twitchChannelPointRewardId ||
+    settings.twitchChannelPointRewardId !== input.event.reward.id
+  ) {
+    await tryUpdateChannelPointRewardRedemptionStatus({
+      env: input.env,
+      deps: input.deps,
+      channelId: channel.id,
+      broadcasterUserId: input.event.broadcaster_user_id,
+      rewardId: input.event.reward.id,
+      redemptionId: input.event.id,
+      status: "CANCELED",
+    });
+    return { body: "Accepted", status: 202 };
+  }
+
+  try {
+    await input.deps.grantVipToken(input.env, {
+      channelId: channel.id,
+      login: input.event.user_login,
+      displayName: input.event.user_name,
+      twitchUserId: input.event.user_id,
+      count: 1,
+    });
+  } catch (error) {
+    console.error("Failed to grant VIP token for channel point redemption", {
+      channelId: channel.id,
+      redemptionId: input.event.id,
+      rewardId: input.event.reward.id,
+      login: input.event.user_login,
+      twitchUserId: input.event.user_id,
+      error: error instanceof Error ? error.message : String(error),
+    });
+    await tryUpdateChannelPointRewardRedemptionStatus({
+      env: input.env,
+      deps: input.deps,
+      channelId: channel.id,
+      broadcasterUserId: input.event.broadcaster_user_id,
+      rewardId: input.event.reward.id,
+      redemptionId: input.event.id,
+      status: "CANCELED",
+    });
+    return { body: "Accepted", status: 202 };
+  }
+
+  const fulfilled = await tryUpdateChannelPointRewardRedemptionStatus({
+    env: input.env,
+    deps: input.deps,
+    channelId: channel.id,
+    broadcasterUserId: input.event.broadcaster_user_id,
+    rewardId: input.event.reward.id,
+    redemptionId: input.event.id,
+    status: "FULFILLED",
+  });
+  if (!fulfilled) {
+    return { body: "Accepted", status: 202 };
+  }
+
+  const { t } = getServerTranslation(settings.defaultLocale, "bot");
+
+  try {
+    await input.deps.createAuditLog(input.env, {
+      channelId: channel.id,
+      actorUserId: channel.ownerUserId,
+      actorType: "system",
+      action: "auto_grant_vip_tokens_channel_point_reward",
+      entityType: "vip_token",
+      entityId: input.event.user_login,
+      payloadJson: JSON.stringify({
+        source: vipTokenChannelPointRewardSubscriptionType,
+        twitchMessageId: input.messageId,
+        login: input.event.user_login,
+        twitchUserId: input.event.user_id,
+        rewardId: input.event.reward.id,
+        rewardTitle: input.event.reward.title,
+        rewardCost: input.event.reward.cost,
+        redemptionId: input.event.id,
+        userInput: input.event.user_input ?? null,
+        grantedTokenCount: 1,
+      }),
+    });
+  } catch (error) {
+    console.error("Failed to write channel point reward audit log", {
+      channelId: channel.id,
+      redemptionId: input.event.id,
+      rewardId: input.event.reward.id,
+      error: error instanceof Error ? error.message : String(error),
+    });
+  }
+
+  try {
+    await input.deps.sendChatReply(input.env, {
+      channelId: channel.id,
+      broadcasterUserId: channel.twitchChannelId,
+      message: t("replies.autoGrantChannelPointReward", {
+        mention: mention(input.event.user_login),
+        rewardTitle: input.event.reward.title,
+      }),
+    });
+  } catch (error) {
+    console.error("Failed to queue channel point reward chat reply", {
+      channelId: channel.id,
+      redemptionId: input.event.id,
+      rewardId: input.event.reward.id,
+      error: error instanceof Error ? error.message : String(error),
+    });
+  }
+
+  return { body: "Accepted", status: 202 };
+}
+
 export async function processEventSubChannelRaid(input: {
   env: AppEnv;
   deps: EventSubSupportDependencies;
@@ -536,8 +729,11 @@ export function createEventSubSupportDependencies(): EventSubSupportDependencies
         autoGrantVipTokensToGiftRecipients:
           settings.autoGrantVipTokensToGiftRecipients,
         autoGrantVipTokensForCheers: settings.autoGrantVipTokensForCheers,
+        autoGrantVipTokensForChannelPointRewards:
+          settings.autoGrantVipTokensForChannelPointRewards,
         autoGrantVipTokensForRaiders: settings.autoGrantVipTokensForRaiders,
         cheerBitsPerVipToken: settings.cheerBitsPerVipToken,
+        channelPointRewardCost: settings.channelPointRewardCost,
         cheerMinimumTokenPercent:
           settings.cheerMinimumTokenPercent === 50 ||
           settings.cheerMinimumTokenPercent === 75 ||
@@ -545,11 +741,30 @@ export function createEventSubSupportDependencies(): EventSubSupportDependencies
             ? settings.cheerMinimumTokenPercent
             : 25,
         raidMinimumViewerCount: Math.max(1, settings.raidMinimumViewerCount),
+        twitchChannelPointRewardId: settings.twitchChannelPointRewardId,
       };
     },
     claimEventSubDelivery,
     grantVipToken,
     createAuditLog: async (env, input) => createAuditLog(env, input as never),
     sendChatReply: async (env, input) => env.TWITCH_REPLY_QUEUE.send(input),
+    updateChannelPointRewardRedemptionStatus: async (env, input) => {
+      const authorization = await getActiveBroadcasterAuthorizationForChannel(
+        env,
+        input.channelId
+      );
+      if (!authorization) {
+        throw new Error("Broadcaster authorization is unavailable.");
+      }
+
+      await updateCustomRewardRedemptionStatus({
+        env,
+        accessToken: authorization.accessTokenEncrypted,
+        broadcasterUserId: input.broadcasterUserId,
+        rewardId: input.rewardId,
+        redemptionId: input.redemptionId,
+        status: input.status,
+      });
+    },
   };
 }

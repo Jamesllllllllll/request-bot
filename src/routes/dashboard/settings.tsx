@@ -21,6 +21,16 @@ import {
   CollapsibleContent,
   CollapsibleTrigger,
 } from "~/components/ui/collapsible";
+import {
+  Dialog,
+  DialogClose,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "~/components/ui/dialog";
 import { Input } from "~/components/ui/input";
 import {
   Select,
@@ -36,6 +46,11 @@ import { formatNumber } from "~/lib/i18n/format";
 import { defaultLocale, localeOptions } from "~/lib/i18n/locales";
 import { getLocalizedPageTitle } from "~/lib/i18n/metadata";
 import { DEFAULT_MAX_QUEUE_SIZE } from "~/lib/settings-defaults";
+import { buildStreamElementsTipRelayCode } from "~/lib/streamelements/instructions";
+import {
+  defaultChannelPointRewardCost,
+  vipTokenChannelPointRewardTitle,
+} from "~/lib/twitch/channel-point-rewards";
 import { getErrorMessage } from "~/lib/utils";
 import type { SettingsInputData } from "~/lib/validation";
 import { viewerSessionQueryOptions } from "~/lib/viewer-session-query";
@@ -131,10 +146,12 @@ const defaultForm: DashboardSettingsFormData = {
   autoGrantVipTokensToSubGifters: false,
   autoGrantVipTokensToGiftRecipients: false,
   autoGrantVipTokensForCheers: false,
+  autoGrantVipTokensForChannelPointRewards: false,
   autoGrantVipTokensForRaiders: false,
   autoGrantVipTokensForStreamElementsTips: false,
   allowRequestPathModifiers: false,
   cheerBitsPerVipToken: 200,
+  channelPointRewardCost: defaultChannelPointRewardCost,
   cheerMinimumTokenPercent: 25,
   raidMinimumViewerCount: 1,
   streamElementsTipAmountPerVipToken: 5,
@@ -1320,6 +1337,99 @@ function DashboardSettingsPage() {
                   <div className="grid min-w-0 content-start gap-4">
                     <div
                       className={`grid min-w-0 gap-3 border bg-(--panel-soft) p-4 ${
+                        form.autoGrantVipTokensForChannelPointRewards
+                          ? "border-(--border-strong)"
+                          : "border-(--border) opacity-70"
+                      }`}
+                    >
+                      <h3 className="text-sm font-semibold text-(--text)">
+                        {t("settings.sections.vipAutomation.channelPoints")}
+                      </h3>
+                      <PermissionRow
+                        label={t(
+                          "settings.sections.vipAutomation.channelPointsToggle"
+                        )}
+                        checked={form.autoGrantVipTokensForChannelPointRewards}
+                        onChange={(value) =>
+                          setBoolean(
+                            "autoGrantVipTokensForChannelPointRewards",
+                            value
+                          )
+                        }
+                      />
+                      <div
+                        className={`grid gap-3 ${!form.autoGrantVipTokensForChannelPointRewards ? "opacity-60" : ""}`}
+                      >
+                        <div className="grid gap-4 md:grid-cols-[minmax(0,0.8fr)_minmax(0,1.2fr)]">
+                          <FieldBlock
+                            label={t(
+                              "settings.sections.vipAutomation.channelPointCost"
+                            )}
+                            description={t(
+                              "settings.sections.vipAutomation.channelPointCostHelp"
+                            )}
+                          >
+                            <div className="max-w-40">
+                              <Input
+                                type="number"
+                                min={1}
+                                step={1}
+                                value={form.channelPointRewardCost}
+                                disabled={
+                                  !form.autoGrantVipTokensForChannelPointRewards
+                                }
+                                onChange={(event) =>
+                                  setNumber(
+                                    "channelPointRewardCost",
+                                    Math.max(1, Number(event.target.value) || 0)
+                                  )
+                                }
+                              />
+                            </div>
+                          </FieldBlock>
+                          <FieldBlock
+                            label={t(
+                              "settings.sections.vipAutomation.channelPointRewardName"
+                            )}
+                            description={t(
+                              "settings.sections.vipAutomation.channelPointRewardNameHelp"
+                            )}
+                          >
+                            <Input
+                              value={vipTokenChannelPointRewardTitle}
+                              readOnly
+                            />
+                          </FieldBlock>
+                        </div>
+                        <div className="grid gap-2 border border-(--border) bg-(--panel-muted) p-3">
+                          <div className="flex flex-wrap items-start justify-between gap-3">
+                            <div className="grid min-w-0 gap-1">
+                              <p className="text-sm font-medium text-(--text)">
+                                {t(
+                                  "settings.sections.vipAutomation.channelPointSetup"
+                                )}
+                              </p>
+                              <p className="text-sm leading-6 text-(--muted)">
+                                {t(
+                                  "settings.sections.vipAutomation.channelPointSetupHelp"
+                                )}
+                              </p>
+                            </div>
+                            <ChannelPointRewardInstructionsDialog
+                              rewardTitle={vipTokenChannelPointRewardTitle}
+                            />
+                          </div>
+                          <p className="text-xs leading-5 text-(--muted)">
+                            {t(
+                              "settings.sections.vipAutomation.channelPointSetupNote"
+                            )}
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div
+                      className={`grid min-w-0 gap-3 border bg-(--panel-soft) p-4 ${
                         form.autoGrantVipTokensForCheers
                           ? "border-(--border-strong)"
                           : "border-(--border) opacity-70"
@@ -1532,34 +1642,22 @@ function DashboardSettingsPage() {
                           </FieldBlock>
                         </div>
                         <div className="grid gap-2 border border-(--border) bg-(--panel-muted) p-3">
-                          <p className="text-sm font-medium text-(--text)">
-                            {t("settings.sections.vipAutomation.setup")}
+                          <div className="flex flex-wrap items-start justify-between gap-3">
+                            <div className="grid min-w-0 gap-1">
+                              <p className="text-sm font-medium text-(--text)">
+                                {t("settings.sections.vipAutomation.setup")}
+                              </p>
+                              <p className="text-sm leading-6 text-(--muted)">
+                                {t("settings.sections.vipAutomation.setupHelp")}
+                              </p>
+                            </div>
+                            <StreamElementsTipInstructionsDialog
+                              relayUrl={streamElementsTipRelayUrl}
+                            />
+                          </div>
+                          <p className="text-xs leading-5 text-(--muted)">
+                            {t("settings.sections.vipAutomation.setupNote")}
                           </p>
-                          <p className="text-sm leading-6 text-(--muted)">
-                            {t("settings.sections.vipAutomation.setupHelp")}
-                          </p>
-                          <ol className="grid gap-1.5 pl-5 text-sm leading-6 text-(--muted) list-decimal">
-                            <li>
-                              {t(
-                                "settings.sections.vipAutomation.setupSteps.connect"
-                              )}
-                            </li>
-                            <li>
-                              {t(
-                                "settings.sections.vipAutomation.setupSteps.trigger"
-                              )}
-                            </li>
-                            <li>
-                              {t(
-                                "settings.sections.vipAutomation.setupSteps.send"
-                              )}
-                            </li>
-                            <li>
-                              {t(
-                                "settings.sections.vipAutomation.setupSteps.note"
-                              )}
-                            </li>
-                          </ol>
                         </div>
                       </div>
                     </div>
@@ -1681,6 +1779,279 @@ function DashboardSettingsPage() {
         </>
       )}
     </div>
+  );
+}
+
+function StreamElementsTipInstructionsDialog(props: {
+  relayUrl: string | null;
+}) {
+  const { t } = useLocaleTranslation("dashboard");
+  const [open, setOpen] = useState(false);
+  const [stepIndex, setStepIndex] = useState(0);
+  const [relayUrlCopied, setRelayUrlCopied] = useState(false);
+  const [relayCodeCopied, setRelayCodeCopied] = useState(false);
+  const relayCode = props.relayUrl
+    ? buildStreamElementsTipRelayCode(props.relayUrl)
+    : "";
+  const steps = [
+    {
+      title: t(
+        "settings.sections.vipAutomation.instructions.pages.enable.title"
+      ),
+      body: t("settings.sections.vipAutomation.instructions.pages.enable.body"),
+      points: [
+        t(
+          "settings.sections.vipAutomation.instructions.pages.enable.steps.toggle"
+        ),
+        t(
+          "settings.sections.vipAutomation.instructions.pages.enable.steps.amount"
+        ),
+        t(
+          "settings.sections.vipAutomation.instructions.pages.enable.steps.save"
+        ),
+      ],
+    },
+    {
+      title: t(
+        "settings.sections.vipAutomation.instructions.pages.connect.title"
+      ),
+      body: t(
+        "settings.sections.vipAutomation.instructions.pages.connect.body"
+      ),
+      points: [
+        t(
+          "settings.sections.vipAutomation.instructions.pages.connect.steps.open"
+        ),
+        t(
+          "settings.sections.vipAutomation.instructions.pages.connect.steps.connect"
+        ),
+        t(
+          "settings.sections.vipAutomation.instructions.pages.connect.steps.autoConnect"
+        ),
+        t(
+          "settings.sections.vipAutomation.instructions.pages.connect.steps.action"
+        ),
+      ],
+    },
+    {
+      title: t(
+        "settings.sections.vipAutomation.instructions.pages.relay.title"
+      ),
+      body: t("settings.sections.vipAutomation.instructions.pages.relay.body"),
+      points: [
+        t(
+          "settings.sections.vipAutomation.instructions.pages.relay.steps.subAction"
+        ),
+        t(
+          "settings.sections.vipAutomation.instructions.pages.relay.steps.paste"
+        ),
+      ],
+    },
+    {
+      title: t("settings.sections.vipAutomation.instructions.pages.test.title"),
+      body: t("settings.sections.vipAutomation.instructions.pages.test.body"),
+      points: [
+        t("settings.sections.vipAutomation.instructions.pages.test.steps.tip"),
+        t("settings.sections.vipAutomation.instructions.pages.test.steps.chat"),
+        t(
+          "settings.sections.vipAutomation.instructions.pages.test.steps.username"
+        ),
+        t("settings.sections.vipAutomation.instructions.pages.test.steps.obs"),
+      ],
+    },
+  ];
+  const currentStep = steps[stepIndex];
+  const hasPreviousStep = stepIndex > 0;
+  const hasNextStep = stepIndex < steps.length - 1;
+
+  useEffect(() => {
+    if (open) {
+      return;
+    }
+
+    setStepIndex(0);
+    setRelayUrlCopied(false);
+    setRelayCodeCopied(false);
+  }, [open]);
+
+  async function copyRelayUrl() {
+    if (!props.relayUrl) {
+      return;
+    }
+
+    await navigator.clipboard.writeText(props.relayUrl);
+    setRelayUrlCopied(true);
+    window.setTimeout(() => {
+      setRelayUrlCopied(false);
+    }, 1500);
+  }
+
+  async function copyRelayCode() {
+    if (!relayCode) {
+      return;
+    }
+
+    await navigator.clipboard.writeText(relayCode);
+    setRelayCodeCopied(true);
+    window.setTimeout(() => {
+      setRelayCodeCopied(false);
+    }, 1500);
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={setOpen}>
+      <DialogTrigger asChild>
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          disabled={!props.relayUrl}
+          className="shrink-0"
+        >
+          {t("settings.actions.instructions")}
+        </Button>
+      </DialogTrigger>
+      <DialogContent className="max-h-[calc(100vh-2rem)] overflow-y-auto sm:max-w-3xl">
+        <DialogHeader className="gap-3">
+          <p className="text-xs font-semibold uppercase tracking-[0.16em] text-(--muted)">
+            {t("settings.sections.vipAutomation.instructions.progress", {
+              current: stepIndex + 1,
+              total: steps.length,
+            })}
+          </p>
+          <DialogTitle>
+            {t("settings.sections.vipAutomation.instructions.title")}
+          </DialogTitle>
+          <DialogDescription>
+            {t("settings.sections.vipAutomation.instructions.description")}
+          </DialogDescription>
+        </DialogHeader>
+
+        <div className="grid gap-4">
+          <section className="grid gap-3 border border-(--border) bg-(--panel-soft) p-4">
+            <div className="grid gap-1">
+              <h3 className="text-base font-semibold text-(--text)">
+                {currentStep.title}
+              </h3>
+              <p className="text-sm leading-6 text-(--muted)">
+                {currentStep.body}
+              </p>
+            </div>
+            <ol className="grid gap-2 pl-5 text-sm leading-6 text-(--muted) list-decimal">
+              {currentStep.points.map((point) => (
+                <li key={point}>{point}</li>
+              ))}
+            </ol>
+          </section>
+
+          {stepIndex === 2 ? (
+            <>
+              <section className="grid gap-3 border border-(--border) bg-(--panel-soft) p-4">
+                <div className="grid gap-1">
+                  <p className="text-sm font-semibold text-(--text)">
+                    {t(
+                      "settings.sections.vipAutomation.instructions.pages.relay.webhookLabel"
+                    )}
+                  </p>
+                  <p className="text-sm leading-6 text-(--muted)">
+                    {t(
+                      "settings.sections.vipAutomation.instructions.pages.relay.webhookHelp"
+                    )}
+                  </p>
+                </div>
+                <div className="grid min-w-0 grid-cols-[minmax(0,1fr)_auto] items-stretch gap-2">
+                  <Input
+                    value={props.relayUrl ?? ""}
+                    readOnly
+                    disabled={!props.relayUrl}
+                  />
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={copyRelayUrl}
+                    disabled={!props.relayUrl}
+                    className="self-stretch"
+                  >
+                    <Copy className="h-4 w-4" />
+                    {relayUrlCopied
+                      ? t("settings.actions.copied")
+                      : t("settings.actions.copyUrl")}
+                  </Button>
+                </div>
+              </section>
+
+              <section className="grid gap-3 border border-(--border) bg-(--panel-soft) p-4">
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div className="grid min-w-0 gap-1">
+                    <p className="text-sm font-semibold text-(--text)">
+                      {t(
+                        "settings.sections.vipAutomation.instructions.pages.relay.codeLabel"
+                      )}
+                    </p>
+                    <p className="text-sm leading-6 text-(--muted)">
+                      {t(
+                        "settings.sections.vipAutomation.instructions.pages.relay.codeHelp"
+                      )}
+                    </p>
+                  </div>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={copyRelayCode}
+                    disabled={!relayCode}
+                    className="shrink-0"
+                  >
+                    <Copy className="h-4 w-4" />
+                    {relayCodeCopied
+                      ? t("settings.actions.copied")
+                      : t("settings.actions.copyCode")}
+                  </Button>
+                </div>
+                <pre className="overflow-x-auto border border-dashed border-(--border-strong) bg-(--bg) p-4 text-xs leading-6 text-(--text)">
+                  <code>{relayCode}</code>
+                </pre>
+              </section>
+            </>
+          ) : null}
+        </div>
+
+        <DialogFooter className="items-center justify-between sm:justify-between">
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            onClick={() => {
+              setStepIndex((current) => Math.max(0, current - 1));
+            }}
+            disabled={!hasPreviousStep}
+          >
+            {t("settings.actions.previous")}
+          </Button>
+          <div className="flex flex-wrap justify-end gap-2">
+            <DialogClose asChild>
+              <Button type="button" variant="outline" size="sm">
+                {t("settings.actions.done")}
+              </Button>
+            </DialogClose>
+            {hasNextStep ? (
+              <Button
+                type="button"
+                size="sm"
+                onClick={() => {
+                  setStepIndex((current) =>
+                    Math.min(steps.length - 1, current + 1)
+                  );
+                }}
+              >
+                {t("settings.actions.next")}
+              </Button>
+            ) : null}
+          </div>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
 
@@ -1829,6 +2200,185 @@ function formatSettingsNumber(locale: string, value: number) {
   return formatNumber(locale as never, value, {
     maximumFractionDigits: 2,
   });
+}
+
+function ChannelPointRewardInstructionsDialog(props: { rewardTitle: string }) {
+  const { t } = useLocaleTranslation("dashboard");
+  const [open, setOpen] = useState(false);
+  const [stepIndex, setStepIndex] = useState(0);
+  const steps = [
+    {
+      title: t(
+        "settings.sections.vipAutomation.channelPointInstructions.pages.enable.title"
+      ),
+      body: t(
+        "settings.sections.vipAutomation.channelPointInstructions.pages.enable.body"
+      ),
+      points: [
+        t(
+          "settings.sections.vipAutomation.channelPointInstructions.pages.enable.steps.toggle"
+        ),
+        t(
+          "settings.sections.vipAutomation.channelPointInstructions.pages.enable.steps.cost"
+        ),
+        t(
+          "settings.sections.vipAutomation.channelPointInstructions.pages.enable.steps.save"
+        ),
+      ],
+    },
+    {
+      title: t(
+        "settings.sections.vipAutomation.channelPointInstructions.pages.reconnect.title"
+      ),
+      body: t(
+        "settings.sections.vipAutomation.channelPointInstructions.pages.reconnect.body"
+      ),
+      points: [
+        t(
+          "settings.sections.vipAutomation.channelPointInstructions.pages.reconnect.steps.notice"
+        ),
+        t(
+          "settings.sections.vipAutomation.channelPointInstructions.pages.reconnect.steps.signIn"
+        ),
+        t(
+          "settings.sections.vipAutomation.channelPointInstructions.pages.reconnect.steps.saveAgain"
+        ),
+      ],
+    },
+    {
+      title: t(
+        "settings.sections.vipAutomation.channelPointInstructions.pages.check.title"
+      ),
+      body: t(
+        "settings.sections.vipAutomation.channelPointInstructions.pages.check.body"
+      ),
+      points: [
+        t(
+          "settings.sections.vipAutomation.channelPointInstructions.pages.check.steps.reward"
+        ),
+        t(
+          "settings.sections.vipAutomation.channelPointInstructions.pages.check.steps.live"
+        ),
+        t(
+          "settings.sections.vipAutomation.channelPointInstructions.pages.check.steps.fulfill"
+        ),
+      ],
+    },
+  ];
+  const currentStep = steps[stepIndex];
+  const hasPreviousStep = stepIndex > 0;
+  const hasNextStep = stepIndex < steps.length - 1;
+
+  useEffect(() => {
+    if (open) {
+      return;
+    }
+
+    setStepIndex(0);
+  }, [open]);
+
+  return (
+    <Dialog open={open} onOpenChange={setOpen}>
+      <DialogTrigger asChild>
+        <Button type="button" variant="outline" size="sm" className="shrink-0">
+          {t("settings.actions.instructions")}
+        </Button>
+      </DialogTrigger>
+      <DialogContent className="max-h-[calc(100vh-2rem)] overflow-y-auto sm:max-w-2xl">
+        <DialogHeader className="gap-3">
+          <p className="text-xs font-semibold uppercase tracking-[0.16em] text-(--muted)">
+            {t(
+              "settings.sections.vipAutomation.channelPointInstructions.progress",
+              {
+                current: stepIndex + 1,
+                total: steps.length,
+              }
+            )}
+          </p>
+          <DialogTitle>
+            {t(
+              "settings.sections.vipAutomation.channelPointInstructions.title"
+            )}
+          </DialogTitle>
+          <DialogDescription>
+            {t(
+              "settings.sections.vipAutomation.channelPointInstructions.description"
+            )}
+          </DialogDescription>
+        </DialogHeader>
+
+        <div className="grid gap-4">
+          <section className="grid gap-3 border border-(--border) bg-(--panel-soft) p-4">
+            <div className="grid gap-1">
+              <h3 className="text-base font-semibold text-(--text)">
+                {currentStep.title}
+              </h3>
+              <p className="text-sm leading-6 text-(--muted)">
+                {currentStep.body}
+              </p>
+            </div>
+            <ol className="grid gap-2 pl-5 text-sm leading-6 text-(--muted) list-decimal">
+              {currentStep.points.map((point) => (
+                <li key={point}>{point}</li>
+              ))}
+            </ol>
+          </section>
+
+          {stepIndex === steps.length - 1 ? (
+            <section className="grid gap-3 border border-(--border) bg-(--panel-soft) p-4">
+              <div className="grid gap-1">
+                <p className="text-sm font-semibold text-(--text)">
+                  {t(
+                    "settings.sections.vipAutomation.channelPointInstructions.rewardNameLabel"
+                  )}
+                </p>
+                <p className="text-sm leading-6 text-(--muted)">
+                  {t(
+                    "settings.sections.vipAutomation.channelPointInstructions.rewardNameHelp"
+                  )}
+                </p>
+              </div>
+              <Input value={props.rewardTitle} readOnly />
+            </section>
+          ) : null}
+        </div>
+
+        <DialogFooter className="items-center justify-between sm:justify-between">
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            onClick={() => {
+              setStepIndex((current) => Math.max(0, current - 1));
+            }}
+            disabled={!hasPreviousStep}
+          >
+            {t("settings.actions.previous")}
+          </Button>
+          <div className="flex flex-wrap justify-end gap-2">
+            <DialogClose asChild>
+              <Button type="button" variant="outline" size="sm">
+                {t("settings.actions.done")}
+              </Button>
+            </DialogClose>
+            {hasNextStep ? (
+              <Button
+                type="button"
+                size="sm"
+                onClick={() => {
+                  setStepIndex((current) =>
+                    Math.min(steps.length - 1, current + 1)
+                  );
+                }}
+              >
+                {t("settings.actions.next")}
+              </Button>
+            ) : null}
+          </div>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
 }
 
 function normalizeSettingsFormData(

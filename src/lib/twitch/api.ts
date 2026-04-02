@@ -1,6 +1,7 @@
 import { setHttpStatus, startSpan } from "@sentry/cloudflare";
 import type { AppEnv } from "~/lib/env";
 import type {
+  EventSubChannelPointRewardRedemptionEvent,
   EventSubChatMessageEvent,
   EventSubCheerEvent,
   EventSubRaidEvent,
@@ -12,6 +13,7 @@ import type {
   TwitchBroadcasterSubscriptionsResponse,
   TwitchChannelSearchResponse,
   TwitchChattersResponse,
+  TwitchCustomRewardsResponse,
   TwitchEventSubCreateResponse,
   TwitchEventSubListResponse,
   TwitchModeratedChannelsResponse,
@@ -367,6 +369,144 @@ export async function getBroadcasterSubscriptions(input: {
   return (await response.json()) as TwitchBroadcasterSubscriptionsResponse;
 }
 
+function buildCustomRewardUrl(input: {
+  broadcasterUserId: string;
+  rewardId?: string;
+}) {
+  const url = new URL(`${twitchBaseUrl}/channel_points/custom_rewards`);
+  url.searchParams.set("broadcaster_id", input.broadcasterUserId);
+
+  if (input.rewardId) {
+    url.searchParams.set("id", input.rewardId);
+  }
+
+  return url;
+}
+
+export async function createCustomReward(input: {
+  env: AppEnv;
+  accessToken: string;
+  broadcasterUserId: string;
+  title: string;
+  prompt: string;
+  cost: number;
+  isEnabled: boolean;
+  shouldRedemptionsSkipRequestQueue: boolean;
+}) {
+  const response = await fetchWithRetry({
+    url: buildCustomRewardUrl({
+      broadcasterUserId: input.broadcasterUserId,
+    }),
+    init: {
+      method: "POST",
+      headers: authHeaders(input.env, input.accessToken),
+      body: JSON.stringify({
+        title: input.title,
+        prompt: input.prompt,
+        cost: input.cost,
+        is_enabled: input.isEnabled,
+        should_redemptions_skip_request_queue:
+          input.shouldRedemptionsSkipRequestQueue,
+      }),
+    },
+  });
+
+  if (!response.ok) {
+    const errorBody = await response.text().catch(() => "");
+    throw new TwitchApiError(
+      `Failed to create custom reward: ${response.status}`,
+      response.status,
+      errorBody
+    );
+  }
+
+  const payload = (await response.json()) as TwitchCustomRewardsResponse;
+  return payload.data[0] ?? null;
+}
+
+export async function updateCustomReward(input: {
+  env: AppEnv;
+  accessToken: string;
+  broadcasterUserId: string;
+  rewardId: string;
+  title: string;
+  prompt: string;
+  cost: number;
+  isEnabled: boolean;
+  shouldRedemptionsSkipRequestQueue: boolean;
+}) {
+  const response = await fetchWithRetry({
+    url: buildCustomRewardUrl({
+      broadcasterUserId: input.broadcasterUserId,
+      rewardId: input.rewardId,
+    }),
+    init: {
+      method: "PATCH",
+      headers: authHeaders(input.env, input.accessToken),
+      body: JSON.stringify({
+        title: input.title,
+        prompt: input.prompt,
+        cost: input.cost,
+        is_enabled: input.isEnabled,
+        should_redemptions_skip_request_queue:
+          input.shouldRedemptionsSkipRequestQueue,
+      }),
+    },
+  });
+
+  if (response.status === 404) {
+    return null;
+  }
+
+  if (!response.ok) {
+    const errorBody = await response.text().catch(() => "");
+    throw new TwitchApiError(
+      `Failed to update custom reward: ${response.status}`,
+      response.status,
+      errorBody
+    );
+  }
+
+  const payload = (await response.json()) as TwitchCustomRewardsResponse;
+  return payload.data[0] ?? null;
+}
+
+export async function updateCustomRewardRedemptionStatus(input: {
+  env: AppEnv;
+  accessToken: string;
+  broadcasterUserId: string;
+  rewardId: string;
+  redemptionId: string;
+  status: "CANCELED" | "FULFILLED";
+}) {
+  const url = new URL(
+    `${twitchBaseUrl}/channel_points/custom_rewards/redemptions`
+  );
+  url.searchParams.set("broadcaster_id", input.broadcasterUserId);
+  url.searchParams.set("reward_id", input.rewardId);
+  url.searchParams.set("id", input.redemptionId);
+
+  const response = await fetchWithRetry({
+    url,
+    init: {
+      method: "PATCH",
+      headers: authHeaders(input.env, input.accessToken),
+      body: JSON.stringify({
+        status: input.status,
+      }),
+    },
+  });
+
+  if (!response.ok) {
+    const errorBody = await response.text().catch(() => "");
+    throw new TwitchApiError(
+      `Failed to update custom reward redemption status: ${response.status}`,
+      response.status,
+      errorBody
+    );
+  }
+}
+
 export async function getAppAccessToken(env: AppEnv) {
   const response = await fetchWithRetry({
     url: `${oauthBaseUrl}/token`,
@@ -426,6 +566,7 @@ export async function createEventSubSubscription(input: {
   type:
     | "channel.chat.message"
     | "channel.cheer"
+    | "channel.channel_points_custom_reward_redemption.add"
     | "channel.raid"
     | "channel.subscribe"
     | "channel.subscription.message"
@@ -467,6 +608,7 @@ export async function listEventSubSubscriptions(input: {
   type?:
     | "channel.chat.message"
     | "channel.cheer"
+    | "channel.channel_points_custom_reward_redemption.add"
     | "channel.raid"
     | "channel.subscribe"
     | "channel.subscription.message"
@@ -768,6 +910,15 @@ export function isChannelCheerEvent(
   payload: unknown
 ): payload is { event: EventSubCheerEvent } {
   return isEventType(payload, "channel.cheer");
+}
+
+export function isChannelPointRewardRedemptionEvent(
+  payload: unknown
+): payload is { event: EventSubChannelPointRewardRedemptionEvent } {
+  return isEventType(
+    payload,
+    "channel.channel_points_custom_reward_redemption.add"
+  );
 }
 
 export function isChannelRaidEvent(

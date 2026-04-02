@@ -10,6 +10,7 @@ import {
 import {
   createEventSubSupportDependencies,
   processEventSubChannelCheer,
+  processEventSubChannelPointRewardRedemption,
   processEventSubChannelRaid,
   processEventSubChannelSubscribe,
   processEventSubSubscriptionGift,
@@ -19,6 +20,7 @@ import { normalizeCommandPrefix } from "~/lib/request-policy";
 import { normalizeChatEvent, parseChatCommand } from "~/lib/requests";
 import {
   isChannelCheerEvent,
+  isChannelPointRewardRedemptionEvent,
   isChannelRaidEvent,
   isChannelSubscribeEvent,
   isChannelSubscriptionMessageEvent,
@@ -140,6 +142,23 @@ export const Route = createFileRoute("/api/eventsub")({
             isAnonymous: payload.event.is_anonymous,
           });
           const result = await processEventSubChannelCheer({
+            env: runtimeEnv,
+            deps: supportDeps,
+            messageId,
+            event: payload.event,
+          });
+          return new Response(result.body, { status: result.status });
+        }
+
+        if (isChannelPointRewardRedemptionEvent(payload)) {
+          console.info("EventSub channel point reward redemption received", {
+            broadcasterLogin: payload.event.broadcaster_user_login,
+            viewerLogin: payload.event.user_login,
+            rewardId: payload.event.reward.id,
+            rewardTitle: payload.event.reward.title,
+            redemptionId: payload.event.id,
+          });
+          const result = await processEventSubChannelPointRewardRedemption({
             env: runtimeEnv,
             deps: supportDeps,
             messageId,

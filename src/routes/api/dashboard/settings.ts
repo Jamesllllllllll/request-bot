@@ -15,6 +15,7 @@ import {
   getArraySetting,
   getRequiredPathsMatchMode,
 } from "~/lib/request-policy";
+import { getChannelPointRewardWarningMessageFromWarnings } from "~/lib/twitch/channel-point-reward-warnings";
 import { getErrorMessage, json } from "~/lib/utils";
 import { settingsInputSchema } from "~/lib/validation";
 
@@ -104,19 +105,31 @@ export const Route = createFileRoute("/api/dashboard/settings")({
         }
 
         await updateSettings(runtimeEnv, state.channel.id, parsed.data);
+        let reconcileWarning: string | null = null;
         let reconcileError: string | null = null;
 
         try {
-          await callBackend(runtimeEnv, "/internal/bot/reconcile", {
-            method: "POST",
-            headers: {
-              "content-type": "application/json",
-            },
-            body: JSON.stringify({
-              channelId: state.channel.id,
-              refreshLiveState: true,
-            }),
-          });
+          const response = await callBackend(
+            runtimeEnv,
+            "/internal/bot/reconcile",
+            {
+              method: "POST",
+              headers: {
+                "content-type": "application/json",
+              },
+              body: JSON.stringify({
+                channelId: state.channel.id,
+                refreshLiveState: true,
+              }),
+            }
+          );
+
+          const reconcileResult = (await response.json().catch(() => null)) as {
+            warnings?: string[];
+          } | null;
+          reconcileWarning = getChannelPointRewardWarningMessageFromWarnings(
+            reconcileResult?.warnings
+          );
         } catch (error) {
           reconcileError =
             error instanceof Error ? error.message : String(error);
@@ -139,9 +152,11 @@ export const Route = createFileRoute("/api/dashboard/settings")({
         return json({
           ok: true,
           message: "Settings saved.",
-          warning: reconcileError
-            ? "Your settings were saved, but bot status could not be refreshed right away. The bot will retry on the next live/status check."
-            : null,
+          warning:
+            reconcileWarning ??
+            (reconcileError
+              ? "Your settings were saved, but bot status could not be refreshed right away. The bot will retry on the next live/status check."
+              : null),
           reconcileError: reconcileError
             ? getErrorMessage(reconcileError)
             : null,

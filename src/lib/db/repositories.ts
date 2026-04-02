@@ -10,6 +10,7 @@ import {
   refreshAccessToken,
   TwitchApiError,
 } from "~/lib/twitch/api";
+import { channelPointRewardManageScope } from "~/lib/twitch/channel-point-rewards";
 import {
   createId,
   decodeHtmlEntities,
@@ -928,6 +929,20 @@ export async function ensureStreamElementsTipWebhookToken(
     .where(eq(channelSettings.channelId, channelId));
 
   return token;
+}
+
+export async function setTwitchChannelPointRewardId(
+  env: AppEnv,
+  channelId: string,
+  rewardId: string | null
+) {
+  await getDb(env)
+    .update(channelSettings)
+    .set({
+      twitchChannelPointRewardId: rewardId ?? "",
+      updatedAt: Date.now(),
+    })
+    .where(eq(channelSettings.channelId, channelId));
 }
 
 export async function getOverlayStateForOwner(
@@ -2748,10 +2763,12 @@ export async function updateSettings(
     autoGrantVipTokensToSubGifters: boolean;
     autoGrantVipTokensToGiftRecipients: boolean;
     autoGrantVipTokensForCheers: boolean;
+    autoGrantVipTokensForChannelPointRewards: boolean;
     autoGrantVipTokensForRaiders: boolean;
     autoGrantVipTokensForStreamElementsTips: boolean;
     allowRequestPathModifiers: boolean;
     cheerBitsPerVipToken: number;
+    channelPointRewardCost: number;
     cheerMinimumTokenPercent: 25 | 50 | 75 | 100;
     raidMinimumViewerCount: number;
     streamElementsTipAmountPerVipToken: number;
@@ -2805,11 +2822,14 @@ export async function updateSettings(
       autoGrantVipTokensToGiftRecipients:
         input.autoGrantVipTokensToGiftRecipients,
       autoGrantVipTokensForCheers: input.autoGrantVipTokensForCheers,
+      autoGrantVipTokensForChannelPointRewards:
+        input.autoGrantVipTokensForChannelPointRewards,
       autoGrantVipTokensForRaiders: input.autoGrantVipTokensForRaiders,
       autoGrantVipTokensForStreamElementsTips:
         input.autoGrantVipTokensForStreamElementsTips,
       allowRequestPathModifiers: input.allowRequestPathModifiers,
       cheerBitsPerVipToken: input.cheerBitsPerVipToken,
+      channelPointRewardCost: input.channelPointRewardCost,
       cheerMinimumTokenPercent: input.cheerMinimumTokenPercent,
       raidMinimumViewerCount: input.raidMinimumViewerCount,
       streamElementsTipAmountPerVipToken:
@@ -3650,15 +3670,22 @@ export async function getViewerState(env: AppEnv, userId: string) {
     env,
     userId
   );
+  const requiredBroadcasterScopes = [
+    "user:read:moderated_channels",
+    "moderator:read:chatters",
+    "channel:bot",
+    "channel:read:subscriptions",
+    "bits:read",
+    ...(settings?.autoGrantVipTokensForChannelPointRewards
+      ? [channelPointRewardManageScope]
+      : []),
+  ];
   const needsBroadcasterScopeReconnect =
     !broadcasterAuthorization ||
-    !hasRequiredAuthorizationScopes(broadcasterAuthorization.scopes, [
-      "user:read:moderated_channels",
-      "moderator:read:chatters",
-      "channel:bot",
-      "channel:read:subscriptions",
-      "bits:read",
-    ]);
+    !hasRequiredAuthorizationScopes(
+      broadcasterAuthorization.scopes,
+      requiredBroadcasterScopes
+    );
   const moderatedChannelsState = broadcasterAuthorization
     ? await getModeratedChannelViewerState(env, broadcasterAuthorization)
     : {

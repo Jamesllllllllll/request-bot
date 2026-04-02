@@ -20,6 +20,7 @@
     "ruleGiftRecipient": "Recevoir un abonnement offert = 1 jeton VIP",
     "ruleCheer": "Cheer de {bits} bits = 1 jeton VIP",
     "ruleMinimumCheer": "Cheer minimum : {bits} bits = {tokens} {count, plural, one {jeton VIP} other {jetons VIP}}.",
+    "ruleChannelPoints": "Utiliser la recompense de points de chaine = 1 jeton VIP",
     "ruleRaidSingle": "Raider cette chaine = 1 jeton VIP",
     "ruleRaidMultiple": "Raid avec {viewers}+ spectateurs = 1 jeton VIP",
     "ruleTip": "Tip StreamElements de {amount} = 1 jeton VIP"

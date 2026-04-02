@@ -51,6 +51,7 @@
     "autoGrantNewSubscriber": "Added 1 VIP token to {mention} for a new sub.",
     "autoGrantSharedSubRenewal": "Added 1 VIP token to {mention} for sharing a sub renewal message.",
     "autoGrantCheer": "Added {countText} VIP token{count, plural, one {} other {s}} to {mention} for cheering {bitsText} bit{bits, plural, one {} other {s}}.",
+    "autoGrantChannelPointReward": "Added 1 VIP token to {mention} for redeeming the {rewardTitle} channel point reward.",
     "autoGrantRaid": "Added 1 VIP token to {mention} for raiding with {viewersText} viewer{viewers, plural, one {} other {s}}.",
     "autoGrantStreamElementsTip": "Added {countText} VIP token{count, plural, one {} other {s}} to {mention} for a {amount} StreamElements tip.",
     "targetPermissionDenied": "Only the broadcaster or a moderator can request for someone else.",

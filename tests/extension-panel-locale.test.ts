@@ -32,7 +32,7 @@ describe("resolveExtensionPanelLocale", () => {
     ).toBe("fr");
   });
 
-  it("prefers a linked viewer preference before local device settings", () => {
+  it("prefers an explicit panel or device locale before a linked viewer preference", () => {
     expect(
       resolveExtensionPanelLocale({
         search: "?language=fr",
@@ -43,7 +43,7 @@ describe("resolveExtensionPanelLocale", () => {
         documentLanguage: "en",
         navigatorLanguage: "en-US",
       })
-    ).toBe("fr");
+    ).toBe("pt-BR");
   });
 
   it("uses the stored device locale before queryless document and browser fallbacks", () => {

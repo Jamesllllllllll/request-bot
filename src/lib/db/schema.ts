@@ -201,6 +201,14 @@ export const channelSettings = sqliteTable("channel_settings", {
   })
     .notNull()
     .default(false),
+  autoGrantVipTokensForChannelPointRewards: integer(
+    "auto_grant_vip_tokens_for_channel_point_rewards",
+    {
+      mode: "boolean",
+    }
+  )
+    .notNull()
+    .default(false),
   autoGrantVipTokensForRaiders: integer("auto_grant_vip_tokens_for_raiders", {
     mode: "boolean",
   })
@@ -222,12 +230,18 @@ export const channelSettings = sqliteTable("channel_settings", {
   cheerBitsPerVipToken: integer("cheer_bits_per_vip_token")
     .notNull()
     .default(200),
+  channelPointRewardCost: integer("channel_point_reward_cost")
+    .notNull()
+    .default(1000),
   cheerMinimumTokenPercent: integer("cheer_minimum_token_percent")
     .notNull()
     .default(25),
   raidMinimumViewerCount: integer("raid_minimum_viewer_count")
     .notNull()
     .default(1),
+  twitchChannelPointRewardId: text("twitch_channel_point_reward_id")
+    .notNull()
+    .default(""),
   streamElementsTipAmountPerVipToken: real(
     "streamelements_tip_amount_per_vip_token"
   )

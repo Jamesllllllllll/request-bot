@@ -90,7 +90,12 @@
       "saveSettings": "Guardar configuración",
       "reconnectTwitch": "Volver a conectar Twitch",
       "copyUrl": "Copiar URL",
+      "copyCode": "Copiar código",
       "copied": "Copiado",
+      "instructions": "Instrucciones",
+      "previous": "Atrás",
+      "next": "Siguiente",
+      "done": "Listo",
       "show": "Mostrar",
       "hide": "Ocultar"
     },
@@ -192,7 +197,7 @@
       },
       "vipAutomation": {
         "title": "Automatización de tokens VIP",
-        "description": "Entrega automáticamente tokens VIP por nuevas suscripciones, subs regaladas, raids, cheers y tips de StreamElements.",
+        "description": "Entrega automaticamente tokens VIP por nuevas suscripciones, subs regaladas, cheers, recompensas de puntos del canal administradas por la app, raids y tips de StreamElements.",
         "subscribes": "Suscripciones",
         "newSub": "Dar 1 token VIP por una nueva sub pagada",
         "sharedRenewal": "Dar 1 token VIP por un mensaje compartido de renovación",
@@ -200,6 +205,51 @@
         "giftedSubs": "Subs regaladas",
         "subGifter": "Dar 1 token VIP al regalador por cada sub regalada",
         "subRecipient": "Dar 1 token VIP a cada receptor de una sub regalada",
+        "channelPoints": "Puntos del canal",
+        "channelPointsToggle": "Dar 1 token VIP por una recompensa de puntos del canal administrada por la app",
+        "channelPointCost": "Costo en puntos del canal",
+        "channelPointCostHelp": "Cada canje de esta recompensa entrega 1 token VIP.",
+        "channelPointRewardName": "Nombre de la recompensa",
+        "channelPointRewardNameHelp": "request-bot crea y mantiene sincronizada esta recompensa de Twitch por ti.",
+        "channelPointSetup": "Configuración",
+        "channelPointSetupHelp": "request-bot crea esta recompensa después de guardar la configuración. Las personas la canjean en Twitch cuando tu canal está en vivo.",
+        "channelPointSetupNote": "Esto requiere un canal de Twitch Affiliate o Partner y funciona cuando el bot esta habilitado para este canal. Si Twitch te pide reconectar, reconecta tu cuenta de Twitch y vuelve a guardar.",
+        "channelPointInstructions": {
+          "title": "Configuración de la recompensa de puntos del canal",
+          "description": "Actívala aquí, reconecta Twitch si te lo pide y deja que request-bot cree y administre la recompensa por ti. Esto requiere un canal de Twitch Affiliate o Partner.",
+          "progress": "Paso {current} de {total}",
+          "rewardNameLabel": "Nombre de la recompensa",
+          "rewardNameHelp": "Este es el nombre exacto de la recompensa de Twitch que crea request-bot.",
+          "pages": {
+            "enable": {
+              "title": "Activa la recompensa aquí",
+              "body": "Empieza en este panel para que request-bot sepa el costo en puntos y pueda crear la recompensa.",
+              "steps": {
+                "toggle": "Activa Dar 1 token VIP por una recompensa de puntos del canal administrada por la app.",
+                "cost": "Define cuántos puntos del canal cuesta cada canje.",
+                "save": "Guarda la configuración para que request-bot pueda crear o actualizar la recompensa."
+              }
+            },
+            "reconnect": {
+              "title": "Reconecta Twitch si hace falta",
+              "body": "Algunas conexiones antiguas de Twitch no tienen el permiso necesario para administrar recompensas.",
+              "steps": {
+                "notice": "Si ves un aviso para reconectar en esta página, haz clic en Reconectar Twitch.",
+                "signIn": "Completa ese inicio de sesión de Twitch con la cuenta de broadcaster que es dueña de este canal.",
+                "saveAgain": "Vuelve aquí y guarda otra vez para que request-bot termine de crear la recompensa."
+              }
+            },
+            "check": {
+              "title": "Confírmala en Twitch",
+              "body": "Cuando la recompensa esté creada, la gente podrá canjearla directamente desde Twitch.",
+              "steps": {
+                "reward": "Busca el nombre de la recompensa que aparece abajo en tu lista de recompensas de puntos del canal en Twitch.",
+                "live": "Cuando tu canal esté en vivo, la gente puede canjearla para obtener 1 token VIP.",
+                "fulfill": "request-bot completa el canje y agrega el token VIP automáticamente."
+              }
+            }
+          }
+        },
         "raids": "Raids",
         "raidReward": "Dar 1 token VIP al streamer que hace raid a este canal",
         "minimumRaid": "Tamaño mínimo del raid",
@@ -222,6 +272,55 @@
         "relayUrlHelp": "Usa esta URL en el paso de Streamer.bot que reenvía el evento de tip de StreamElements.",
         "setup": "Configuración",
         "setupHelp": "StreamElements puede seguir mostrando alertas de tip en OBS como ya lo haces. Para los premios de tokens VIP hace falta que Streamer.bot reenvíe el evento aquí.",
+        "setupNote": "Los premios por tips solo funcionan cuando el nombre del tip en StreamElements coincide con el nombre de usuario de Twitch del espectador.",
+        "instructions": {
+          "title": "Configuración del relay de tips de StreamElements",
+          "description": "Usa Streamer.bot para reenviar cada tip de StreamElements aquí y así request-bot puede otorgar tokens VIP automáticamente.",
+          "progress": "Paso {current} de {total}",
+          "pages": {
+            "enable": {
+              "title": "Activa aquí los premios por tips",
+              "body": "Empieza en este panel para que el relay tenga dónde enviar el tip.",
+              "steps": {
+                "toggle": "Activa Dar tokens VIP por tips de StreamElements.",
+                "amount": "Define cuánto valor de tip otorga 1 token VIP.",
+                "save": "Guarda la configuración antes de hacer tu primer tip de prueba."
+              }
+            },
+            "connect": {
+              "title": "Conecta Streamer.bot con StreamElements",
+              "body": "Configura Streamer.bot para recibir los eventos de tip de StreamElements.",
+              "steps": {
+                "open": "En Streamer.bot, abre Integrations > StreamElements.",
+                "connect": "Haz clic en Connect to StreamElements e inicia sesión con la cuenta de StreamElements que recibe tus tips.",
+                "autoConnect": "Activa Auto Connect para que el relay siga funcionando cuando Streamer.bot se reinicie.",
+                "action": "Crea una Action nueva y añade el trigger StreamElements Tip."
+              }
+            },
+            "relay": {
+              "title": "Añade el paso del relay",
+              "body": "En esa misma Action, añade una sub-action Execute C# Code. Usa la URL del webhook y el código para pegar que se muestran abajo.",
+              "steps": {
+                "subAction": "Añade una sub-action Execute C# Code dentro de la Action que usa el trigger StreamElements Tip.",
+                "paste": "Pega la URL del webhook y el código de abajo, y luego guarda la Action."
+              },
+              "webhookLabel": "Tu URL del webhook",
+              "webhookHelp": "Pega esta URL exacta en el código de Streamer.bot que aparece abajo.",
+              "codeLabel": "Código C# para Streamer.bot",
+              "codeHelp": "Pega esto en la sub-action Execute C# Code."
+            },
+            "test": {
+              "title": "Envía un tip de prueba",
+              "body": "Haz una prueba completa antes de depender de esto en directo.",
+              "steps": {
+                "tip": "Envía un tip de prueba por StreamElements después de activar la Action.",
+                "chat": "Mira el mensaje de request-bot en el chat que confirma que se añadieron tokens VIP.",
+                "username": "Asegúrate de que el nombre del tip en StreamElements sea el nombre de usuario de Twitch del espectador. Si no lo es, request-bot no puede relacionar ese tip con esa persona.",
+                "obs": "Si Streamer.bot no reenvía el evento, las alertas de StreamElements pueden seguir apareciendo en OBS, pero aquí no se otorgarán tokens VIP."
+              }
+            }
+          }
+        },
         "setupSteps": {
           "connect": "Conecta Streamer.bot con StreamElements.",
           "trigger": "Usa el trigger de StreamElements Tip en Streamer.bot.",

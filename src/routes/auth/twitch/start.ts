@@ -3,6 +3,7 @@ import { env } from "cloudflare:workers";
 import { createFileRoute } from "@tanstack/react-router";
 import { createOauthStateCookie } from "~/lib/auth/session.server";
 import type { AppEnv } from "~/lib/env";
+import { channelPointRewardManageScope } from "~/lib/twitch/channel-point-rewards";
 
 const requiredBroadcasterScopes = [
   "openid",
@@ -11,6 +12,7 @@ const requiredBroadcasterScopes = [
   "channel:bot",
   "channel:read:subscriptions",
   "bits:read",
+  channelPointRewardManageScope,
 ] as const;
 
 function getBroadcasterScopes(env: AppEnv) {

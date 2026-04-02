@@ -77,7 +77,9 @@ For local bot testing, set `TWITCH_BOT_USERNAME` in `.env` to your dedicated tes
 
 Keep the production bot username only in production secrets or deployed env. Do not point local development at the production bot account unless you intentionally want local testing to use the live bot identity.
 
-`TWITCH_SCOPES` applies to the broadcaster's main app login, not the shared bot login. It needs `channel:bot` so bot replies can use Twitch's bot badge path, and it needs `moderator:read:chatters` for the chatter-first VIP lookup flow.
+`TWITCH_SCOPES` applies to the broadcaster's main app login, not the shared bot login. It needs `channel:bot` so bot replies can use Twitch's bot badge path, `moderator:read:chatters` for the chatter-first VIP lookup flow, `channel:read:subscriptions` and `bits:read` for VIP token automation, and `channel:manage:redemptions` for the native channel point reward flow.
+
+If you want to test the native channel point reward flow locally, use a Twitch Affiliate or Partner channel. Twitch does not allow custom rewards on channels without channel points.
 
 ### Important local testing warning
 

@@ -176,4 +176,50 @@ print(json.dumps(row))
 
     expect(JSON.parse(output)).toEqual(["en"]);
   });
+
+  test("fresh migrated database defaults channel point reward settings safely", () => {
+    const tempDir = mkdtempSync(join(tmpdir(), "request-bot-db-"));
+    const dbPath = join(tempDir, "test.sqlite");
+    const migrationPaths = readdirSync(join(process.cwd(), "drizzle"))
+      .filter((name) => name.endsWith(".sql"))
+      .sort()
+      .map((name) => join(process.cwd(), "drizzle", name));
+
+    const script = `
+import json
+import sqlite3
+import sys
+
+db_path = sys.argv[1]
+migration_paths = json.loads(sys.argv[2])
+
+con = sqlite3.connect(db_path)
+cur = con.cursor()
+
+for migration_path in migration_paths:
+    with open(migration_path, "r", encoding="utf-8") as file:
+        sql = file.read()
+    cur.executescript(sql)
+
+cur.execute("insert into users (id, twitch_user_id, login, display_name) values (?, ?, ?, ?)", ("usr_test", "tw_test", "tester", "Tester"))
+cur.execute("insert into channels (id, owner_user_id, twitch_channel_id, slug, login, display_name) values (?, ?, ?, ?, ?, ?)", ("chn_test", "usr_test", "tw_channel", "tester", "tester", "Tester"))
+cur.execute("insert into channel_settings (channel_id) values (?)", ("chn_test",))
+
+row = cur.execute("select auto_grant_vip_tokens_for_channel_point_rewards, channel_point_reward_cost, twitch_channel_point_reward_id from channel_settings where channel_id='chn_test'").fetchone()
+con.commit()
+con.close()
+print(json.dumps(row))
+`;
+
+    const output = execFileSync(
+      pythonCommand,
+      ["-", dbPath, JSON.stringify(migrationPaths)],
+      {
+        input: script,
+        encoding: "utf8",
+      }
+    );
+
+    expect(JSON.parse(output)).toEqual([0, 1000, ""]);
+  });
 });

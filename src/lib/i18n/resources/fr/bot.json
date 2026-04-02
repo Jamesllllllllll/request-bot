@@ -51,6 +51,7 @@
     "autoGrantNewSubscriber": "{mention} reçoit 1 jeton VIP pour un nouvel abonnement.",
     "autoGrantSharedSubRenewal": "{mention} reçoit 1 jeton VIP pour avoir partagé un message de renouvellement d'abonnement.",
     "autoGrantCheer": "{mention} reçoit {countText} {count, plural, one {jeton VIP} other {jetons VIP}} pour {bitsText} {bits, plural, one {bit envoyé} other {bits envoyés}}.",
+    "autoGrantChannelPointReward": "{mention} reçoit 1 jeton VIP pour avoir utilise la recompense de points de chaine {rewardTitle}.",
     "autoGrantRaid": "{mention} reçoit 1 jeton VIP pour un raid de {viewersText} {viewers, plural, one {spectateur} other {spectateurs}}.",
     "autoGrantStreamElementsTip": "{mention} reçoit {countText} {count, plural, one {jeton VIP} other {jetons VIP}} pour un tip StreamElements de {amount}.",
     "targetPermissionDenied": "Only the broadcaster or a moderator can request for someone else.",

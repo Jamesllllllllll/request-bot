@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { pathOptions, tuningOptions } from "./channel-options";
 import { supportedLocales } from "./i18n/locales";
+import { defaultChannelPointRewardCost } from "./twitch/channel-point-rewards";
 
 const searchSortSchema = z.enum([
   "relevance",
@@ -189,10 +190,17 @@ export const settingsInputSchema = z
     autoGrantVipTokensToSubGifters: z.boolean(),
     autoGrantVipTokensToGiftRecipients: z.boolean(),
     autoGrantVipTokensForCheers: z.boolean(),
+    autoGrantVipTokensForChannelPointRewards: z.boolean(),
     autoGrantVipTokensForRaiders: z.boolean(),
     autoGrantVipTokensForStreamElementsTips: z.boolean(),
     allowRequestPathModifiers: z.boolean(),
     cheerBitsPerVipToken: z.number().int().min(1).max(100_000),
+    channelPointRewardCost: z
+      .number()
+      .int()
+      .min(1)
+      .max(1_000_000)
+      .default(defaultChannelPointRewardCost),
     cheerMinimumTokenPercent: z.union([
       z.literal(25),
       z.literal(50),

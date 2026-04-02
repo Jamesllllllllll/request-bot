@@ -40,12 +40,14 @@ TWITCH_EVENTSUB_SECRET=...
 SESSION_SECRET=...
 ADMIN_TWITCH_USER_IDS=your_main_twitch_user_id
 TWITCH_BOT_USERNAME=Pants_Bot_
-TWITCH_SCOPES=openid user:read:moderated_channels moderator:read:chatters channel:bot
+TWITCH_SCOPES=openid user:read:moderated_channels moderator:read:chatters channel:bot channel:read:subscriptions bits:read channel:manage:redemptions
 ```
 
 For local development, `TWITCH_BOT_USERNAME` should usually be your dedicated test bot account. Production should keep its own bot username in deployed env or secrets. The app enforces that the connected bot login matches `TWITCH_BOT_USERNAME`, so changing bot accounts locally requires changing local `.env` first.
 
-`TWITCH_SCOPES` belongs to the broadcaster login flow, not the bot login flow. It should include `channel:bot` so chat replies can use Twitch's bot badge path. If the connected broadcaster account is missing that permission, reconnect Twitch.
+`TWITCH_SCOPES` belongs to the broadcaster login flow, not the bot login flow. It should include `channel:bot` so chat replies can use Twitch's bot badge path, plus `channel:read:subscriptions`, `bits:read`, and `channel:manage:redemptions` for VIP token automation and app-owned channel point rewards. If the connected broadcaster account is missing those permissions, reconnect Twitch.
+
+App-owned channel point rewards only work on Twitch Affiliate or Partner channels. If you test this flow on a channel without channel points, Twitch rejects the reward API calls and request-bot leaves the rest of the bot active.
 
 2. Make sure your Twitch developer application has both redirect URIs registered:
 

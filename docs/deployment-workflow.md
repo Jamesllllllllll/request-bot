@@ -96,7 +96,7 @@ Use these Twitch values:
 The checked-in default broadcaster scope is:
 
 ```text
-openid user:read:moderated_channels channel:bot
+openid user:read:moderated_channels moderator:read:chatters channel:bot channel:read:subscriptions bits:read channel:manage:redemptions
 ```
 
 Notes:
@@ -315,7 +315,7 @@ gh secret set CLOUDFLARE_D1_DATABASE_ID
 gh secret set CLOUDFLARE_SESSION_KV_ID
 gh secret set APP_URL --body "https://your-production-url.example"
 gh variable set TWITCH_BOT_USERNAME --body "your_bot_username"
-gh variable set TWITCH_SCOPES --body "openid user:read:moderated_channels channel:bot"
+gh variable set TWITCH_SCOPES --body "openid user:read:moderated_channels moderator:read:chatters channel:bot channel:read:subscriptions bits:read channel:manage:redemptions"
 gh variable set SENTRY_ENVIRONMENT --body "production"
 ```
 

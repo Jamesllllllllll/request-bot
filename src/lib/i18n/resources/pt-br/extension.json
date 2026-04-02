@@ -20,6 +20,7 @@
     "ruleGiftRecipient": "Receber uma inscricao presenteada = 1 token VIP",
     "ruleCheer": "Cheer de {bits} bits = 1 token VIP",
     "ruleMinimumCheer": "Cheer minimo: {bits} bits = {tokens} {count, plural, one {token VIP} other {tokens VIP}}.",
+    "ruleChannelPoints": "Resgatar a recompensa de pontos do canal = 1 token VIP",
     "ruleRaidSingle": "Raid neste canal = 1 token VIP",
     "ruleRaidMultiple": "Raid com {viewers}+ espectadores = 1 token VIP",
     "ruleTip": "Gorjeta do StreamElements de {amount} = 1 token VIP"

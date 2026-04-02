@@ -90,7 +90,12 @@
       "saveSettings": "Save settings",
       "reconnectTwitch": "Reconnect Twitch",
       "copyUrl": "Copy URL",
+      "copyCode": "Copy code",
       "copied": "Copied",
+      "instructions": "Instructions",
+      "previous": "Back",
+      "next": "Next",
+      "done": "Done",
       "show": "Show",
       "hide": "Hide"
     },
@@ -192,7 +197,7 @@
       },
       "vipAutomation": {
         "title": "VIP token automation",
-        "description": "Automatically reward VIP tokens for new subs, gifted subs, raids, cheers, and StreamElements tips.",
+        "description": "Automatically reward VIP tokens for new subs, gifted subs, cheers, app-owned channel point rewards, raids, and StreamElements tips.",
         "subscribes": "Subscribes",
         "newSub": "Give 1 VIP token for a new paid sub",
         "sharedRenewal": "Give 1 VIP token for a shared sub renewal message",
@@ -200,6 +205,51 @@
         "giftedSubs": "Gifted subs",
         "subGifter": "Give 1 VIP token to the gifter for each gifted sub",
         "subRecipient": "Give 1 VIP token to each gifted sub recipient",
+        "channelPoints": "Channel points",
+        "channelPointsToggle": "Give 1 VIP token for an app-owned channel point reward",
+        "channelPointCost": "Channel point cost",
+        "channelPointCostHelp": "Each redemption of this reward gives 1 VIP token.",
+        "channelPointRewardName": "Reward name",
+        "channelPointRewardNameHelp": "request-bot creates and keeps this Twitch reward in sync for you.",
+        "channelPointSetup": "Setup",
+        "channelPointSetupHelp": "request-bot creates this reward after you save settings. Viewers redeem it on Twitch when your channel is live.",
+        "channelPointSetupNote": "This requires a Twitch Affiliate or Partner channel and works when the bot is enabled for your channel. If Twitch asks you to reconnect, reconnect your Twitch account and save again.",
+        "channelPointInstructions": {
+          "title": "Channel point reward setup",
+          "description": "Turn this on here, reconnect Twitch if prompted, and let request-bot create and manage the reward for you. This requires a Twitch Affiliate or Partner channel.",
+          "progress": "Step {current} of {total}",
+          "rewardNameLabel": "Reward name",
+          "rewardNameHelp": "This is the exact Twitch reward name request-bot creates.",
+          "pages": {
+            "enable": {
+              "title": "Turn on the reward here",
+              "body": "Start in this dashboard so request-bot knows the point cost and can create the reward.",
+              "steps": {
+                "toggle": "Enable Give 1 VIP token for an app-owned channel point reward.",
+                "cost": "Set how many channel points each redemption should cost.",
+                "save": "Save settings so request-bot can create or update the reward."
+              }
+            },
+            "reconnect": {
+              "title": "Reconnect Twitch if needed",
+              "body": "Some older Twitch connections are missing the reward-management scope.",
+              "steps": {
+                "notice": "If you see a reconnect notice on this page, click Reconnect Twitch.",
+                "signIn": "Finish that Twitch sign-in with the broadcaster account that owns this channel.",
+                "saveAgain": "Return here and save again so request-bot can finish creating the reward."
+              }
+            },
+            "check": {
+              "title": "Confirm it on Twitch",
+              "body": "Once the reward is created, viewers can redeem it directly from Twitch.",
+              "steps": {
+                "reward": "Look for the reward name shown below in your Twitch channel point rewards.",
+                "live": "When your channel is live, viewers can redeem it to earn 1 VIP token.",
+                "fulfill": "request-bot fulfills the redemption and adds the VIP token automatically."
+              }
+            }
+          }
+        },
         "raids": "Raids",
         "raidReward": "Give 1 VIP token to the streamer who raids this channel",
         "minimumRaid": "Minimum raid size",
@@ -222,6 +272,55 @@
         "relayUrlHelp": "Use this URL in the Streamer.bot step that forwards your StreamElements tip event.",
         "setup": "Setup",
         "setupHelp": "StreamElements can keep showing tip alerts in OBS the way you already use them. VIP token rewards need Streamer.bot to forward the tip event here.",
+        "setupNote": "Tip rewards only work when the StreamElements tip name matches the viewer's Twitch username.",
+        "instructions": {
+          "title": "StreamElements tip relay setup",
+          "description": "Use Streamer.bot to forward each StreamElements tip here so request-bot can award VIP tokens automatically.",
+          "progress": "Step {current} of {total}",
+          "pages": {
+            "enable": {
+              "title": "Turn on tip rewards here",
+              "body": "Start in this dashboard so the relay has somewhere to send the tip.",
+              "steps": {
+                "toggle": "Enable Give VIP tokens for StreamElements tips.",
+                "amount": "Set how much tip value awards 1 VIP token.",
+                "save": "Save settings before you run your first test tip."
+              }
+            },
+            "connect": {
+              "title": "Connect Streamer.bot to StreamElements",
+              "body": "Set up Streamer.bot to receive StreamElements tip events.",
+              "steps": {
+                "open": "In Streamer.bot, open Integrations > StreamElements.",
+                "connect": "Click Connect to StreamElements and sign in with the StreamElements account that receives your tips.",
+                "autoConnect": "Turn on Auto Connect so tip relays keep working when Streamer.bot restarts.",
+                "action": "Create a new Action and add the StreamElements Tip trigger to it."
+              }
+            },
+            "relay": {
+              "title": "Add the relay step",
+              "body": "In that same Action, add an Execute C# Code sub-action. Use the webhook URL and paste-in code below.",
+              "steps": {
+                "subAction": "Add an Execute C# Code sub-action inside the Action that uses the StreamElements Tip trigger.",
+                "paste": "Paste the webhook URL and the code below, then save the Action."
+              },
+              "webhookLabel": "Your webhook URL",
+              "webhookHelp": "Paste this exact URL into the Streamer.bot code below.",
+              "codeLabel": "C# code for Streamer.bot",
+              "codeHelp": "Paste this into the Execute C# Code sub-action."
+            },
+            "test": {
+              "title": "Send a test tip",
+              "body": "Run one test tip all the way through before you depend on it live.",
+              "steps": {
+                "tip": "Send a test tip through StreamElements after the Action is enabled.",
+                "chat": "Watch for the request-bot chat reply that confirms VIP tokens were added.",
+                "username": "Make sure the StreamElements tip name is the viewer's Twitch login. If it is not, request-bot cannot match the tip to that viewer.",
+                "obs": "Without Streamer.bot forwarding the event, StreamElements alerts can still show in OBS, but no VIP tokens are awarded here."
+              }
+            }
+          }
+        },
         "setupSteps": {
           "connect": "Connect Streamer.bot to StreamElements.",
           "trigger": "Use the StreamElements Tip trigger in Streamer.bot.",

@@ -15,3 +15,16 @@ export function formatNumber(
 ) {
   return new Intl.NumberFormat(locale, options).format(value);
 }
+
+export function formatCurrency(
+  locale: AppLocale,
+  value: number,
+  currency: string,
+  options?: Omit<Intl.NumberFormatOptions, "style" | "currency">
+) {
+  return new Intl.NumberFormat(locale, {
+    ...options,
+    style: "currency",
+    currency,
+  }).format(value);
+}

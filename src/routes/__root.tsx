@@ -18,6 +18,7 @@ import {
   Settings2,
 } from "lucide-react";
 import { LanguagePicker } from "~/components/language-picker";
+import { TranslationHelpButton } from "~/components/translation-help-button";
 import { Button } from "~/components/ui/button";
 import {
   Tooltip,
@@ -135,6 +136,7 @@ function AppShell() {
 
           <div className="flex min-w-0 flex-1 flex-wrap items-center justify-end gap-3 max-[960px]:flex-[0_1_auto] max-[960px]:justify-start">
             <LanguagePicker />
+            <TranslationHelpButton />
             <nav className="flex max-w-full flex-wrap items-center gap-1 border border-(--border) bg-(--panel-soft) p-0 text-sm max-[960px]:w-auto max-[960px]:self-start max-[960px]:gap-[0.35rem]">
               <NavLink
                 to="/search"

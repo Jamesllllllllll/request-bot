@@ -52,6 +52,7 @@ export const channelSettings = sqliteTable("channel_settings", {
   channelId: text("channel_id")
     .primaryKey()
     .references(() => channels.id),
+  defaultLocale: text("default_locale").notNull().default("en"),
   botChannelEnabled: integer("bot_channel_enabled", { mode: "boolean" })
     .notNull()
     .default(false),

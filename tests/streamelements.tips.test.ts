@@ -11,6 +11,7 @@ function createDeps(
 ): StreamElementsTipDependencies {
   return {
     getChannelSettingsByChannelId: vi.fn().mockResolvedValue({
+      defaultLocale: "en",
       autoGrantVipTokensForStreamElementsTips: true,
       streamElementsTipAmountPerVipToken: 5,
     }),
@@ -114,6 +115,55 @@ describe("StreamElements tip automation", () => {
       expect.objectContaining({
         message:
           "Added 5 VIP tokens to @viewer_one for a $25 StreamElements tip.",
+      })
+    );
+  });
+
+  it("localizes StreamElements tip replies using the channel default locale", async () => {
+    const deps = createDeps({
+      getChannelSettingsByChannelId: vi.fn().mockResolvedValue({
+        defaultLocale: "es",
+        autoGrantVipTokensForStreamElementsTips: true,
+        streamElementsTipAmountPerVipToken: 5,
+      }),
+    });
+    const tip = parseStreamElementsTipPayload({
+      topic: "channel.tips",
+      data: {
+        donation: {
+          user: {
+            username: "viewer_one",
+          },
+          amount: 25,
+          currency: "USD",
+        },
+        transactionId: "txn-2-es",
+        approved: "allowed",
+        status: "success",
+      },
+    });
+
+    expect(tip).not.toBeNull();
+    if (!tip) {
+      throw new Error("Expected a valid StreamElements tip payload.");
+    }
+
+    const result = await processStreamElementsTip({
+      env,
+      deps,
+      channel,
+      tip,
+    });
+
+    expect(result).toEqual({
+      body: "Accepted",
+      status: 202,
+    });
+    expect(deps.sendChatReply).toHaveBeenCalledWith(
+      env,
+      expect.objectContaining({
+        message:
+          "Se agregaron 5 tokens VIP a @viewer_one por una propina de StreamElements de 25 US$.",
       })
     );
   });

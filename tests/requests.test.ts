@@ -222,6 +222,7 @@ describe("request policy", () => {
     ).toEqual({
       allowed: false,
       reason: "Only subscribers or VIPs can request songs right now.",
+      reasonCode: "subscriber_or_vip_only",
     });
   });
 

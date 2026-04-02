@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { pathOptions, tuningOptions } from "./channel-options";
+import { supportedLocales } from "./i18n/locales";
 
 const searchSortSchema = z.enum([
   "relevance",
@@ -151,6 +152,7 @@ export const moderationActionSchema = z.discriminatedUnion("action", [
 
 export const settingsInputSchema = z
   .object({
+    defaultLocale: z.enum(supportedLocales),
     botChannelEnabled: z.boolean(),
     moderatorCanManageRequests: z.boolean(),
     moderatorCanManageBlacklist: z.boolean(),

@@ -51,6 +51,7 @@
     "autoGrantNewSubscriber": "{mention} recebeu 1 token VIP por uma nova inscrição.",
     "autoGrantSharedSubRenewal": "{mention} recebeu 1 token VIP por compartilhar uma mensagem de renovação de inscrição.",
     "autoGrantCheer": "{mention} recebeu {countText} {count, plural, one {token VIP} other {tokens VIP}} por enviar {bitsText} {bits, plural, one {bit} other {bits}}.",
+    "autoGrantChannelPointReward": "{mention} recebeu 1 token VIP por resgatar a recompensa de pontos do canal {rewardTitle}.",
     "autoGrantRaid": "{mention} recebeu 1 token VIP por fazer raid com {viewersText} {viewers, plural, one {espectador} other {espectadores}}.",
     "autoGrantStreamElementsTip": "{mention} recebeu {countText} {count, plural, one {token VIP} other {tokens VIP}} por uma gorjeta do StreamElements de {amount}.",
     "targetPermissionDenied": "Only the broadcaster or a moderator can request for someone else.",

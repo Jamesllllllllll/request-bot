@@ -10,6 +10,7 @@ export interface VipTokenAutomationSettingsLike {
   autoGrantVipTokensForCheers?: boolean | null;
   cheerBitsPerVipToken?: number | null;
   cheerMinimumTokenPercent?: number | null;
+  autoGrantVipTokensForChannelPointRewards?: boolean | null;
   autoGrantVipTokensForRaiders?: boolean | null;
   raidMinimumViewerCount?: number | null;
   autoGrantVipTokensForStreamElementsTips?: boolean | null;
@@ -93,6 +94,13 @@ export function getVipTokenAutomationDetails(
           `Minimum cheer: ${formattedMinimumBits} bits = ${formatVipTokenCount(minimumTokenCount)} VIP token${minimumTokenCount === 1 ? "" : "s"}.`
       );
     }
+  }
+
+  if (input.autoGrantVipTokensForChannelPointRewards) {
+    earningRules.push(
+      translate?.("vip.ruleChannelPoints") ??
+        "Redeem the channel point reward = 1 VIP token"
+    );
   }
 
   if (input.autoGrantVipTokensForRaiders) {

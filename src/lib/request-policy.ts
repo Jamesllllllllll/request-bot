@@ -7,6 +7,8 @@ import {
 } from "./channel-blacklist";
 import type { SongSearchResult } from "./song-search/types";
 
+type Translate = (key: string, options?: Record<string, unknown>) => string;
+
 function normalize(value: string | undefined | null) {
   return (value ?? "").trim().toLowerCase();
 }
@@ -79,6 +81,7 @@ export function isRequesterAllowed(
     return {
       allowed: false,
       reason: "Requests are disabled for this channel.",
+      reasonCode: "requests_disabled",
     };
   }
 
@@ -91,6 +94,7 @@ export function isRequesterAllowed(
       return {
         allowed: false,
         reason: "VIP requests are disabled in this channel.",
+        reasonCode: "vip_requests_disabled",
       };
     }
     return { allowed: true };
@@ -101,6 +105,7 @@ export function isRequesterAllowed(
       return {
         allowed: false,
         reason: "Subscriber requests are disabled in this channel.",
+        reasonCode: "subscriber_requests_disabled",
       };
     }
     return { allowed: true };
@@ -110,6 +115,7 @@ export function isRequesterAllowed(
     return {
       allowed: false,
       reason: "Only subscribers or VIPs can request songs right now.",
+      reasonCode: "subscriber_or_vip_only",
     };
   }
 
@@ -198,6 +204,7 @@ export function isSongAllowed(input: {
     return {
       allowed: false,
       reason: "Only official DLC requests are allowed.",
+      reasonCode: "only_official_dlc",
     };
   }
 
@@ -357,23 +364,29 @@ export function songMatchesRequestedPaths(input: {
 }
 
 export function formatPathLabel(path: string) {
+  return formatLocalizedPathLabel(path);
+}
+
+export function formatLocalizedPathLabel(path: string, translate?: Translate) {
   switch (normalize(path)) {
     case "lead":
-      return "Lead";
+      return translate?.("paths.lead") ?? "Lead";
     case "rhythm":
-      return "Rhythm";
+      return translate?.("paths.rhythm") ?? "Rhythm";
     case "bass":
-      return "Bass";
+      return translate?.("paths.bass") ?? "Bass";
     case "voice":
     case "vocals":
-      return "Lyrics";
+      return translate?.("paths.lyrics") ?? "Lyrics";
     default:
       return path.trim();
   }
 }
 
-export function formatPathList(paths: string[]) {
-  return paths.map((path) => formatPathLabel(path)).join(", ");
+export function formatPathList(paths: string[], translate?: Translate) {
+  return paths
+    .map((path) => formatLocalizedPathLabel(path, translate))
+    .join(", ");
 }
 
 export function buildHowMessage(input: {
@@ -381,37 +394,56 @@ export function buildHowMessage(input: {
   appUrl: string;
   channelSlug?: string;
   allowRequestPathModifiers?: boolean;
+  translate?: Translate;
 }) {
   const normalized = normalizeCommandPrefix(input.commandPrefix);
   const parts = [
-    `Commands: ${normalized}sr artist - song; ${normalized}sr artist *random; ${normalized}sr artist *choice; ${normalized}vip; ${normalized}vip artist - song; ${normalized}edit artist - song; ${normalized}remove reg|vip|all; ${normalized}position.`,
+    input.translate?.("commands.how.commands", {
+      commandPrefix: normalized,
+    }) ??
+      `Commands: ${normalized}sr artist - song; ${normalized}sr artist *random; ${normalized}sr artist *choice; ${normalized}vip; ${normalized}vip artist - song; ${normalized}edit artist - song; ${normalized}remove reg|vip|all; ${normalized}position.`,
   ];
   if (input.allowRequestPathModifiers) {
     parts.push(
-      `Bass requests: add *bass to ${normalized}sr, ${normalized}vip, or ${normalized}edit.`
+      input.translate?.("commands.how.bassRequests", {
+        commandPrefix: normalized,
+      }) ??
+        `Bass requests: add *bass to ${normalized}sr, ${normalized}vip, or ${normalized}edit.`
     );
   }
 
   const root = input.appUrl.replace(/\/+$/, "");
   const slug = input.channelSlug?.replace(/^\/+|\/+$/g, "") ?? "";
   parts.push(
-    `Browse the track list and request songs here: ${slug ? `${root}/${slug}` : `${root}/search`}`
+    input.translate?.("commands.how.browse", {
+      url: slug ? `${root}/${slug}` : `${root}/search`,
+    }) ??
+      `Browse the track list and request songs here: ${slug ? `${root}/${slug}` : `${root}/search`}`
   );
   return parts.join(" ");
 }
 
-export function buildSearchMessage(appUrl: string) {
+export function buildSearchMessage(appUrl: string, translate?: Translate) {
   const root = appUrl.replace(/\/+$/, "");
-  return `Search the song database here: ${root}/search`;
+  return (
+    translate?.("commands.search", {
+      url: `${root}/search`,
+    }) ?? `Search the song database here: ${root}/search`
+  );
 }
 
 export function buildChannelPlaylistMessage(
   appUrl: string,
-  channelSlug: string
+  channelSlug: string,
+  translate?: Translate
 ) {
   const root = appUrl.replace(/\/+$/, "");
   const slug = channelSlug.replace(/^\/+|\/+$/g, "");
-  return `You can edit or search the song database here: ${root}/${slug}`;
+  return (
+    translate?.("commands.channelPlaylist", {
+      url: `${root}/${slug}`,
+    }) ?? `You can edit or search the song database here: ${root}/${slug}`
+  );
 }
 
 export function buildBlacklistMessage(
@@ -426,7 +458,8 @@ export function buildBlacklistMessage(
     groupedProjectId?: number;
     songTitle: string;
     artistName?: string | null;
-  }> = []
+  }> = [],
+  translate?: Translate
 ) {
   if (
     artists.length === 0 &&
@@ -434,7 +467,10 @@ export function buildBlacklistMessage(
     songs.length === 0 &&
     songGroups.length === 0
   ) {
-    return "No blacklisted artists, charters, songs, or versions.";
+    return (
+      translate?.("commands.blacklist.empty") ??
+      "No blacklisted artists, charters, songs, or versions."
+    );
   }
 
   const artistText = artists.length
@@ -469,14 +505,23 @@ export function buildBlacklistMessage(
         )
         .join(", ")
     : "none";
-  return `Artists: ${artistText}. Charters: ${charterText}. Songs: ${songGroupText}. Versions: ${songText}.`;
+  return (
+    translate?.("commands.blacklist.summary", {
+      artists: artistText,
+      charters: charterText,
+      songs: songGroupText,
+      versions: songText,
+    }) ??
+    `Artists: ${artistText}. Charters: ${charterText}. Songs: ${songGroupText}. Versions: ${songText}.`
+  );
 }
 
 export function buildSetlistMessage(
-  artists: Array<{ artistId?: number | null; artistName: string }>
+  artists: Array<{ artistId?: number | null; artistName: string }>,
+  translate?: Translate
 ) {
   if (artists.length === 0) {
-    return "No setlist artists.";
+    return translate?.("commands.setlist.empty") ?? "No setlist artists.";
   }
 
   const artistText = artists.length
@@ -485,7 +530,11 @@ export function buildSetlistMessage(
         .map((entry) => entry.artistName)
         .join(", ")
     : "none";
-  return `Artists: ${artistText}.`;
+  return (
+    translate?.("commands.setlist.summary", {
+      artists: artistText,
+    }) ?? `Artists: ${artistText}.`
+  );
 }
 
 export function normalizeCommandPrefix(commandPrefix: string) {

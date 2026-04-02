@@ -1,8 +1,4 @@
-import {
-  localeCookieMaxAgeSeconds,
-  localeCookieName,
-  localeStorageKey,
-} from "./config";
+import { localeCookieName, localeStorageKey } from "./config";
 import { type AppLocale, defaultLocale, normalizeLocale } from "./locales";
 
 export function resolveExplicitLocale(input: {
@@ -51,13 +47,4 @@ export function persistExplicitDeviceLocale(locale: AppLocale) {
   } catch {
     // Ignore local storage failures in restricted browser contexts.
   }
-}
-
-export function persistExplicitLocaleCookie(locale: AppLocale) {
-  if (typeof document === "undefined") {
-    return;
-  }
-
-  const secureFlag = window.location.protocol === "https:" ? "; Secure" : "";
-  document.cookie = `${localeCookieName}=${encodeURIComponent(locale)}; Path=/; SameSite=Lax; Max-Age=${localeCookieMaxAgeSeconds}${secureFlag}`;
 }

@@ -10,6 +10,7 @@ import {
   updateSettings,
 } from "~/lib/db/repositories";
 import type { AppEnv } from "~/lib/env";
+import { defaultLocale, normalizeLocale } from "~/lib/i18n/locales";
 import {
   getArraySetting,
   getRequiredPathsMatchMode,
@@ -34,7 +35,7 @@ async function requireDashboardState(runtimeEnv: AppEnv) {
 
   const state = await getDashboardState(runtimeEnv, userId);
   if (!state) {
-    throw new Error("Your channel could not be loaded.");
+    throw new Error("Only the channel owner can manage channel settings.");
   }
 
   return state;
@@ -83,6 +84,8 @@ export const getDashboardSettings = createServerFn({ method: "GET" }).handler(
             requiredPathsMatchMode: getRequiredPathsMatchMode(
               state.settings.requiredPathsMatchMode
             ),
+            defaultLocale:
+              normalizeLocale(state.settings.defaultLocale) ?? defaultLocale,
             cheerMinimumTokenPercent: normalizeCheerMinimumTokenPercent(
               state.settings.cheerMinimumTokenPercent
             ),

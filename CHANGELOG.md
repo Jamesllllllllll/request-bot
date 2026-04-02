@@ -4,6 +4,19 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.3.1] - 2026-04-01
+
+### Added
+- Owner-controlled channel language for bot replies, with Twitch panel fallback to the channel default when a viewer has no linked or local language preference.
+- A non-English translation feedback prompt in the website header and account settings.
+
+### Changed
+- Twitch panel and public VIP-token help now share localized VIP automation copy and locale-aware amount formatting.
+- More support-event and StreamElements bot replies now respect the channel's configured bot language instead of always replying in English.
+
+### Fixed
+- Website language changes now apply immediately again instead of briefly reverting or waiting for the background locale save to finish.
+
 ## [0.3.0] - 2026-04-01
 
 ### Added

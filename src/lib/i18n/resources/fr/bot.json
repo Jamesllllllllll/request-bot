@@ -1,0 +1,99 @@
+{
+  "dashboard": {
+    "botLanguage": "Langue des réponses du bot",
+    "botLanguageHelp": "Choisissez la langue utilisée pour les réponses dans le chat et l’aide des commandes. Le panneau Twitch utilise aussi cette langue par défaut quand un spectateur n’a pas sa propre préférence."
+  },
+  "paths": {
+    "lead": "Lead",
+    "rhythm": "Rhythm",
+    "bass": "Bass",
+    "lyrics": "Lyrics"
+  },
+  "labels": {
+    "request": "request",
+    "regularRequest": "regular request",
+    "vipRequest": "VIP request"
+  },
+  "commands": {
+    "how": {
+      "commands": "Commands: {commandPrefix}sr artist - song; {commandPrefix}sr artist *random; {commandPrefix}sr artist *choice; {commandPrefix}vip; {commandPrefix}vip artist - song; {commandPrefix}edit artist - song; {commandPrefix}remove reg|vip|all; {commandPrefix}position.",
+      "bassRequests": "Bass requests: add *bass to {commandPrefix}sr, {commandPrefix}vip, or {commandPrefix}edit.",
+      "browse": "Browse the track list and request songs here: {url}"
+    },
+    "search": "Recherchez dans la base de chansons ici : {url}",
+    "channelPlaylist": "You can edit or search the song database here: {url}",
+    "blacklist": {
+      "empty": "No blacklisted artists, charters, songs, or versions.",
+      "summary": "Artists: {artists}. Charters: {charters}. Songs: {songs}. Versions: {versions}."
+    },
+    "setlist": {
+      "empty": "No setlist artists.",
+      "summary": "Artists: {artists}."
+    }
+  },
+  "reasons": {
+    "requests_disabled": "Requests are disabled for this channel.",
+    "vip_requests_disabled": "VIP requests are disabled in this channel.",
+    "subscriber_requests_disabled": "Subscriber requests are disabled in this channel.",
+    "subscriber_or_vip_only": "Only subscribers or VIPs can request songs right now.",
+    "only_official_dlc": "Only official DLC requests are allowed.",
+    "disallowed_tuning": "That song's tuning is not allowed in this channel.",
+    "artist_not_in_setlist": "That artist is not in the current setlist.",
+    "requested_paths_not_matched": "That song does not include the requested path{count, plural, one {} other {s}}: {paths}."
+  },
+  "replies": {
+    "vipPermissionDenied": "Only the broadcaster or an allowed moderator can grant VIP tokens.",
+    "addVipUsage": "Use !addvip <username> or !addvip <username> <amount> to grant VIP tokens.",
+    "invalidVipAmount": "Use a VIP token amount greater than 0.",
+    "grantedVipTokens": "Granted {countText} VIP token{count, plural, one {} other {s}} to {login}.",
+    "autoGrantGiftSubGifter": "{mention} reçoit {countText} {count, plural, one {jeton VIP} other {jetons VIP}} pour avoir offert {subCountText} {subCount, plural, one {abonnement} other {abonnements}}.",
+    "autoGrantGiftRecipient": "{mention} reçoit 1 jeton VIP pour avoir reçu un abonnement offert.",
+    "autoGrantNewSubscriber": "{mention} reçoit 1 jeton VIP pour un nouvel abonnement.",
+    "autoGrantSharedSubRenewal": "{mention} reçoit 1 jeton VIP pour avoir partagé un message de renouvellement d'abonnement.",
+    "autoGrantCheer": "{mention} reçoit {countText} {count, plural, one {jeton VIP} other {jetons VIP}} pour {bitsText} {bits, plural, one {bit envoyé} other {bits envoyés}}.",
+    "autoGrantRaid": "{mention} reçoit 1 jeton VIP pour un raid de {viewersText} {viewers, plural, one {spectateur} other {spectateurs}}.",
+    "autoGrantStreamElementsTip": "{mention} reçoit {countText} {count, plural, one {jeton VIP} other {jetons VIP}} pour un tip StreamElements de {amount}.",
+    "targetPermissionDenied": "Only the broadcaster or a moderator can request for someone else.",
+    "twitchUserNotFound": "I couldn't find Twitch user @{login}.",
+    "removeUsage": "Use {commandPrefix}remove reg, {commandPrefix}remove vip, or {commandPrefix}remove all.",
+    "removeSuccess": "{mention} removed {count} {kindLabel}{count, plural, one {} other {s}} from this playlist.",
+    "removeEmpty": "{mention} you do not have any {kindLabel}{kind, select, all {s} other {}} in this playlist.",
+    "removeFailed": "{mention} I couldn't remove your requests right now. Please try again.",
+    "positionNone": "{mention} you do not have any active requests in this playlist.",
+    "positionPlayingNow": "playing now: {titles}",
+    "positionPlayingNowFallback": "playing now",
+    "positionQueuedAt": "queued at {positions}",
+    "positionQueuedFallback": "queued in the playlist",
+    "positionSummary": "{mention} your request{count, plural, one {} other {s}} {count, plural, one {is} other {are}} {parts}.",
+    "requestsDisabledNow": "Les demandes sont désactivées pour cette chaîne pour le moment.",
+    "vipBalanceAvailable": "{mention} vous avez {countText} {count, plural, one {jeton VIP disponible} other {jetons VIP disponibles}}.",
+    "vipBalanceSuffix": " You have {countText} VIP token{count, plural, one {} other {s}}.",
+    "requestDeniedFallback": "You cannot request songs in this channel right now.",
+    "noActiveRequestToEdit": "{mention} there is no active request to edit in this playlist.",
+    "timeWindowLimit": "You have reached the request limit for the next {seconds} seconds.",
+    "notEnoughVipTokens": "You do not have enough VIP tokens for this channel.{balanceSuffix}",
+    "requestQueryMissing": "{mention} ajoutez un artiste ou une chanson avant d'utiliser les modificateurs de demande.",
+    "songLookupFailed": "{mention} I ran into a problem searching for that song. Please try again.",
+    "randomNotFound": "{mention} je n'ai pas trouvé de correspondance aléatoire autorisée pour \"{query}\".",
+    "rejectedSongBlocked": "{mention} je ne peux pas ajouter cette chanson à la playlist.",
+    "rejectedSongReason": "{mention} {reason}",
+    "choiceAlreadyActive": "{mention} that streamer choice request is already in your active requests.",
+    "songAlreadyActive": "{mention} that song is already in your active requests.",
+    "activeRequestLimit": "You already have {count} active request{count, plural, one {} other {s}} in the playlist.",
+    "duplicateWindow": "{mention} that song was requested too recently. Please wait before requesting it again.",
+    "playlistFull": "{mention} the playlist is full right now.",
+    "choiceExistingVip": "your existing streamer choice request for \"{query}\" is now a VIP request{suffix} 1 VIP token was used.",
+    "choiceNewVip": "your streamer choice request for \"{query}\" has been added as a VIP request{suffix}",
+    "choiceExistingRegular": "your existing VIP streamer choice request for \"{query}\" is now a regular request again. 1 VIP token was refunded.",
+    "choiceNewRegular": "your streamer choice request for \"{query}\" has been added to the playlist.",
+    "existingSongVip": "{mention} your existing request \"{song}\" is now a VIP request{suffix} 1 VIP token was used.",
+    "existingSongRegular": "{mention} your existing VIP request \"{song}\" is now a regular request again. 1 VIP token was refunded.",
+    "unmatchedAdded": "{mention} there was no matching track found for \"{query}\", but I added it anyway. {playlistUrlMessage}",
+    "missingRequiredPathsAdded": "{mention} your song \"{song}\" has been added to the playlist, but it is missing required paths: {paths}.",
+    "vipSongAdded": "{mention} votre chanson VIP \"{song}\" sera jouée ensuite.",
+    "songAdded": "{mention} votre chanson \"{song}\" a été ajoutée à la playlist.",
+    "choiceAddFailed": "{mention} I couldn't add your streamer choice request right now. Please try again.",
+    "songAddFailedMatched": "{mention} I found a song match, but I couldn't add it to the playlist. Please try again.",
+    "songAddFailedUnmatched": "{mention} I couldn't find a song match, and I couldn't add the warning request to the playlist. Please try again."
+  }
+}

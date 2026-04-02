@@ -61,6 +61,7 @@ function createSong(
 function createState(overrides: Record<string, unknown> = {}) {
   return {
     settings: {
+      defaultLocale: "en",
       requestsEnabled: true,
       allowAnyoneToRequest: true,
       allowSubscribersToRequest: true,
@@ -337,7 +338,37 @@ describe("processEventSubChatMessage", () => {
       env,
       expect.objectContaining({
         message:
-          "You do not have enough VIP tokens for this channel. You have 0.5.",
+          "You do not have enough VIP tokens for this channel. You have 0.5 VIP tokens.",
+      })
+    );
+  });
+
+  it("uses the channel default locale for bot replies when translations are available", async () => {
+    const deps = createDeps({
+      getDashboardState: vi.fn().mockResolvedValue(
+        createState({
+          defaultLocale: "es",
+          requestsEnabled: false,
+        })
+      ),
+    });
+
+    const result = await processEventSubChatMessage({
+      env,
+      event: createEvent(),
+      parsed: createParsed(),
+      deps,
+    });
+
+    expect(result).toEqual({
+      body: "Ignored",
+      status: 202,
+    });
+    expect(deps.sendChatReply).toHaveBeenCalledWith(
+      env,
+      expect.objectContaining({
+        message:
+          "Las solicitudes están desactivadas para este canal en este momento.",
       })
     );
   });

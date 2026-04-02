@@ -32,7 +32,7 @@ import {
   formatBlacklistReasonLabel,
   getBlacklistReasonCodes,
 } from "~/lib/channel-blacklist";
-import { useLocaleTranslation } from "~/lib/i18n/client";
+import { useAppLocale, useLocaleTranslation } from "~/lib/i18n/client";
 import { getLocalizedPageTitle } from "~/lib/i18n/metadata";
 import { formatSlugTitle } from "~/lib/page-title";
 import { getPickNumbersForQueuedItems } from "~/lib/pick-order";
@@ -282,7 +282,8 @@ function formatPublicPlaylistSecondaryLine(
 }
 
 function PublicChannelPage() {
-  const { t } = useLocaleTranslation(["common", "playlist"]);
+  const { t } = useLocaleTranslation(["common", "playlist", "extension"]);
+  const { locale } = useAppLocale();
   const { slug } = Route.useParams();
   const queryClient = useQueryClient();
   const [showBlacklisted, setShowBlacklisted] = useState(false);
@@ -379,7 +380,15 @@ function PublicChannelPage() {
       ? "border-amber-500/30 bg-amber-500/10 text-amber-100"
       : "border-rose-500/30 bg-rose-500/10 text-rose-100";
   const vipAutomationDetails = getVipTokenAutomationDetails(
-    data?.settings ?? {}
+    data?.settings ?? {},
+    {
+      locale,
+      translate: (key, options) =>
+        t(key, {
+          ns: "extension",
+          ...(options ?? {}),
+        }),
+    }
   );
   const defaultSearchPathFilters = useMemo(
     () => getArraySetting(data?.settings?.requiredPathsJson),
@@ -1452,8 +1461,13 @@ function VipTokenInfoContent(props: {
   vipAutomationDetails: ReturnType<typeof getVipTokenAutomationDetails>;
   balanceSummary?: string;
 }) {
-  const { t } = useLocaleTranslation("playlist");
-  const redemptionDetails = getVipTokenRedemptionDetails();
+  const { t } = useLocaleTranslation(["playlist", "extension"]);
+  const redemptionDetails = getVipTokenRedemptionDetails((key, options) =>
+    t(key, {
+      ns: "extension",
+      ...(options ?? {}),
+    })
+  );
 
   return (
     <div className="grid gap-4 p-4 mt-1 text-sm leading-6 text-(--muted) bg-(--panel-soft)">

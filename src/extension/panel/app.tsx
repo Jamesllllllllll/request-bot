@@ -9,6 +9,7 @@ import {
   extractClosestEdge,
 } from "@atlaskit/pragmatic-drag-and-drop-hitbox/closest-edge";
 import { getReorderDestinationIndex } from "@atlaskit/pragmatic-drag-and-drop-hitbox/util/get-reorder-destination-index";
+import type { TFunction } from "i18next";
 import {
   Check,
   CircleAlert,
@@ -45,6 +46,13 @@ import {
   CollapsibleTrigger,
 } from "~/components/ui/collapsible";
 import { Input } from "~/components/ui/input";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "~/components/ui/select";
 import { Skeleton } from "~/components/ui/skeleton";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "~/components/ui/tabs";
 import {
@@ -54,18 +62,18 @@ import {
   TooltipTrigger,
 } from "~/components/ui/tooltip";
 import {
+  AppI18nProvider,
+  useAppLocale,
+  useLocaleTranslation,
+} from "~/lib/i18n/client";
+import { type AppLocale, localeOptions } from "~/lib/i18n/locales";
+import {
   getQueuedPositionsFromRegularOrder,
   getUpdatedPositionsAfterSetCurrent,
   getUpdatedQueuedPositionsAfterKindChange,
 } from "~/lib/playlist/order";
-import {
-  ADD_REQUESTS_WHEN_LIVE_MESSAGE,
-  areChannelRequestsOpen,
-} from "~/lib/request-availability";
-import {
-  getVipTokenAutomationDetails,
-  getVipTokenRedemptionDescription,
-} from "~/lib/vip-token-automation";
+import { areChannelRequestsOpen } from "~/lib/request-availability";
+import { getVipTokenAutomationDetails } from "~/lib/vip-token-automation";
 import { toExtensionApiUrl, toExtensionAppUrl } from "./config";
 import {
   applyDemoViewerRequestMutation,
@@ -74,6 +82,7 @@ import {
   mockModeratorViewerProfile,
   type PanelDemoPlaylist,
 } from "./demo";
+import { readPanelStoredLocale, resolveExtensionPanelLocale } from "./locale";
 import {
   getTwitchExtensionHelper,
   loadTwitchExtensionHelper,
@@ -92,6 +101,7 @@ type PanelBootstrapResponse = {
     botReadyState?: string | null;
   };
   settings: {
+    defaultLocale: string;
     requestsEnabled: boolean;
     showPlaylistPositions: boolean;
     autoGrantVipTokenToSubscribers: boolean;
@@ -118,6 +128,7 @@ type PanelBootstrapResponse = {
       login: string;
       displayName: string;
       profileImageUrl?: string | null;
+      preferredLocale?: string | null;
       isSubscriber: boolean;
       subscriptionVerified: boolean;
       vipTokensAvailable: number;
@@ -256,6 +267,33 @@ type TransientPanelNotice = {
 const PANEL_VISIBLE_REFRESH_INTERVAL_MS = 5000;
 
 export function ExtensionPanelApp(props: { apiBaseUrl?: string }) {
+  const [initialLocale, setInitialLocale] = useState<AppLocale>(() =>
+    resolveExtensionPanelLocale({
+      search: typeof window !== "undefined" ? window.location.search : null,
+      storedLocale: readPanelStoredLocale(),
+      documentLanguage:
+        typeof document !== "undefined" ? document.documentElement.lang : null,
+      navigatorLanguage:
+        typeof navigator !== "undefined" ? navigator.language : null,
+    })
+  );
+
+  return (
+    <AppI18nProvider initialLocale={initialLocale}>
+      <ExtensionPanelAppContent
+        {...props}
+        onResolvedLocaleChange={setInitialLocale}
+      />
+    </AppI18nProvider>
+  );
+}
+
+function ExtensionPanelAppContent(props: {
+  apiBaseUrl?: string;
+  onResolvedLocaleChange?: (locale: AppLocale) => void;
+}) {
+  const { t } = useLocaleTranslation("extension");
+  const { locale, setLocale, isSavingLocale } = useAppLocale();
   const [helperState, setHelperState] = useState<"loading" | "ready" | "error">(
     "loading"
   );
@@ -304,8 +342,13 @@ export function ExtensionPanelApp(props: { apiBaseUrl?: string }) {
   const showPlaylistPositions =
     bootstrap?.settings.showPlaylistPositions ?? false;
   const vipTokenAutomationDetails = getVipTokenAutomationDetails(
-    bootstrap?.settings ?? {}
+    bootstrap?.settings ?? {},
+    {
+      locale,
+      translate: (key, options) => t(key, options),
+    }
   );
+  const addRequestsWhenLiveMessage = t("requests.addWhenLive");
   const managementPermissions = bootstrap?.management.permissions;
   const canManagePlaylist = managementPermissions?.canManageRequests ?? false;
   const canManageVipRequests =
@@ -323,14 +366,14 @@ export function ExtensionPanelApp(props: { apiBaseUrl?: string }) {
     : viewerRequestsAvailable && !!bootstrap?.viewer.canVipRequest;
   const quickVipDisabledReason = canManagePlaylist
     ? !channelRequestsOpen
-      ? ADD_REQUESTS_WHEN_LIVE_MESSAGE
+      ? addRequestsWhenLiveMessage
       : viewerProfile && viewerProfile.vipTokensAvailable < 1
-        ? "Not enough VIP tokens."
+        ? t("vip.notEnough")
         : null
     : !viewerRequestsAvailable
-      ? ADD_REQUESTS_WHEN_LIVE_MESSAGE
+      ? addRequestsWhenLiveMessage
       : viewerProfile && viewerProfile.vipTokensAvailable < 1
-        ? "Not enough VIP tokens."
+        ? t("vip.notEnough")
         : null;
   const showViewerSearchActions =
     !canManagePlaylist && (canQuickRequest || canQuickVipRequest);
@@ -338,9 +381,9 @@ export function ExtensionPanelApp(props: { apiBaseUrl?: string }) {
   const showManagerSearchActions = canManagePlaylist;
   const searchTabBlockedByRequestsOff = !canManagePlaylist && !requestsEnabled;
   const vipSearchDisabledReason = !viewerRequestsAvailable
-    ? ADD_REQUESTS_WHEN_LIVE_MESSAGE
+    ? addRequestsWhenLiveMessage
     : viewerProfile && viewerProfile.vipTokensAvailable < 1
-      ? "Not enough VIP tokens."
+      ? t("vip.notEnough")
       : null;
   const playlistItems = bootstrap?.playlist.items ?? [];
   const currentPlaylistItemId = bootstrap?.playlist.currentItemId ?? null;
@@ -352,8 +395,8 @@ export function ExtensionPanelApp(props: { apiBaseUrl?: string }) {
   const canShufflePlaylist =
     showShufflePlaylistControl && currentPlaylistItemId == null;
   const shufflePlaylistTooltip = currentPlaylistItemId
-    ? "Mark the current song played before shuffling."
-    : "Shuffle the queue.";
+    ? t("queue.shuffleBlocked")
+    : t("queue.shuffle");
   const canReorderPlaylist =
     canManagePlaylist && queuedPlaylistItems.length > 1;
   const waitingForAuthorization =
@@ -565,6 +608,27 @@ export function ExtensionPanelApp(props: { apiBaseUrl?: string }) {
       }
     };
   }, [auth?.token, props.apiBaseUrl]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+
+    props.onResolvedLocaleChange?.(
+      resolveExtensionPanelLocale({
+        search: window.location.search,
+        storedLocale: readPanelStoredLocale(),
+        documentLanguage: document.documentElement.lang,
+        navigatorLanguage: navigator.language,
+        viewerPreferredLocale: bootstrap?.viewer.profile?.preferredLocale,
+        channelDefaultLocale: bootstrap?.settings.defaultLocale,
+      })
+    );
+  }, [
+    bootstrap?.settings.defaultLocale,
+    bootstrap?.viewer.profile?.preferredLocale,
+    props.onResolvedLocaleChange,
+  ]);
 
   function showTransientNotice(
     tone: TransientPanelNotice["tone"],
@@ -848,7 +912,11 @@ export function ExtensionPanelApp(props: { apiBaseUrl?: string }) {
         }
       );
 
-      showTransientNotice("success", result.message ?? "Request updated.");
+      showTransientNotice(
+        "success",
+        result.message ??
+          (isEditingRequest ? "Request updated." : "Request added.")
+      );
       await refreshPanelState({
         token: auth.token,
       });
@@ -974,7 +1042,7 @@ export function ExtensionPanelApp(props: { apiBaseUrl?: string }) {
       if (mutation.action !== "reorderItems") {
         showTransientNotice(
           "success",
-          getPlaylistMutationSuccessMessage(mutation, response)
+          getPlaylistMutationSuccessMessage(mutation, response, t)
         );
       }
     } catch (error) {
@@ -1083,13 +1151,16 @@ export function ExtensionPanelApp(props: { apiBaseUrl?: string }) {
   }
 
   const channelTitle = bootstrap?.channel?.displayName
-    ? `${bootstrap.channel.displayName}'s Request Playlist`
-    : "Request Playlist";
+    ? t("panel.titleWithChannel", {
+        displayName: bootstrap.channel.displayName,
+      })
+    : t("panel.titleDefault");
   const footerPlaylistHref = bootstrap?.channel?.slug
     ? toExtensionAppUrl(`/${bootstrap.channel.slug}`, props.apiBaseUrl)
     : null;
   const footerPlaylistLabel = getPanelPlaylistFooterLabel(
-    bootstrap?.channel?.displayName
+    bootstrap?.channel?.displayName,
+    t
   );
   const showStandaloneDemo =
     !auth &&
@@ -1114,51 +1185,62 @@ export function ExtensionPanelApp(props: { apiBaseUrl?: string }) {
                 onOpenChange={setVipHelpOpen}
                 className="min-w-0"
               >
-                <div className="min-w-0">
-                  <h1 className="truncate text-sm font-semibold text-(--text)">
-                    {channelTitle}
-                  </h1>
-                  {viewerProfile ? (
-                    <div className="mt-1 flex min-w-0 flex-wrap items-center gap-x-1 gap-y-0.5 text-[11px] leading-4 text-(--muted)">
-                      <span>You have</span>
-                      <CollapsibleTrigger asChild>
-                        <button
-                          type="button"
-                          className="inline-flex min-w-0 max-w-full items-center gap-1 text-left text-[11px] leading-4 text-(--brand-deep) underline decoration-dashed underline-offset-3"
-                        >
-                          <span className="truncate">
-                            {formatVipTokensCompact(
-                              viewerProfile.vipTokensAvailable
-                            )}
-                          </span>
-                          <CircleHelp className="h-3 w-3 shrink-0" />
-                        </button>
-                      </CollapsibleTrigger>
-                      <span aria-hidden="true">·</span>
-                      <span className="truncate">
-                        {formatRequestLimitCompact(
-                          activeRequestCount,
-                          activeRequestLimit
-                        )}
-                      </span>
-                    </div>
-                  ) : (
-                    <p className="mt-1 truncate text-[11px] leading-4 text-(--muted)">
-                      {bootstrap?.viewer.isLinked
-                        ? (bootstrap.viewer.access.reason ??
-                          "Viewer state is still loading.")
-                        : "Share Twitch identity to request."}
-                    </p>
-                  )}
+                <div className="flex items-start justify-between gap-2">
+                  <div className="min-w-0 flex-1">
+                    <h1 className="truncate text-sm font-semibold text-(--text)">
+                      {channelTitle}
+                    </h1>
+                    {viewerProfile ? (
+                      <div className="mt-1 flex min-w-0 flex-wrap items-center gap-x-1 gap-y-0.5 text-[11px] leading-4 text-(--muted)">
+                        <CollapsibleTrigger asChild>
+                          <button
+                            type="button"
+                            className="inline-flex min-w-0 max-w-full items-center gap-1 text-left text-[11px] leading-4 text-(--brand-deep) underline decoration-dashed underline-offset-3"
+                          >
+                            <span className="truncate">
+                              {formatVipTokensCompact(
+                                viewerProfile.vipTokensAvailable,
+                                t
+                              )}
+                            </span>
+                            <CircleHelp className="h-3 w-3 shrink-0" />
+                          </button>
+                        </CollapsibleTrigger>
+                        <span aria-hidden="true">·</span>
+                        <span className="truncate">
+                          {formatRequestLimitCompact(
+                            activeRequestCount,
+                            activeRequestLimit,
+                            t
+                          )}
+                        </span>
+                      </div>
+                    ) : (
+                      <p className="mt-1 truncate text-[11px] leading-4 text-(--muted)">
+                        {bootstrap?.viewer.isLinked
+                          ? translateExtensionMessage(
+                              bootstrap.viewer.access.reason ??
+                                t("panel.viewerStateLoading"),
+                              t
+                            )
+                          : t("panel.shareIdentityToRequest")}
+                      </p>
+                    )}
+                  </div>
+                  <PanelLanguageSelect
+                    locale={locale}
+                    onLocaleChange={setLocale}
+                    isSavingLocale={isSavingLocale}
+                  />
                 </div>
                 <CollapsibleContent className="mt-2 overflow-hidden border border-(--border) bg-(--panel) px-2.5 py-2">
                   <div className="grid gap-1.5 text-[11px] leading-4 text-(--muted)">
                     <p className="font-semibold text-(--text)">
-                      {getVipTokenRedemptionDescription()}
+                      {t("vip.redemptionDescription")}
                     </p>
                     <div className="grid gap-1">
                       <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-(--text)">
-                        How to earn VIP tokens
+                        {t("vip.howToEarn")}
                       </p>
                       {vipTokenAutomationDetails.earningRules.length ? (
                         <div className="grid gap-1">
@@ -1169,9 +1251,7 @@ export function ExtensionPanelApp(props: { apiBaseUrl?: string }) {
                           )}
                         </div>
                       ) : (
-                        <p>
-                          This channel grants VIP tokens manually right now.
-                        </p>
+                        <p>{t("vip.manualOnly")}</p>
                       )}
                       {vipTokenAutomationDetails.notes.map((note) => (
                         <p key={note}>{note}</p>
@@ -1189,7 +1269,7 @@ export function ExtensionPanelApp(props: { apiBaseUrl?: string }) {
                     onClick={handleRequestIdentityShare}
                     disabled={helperState !== "ready"}
                   >
-                    Share Twitch Identity
+                    {t("panel.shareIdentityButton")}
                   </Button>
                 ) : null}
               </div>
@@ -1199,20 +1279,22 @@ export function ExtensionPanelApp(props: { apiBaseUrl?: string }) {
 
         {helperState === "error" ? (
           <PanelNotice icon={<CircleAlert className="h-4 w-4" />} tone="danger">
-            {helperError ?? "Unable to load the Twitch extension helper."}
+            {translateExtensionMessage(
+              helperError ?? t("notices.helperLoadFailed"),
+              t
+            )}
           </PanelNotice>
         ) : null}
 
         {helperTimedOut && !auth ? (
           <PanelNotice icon={<CircleAlert className="h-4 w-4" />}>
-            Open this page from Twitch Local Test or Hosted Test to receive
-            panel authorization.
+            {t("notices.authorizationHint")}
           </PanelNotice>
         ) : null}
 
         {bootstrapError ? (
           <PanelNotice icon={<CircleAlert className="h-4 w-4" />} tone="danger">
-            {bootstrapError}
+            {translateExtensionMessage(bootstrapError, t)}
           </PanelNotice>
         ) : null}
 
@@ -1221,7 +1303,7 @@ export function ExtensionPanelApp(props: { apiBaseUrl?: string }) {
             icon={<LoaderCircle className="h-4 w-4 animate-spin" />}
             tone="default"
           >
-            {connectionMessage}
+            {translateExtensionMessage(connectionMessage, t)}
           </PanelNotice>
         ) : null}
 
@@ -1231,19 +1313,19 @@ export function ExtensionPanelApp(props: { apiBaseUrl?: string }) {
               key={transientNotice.id}
               tone={transientNotice.tone}
             >
-              {transientNotice.message}
+              {translateExtensionMessage(transientNotice.message, t)}
             </TransientNoticeBanner>
           ) : null}
         </AnimatePresence>
 
         {bootstrap?.setup ? (
           <PanelNotice icon={<CircleAlert className="h-4 w-4" />}>
-            {bootstrap.setup.message}
+            {translateExtensionMessage(bootstrap.setup.message, t)}
           </PanelNotice>
         ) : null}
         {bootstrap?.channel && !channelRequestsOpen ? (
           <PanelNotice icon={<CircleAlert className="h-4 w-4" />}>
-            {ADD_REQUESTS_WHEN_LIVE_MESSAGE}
+            {addRequestsWhenLiveMessage}
           </PanelNotice>
         ) : null}
 
@@ -1270,7 +1352,7 @@ export function ExtensionPanelApp(props: { apiBaseUrl?: string }) {
                 style={{ fontFamily: '"IBM Plex Sans", sans-serif' }}
               >
                 <span className="inline-flex items-center gap-1">
-                  <span>Playlist</span>
+                  <span>{t("queue.tab")}</span>
                   <span className="shrink-0 text-[11px] font-semibold uppercase tracking-[0.18em] text-current">
                     ({queueCount})
                   </span>
@@ -1281,7 +1363,7 @@ export function ExtensionPanelApp(props: { apiBaseUrl?: string }) {
                 className="h-auto rounded-none border-0 px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-(--muted) shadow-none after:bottom-0 after:h-px after:bg-(--brand-deep) data-[state=active]:text-(--brand-deep)"
                 style={{ fontFamily: '"IBM Plex Sans", sans-serif' }}
               >
-                Search
+                {t("search.tab")}
               </TabsTrigger>
             </TabsList>
 
@@ -1296,7 +1378,7 @@ export function ExtensionPanelApp(props: { apiBaseUrl?: string }) {
                       <span className="inline-flex h-4 w-4 items-center justify-center border border-emerald-700/50 bg-emerald-950 text-emerald-100">
                         <Sword className="h-2.5 w-2.5" />
                       </span>
-                      <span>Queue tools</span>
+                      <span>{t("queue.tools")}</span>
                     </span>
                     {showShufflePlaylistControl ? (
                       <Tooltip>
@@ -1374,7 +1456,7 @@ export function ExtensionPanelApp(props: { apiBaseUrl?: string }) {
                   })
                 ) : (
                   <div className="border-t border-(--border) px-3 py-2 text-[11px] text-(--muted)">
-                    Queue is empty.
+                    {t("queue.empty")}
                   </div>
                 )}
               </div>
@@ -1411,8 +1493,8 @@ export function ExtensionPanelApp(props: { apiBaseUrl?: string }) {
                           autoCapitalize="none"
                           placeholder={
                             editingRequest
-                              ? "Search for a song to edit your request"
-                              : "Search title, artist, or album"
+                              ? t("search.placeholderEdit")
+                              : t("search.placeholder")
                           }
                           className="h-8 rounded-none border-(--border-strong) px-2 py-1 text-[12px] shadow-none focus-visible:ring-1 focus-visible:ring-(--brand) focus-visible:ring-offset-0"
                         />
@@ -1436,7 +1518,7 @@ export function ExtensionPanelApp(props: { apiBaseUrl?: string }) {
 
                       {searchError ? (
                         <p className="mt-2 text-[11px] text-(--danger)">
-                          {searchError}
+                          {translateExtensionMessage(searchError, t)}
                         </p>
                       ) : null}
                       {showSpecialRequestControls ? (
@@ -1463,7 +1545,7 @@ export function ExtensionPanelApp(props: { apiBaseUrl?: string }) {
                 <div>
                   {searchTabBlockedByRequestsOff ? (
                     <div className="border-t border-(--border) px-3 py-3 text-[11px] text-(--muted)">
-                      Requests are off right now.
+                      {t("requests.offRightNow")}
                     </div>
                   ) : searchResults?.items?.length ? (
                     <div>
@@ -1481,7 +1563,7 @@ export function ExtensionPanelApp(props: { apiBaseUrl?: string }) {
                             <div className="flex items-start justify-between gap-2">
                               <div className="min-w-0">
                                 <p className="truncate text-[13px] leading-4 font-medium text-(--text)">
-                                  {formatSearchSongLabel(item)}
+                                  {formatSearchSongLabel(item, t)}
                                 </p>
                                 <p className="mt-0.5 truncate text-[11px] leading-4 text-(--muted)">
                                   {formatSearchSongMeta(item)}
@@ -1502,10 +1584,10 @@ export function ExtensionPanelApp(props: { apiBaseUrl?: string }) {
                                     }}
                                   >
                                     {pendingAction === managerActionKey
-                                      ? "Adding..."
+                                      ? t("buttons.adding")
                                       : isEditingRequest
-                                        ? "Edit"
-                                        : "Add"}
+                                        ? t("buttons.edit")
+                                        : t("buttons.add")}
                                   </Button>
                                 </div>
                               ) : showViewerSearchActions ? (
@@ -1522,7 +1604,7 @@ export function ExtensionPanelApp(props: { apiBaseUrl?: string }) {
                                     }
                                     title={
                                       !viewerRequestsAvailable
-                                        ? ADD_REQUESTS_WHEN_LIVE_MESSAGE
+                                        ? addRequestsWhenLiveMessage
                                         : undefined
                                     }
                                     onClick={() => {
@@ -1538,11 +1620,11 @@ export function ExtensionPanelApp(props: { apiBaseUrl?: string }) {
                                   >
                                     {pendingAction === actionKey
                                       ? isEditingRequest
-                                        ? "Editing..."
-                                        : "Adding..."
+                                        ? t("buttons.editing")
+                                        : t("buttons.adding")
                                       : isEditingRequest
-                                        ? "Edit"
-                                        : "Add"}
+                                        ? t("buttons.edit")
+                                        : t("buttons.add")}
                                   </Button>
                                   <PanelSearchVipButton
                                     disabledReason={vipSearchDisabledReason}
@@ -1574,7 +1656,7 @@ export function ExtensionPanelApp(props: { apiBaseUrl?: string }) {
                     </div>
                   ) : debouncedSearchQuery.trim().length >= 3 && !searching ? (
                     <div className="border-t border-(--border) px-3 py-2 text-[11px] text-(--muted)">
-                      No songs matched that search.
+                      {t("search.noResults")}
                     </div>
                   ) : null}
                 </div>
@@ -1594,6 +1676,7 @@ export function ExtensionPanelApp(props: { apiBaseUrl?: string }) {
 }
 
 export function ExtensionPanelModeratorPreview() {
+  const { t } = useLocaleTranslation("extension");
   const [playlist, setPlaylist] = useState<PanelDemoPlaylist>({
     currentItemId: "preview-current",
     items: createMockModeratorPlaylistItems(),
@@ -1634,7 +1717,7 @@ export function ExtensionPanelModeratorPreview() {
   const queueCount = playlist.items.length;
   const showPlaylistPositions = false;
   const footerPlaylistHref = toExtensionAppUrl("/jimmy-pants");
-  const footerPlaylistLabel = getPanelPlaylistFooterLabel("Jimmy Pants_");
+  const footerPlaylistLabel = getPanelPlaylistFooterLabel("Jimmy Pants_", t);
   const queuedPlaylistItems = playlist.items.filter(
     (item) => getString(item, "id") !== currentPlaylistItemId
   );
@@ -1643,11 +1726,11 @@ export function ExtensionPanelModeratorPreview() {
   const canShufflePlaylist =
     showShufflePlaylistControl && currentPlaylistItemId == null;
   const shufflePlaylistTooltip = currentPlaylistItemId
-    ? "Mark the current song played before shuffling."
-    : "Shuffle the queue.";
+    ? t("queue.shuffleBlocked")
+    : t("queue.shuffle");
   const vipSearchDisabledReason =
     mockModeratorViewerProfile.vipTokensAvailable < 1
-      ? "Not enough VIP tokens."
+      ? t("vip.notEnough")
       : null;
   const editingRequest = getViewerEditablePanelItem(
     playlist.items,
@@ -2029,7 +2112,9 @@ export function ExtensionPanelModeratorPreview() {
     ) {
       showTransientMessage(
         "danger",
-        `You already have ${activeRequestLimit} active request${activeRequestLimit === 1 ? "" : "s"} in this playlist.`
+        t("requests.limitReached", {
+          count: activeRequestLimit,
+        })
       );
       return;
     }
@@ -2102,9 +2187,13 @@ export function ExtensionPanelModeratorPreview() {
     if (mutation.action !== "reorderItems") {
       showTransientMessage(
         "success",
-        getPlaylistMutationSuccessMessage(mutation, {
-          ok: true,
-        })
+        getPlaylistMutationSuccessMessage(
+          mutation,
+          {
+            ok: true,
+          },
+          t
+        )
       );
     }
 
@@ -2163,21 +2252,27 @@ export function ExtensionPanelModeratorPreview() {
     <TooltipProvider>
       <div className="mx-auto flex h-[560px] min-h-0 w-full max-w-[320px] flex-col overflow-hidden border border-(--border-strong) bg-(--panel)">
         <section className="border-b border-(--border-strong) px-3 py-2">
-          <div className="min-w-0 flex-1">
-            <h1 className="truncate text-sm font-semibold text-(--text)">
-              Jimmy Pants_'s Request Playlist
-            </h1>
-            <p className="mt-1 truncate text-[11px] text-(--muted)">
-              You have{" "}
-              {formatVipTokensCompact(
-                mockModeratorViewerProfile.vipTokensAvailable
-              )}{" "}
-              ·{" "}
-              {formatRequestLimitCompact(
-                activeRequestCount,
-                activeRequestLimit
-              )}
-            </p>
+          <div className="flex items-start justify-between gap-2">
+            <div className="min-w-0 flex-1">
+              <h1 className="truncate text-sm font-semibold text-(--text)">
+                {t("panel.titleWithChannel", {
+                  displayName: "Jimmy Pants_",
+                })}
+              </h1>
+              <p className="mt-1 truncate text-[11px] text-(--muted)">
+                {formatVipTokensCompact(
+                  mockModeratorViewerProfile.vipTokensAvailable,
+                  t
+                )}{" "}
+                ·{" "}
+                {formatRequestLimitCompact(
+                  activeRequestCount,
+                  activeRequestLimit,
+                  t
+                )}
+              </p>
+            </div>
+            <PreviewPanelLanguageSelect />
           </div>
         </section>
 
@@ -2187,7 +2282,7 @@ export function ExtensionPanelModeratorPreview() {
               key={transientNotice.id}
               tone={transientNotice.tone}
             >
-              {transientNotice.message}
+              {translateExtensionMessage(transientNotice.message, t)}
             </TransientNoticeBanner>
           ) : null}
         </AnimatePresence>
@@ -2211,7 +2306,7 @@ export function ExtensionPanelModeratorPreview() {
               style={{ fontFamily: '"IBM Plex Sans", sans-serif' }}
             >
               <span className="inline-flex items-center gap-1">
-                <span>Playlist</span>
+                <span>{t("queue.tab")}</span>
                 <span className="shrink-0 text-[11px] font-semibold uppercase tracking-[0.18em] text-current">
                   ({queueCount})
                 </span>
@@ -2222,7 +2317,7 @@ export function ExtensionPanelModeratorPreview() {
               className="h-auto rounded-none border-0 px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-(--muted) shadow-none after:bottom-0 after:h-px after:bg-(--brand-deep) data-[state=active]:text-(--brand-deep)"
               style={{ fontFamily: '"IBM Plex Sans", sans-serif' }}
             >
-              Search
+              {t("search.tab")}
             </TabsTrigger>
           </TabsList>
 
@@ -2237,7 +2332,7 @@ export function ExtensionPanelModeratorPreview() {
                     <span className="inline-flex h-4 w-4 items-center justify-center border border-emerald-700/50 bg-emerald-950 text-emerald-100">
                       <Sword className="h-2.5 w-2.5" />
                     </span>
-                    <span>Queue tools</span>
+                    <span>{t("queue.tools")}</span>
                   </span>
                   <Tooltip>
                     <TooltipTrigger asChild>
@@ -2335,8 +2430,8 @@ export function ExtensionPanelModeratorPreview() {
                     autoCapitalize="none"
                     placeholder={
                       editingRequest
-                        ? "Search for a song to edit your request"
-                        : "Search title, artist, or album"
+                        ? t("search.placeholderEdit")
+                        : t("search.placeholder")
                     }
                     className="h-8 rounded-none border-(--border-strong) px-2 py-1 text-[12px] shadow-none focus-visible:ring-1 focus-visible:ring-(--brand) focus-visible:ring-offset-0"
                   />
@@ -2356,7 +2451,7 @@ export function ExtensionPanelModeratorPreview() {
 
                 {searchError ? (
                   <p className="mt-2 text-[11px] text-(--danger)">
-                    {searchError}
+                    {translateExtensionMessage(searchError, t)}
                   </p>
                 ) : null}
                 <PanelSpecialRequestControls
@@ -2394,7 +2489,7 @@ export function ExtensionPanelModeratorPreview() {
                           <div className="flex items-start justify-between gap-2">
                             <div className="min-w-0">
                               <p className="truncate text-[13px] leading-4 font-medium text-(--text)">
-                                {formatSearchSongLabel(item)}
+                                {formatSearchSongLabel(item, t)}
                               </p>
                               <p className="mt-0.5 truncate text-[11px] leading-4 text-(--muted)">
                                 {formatSearchSongMeta(item)}
@@ -2421,11 +2516,11 @@ export function ExtensionPanelModeratorPreview() {
                               >
                                 {pendingAction === actionKey
                                   ? isEditingRequest
-                                    ? "Editing..."
-                                    : "Adding..."
+                                    ? t("buttons.editing")
+                                    : t("buttons.adding")
                                   : isEditingRequest
-                                    ? "Edit"
-                                    : "Add"}
+                                    ? t("buttons.edit")
+                                    : t("buttons.add")}
                               </Button>
                               <PanelSearchVipButton
                                 disabledReason={vipSearchDisabledReason}
@@ -2456,7 +2551,7 @@ export function ExtensionPanelModeratorPreview() {
                   </div>
                 ) : !searching ? (
                   <div className="border-t border-(--border) px-3 py-2 text-[11px] text-(--muted)">
-                    No songs matched that search.
+                    {t("search.noResults")}
                   </div>
                 ) : null}
               </div>
@@ -2499,6 +2594,7 @@ function PanelPlaylistRow(props: {
   onRemoveRequest: (itemId: string) => Promise<void>;
   onPlaylistMutation: (mutation: PanelPlaylistMutation) => Promise<void>;
 }) {
+  const { t } = useLocaleTranslation("extension");
   const itemRef = useRef<HTMLDivElement | null>(null);
   const dragHandleRef = useRef<HTMLButtonElement | null>(null);
   const isCurrent = props.itemId === props.currentItemId;
@@ -2714,7 +2810,9 @@ function PanelPlaylistRow(props: {
           <button
             ref={dragHandleRef}
             type="button"
-            aria-label={`Reorder ${formatSongLabel(props.item)}`}
+            aria-label={t("queue.reorderAria", {
+              song: formatSongLabel(props.item, t),
+            })}
             className={`inline-flex w-7 shrink-0 items-center justify-center border-r border-(--border) text-(--muted) transition ${
               canReorder
                 ? "cursor-grab hover:bg-(--panel-soft) hover:text-(--text) active:cursor-grabbing"
@@ -2722,7 +2820,7 @@ function PanelPlaylistRow(props: {
             }`}
             disabled={!canReorder}
             title={
-              canReorder ? "Drag to reorder" : "Current song stays in place"
+              canReorder ? t("queue.dragToReorder") : t("queue.currentStays")
             }
           >
             <GripVertical className="h-3.5 w-3.5" />
@@ -2772,7 +2870,7 @@ function PanelPlaylistRow(props: {
                   ) : null}
                   {!isCurrent && isVipRequest ? (
                     <span className="inline-flex h-5 items-center justify-center rounded-full bg-fuchsia-100 px-1.5 text-[9px] leading-none font-semibold tracking-[0.12em] text-fuchsia-700 uppercase">
-                      VIP
+                      {t("buttons.vip")}
                     </span>
                   ) : null}
                 </div>
@@ -2780,10 +2878,10 @@ function PanelPlaylistRow(props: {
 
               <div className="min-w-0 flex-1 pr-2">
                 <p className="truncate text-[13px] leading-4 font-medium text-(--text)">
-                  {formatSongLabel(props.item)}
+                  {formatSongLabel(props.item, t)}
                 </p>
                 <p className="mt-0.5 truncate text-[11px] leading-4 text-(--muted)">
-                  {formatRequesterLine(props.item)}
+                  {formatRequesterLine(props.item, t)}
                 </p>
               </div>
 
@@ -2794,8 +2892,8 @@ function PanelPlaylistRow(props: {
                       size="sm"
                       variant="ghost"
                       className="h-6 w-6 rounded-none px-0 text-(--muted) shadow-none hover:bg-(--panel-soft) hover:text-(--text)"
-                      title="Request actions"
-                      aria-label="Request actions"
+                      title={t("panel.requestActions")}
+                      aria-label={t("panel.requestActions")}
                     >
                       <MoreHorizontal className="h-3.5 w-3.5" />
                     </Button>
@@ -2836,7 +2934,7 @@ function PanelPlaylistRow(props: {
                     >
                       {canEditOwnRequest ? (
                         <PanelActionIconButton
-                          label="Edit request"
+                          label={t("queue.editRequest")}
                           className="text-(--brand-deep) hover:bg-(--brand-soft) hover:text-(--brand-deep)"
                           onClick={() => props.onEditRequest(props.itemId)}
                         >
@@ -2846,7 +2944,11 @@ function PanelPlaylistRow(props: {
 
                       {canToggleVipRequest ? (
                         <PanelActionIconButton
-                          label={isVipRequest ? "Make regular" : "Make VIP"}
+                          label={
+                            isVipRequest
+                              ? t("queue.makeRegular")
+                              : t("queue.makeVip")
+                          }
                           className="text-fuchsia-700 hover:bg-fuchsia-100 hover:text-fuchsia-700"
                           onClick={() => {
                             void props.onPlaylistMutation({
@@ -2870,7 +2972,7 @@ function PanelPlaylistRow(props: {
 
                       {canShowSetCurrent ? (
                         <PanelActionIconButton
-                          label="Play now"
+                          label={t("queue.playNow")}
                           onClick={() => {
                             void props.onPlaylistMutation({
                               action: "setCurrent",
@@ -2889,7 +2991,7 @@ function PanelPlaylistRow(props: {
 
                       {canReturnToQueue ? (
                         <PanelActionIconButton
-                          label="Return to queue"
+                          label={t("queue.returnToQueue")}
                           onClick={() => {
                             void props.onPlaylistMutation({
                               action: "returnToQueue",
@@ -2910,7 +3012,7 @@ function PanelPlaylistRow(props: {
 
                       {canMarkPlayed ? (
                         <PanelActionIconButton
-                          label="Mark complete"
+                          label={t("queue.markComplete")}
                           onClick={() => {
                             void props.onPlaylistMutation({
                               action: "markPlayed",
@@ -2935,8 +3037,8 @@ function PanelPlaylistRow(props: {
                           >
                             <span>
                               {props.canManagePlaylist
-                                ? "Remove from playlist?"
-                                : "Remove request?"}
+                                ? t("requests.removeFromPlaylistConfirm")
+                                : t("requests.removeConfirm")}
                             </span>
                             <Button
                               size="sm"
@@ -2981,8 +3083,8 @@ function PanelPlaylistRow(props: {
                           <PanelActionIconButton
                             label={
                               props.canManagePlaylist
-                                ? "Remove from playlist"
-                                : "Remove request"
+                                ? t("queue.removeFromPlaylist")
+                                : t("queue.removeRequest")
                             }
                             className="text-(--danger) hover:bg-(--danger)/10 hover:text-(--danger)"
                             onClick={() =>
@@ -3009,18 +3111,20 @@ function PanelSearchEditBanner(props: {
   item: PanelPlaylistItem;
   onCancel: () => void;
 }) {
+  const { t } = useLocaleTranslation("extension");
+
   return (
     <div className="mb-2 border border-(--brand) bg-(--brand-soft) px-2 py-2">
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0">
           <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-(--brand-deep)">
-            Editing request
+            {t("requests.editBannerLabel")}
           </p>
           <p className="mt-1 truncate text-[12px] font-medium text-(--text)">
-            {formatSongLabel(props.item)}
+            {formatSongLabel(props.item, t)}
           </p>
           <p className="mt-0.5 text-[11px] leading-4 text-(--muted)">
-            Search for a song or use the request buttons below.
+            {t("requests.editBannerDescription")}
           </p>
         </div>
         <Button
@@ -3030,7 +3134,7 @@ function PanelSearchEditBanner(props: {
           className="h-6 rounded-none px-1.5 text-[10px] font-semibold uppercase tracking-[0.14em] text-(--muted) shadow-none hover:bg-(--panel-soft) hover:text-(--text)"
           onClick={props.onCancel}
         >
-          Cancel
+          {t("buttons.cancel")}
         </Button>
       </div>
     </div>
@@ -3044,6 +3148,8 @@ function PanelSearchVipButton(props: {
   isEditingRequest: boolean;
   onClick: () => void;
 }) {
+  const { t } = useLocaleTranslation("extension");
+
   const button = (
     <Button
       size="sm"
@@ -3053,11 +3159,11 @@ function PanelSearchVipButton(props: {
     >
       {props.pending
         ? props.isEditingRequest
-          ? "Editing..."
-          : "Adding..."
+          ? t("buttons.editing")
+          : t("buttons.adding")
         : props.isEditingRequest
-          ? "Edit VIP"
-          : "VIP"}
+          ? t("buttons.editVip")
+          : t("buttons.vip")}
     </Button>
   );
 
@@ -3087,26 +3193,28 @@ function PanelSpecialRequestControls(props: {
     requestKind: "regular" | "vip"
   ) => void;
 }) {
+  const { t } = useLocaleTranslation("extension");
   const normalizedQuery = props.query.trim();
   const regularDisabledReason = getPanelSpecialRequestDisabledReason({
     query: normalizedQuery,
     canRequest: props.canRequest,
+    t,
   });
   const vipDisabledReason = getPanelSpecialRequestDisabledReason({
     query: normalizedQuery,
     canRequest: props.canVipRequest,
-    fallbackReason:
-      props.vipDisabledReason ?? "You do not have enough VIP tokens.",
+    fallbackReason: props.vipDisabledReason ?? t("vip.insufficient"),
+    t,
   });
 
   return (
     <div className="mt-2 grid gap-2 border border-(--border) bg-(--panel-soft) px-2 py-2">
       <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-(--brand-deep)">
-        Quick request
+        {t("requests.quick")}
       </p>
       <div className="grid gap-2">
         <PanelSpecialRequestRow
-          label="Random song"
+          label={t("requests.randomSong")}
           disabledReason={regularDisabledReason}
           vipDisabledReason={vipDisabledReason}
           busy={props.pendingAction != null}
@@ -3131,7 +3239,7 @@ function PanelSpecialRequestControls(props: {
           onVipClick={() => props.onSubmit("random", "vip")}
         />
         <PanelSpecialRequestRow
-          label="Streamer choice"
+          label={t("requests.streamerChoice")}
           disabledReason={regularDisabledReason}
           vipDisabledReason={vipDisabledReason}
           busy={props.pendingAction != null}
@@ -3171,6 +3279,7 @@ function PanelSpecialRequestRow(props: {
   onRegularClick: () => void;
   onVipClick: () => void;
 }) {
+  const { t } = useLocaleTranslation("extension");
   const regularDisabled = props.busy || props.disabledReason != null;
   const vipDisabled = props.busy || props.vipDisabledReason != null;
 
@@ -3189,11 +3298,11 @@ function PanelSpecialRequestRow(props: {
         >
           {props.regularPending
             ? props.isEditingRequest
-              ? "Editing..."
-              : "Adding..."
+              ? t("buttons.editing")
+              : t("buttons.adding")
             : props.isEditingRequest
-              ? "Edit"
-              : "Add"}
+              ? t("buttons.edit")
+              : t("buttons.add")}
         </Button>
         <PanelSearchVipButton
           disabled={vipDisabled}
@@ -3445,6 +3554,102 @@ function getErrorText(error: unknown, fallback: string) {
     : fallback;
 }
 
+function translateExtensionMessage(message: string, t: TFunction) {
+  const normalized = message.trim();
+  const initialRetryMatch =
+    /^Panel is still connecting\. Retrying in (.+)\.$/u.exec(normalized);
+  if (initialRetryMatch) {
+    return t("notices.connectingRetry", {
+      delay: initialRetryMatch[1],
+    });
+  }
+
+  const reconnectRetryMatch =
+    /^Connection interrupted\. Retrying in (.+)\.$/u.exec(normalized);
+  if (reconnectRetryMatch) {
+    return t("notices.connectionInterruptedRetry", {
+      delay: reconnectRetryMatch[1],
+    });
+  }
+
+  switch (normalized) {
+    case "Unable to load the Twitch extension helper.":
+      return t("notices.helperLoadFailed");
+    case "The Twitch extension helper is unavailable.":
+      return t("notices.helperUnavailable");
+    case "Unable to load panel state.":
+      return t("notices.panelStateLoadFailed");
+    case "Unable to refresh panel state.":
+      return t("notices.panelStateRefreshFailed");
+    case "Unable to update request.":
+      return t("notices.updateRequestFailed");
+    case "Unable to remove request.":
+      return t("notices.removeRequestFailed");
+    case "Unable to update the playlist.":
+      return t("notices.updatePlaylistFailed");
+    case "Unable to search songs.":
+      return t("search.searchFailed");
+    case "Extension request failed.":
+      return t("notices.extensionRequestFailed");
+    case "Request updated.":
+      return t("requests.updated");
+    case "Request added.":
+      return t("requests.added");
+    case "Request removed.":
+      return t("requests.removed");
+    case "Request changed to VIP.":
+      return t("requests.changedVip");
+    case "Request changed to regular.":
+      return t("requests.changedRegular");
+    case "Song is now playing.":
+      return t("queue.setCurrentSuccess");
+    case "Song returned to queue.":
+      return t("queue.returnToQueueSuccess");
+    case "Song marked played.":
+      return t("queue.markPlayedSuccess");
+    case "Playlist item removed.":
+      return t("queue.deleteItemSuccess");
+    case "Playlist shuffled.":
+      return t("queue.shuffleSuccess");
+    case "Playlist order updated.":
+      return t("queue.reorderSuccess");
+    case "Playlist updated.":
+      return t("queue.updated");
+    case "You can add requests when the stream goes live.":
+      return t("requests.addWhenLive");
+    case "Not enough VIP tokens.":
+      return t("vip.notEnough");
+    case "You do not have enough VIP tokens.":
+      return t("vip.insufficient");
+    case "Viewer state is still loading.":
+      return t("panel.viewerStateLoading");
+    case "Share Twitch identity to request.":
+      return t("panel.shareIdentityToRequest");
+    case "This Twitch channel has not connected RockList.Live yet.":
+      return t("access.channelNotConnected");
+    case "Viewer profile could not be resolved right now.":
+      return t("access.viewerProfileUnavailable");
+    case "Share Twitch identity to request songs.":
+      return t("access.shareIdentityToRequestSongs");
+    case "Share Twitch identity to manage requests from the panel.":
+      return t("access.shareIdentityToManage");
+    case "You are blocked from requesting songs in this channel.":
+      return t("access.blocked");
+    case "That song is unavailable right now.":
+      return t("search.unavailable");
+    case "Type an artist or song first.":
+      return t("search.typeArtistOrSong");
+    case "No songs matched that search.":
+      return t("search.noResults");
+    case "Requests are off right now.":
+      return t("requests.offRightNow");
+    case "Please wait before performing another search.":
+      return t("search.rateLimited");
+    default:
+      return normalized;
+  }
+}
+
 function orderPanelPlaylistItems(
   items: PanelPlaylistItem[],
   orderedItemIds: string[]
@@ -3523,7 +3728,8 @@ function getPanelPlaylistDragData(args: {
 
 function getPlaylistMutationSuccessMessage(
   mutation: PanelPlaylistMutation,
-  response: PanelPlaylistMutationResponse
+  response: PanelPlaylistMutationResponse,
+  t: TFunction
 ) {
   if (typeof response?.error === "string" && response.error.trim()) {
     return response.error;
@@ -3535,23 +3741,23 @@ function getPlaylistMutationSuccessMessage(
 
   switch (mutation.action) {
     case "setCurrent":
-      return "Song is now playing.";
+      return t("queue.setCurrentSuccess");
     case "returnToQueue":
-      return "Song returned to queue.";
+      return t("queue.returnToQueueSuccess");
     case "markPlayed":
-      return "Song marked played.";
+      return t("queue.markPlayedSuccess");
     case "deleteItem":
-      return "Playlist item removed.";
+      return t("queue.deleteItemSuccess");
     case "changeRequestKind":
       return mutation.requestKind === "vip"
-        ? "Request changed to VIP."
-        : "Request changed to regular.";
+        ? t("requests.changedVip")
+        : t("requests.changedRegular");
     case "shufflePlaylist":
-      return "Playlist shuffled.";
+      return t("queue.shuffleSuccess");
     case "reorderItems":
-      return "Playlist order updated.";
+      return t("queue.reorderSuccess");
     default:
-      return "Playlist updated.";
+      return t("queue.updated");
   }
 }
 
@@ -3606,34 +3812,45 @@ function getStringArray(input: Record<string, unknown>, key: string) {
     : null;
 }
 
-function formatSongLabel(item: Record<string, unknown>) {
+function formatSongLabel(item: Record<string, unknown>, t: TFunction) {
   const warningCode = getString(item, "warningCode");
   const requestedQuery = getString(item, "requestedQuery");
   if (warningCode === "streamer_choice") {
     return requestedQuery
-      ? `Streamer choice: ${requestedQuery}`
-      : "Streamer choice";
+      ? t("playlistItem.streamerChoiceWithQuery", {
+          query: requestedQuery,
+        })
+      : t("playlistItem.streamerChoice");
   }
 
   const artist = getString(item, "songArtist");
-  const title = getString(item, "songTitle") ?? "Unknown song";
+  const title = getString(item, "songTitle") ?? t("playlistItem.unknownSong");
   return artist ? `${artist} - ${title}` : title;
 }
 
-function formatRequesterLine(item: Record<string, unknown>) {
+function formatRequesterLine(item: Record<string, unknown>, t: TFunction) {
   const requester =
     getString(item, "requestedByDisplayName") ??
     getString(item, "requestedByLogin") ??
-    "Unknown requester";
-  const addedAt = formatCompactRelativeTimestamp(getNumber(item, "createdAt"));
-  const editedAt = formatEditedTimestamp(item);
+    t("playlistItem.unknownRequester");
+  const addedAt = t("playlistItem.metaAdded", {
+    time: formatCompactRelativeTimestamp(getNumber(item, "createdAt"), t),
+  });
+  const editedAt = formatEditedTimestamp(item, t);
 
   return editedAt
-    ? `${requester} · Added ${addedAt} · Edited ${editedAt}`
-    : `${requester} · Added ${addedAt}`;
+    ? t("playlistItem.metaLineEdited", {
+        requester,
+        added: addedAt,
+        edited: editedAt,
+      })
+    : t("playlistItem.metaLine", {
+        requester,
+        added: addedAt,
+      });
 }
 
-function formatEditedTimestamp(item: Record<string, unknown>) {
+function formatEditedTimestamp(item: Record<string, unknown>, t: TFunction) {
   const updatedAt = getNumber(item, "editedAt");
   const createdAt = getNumber(item, "createdAt");
 
@@ -3641,17 +3858,22 @@ function formatEditedTimestamp(item: Record<string, unknown>) {
     return null;
   }
 
-  return formatCompactRelativeTimestamp(updatedAt);
+  return t("playlistItem.metaEdited", {
+    time: formatCompactRelativeTimestamp(updatedAt, t),
+  });
 }
 
-function formatCompactRelativeTimestamp(timestamp: number | null) {
+function formatCompactRelativeTimestamp(
+  timestamp: number | null,
+  t: TFunction
+) {
   if (timestamp == null) {
-    return "recent";
+    return t("playlistItem.recent");
   }
 
   const deltaSeconds = Math.max(0, Math.floor((Date.now() - timestamp) / 1000));
   if (deltaSeconds < 10) {
-    return "now";
+    return t("playlistItem.now");
   }
   if (deltaSeconds < 60) {
     return `${deltaSeconds}s`;
@@ -3671,9 +3893,9 @@ function formatCompactRelativeTimestamp(timestamp: number | null) {
   return `${deltaDays}d`;
 }
 
-function formatSearchSongLabel(item: Record<string, unknown>) {
+function formatSearchSongLabel(item: Record<string, unknown>, t: TFunction) {
   const artist = getString(item, "artist");
-  const title = getString(item, "title") ?? "Unknown song";
+  const title = getString(item, "title") ?? t("playlistItem.unknownSong");
   return artist ? `${artist} - ${title}` : title;
 }
 
@@ -3699,13 +3921,14 @@ function getPanelSpecialRequestDisabledReason(input: {
   query: string;
   canRequest: boolean;
   fallbackReason?: string;
+  t: TFunction;
 }) {
   if (input.query.length < 2) {
-    return "Type at least 2 characters first.";
+    return input.t("search.typeAtLeastTwo");
   }
 
   if (!input.canRequest) {
-    return input.fallbackReason ?? "You cannot request songs right now.";
+    return input.fallbackReason ?? input.t("requests.noPermission");
   }
 
   return null;
@@ -3725,6 +3948,8 @@ function PanelRequestsStatusBar({
 }: {
   requestsEnabled: boolean;
 }) {
+  const { t } = useLocaleTranslation("extension");
+
   return (
     <div
       className={
@@ -3733,25 +3958,87 @@ function PanelRequestsStatusBar({
           : "border-b border-(--border-strong) bg-rose-950/60 px-3 py-1.5 text-center text-[10px] font-semibold uppercase tracking-[0.16em] text-rose-100"
       }
     >
-      Requests are {requestsEnabled ? "ON" : "OFF"}
+      {t("requests.status", {
+        state: requestsEnabled
+          ? t("requests.statusOn")
+          : t("requests.statusOff"),
+      })}
     </div>
   );
 }
 
-function formatVipTokensCompact(count: number) {
-  return count === 1 ? "1 VIP token" : `${count} VIP tokens`;
+function formatVipTokensCompact(count: number, t: TFunction) {
+  return t("vip.balance", {
+    count,
+  });
 }
 
-function formatRequestLimitCompact(count: number, limit: number | null) {
+function formatRequestLimitCompact(
+  count: number,
+  limit: number | null,
+  t: TFunction
+) {
   if (limit == null) {
-    return `${count} request${count === 1 ? "" : "s"}`;
+    return t("requests.countUnlimited", {
+      count,
+    });
   }
 
-  return `${count}/${limit} requests`;
+  return t("requests.countLimited", {
+    count,
+    limit,
+  });
 }
 
-function getPanelPlaylistFooterLabel(displayName: string | null | undefined) {
+function getPanelPlaylistFooterLabel(
+  displayName: string | null | undefined,
+  t: TFunction
+) {
   return displayName?.trim()
-    ? `Open ${displayName}'s playlist on RockList.Live`
-    : "Open playlist on RockList.Live";
+    ? t("footer.openPlaylistForChannel", {
+        displayName,
+      })
+    : t("footer.openPlaylist");
+}
+
+function PanelLanguageSelect(props: {
+  locale: AppLocale;
+  onLocaleChange: (locale: AppLocale) => Promise<void>;
+  isSavingLocale: boolean;
+}) {
+  const { t } = useLocaleTranslation("common");
+
+  return (
+    <Select
+      value={props.locale}
+      onValueChange={(value) => void props.onLocaleChange(value as AppLocale)}
+      disabled={props.isSavingLocale}
+    >
+      <SelectTrigger
+        aria-label={t("language.label")}
+        className="h-7 min-w-[7.75rem] gap-2 px-2 text-[11px] shadow-none"
+      >
+        <SelectValue />
+      </SelectTrigger>
+      <SelectContent>
+        {localeOptions.map((option) => (
+          <SelectItem key={option.value} value={option.value}>
+            {option.nativeLabel}
+          </SelectItem>
+        ))}
+      </SelectContent>
+    </Select>
+  );
+}
+
+function PreviewPanelLanguageSelect() {
+  const { locale, setLocale, isSavingLocale } = useAppLocale();
+
+  return (
+    <PanelLanguageSelect
+      locale={locale}
+      onLocaleChange={setLocale}
+      isSavingLocale={isSavingLocale}
+    />
+  );
 }

@@ -1,3 +1,5 @@
+import { formatCurrency, formatNumber } from "~/lib/i18n/format";
+import { type AppLocale, defaultLocale } from "~/lib/i18n/locales";
 import { formatVipTokenCount, normalizeVipTokenCount } from "~/lib/vip-tokens";
 
 export interface VipTokenAutomationSettingsLike {
@@ -14,33 +16,56 @@ export interface VipTokenAutomationSettingsLike {
   streamElementsTipAmountPerVipToken?: number | null;
 }
 
+type Translate = (key: string, options?: Record<string, unknown>) => string;
+
 export function getVipTokenAutomationDetails(
-  input: VipTokenAutomationSettingsLike
+  input: VipTokenAutomationSettingsLike,
+  options?: {
+    locale?: AppLocale;
+    translate?: Translate;
+  }
 ) {
+  const locale = options?.locale ?? defaultLocale;
+  const translate = options?.translate;
   const earningRules: string[] = [];
   const notes: string[] = [];
 
   if (input.autoGrantVipTokenToSubscribers) {
-    earningRules.push("New paid sub = 1 VIP token");
+    earningRules.push(
+      translate?.("vip.ruleNewPaidSub") ?? "New paid sub = 1 VIP token"
+    );
   }
 
   if (input.autoGrantVipTokensForSharedSubRenewalMessage) {
-    earningRules.push("Shared sub renewal message = 1 VIP token");
+    earningRules.push(
+      translate?.("vip.ruleSharedSubRenewal") ??
+        "Shared sub renewal message = 1 VIP token"
+    );
   }
 
   if (input.autoGrantVipTokensToSubGifters) {
-    earningRules.push("Gift 1 sub = 1 VIP token to the gifter");
+    earningRules.push(
+      translate?.("vip.ruleGiftSub") ?? "Gift 1 sub = 1 VIP token to the gifter"
+    );
   }
 
   if (input.autoGrantVipTokensToGiftRecipients) {
-    earningRules.push("Receive a gifted sub = 1 VIP token");
+    earningRules.push(
+      translate?.("vip.ruleGiftRecipient") ??
+        "Receive a gifted sub = 1 VIP token"
+    );
   }
 
   if (input.autoGrantVipTokensForCheers) {
     const bitsPerVipToken = normalizePositiveNumber(input.cheerBitsPerVipToken);
     if (bitsPerVipToken != null) {
+      const formattedBitsPerVipToken = formatNumber(locale, bitsPerVipToken, {
+        maximumFractionDigits: 2,
+      });
       earningRules.push(
-        `Cheer ${formatNumber(bitsPerVipToken)} bits = 1 VIP token`
+        translate?.("vip.ruleCheer", {
+          bits: formattedBitsPerVipToken,
+        }) ?? `Cheer ${formattedBitsPerVipToken} bits = 1 VIP token`
       );
       const minimumBits = Math.ceil(
         bitsPerVipToken *
@@ -49,8 +74,23 @@ export function getVipTokenAutomationDetails(
       const minimumTokenCount = normalizeVipTokenCount(
         minimumBits / bitsPerVipToken
       );
+      const formattedMinimumBits = formatNumber(locale, minimumBits, {
+        maximumFractionDigits: 2,
+      });
+      const formattedMinimumTokenCount = formatNumber(
+        locale,
+        minimumTokenCount,
+        {
+          maximumFractionDigits: 2,
+        }
+      );
       earningRules.push(
-        `Minimum cheer: ${formatNumber(minimumBits)} bits = ${formatVipTokenCount(minimumTokenCount)} VIP token${minimumTokenCount === 1 ? "" : "s"}.`
+        translate?.("vip.ruleMinimumCheer", {
+          bits: formattedMinimumBits,
+          tokens: formattedMinimumTokenCount,
+          count: minimumTokenCount,
+        }) ??
+          `Minimum cheer: ${formattedMinimumBits} bits = ${formatVipTokenCount(minimumTokenCount)} VIP token${minimumTokenCount === 1 ? "" : "s"}.`
       );
     }
   }
@@ -61,8 +101,16 @@ export function getVipTokenAutomationDetails(
     );
     earningRules.push(
       minimumRaidViewerCount > 1
-        ? `Raid with ${formatNumber(minimumRaidViewerCount)}+ viewers = 1 VIP token`
-        : "Raid this channel = 1 VIP token"
+        ? (translate?.("vip.ruleRaidMultiple", {
+            viewers: formatNumber(locale, minimumRaidViewerCount, {
+              maximumFractionDigits: 2,
+            }),
+          }) ??
+            `Raid with ${formatNumber(locale, minimumRaidViewerCount, {
+              maximumFractionDigits: 2,
+            })}+ viewers = 1 VIP token`)
+        : (translate?.("vip.ruleRaidSingle") ??
+            "Raid this channel = 1 VIP token")
     );
   }
 
@@ -71,8 +119,19 @@ export function getVipTokenAutomationDetails(
       input.streamElementsTipAmountPerVipToken
     );
     if (amountPerVipToken != null) {
+      const formattedTipAmount = formatCurrency(
+        locale,
+        amountPerVipToken,
+        "USD",
+        {
+          minimumFractionDigits: Number.isInteger(amountPerVipToken) ? 0 : 2,
+          maximumFractionDigits: 2,
+        }
+      );
       earningRules.push(
-        `StreamElements tip ${formatCurrency(amountPerVipToken)} = 1 VIP token`
+        translate?.("vip.ruleTip", {
+          amount: formattedTipAmount,
+        }) ?? `StreamElements tip ${formattedTipAmount} = 1 VIP token`
       );
     }
   }
@@ -83,14 +142,16 @@ export function getVipTokenAutomationDetails(
   };
 }
 
-export function getVipTokenRedemptionDescription() {
-  return "Spend 1 VIP token for your song to be placed at the top of the playlist.";
+export function getVipTokenRedemptionDescription(translate?: Translate) {
+  return (
+    translate?.("vip.redemptionDescription") ??
+    "Spend 1 VIP token for your song to be placed at the top of the playlist."
+  );
 }
 
-export function getVipTokenRedemptionDetails() {
+export function getVipTokenRedemptionDetails(translate?: Translate) {
   return {
-    summary:
-      "Spend 1 VIP token for your song to be placed at the top of the playlist.",
+    summary: getVipTokenRedemptionDescription(translate),
     uses: [],
   };
 }
@@ -109,19 +170,4 @@ function normalizeRaidMinimumViewerCount(value: number | null | undefined) {
   return typeof value === "number" && Number.isFinite(value) && value > 1
     ? Math.floor(value)
     : 1;
-}
-
-function formatNumber(value: number) {
-  return new Intl.NumberFormat("en-US", {
-    maximumFractionDigits: 2,
-  }).format(value);
-}
-
-function formatCurrency(value: number) {
-  return new Intl.NumberFormat("en-US", {
-    style: "currency",
-    currency: "USD",
-    minimumFractionDigits: Number.isInteger(value) ? 0 : 2,
-    maximumFractionDigits: 2,
-  }).format(value);
 }

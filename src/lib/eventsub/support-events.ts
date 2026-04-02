@@ -6,6 +6,9 @@ import {
   grantVipToken,
 } from "~/lib/db/repositories";
 import type { AppEnv } from "~/lib/env";
+import { formatNumber } from "~/lib/i18n/format";
+import type { AppLocale } from "~/lib/i18n/locales";
+import { getServerTranslation } from "~/lib/i18n/server";
 import type {
   EventSubCheerEvent,
   EventSubRaidEvent,
@@ -13,7 +16,7 @@ import type {
   EventSubSubscriptionGiftEvent,
   EventSubSubscriptionMessageEvent,
 } from "~/lib/twitch/types";
-import { formatVipTokenCount, normalizeVipTokenCount } from "~/lib/vip-tokens";
+import { normalizeVipTokenCount } from "~/lib/vip-tokens";
 
 export interface EventSubSupportChannel {
   id: string;
@@ -22,6 +25,7 @@ export interface EventSubSupportChannel {
 }
 
 export interface EventSubSupportSettings {
+  defaultLocale: string;
   autoGrantVipTokenToSubscribers: boolean;
   autoGrantVipTokensForSharedSubRenewalMessage: boolean;
   autoGrantVipTokensToSubGifters: boolean;
@@ -73,9 +77,14 @@ type EventSubSupportResult =
   | { body: "Duplicate"; status: 202 }
   | { body: "Channel not found"; status: 202 };
 
-function formatPluralizedTokens(count: number) {
-  const formatted = formatVipTokenCount(count);
-  return `${formatted} VIP token${count === 1 ? "" : "s"}`;
+function mention(login: string) {
+  return `@${login}`;
+}
+
+function formatTokenCount(locale: AppLocale, count: number) {
+  return formatNumber(locale, normalizeVipTokenCount(count), {
+    maximumFractionDigits: 2,
+  });
 }
 
 function getCheerMinimumBits(settings: EventSubSupportSettings) {
@@ -123,6 +132,7 @@ export async function processEventSubSubscriptionGift(input: {
   if (!settings?.autoGrantVipTokensToSubGifters) {
     return { body: "Ignored", status: 202 };
   }
+  const { locale, t } = getServerTranslation(settings.defaultLocale, "bot");
 
   const claimed = await claimDeliveryIfNeeded({
     env: input.env,
@@ -171,7 +181,15 @@ export async function processEventSubSubscriptionGift(input: {
   await input.deps.sendChatReply(input.env, {
     channelId: channel.id,
     broadcasterUserId: channel.twitchChannelId,
-    message: `Added ${formatPluralizedTokens(tokenCount)} to @${input.event.user_login} for gifting ${input.event.total} sub${input.event.total === 1 ? "" : "s"}.`,
+    message: t("replies.autoGrantGiftSubGifter", {
+      mention: mention(input.event.user_login),
+      count: tokenCount,
+      countText: formatTokenCount(locale, tokenCount),
+      subCount: input.event.total,
+      subCountText: formatNumber(locale, input.event.total, {
+        maximumFractionDigits: 2,
+      }),
+    }),
   });
 
   return { body: "Accepted", status: 202 };
@@ -201,6 +219,7 @@ export async function processEventSubChannelSubscribe(input: {
   if (!shouldGrant) {
     return { body: "Ignored", status: 202 };
   }
+  const { t } = getServerTranslation(settings?.defaultLocale, "bot");
 
   const claimed = await claimDeliveryIfNeeded({
     env: input.env,
@@ -242,8 +261,12 @@ export async function processEventSubChannelSubscribe(input: {
     channelId: channel.id,
     broadcasterUserId: channel.twitchChannelId,
     message: input.event.is_gift
-      ? `Added 1 VIP token to @${input.event.user_login} for receiving a gifted sub.`
-      : `Added 1 VIP token to @${input.event.user_login} for a new sub.`,
+      ? t("replies.autoGrantGiftRecipient", {
+          mention: mention(input.event.user_login),
+        })
+      : t("replies.autoGrantNewSubscriber", {
+          mention: mention(input.event.user_login),
+        }),
   });
 
   return { body: "Accepted", status: 202 };
@@ -270,6 +293,7 @@ export async function processEventSubSubscriptionMessage(input: {
   if (!settings?.autoGrantVipTokensForSharedSubRenewalMessage) {
     return { body: "Ignored", status: 202 };
   }
+  const { t } = getServerTranslation(settings.defaultLocale, "bot");
 
   const claimed = await claimDeliveryIfNeeded({
     env: input.env,
@@ -310,7 +334,9 @@ export async function processEventSubSubscriptionMessage(input: {
   await input.deps.sendChatReply(input.env, {
     channelId: channel.id,
     broadcasterUserId: channel.twitchChannelId,
-    message: `Added 1 VIP token to @${input.event.user_login} for sharing a sub renewal message.`,
+    message: t("replies.autoGrantSharedSubRenewal", {
+      mention: mention(input.event.user_login),
+    }),
   });
 
   return { body: "Accepted", status: 202 };
@@ -337,6 +363,7 @@ export async function processEventSubChannelCheer(input: {
   if (!settings?.autoGrantVipTokensForCheers) {
     return { body: "Ignored", status: 202 };
   }
+  const { locale, t } = getServerTranslation(settings.defaultLocale, "bot");
 
   const claimed = await claimDeliveryIfNeeded({
     env: input.env,
@@ -397,7 +424,15 @@ export async function processEventSubChannelCheer(input: {
   await input.deps.sendChatReply(input.env, {
     channelId: channel.id,
     broadcasterUserId: channel.twitchChannelId,
-    message: `Added ${formatPluralizedTokens(tokenCount)} to @${input.event.user_login} for cheering ${input.event.bits} bit${input.event.bits === 1 ? "" : "s"}.`,
+    message: t("replies.autoGrantCheer", {
+      mention: mention(input.event.user_login),
+      count: tokenCount,
+      countText: formatTokenCount(locale, tokenCount),
+      bits: input.event.bits,
+      bitsText: formatNumber(locale, input.event.bits, {
+        maximumFractionDigits: 2,
+      }),
+    }),
   });
 
   return { body: "Accepted", status: 202 };
@@ -424,6 +459,7 @@ export async function processEventSubChannelRaid(input: {
   if (!settings?.autoGrantVipTokensForRaiders) {
     return { body: "Ignored", status: 202 };
   }
+  const { locale, t } = getServerTranslation(settings.defaultLocale, "bot");
 
   if (input.event.viewers < settings.raidMinimumViewerCount) {
     return { body: "Ignored", status: 202 };
@@ -469,7 +505,13 @@ export async function processEventSubChannelRaid(input: {
   await input.deps.sendChatReply(input.env, {
     channelId: channel.id,
     broadcasterUserId: channel.twitchChannelId,
-    message: `Added 1 VIP token to @${input.event.from_broadcaster_user_login} for raiding with ${input.event.viewers} viewer${input.event.viewers === 1 ? "" : "s"}.`,
+    message: t("replies.autoGrantRaid", {
+      mention: mention(input.event.from_broadcaster_user_login),
+      viewers: input.event.viewers,
+      viewersText: formatNumber(locale, input.event.viewers, {
+        maximumFractionDigits: 2,
+      }),
+    }),
   });
 
   return { body: "Accepted", status: 202 };
@@ -486,6 +528,7 @@ export function createEventSubSupportDependencies(): EventSubSupportDependencies
       }
 
       return {
+        defaultLocale: settings.defaultLocale,
         autoGrantVipTokenToSubscribers: settings.autoGrantVipTokenToSubscribers,
         autoGrantVipTokensForSharedSubRenewalMessage:
           settings.autoGrantVipTokensForSharedSubRenewalMessage,

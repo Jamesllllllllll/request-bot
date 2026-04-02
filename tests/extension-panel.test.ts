@@ -111,6 +111,7 @@ describe("extension panel service", () => {
       login: "viewer_one",
       displayName: "Viewer One",
       profileImageUrl: "https://example.com/viewer.png",
+      preferredLocale: "fr",
     } as never);
     vi.mocked(getViewerRequestStateForChannelViewer).mockResolvedValue({
       viewer: {
@@ -118,6 +119,7 @@ describe("extension panel service", () => {
         login: "viewer_one",
         displayName: "Viewer One",
         profileImageUrl: "https://example.com/viewer.png",
+        preferredLocale: "fr",
         isSubscriber: false,
         subscriptionVerified: false,
         vipTokensAvailable: 2,
@@ -169,8 +171,10 @@ describe("extension panel service", () => {
       login: "viewer_one",
       displayName: "Viewer One",
       profileImageUrl: "https://example.com/viewer.png",
+      preferredLocale: "fr",
     } as never);
     vi.mocked(getChannelSettingsByChannelId).mockResolvedValue({
+      defaultLocale: "es",
       blacklistEnabled: true,
       showPlaylistPositions: true,
       moderatorCanManageRequests: true,
@@ -252,6 +256,7 @@ describe("extension panel service", () => {
         isLive: true,
       },
       settings: {
+        defaultLocale: "es",
         showPlaylistPositions: true,
       },
       playlist: {
@@ -259,6 +264,9 @@ describe("extension panel service", () => {
       },
       viewer: {
         isLinked: true,
+        profile: {
+          preferredLocale: "fr",
+        },
         canRequest: true,
         canVipRequest: true,
         canEditOwnRequest: false,
@@ -356,6 +364,7 @@ describe("extension panel service", () => {
         isLive: true,
       },
       settings: {
+        defaultLocale: "es",
         showPlaylistPositions: true,
       },
       playlist: {
@@ -373,6 +382,7 @@ describe("extension panel service", () => {
         profile: {
           twitchUserId: "viewer-1",
           displayName: "Viewer One",
+          preferredLocale: "fr",
           vipTokensAvailable: 2,
         },
       },

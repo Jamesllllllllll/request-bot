@@ -84,6 +84,7 @@ export type ViewerIdentity = {
   login: string;
   displayName: string;
   profileImageUrl?: string | null;
+  preferredLocale?: string | null;
 };
 
 type ViewerChannelState = {
@@ -145,6 +146,7 @@ export type ViewerRequestStatePayload = {
     login: string;
     displayName: string;
     profileImageUrl?: string | null;
+    preferredLocale?: string | null;
     isSubscriber: boolean;
     subscriptionVerified: boolean;
     vipTokensAvailable: number;
@@ -230,6 +232,7 @@ async function resolveViewerIdentity(env: AppEnv, request: Request) {
     login: user.login,
     displayName: user.displayName,
     profileImageUrl: user.profileImageUrl,
+    preferredLocale: user.preferredLocale,
   } satisfies ViewerIdentity;
 }
 
@@ -258,6 +261,7 @@ export async function getViewerRequestStateForChannelViewer(input: {
       login: context.viewer.login,
       displayName: context.viewer.displayName,
       profileImageUrl: context.viewer.profileImageUrl,
+      preferredLocale: context.viewer.preferredLocale,
       isSubscriber: context.subscription.isSubscriber,
       subscriptionVerified: context.subscription.verified,
       vipTokensAvailable: context.vipTokensAvailable,

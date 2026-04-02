@@ -10,6 +10,7 @@ import {
   upsertUserProfile,
 } from "~/lib/db/repositories";
 import type { AppEnv } from "~/lib/env";
+import { defaultLocale } from "~/lib/i18n/locales";
 import {
   getArraySetting,
   getRequiredPathsMatchMode,
@@ -103,6 +104,7 @@ type ExtensionPanelLiveState = {
     botReadyState?: string | null;
   };
   settings: {
+    defaultLocale: string;
     requestsEnabled: boolean;
     showPlaylistPositions: boolean;
     autoGrantVipTokenToSubscribers: boolean;
@@ -127,6 +129,7 @@ type ExtensionPanelLiveState = {
       login: string;
       displayName: string;
       profileImageUrl?: string | null;
+      preferredLocale?: string | null;
       vipTokensAvailable: number;
     };
     activeRequests: Array<Record<string, unknown>>;
@@ -227,6 +230,7 @@ export async function getExtensionBootstrapState(input: {
         connected: false,
         channel: null,
         settings: {
+          defaultLocale,
           requestsEnabled: true,
           showPlaylistPositions: false,
           autoGrantVipTokenToSubscribers: false,
@@ -343,6 +347,7 @@ export async function getExtensionBootstrapState(input: {
               login: viewer.login,
               displayName: viewer.displayName,
               profileImageUrl: viewer.profileImageUrl ?? null,
+              preferredLocale: viewer.preferredLocale ?? null,
               isSubscriber: viewer.isSubscriber,
               subscriptionVerified: viewer.subscriptionVerified,
               vipTokensAvailable: viewer.vipTokensAvailable,
@@ -659,6 +664,7 @@ async function getExtensionPanelLiveState(input: {
       botReadyState: input.channel.botReadyState,
     },
     settings: {
+      defaultLocale: settings?.defaultLocale ?? defaultLocale,
       requestsEnabled: !!settings?.requestsEnabled,
       showPlaylistPositions: !!settings?.showPlaylistPositions,
       autoGrantVipTokenToSubscribers:
@@ -693,6 +699,7 @@ async function getExtensionPanelLiveState(input: {
             login: input.linkedViewer.login,
             displayName: input.linkedViewer.displayName,
             profileImageUrl: input.linkedViewer.profileImageUrl ?? null,
+            preferredLocale: input.linkedViewer.preferredLocale ?? null,
             vipTokensAvailable,
           }
         : null,
@@ -745,6 +752,7 @@ async function getExistingLinkedViewerIdentity(
     login: user.login,
     displayName: user.displayName,
     profileImageUrl: user.profileImageUrl,
+    preferredLocale: user.preferredLocale,
   };
 }
 
@@ -820,6 +828,7 @@ async function resolveLinkedViewerIdentity(
       login: existingUser.login,
       displayName: existingUser.displayName,
       profileImageUrl: existingUser.profileImageUrl,
+      preferredLocale: existingUser.preferredLocale,
     };
   }
 
@@ -852,6 +861,7 @@ async function resolveLinkedViewerIdentity(
     login: user.login,
     displayName: user.displayName,
     profileImageUrl: user.profileImageUrl,
+    preferredLocale: user.preferredLocale,
   };
 }
 

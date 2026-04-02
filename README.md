@@ -35,7 +35,7 @@ It runs on TanStack Start, Cloudflare Workers, D1, Durable Objects, Queues, KV, 
 
 ### Platform And Quality
 
-- Internationalization scaffolding for localized website copy
+- Internationalization support for localized website and Twitch panel UI, plus owner-controlled bot reply locales with English as the default
 - Durable Object playlist serialization, Queue-based reply delivery, and Cloudflare-backed persistence
 - Vitest, Playwright, and GitHub Actions verification
 

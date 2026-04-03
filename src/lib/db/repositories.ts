@@ -2,6 +2,7 @@ import "@tanstack/react-start/server-only";
 import { and, asc, desc, eq, gt, inArray, sql } from "drizzle-orm";
 import { tuningOptions } from "~/lib/channel-options";
 import type { AppEnv } from "~/lib/env";
+import { toPublicOverlaySettings } from "~/lib/overlay/public-settings";
 import { DEFAULT_MAX_QUEUE_SIZE } from "~/lib/settings-defaults";
 import {
   getAppAccessToken,
@@ -234,6 +235,8 @@ export async function upsertUserAndChannel(
         login: input.login,
         displayName: input.displayName,
         profileImageUrl: input.profileImageUrl,
+        isAdmin: isConfiguredAdmin(env, input.twitchUserId),
+        updatedAt: Date.now(),
       },
     });
 
@@ -243,24 +246,6 @@ export async function upsertUserAndChannel(
 
   if (!user) {
     throw new Error("User upsert failed");
-  }
-
-  if (isConfiguredAdmin(env, input.twitchUserId) && !user.isAdmin) {
-    await db
-      .update(users)
-      .set({
-        isAdmin: true,
-        updatedAt: Date.now(),
-      })
-      .where(eq(users.id, user.id));
-
-    const refreshedUser = await db.query.users.findFirst({
-      where: eq(users.id, user.id),
-    });
-
-    if (refreshedUser) {
-      Object.assign(user, refreshedUser);
-    }
   }
 
   await db
@@ -1039,10 +1024,7 @@ export async function getOverlayStateBySlugAndToken(
 
   return {
     channel,
-    settings: {
-      ...settings,
-      overlayAccessToken,
-    },
+    settings: toPublicOverlaySettings(settings),
     playlist,
     playedSongs: playedRows,
   };

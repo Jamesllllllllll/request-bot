@@ -1,4 +1,5 @@
 import type { AppEnv } from "./env";
+import { withInternalApiSecret } from "./internal-api";
 import { getErrorMessage } from "./utils";
 
 export async function callBackend(
@@ -6,7 +7,10 @@ export async function callBackend(
   pathname: string,
   init?: RequestInit
 ) {
-  const request = new Request(`http://backend${pathname}`, init);
+  const request = new Request(
+    `http://backend${pathname}`,
+    withInternalApiSecret(env, init)
+  );
   const response = await env.BACKEND_SERVICE.fetch(request);
 
   if (!response.ok) {

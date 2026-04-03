@@ -1,5 +1,7 @@
 import type { AppEnv } from "~/lib/env";
 
+export const eventSubMaxAgeMs = 10 * 60 * 1000;
+
 async function sign(secret: string, message: string) {
   const key = await crypto.subtle.importKey(
     "raw",
@@ -19,13 +21,26 @@ async function sign(secret: string, message: string) {
 export async function verifyEventSubSignature(
   request: Request,
   env: AppEnv,
-  bodyText: string
+  bodyText: string,
+  input?: {
+    now?: number;
+  }
 ) {
   const messageId = request.headers.get("Twitch-Eventsub-Message-Id");
   const timestamp = request.headers.get("Twitch-Eventsub-Message-Timestamp");
   const signature = request.headers.get("Twitch-Eventsub-Message-Signature");
 
   if (!messageId || !timestamp || !signature) {
+    return false;
+  }
+
+  const parsedTimestamp = Date.parse(timestamp);
+  const now = input?.now ?? Date.now();
+  if (
+    Number.isNaN(parsedTimestamp) ||
+    parsedTimestamp > now + eventSubMaxAgeMs ||
+    now - parsedTimestamp > eventSubMaxAgeMs
+  ) {
     return false;
   }
 

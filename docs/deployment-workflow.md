@@ -80,6 +80,8 @@ Set these in `.env.deploy` before a real deployment:
 - `TWITCH_CLIENT_ID`
 - `TWITCH_EXTENSION_CLIENT_ID`
 - `TWITCH_CLIENT_SECRET`
+- `TWITCH_TOKEN_ENCRYPTION_SECRET`
+- `INTERNAL_API_SECRET`
 - `TWITCH_EVENTSUB_SECRET`
 - `TWITCH_EXTENSION_SECRET`
 - `SESSION_SECRET`
@@ -119,6 +121,8 @@ Frontend Worker (`request-bot`) required secrets:
 ```bash
 echo "<TWITCH_CLIENT_ID>" | npx wrangler secret put TWITCH_CLIENT_ID --config wrangler.jsonc
 echo "<TWITCH_CLIENT_SECRET>" | npx wrangler secret put TWITCH_CLIENT_SECRET --config wrangler.jsonc
+echo "<TWITCH_TOKEN_ENCRYPTION_SECRET>" | npx wrangler secret put TWITCH_TOKEN_ENCRYPTION_SECRET --config wrangler.jsonc
+echo "<INTERNAL_API_SECRET>" | npx wrangler secret put INTERNAL_API_SECRET --config wrangler.jsonc
 echo "<TWITCH_EVENTSUB_SECRET>" | npx wrangler secret put TWITCH_EVENTSUB_SECRET --config wrangler.jsonc
 echo "<TWITCH_EXTENSION_SECRET>" | npx wrangler secret put TWITCH_EXTENSION_SECRET --config wrangler.jsonc
 echo "<SESSION_SECRET>" | npx wrangler secret put SESSION_SECRET --config wrangler.jsonc
@@ -131,6 +135,8 @@ Backend Worker (`request-bot-backend`) required secrets:
 ```bash
 echo "<TWITCH_CLIENT_ID>" | npx wrangler secret put TWITCH_CLIENT_ID --config wrangler.aux.jsonc
 echo "<TWITCH_CLIENT_SECRET>" | npx wrangler secret put TWITCH_CLIENT_SECRET --config wrangler.aux.jsonc
+echo "<TWITCH_TOKEN_ENCRYPTION_SECRET>" | npx wrangler secret put TWITCH_TOKEN_ENCRYPTION_SECRET --config wrangler.aux.jsonc
+echo "<INTERNAL_API_SECRET>" | npx wrangler secret put INTERNAL_API_SECRET --config wrangler.aux.jsonc
 echo "<TWITCH_EVENTSUB_SECRET>" | npx wrangler secret put TWITCH_EVENTSUB_SECRET --config wrangler.aux.jsonc
 echo "<SENTRY_DSN>" | npx wrangler secret put SENTRY_DSN --config wrangler.aux.jsonc
 ```
@@ -139,6 +145,7 @@ Notes:
 
 - if the Worker does not exist yet, `wrangler secret put` creates it before uploading the secret
 - `SESSION_SECRET` is only needed by the frontend Worker because it signs and verifies sessions
+- `INTERNAL_API_SECRET` must be set on both Workers and must match because the frontend Worker authenticates every backend `/internal/*` request with it
 - `TWITCH_EXTENSION_SECRET` is only needed by the frontend Worker because it verifies extension JWTs on `/api/extension/*`
 - `SESSION_KV` is a KV binding, not a secret
 - `TWITCH_BOT_USERNAME` and `TWITCH_SCOPES` are not secrets

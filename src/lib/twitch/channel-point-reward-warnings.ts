@@ -99,11 +99,11 @@ export function getChannelPointRewardWarningMessage(
     case "channel_point_reward_reward_limit_reached":
       return "Twitch only allows 50 custom rewards per channel. Remove or disable a reward on Twitch, then save again.";
     case "channel_point_reward_reward_not_app_owned":
-      return "The saved Twitch reward is no longer managed by request-bot. Remove that reward on Twitch, then save again.";
+      return "The saved Twitch reward is no longer managed by RockList.Live. Remove that reward on Twitch, then save again.";
     case "channel_point_reward_reward_title_conflict":
       return "A Twitch reward named RockList VIP Token already exists. Rename or remove that reward on Twitch, then save again.";
     case "channel_point_reward_setup_failed":
-      return "Your other bot settings were saved, but request-bot could not finish the Twitch channel point reward setup. Check your Twitch rewards, then save again.";
+      return "Your other bot settings were saved, but RockList.Live could not finish the Twitch channel point reward setup. Check your Twitch rewards, then save again.";
   }
 }
 

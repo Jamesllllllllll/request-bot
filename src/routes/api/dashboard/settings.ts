@@ -6,6 +6,7 @@ import { callBackend } from "~/lib/backend";
 import {
   createAuditLog,
   ensureStreamElementsTipWebhookToken,
+  getActiveBroadcasterAuthorizationForChannel,
   getBotAuthorization,
   getDashboardState,
   updateSettings,
@@ -15,9 +16,15 @@ import {
   getArraySetting,
   getRequiredPathsMatchMode,
 } from "~/lib/request-policy";
+import { getTwitchUser } from "~/lib/twitch/api";
+import {
+  getChannelPointRewardEligibility,
+  unknownChannelPointRewardEligibility,
+} from "~/lib/twitch/channel-point-reward-eligibility";
 import { getChannelPointRewardWarningMessageFromWarnings } from "~/lib/twitch/channel-point-reward-warnings";
 import { getErrorMessage, json } from "~/lib/utils";
 import { settingsInputSchema } from "~/lib/validation";
+import { parseVipTokenDurationThresholds } from "~/lib/vip-token-duration-thresholds";
 
 async function requireDashboardState(request: Request, runtimeEnv: AppEnv) {
   const userId = await getSessionUserId(request, runtimeEnv);
@@ -42,13 +49,42 @@ export const Route = createFileRoute("/api/dashboard/settings")({
           );
         }
 
-        const botAuthorization = await getBotAuthorization(runtimeEnv);
-        const streamElementsTipWebhookToken = state.settings
-          ? await ensureStreamElementsTipWebhookToken(
+        const [
+          botAuthorization,
+          streamElementsTipWebhookToken,
+          broadcasterAuthorization,
+        ] = await Promise.all([
+          getBotAuthorization(runtimeEnv),
+          state.settings
+            ? ensureStreamElementsTipWebhookToken(runtimeEnv, state.channel.id)
+            : null,
+          getActiveBroadcasterAuthorizationForChannel(
+            runtimeEnv,
+            state.channel.id
+          ),
+        ]);
+        let channelPointRewardsEligibility =
+          unknownChannelPointRewardEligibility;
+
+        if (broadcasterAuthorization) {
+          try {
+            const twitchUser = await getTwitchUser(
               runtimeEnv,
-              state.channel.id
-            )
-          : null;
+              broadcasterAuthorization.accessTokenEncrypted
+            );
+            channelPointRewardsEligibility = getChannelPointRewardEligibility(
+              twitchUser.broadcaster_type
+            );
+          } catch (error) {
+            console.error(
+              "Failed to resolve Twitch channel point reward eligibility",
+              {
+                channelId: state.channel.id,
+                error: error instanceof Error ? error.message : String(error),
+              }
+            );
+          }
+        }
 
         return json({
           channel: state.channel,
@@ -61,6 +97,9 @@ export const Route = createFileRoute("/api/dashboard/settings")({
                 requiredPaths: getArraySetting(
                   state.settings.requiredPathsJson
                 ),
+                vipTokenDurationThresholds: parseVipTokenDurationThresholds(
+                  state.settings.vipTokenDurationThresholdsJson
+                ),
                 requiredPathsMatchMode: getRequiredPathsMatchMode(
                   state.settings.requiredPathsMatchMode
                 ),
@@ -71,6 +110,7 @@ export const Route = createFileRoute("/api/dashboard/settings")({
               ? `${runtimeEnv.APP_URL}/api/integrations/streamelements/${state.channel.slug}/${streamElementsTipWebhookToken}`
               : null,
           },
+          channelPointRewardsEligibility,
           playedSongs: state.playedSongs,
           bot: {
             connected: !!botAuthorization,

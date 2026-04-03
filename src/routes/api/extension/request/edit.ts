@@ -36,6 +36,7 @@ export const Route = createFileRoute("/api/extension/request/edit")({
                   songId: body.songId,
                   requestMode: body.requestMode ?? "catalog",
                   requestKind: body.requestKind,
+                  vipTokenCost: body.vipTokenCost,
                   replaceExisting: true,
                   itemId: body.itemId,
                 }
@@ -44,6 +45,7 @@ export const Route = createFileRoute("/api/extension/request/edit")({
                   query: body.query,
                   requestMode: body.requestMode,
                   requestKind: body.requestKind,
+                  vipTokenCost: body.vipTokenCost,
                   replaceExisting: true,
                   itemId: body.itemId,
                 };

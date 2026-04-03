@@ -2,9 +2,12 @@ import { withMonitor, withSentry } from "@sentry/cloudflare";
 import { and, eq } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/d1";
 import {
+  clearVipRequestCooldownBySourceItem,
+  clearVipRequestCooldownsBySourceItems,
   createPlayedSong,
   getBotAuthorization,
   getChannelBlacklistByChannelId,
+  upsertVipRequestCooldown,
 } from "~/lib/db/repositories";
 import * as schema from "~/lib/db/schema";
 import {
@@ -18,7 +21,7 @@ import {
   users,
 } from "~/lib/db/schema";
 import { assertDatabaseSchemaCurrent } from "~/lib/db/schema-version";
-import type { BackendEnv } from "~/lib/env";
+import type { AppEnv, BackendEnv } from "~/lib/env";
 import {
   getCompactedRegularPositionAssignments,
   getNextRegularPosition,
@@ -55,6 +58,7 @@ import {
 } from "~/lib/twitch/api";
 import { reconcileChannelBotState } from "~/lib/twitch/bot";
 import { createId, json, normalizeSongSourceUrl } from "~/lib/utils";
+import { isVipRequestCooldownEnabled } from "~/lib/vip-request-cooldowns";
 
 function getDb(env: BackendEnv) {
   return drizzle(getSentryD1Database(env), { schema });
@@ -218,6 +222,99 @@ class D1PlaylistCoordinator implements PlaylistCoordinator {
       });
   }
 
+  private async getVipRequestCooldownSettings(channelId: string) {
+    return getDb(this.env).query.channelSettings.findFirst({
+      where: eq(channelSettings.channelId, channelId),
+      columns: {
+        vipRequestCooldownEnabled: true,
+        vipRequestCooldownMinutes: true,
+      },
+    });
+  }
+
+  private async syncVipRequestCooldownForVipItem(input: {
+    channelId: string;
+    itemId: string;
+    requestedByLogin?: string | null;
+    requestedByDisplayName?: string | null;
+    requestedByTwitchUserId?: string | null;
+  }) {
+    if (!input.requestedByLogin) {
+      return;
+    }
+
+    try {
+      const settings = await this.getVipRequestCooldownSettings(
+        input.channelId
+      );
+
+      if (!settings || !isVipRequestCooldownEnabled(settings)) {
+        return;
+      }
+
+      await upsertVipRequestCooldown(this.env as unknown as AppEnv, {
+        channelId: input.channelId,
+        login: input.requestedByLogin,
+        displayName: input.requestedByDisplayName ?? null,
+        twitchUserId: input.requestedByTwitchUserId ?? null,
+        sourceItemId: input.itemId,
+        cooldownMinutes: settings.vipRequestCooldownMinutes,
+      });
+    } catch (error) {
+      console.error("Failed to sync VIP request cooldown", {
+        channelId: input.channelId,
+        itemId: input.itemId,
+        requestedByLogin: input.requestedByLogin,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+
+  private async clearVipRequestCooldownForSourceItem(
+    channelId: string,
+    itemId: string
+  ) {
+    try {
+      await clearVipRequestCooldownBySourceItem(this.env as unknown as AppEnv, {
+        channelId,
+        sourceItemId: itemId,
+      });
+    } catch (error) {
+      console.error("Failed to clear VIP request cooldown", {
+        channelId,
+        itemId,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+
+  private async clearVipRequestCooldownsForSourceItems(
+    channelId: string,
+    itemIds: string[]
+  ) {
+    const sourceItemIds = [...new Set(itemIds.filter(Boolean))];
+
+    if (sourceItemIds.length === 0) {
+      return;
+    }
+
+    try {
+      await clearVipRequestCooldownsBySourceItems(
+        this.env as unknown as AppEnv,
+        {
+          channelId,
+          sourceItemIds,
+        }
+      );
+    } catch (error) {
+      console.error("Failed to clear VIP request cooldowns", {
+        channelId,
+        sourceItemIds,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+
   private async reindexPlaylistItems(
     items: Array<{ id: string; position: number; regularPosition?: number }>
   ) {
@@ -356,6 +453,7 @@ class D1PlaylistCoordinator implements PlaylistCoordinator {
         requestedByDisplayName: input.requestedByDisplayName,
         requestMessageId: input.messageId ?? null,
         requestKind: input.requestKind ?? "regular",
+        vipTokenCost: input.vipTokenCost ?? 0,
         position: nextPosition,
         regularPosition: nextRegularPosition,
       });
@@ -398,6 +496,15 @@ class D1PlaylistCoordinator implements PlaylistCoordinator {
       itemId,
       input
     );
+    if (input.requestKind === "vip") {
+      await this.syncVipRequestCooldownForVipItem({
+        channelId: input.channelId,
+        itemId,
+        requestedByLogin: input.requestedByLogin,
+        requestedByDisplayName: input.requestedByDisplayName,
+        requestedByTwitchUserId: input.requestedByTwitchUserId,
+      });
+    }
     await this.notify(input.channelId);
 
     console.info("Playlist addRequest complete", {
@@ -427,7 +534,14 @@ class D1PlaylistCoordinator implements PlaylistCoordinator {
       throw new Error("Playlist item not found");
     }
 
-    if (target.requestKind === input.requestKind) {
+    const nextVipTokenCost =
+      input.vipTokenCost ?? (input.requestKind === "vip" ? 1 : 0);
+
+    if (
+      target.requestKind === input.requestKind &&
+      (target.vipTokenCost ?? (target.requestKind === "vip" ? 1 : 0)) ===
+        nextVipTokenCost
+    ) {
       return {
         ok: true,
         playlistId: playlist.id,
@@ -437,32 +551,56 @@ class D1PlaylistCoordinator implements PlaylistCoordinator {
       };
     }
 
-    const nextQueuedPositions = getUpdatedQueuedPositionsAfterKindChange({
-      items,
-      playlistCurrentItemId: playlist.currentItemId,
-      targetItemId: input.itemId,
-      requestKind: input.requestKind,
-    });
+    const requestKindChanged = target.requestKind !== input.requestKind;
+    const nextQueuedPositions = requestKindChanged
+      ? getUpdatedQueuedPositionsAfterKindChange({
+          items,
+          playlistCurrentItemId: playlist.currentItemId,
+          targetItemId: input.itemId,
+          requestKind: input.requestKind,
+        })
+      : null;
 
     await db
       .update(playlistItems)
       .set({
         requestKind: input.requestKind,
+        vipTokenCost: nextVipTokenCost,
         updatedAt: Date.now(),
       })
       .where(eq(playlistItems.id, input.itemId));
 
-    await this.reindexPlaylistItems(nextQueuedPositions);
+    if (nextQueuedPositions) {
+      await this.reindexPlaylistItems(nextQueuedPositions);
+    }
+
+    if (requestKindChanged) {
+      if (input.requestKind === "vip") {
+        await this.syncVipRequestCooldownForVipItem({
+          channelId: input.channelId,
+          itemId: target.id,
+          requestedByLogin: target.requestedByLogin,
+          requestedByDisplayName: target.requestedByDisplayName,
+          requestedByTwitchUserId: target.requestedByTwitchUserId,
+        });
+      } else {
+        await this.clearVipRequestCooldownForSourceItem(
+          input.channelId,
+          target.id
+        );
+      }
+    }
 
     await this.audit(
       input.channelId,
       input.actorUserId,
-      input.requestKind === "vip"
+      requestKindChanged && input.requestKind === "vip"
         ? "request_upgraded_to_vip"
         : "request_downgraded_to_regular",
       input.itemId,
       {
         requestKind: input.requestKind,
+        vipTokenCost: nextVipTokenCost,
       }
     );
     await this.notify(input.channelId);
@@ -473,9 +611,11 @@ class D1PlaylistCoordinator implements PlaylistCoordinator {
       currentItemId: playlist.currentItemId,
       changedItemId: input.itemId,
       message:
-        input.requestKind === "vip"
+        requestKindChanged && input.requestKind === "vip"
           ? "Request upgraded to VIP"
-          : "Request changed to regular",
+          : requestKindChanged
+            ? "Request changed to regular"
+            : "Request VIP token cost updated",
     };
   }
 
@@ -522,6 +662,8 @@ class D1PlaylistCoordinator implements PlaylistCoordinator {
         warningMessage: input.song.warningMessage ?? null,
         candidateMatchesJson: input.song.candidateMatchesJson ?? null,
         requestKind: input.requestKind,
+        vipTokenCost:
+          input.vipTokenCost ?? (input.requestKind === "vip" ? 1 : 0),
         editedAt: Date.now(),
         updatedAt: Date.now(),
       })
@@ -529,6 +671,23 @@ class D1PlaylistCoordinator implements PlaylistCoordinator {
 
     if (nextQueuedPositions) {
       await this.reindexPlaylistItems(nextQueuedPositions);
+    }
+
+    if (target.requestKind !== input.requestKind) {
+      if (input.requestKind === "vip") {
+        await this.syncVipRequestCooldownForVipItem({
+          channelId: input.channelId,
+          itemId: target.id,
+          requestedByLogin: target.requestedByLogin,
+          requestedByDisplayName: target.requestedByDisplayName,
+          requestedByTwitchUserId: target.requestedByTwitchUserId,
+        });
+      } else {
+        await this.clearVipRequestCooldownForSourceItem(
+          input.channelId,
+          target.id
+        );
+      }
     }
 
     await this.audit(
@@ -720,6 +879,10 @@ class D1PlaylistCoordinator implements PlaylistCoordinator {
         regularPosition: regularPositionMap.get(item.id) ?? index + 1,
       }))
     );
+    await this.clearVipRequestCooldownsForSourceItems(
+      input.channelId,
+      removable.map((item) => item.id)
+    );
 
     const removedSongIds = new Set(
       removable
@@ -905,6 +1068,7 @@ class D1PlaylistCoordinator implements PlaylistCoordinator {
       requestedByLogin: current.requestedByLogin,
       requestedByDisplayName: current.requestedByDisplayName,
       requestKind: current.requestKind,
+      vipTokenCost: current.vipTokenCost ?? 0,
       requestedAt: current.createdAt,
       playedAt: Date.now(),
     });
@@ -1264,6 +1428,10 @@ class D1PlaylistCoordinator implements PlaylistCoordinator {
         regularPosition: regularPositionMap.get(item.id) ?? index + 1,
       }))
     );
+    await this.clearVipRequestCooldownForSourceItem(
+      input.channelId,
+      input.itemId
+    );
 
     const nextCurrent =
       playlist.currentItemId === input.itemId ? null : playlist.currentItemId;
@@ -1431,17 +1599,15 @@ class D1PlaylistCoordinator implements PlaylistCoordinator {
     input: ClearPlaylistInput
   ): Promise<PlaylistMutationResult> {
     const db = getDb(this.env);
-    const playlist = await db.query.playlists.findFirst({
-      where: eq(playlists.channelId, input.channelId),
-    });
-
-    if (!playlist) {
-      throw new Error("Playlist not found");
-    }
+    const { playlist, items } = await this.getPlaylist(input.channelId);
 
     await db
       .delete(playlistItems)
       .where(eq(playlistItems.playlistId, playlist.id));
+    await this.clearVipRequestCooldownsForSourceItems(
+      input.channelId,
+      items.map((item) => item.id)
+    );
     await db
       .update(playlists)
       .set({
@@ -1471,17 +1637,15 @@ class D1PlaylistCoordinator implements PlaylistCoordinator {
     input: ResetSessionInput
   ): Promise<PlaylistMutationResult> {
     const db = getDb(this.env);
-    const playlist = await db.query.playlists.findFirst({
-      where: eq(playlists.channelId, input.channelId),
-    });
-
-    if (!playlist) {
-      throw new Error("Playlist not found");
-    }
+    const { playlist, items } = await this.getPlaylist(input.channelId);
 
     await db
       .delete(playlistItems)
       .where(eq(playlistItems.playlistId, playlist.id));
+    await this.clearVipRequestCooldownsForSourceItems(
+      input.channelId,
+      items.map((item) => item.id)
+    );
     await db
       .update(playlists)
       .set({

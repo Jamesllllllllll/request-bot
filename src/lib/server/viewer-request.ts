@@ -15,6 +15,7 @@ import {
   getChannelSettingsByChannelId,
   getPlaylistByChannelId,
   getUserById,
+  getVipRequestCooldown,
   getVipTokenBalance,
   grantVipToken,
   isBlockedUser,
@@ -44,6 +45,17 @@ import {
 } from "~/lib/request-policy";
 import { getBroadcasterSubscriptions, TwitchApiError } from "~/lib/twitch/api";
 import { createId, getErrorMessage } from "~/lib/utils";
+import {
+  formatVipRequestCooldownCountdown,
+  getVipRequestCooldownCountdown,
+  isVipRequestCooldownEnabled,
+} from "~/lib/vip-request-cooldowns";
+import {
+  formatVipTokenCostLabel,
+  getEffectiveVipTokenCost,
+  getRequiredVipTokenCostForSong,
+  parseVipTokenDurationThresholds,
+} from "~/lib/vip-token-duration-thresholds";
 import { hasRedeemableVipToken } from "~/lib/vip-tokens";
 
 type ViewerRequestKind = "regular" | "vip";
@@ -59,6 +71,7 @@ export type ViewerRequestMutationInput =
       query?: never;
       itemId?: string;
       requestKind: ViewerRequestKind;
+      vipTokenCost?: number;
       replaceExisting: boolean;
     }
   | {
@@ -67,6 +80,7 @@ export type ViewerRequestMutationInput =
       requestMode: "random" | "choice";
       songId?: never;
       requestKind: ViewerRequestKind;
+      vipTokenCost?: number;
       replaceExisting: boolean;
       itemId?: string;
     }
@@ -114,6 +128,7 @@ type ViewerRequestContext = {
   subscription: SubscriptionResolution;
   access: ViewerRequestAccess;
   vipTokensAvailable: number;
+  vipRequestCooldown: Awaited<ReturnType<typeof getVipRequestCooldown>> | null;
   activeRequestLimit: number | null;
   isBlocked: boolean;
 };
@@ -323,6 +338,7 @@ async function loadViewerRequestContext(
     blocked,
     subscription,
     balance,
+    vipRequestCooldown,
   ] = await Promise.all([
     getChannelSettingsByChannelId(env, channel.id),
     getPlaylistByChannelId(env, channel.id),
@@ -333,6 +349,10 @@ async function loadViewerRequestContext(
     isBlockedUser(env, channel.id, viewer.twitchUserId),
     resolveViewerSubscription(env, channel.id, channel.twitchChannelId, viewer),
     getVipTokenBalance(env, {
+      channelId: channel.id,
+      login: viewer.login,
+    }),
+    getVipRequestCooldown(env, {
       channelId: channel.id,
       login: viewer.login,
     }),
@@ -385,6 +405,7 @@ async function loadViewerRequestContext(
     subscription,
     access,
     vipTokensAvailable: balance?.availableCount ?? 0,
+    vipRequestCooldown,
     activeRequestLimit: Number.isFinite(limit) ? limit : null,
     isBlocked: blocked,
   };
@@ -569,13 +590,16 @@ function findViewerMatchingChoiceRequest(input: {
 function formatViewerChoiceRequest(input: {
   requestedText: string;
   requestKind: ViewerRequestKind;
+  vipTokenCost?: number;
   status?: string | null;
   existing?: boolean;
   editing?: boolean;
 }) {
+  const vipTokenCostSuffix = getVipTokenCostMessageSuffix(input.vipTokenCost);
+
   if (input.editing) {
     return input.requestKind === "vip"
-      ? `Edited your request to streamer choice "${input.requestedText}" as a VIP request.`
+      ? `Edited your request to streamer choice "${input.requestedText}" as a VIP request${vipTokenCostSuffix}.`
       : `Edited your request to streamer choice "${input.requestedText}".`;
   }
 
@@ -584,8 +608,8 @@ function formatViewerChoiceRequest(input: {
       input.status === "current" ? "." : " and will play next.";
 
     return input.existing
-      ? `Your streamer choice request "${input.requestedText}" is now marked as VIP${nextPositionSuffix}`
-      : `Added streamer choice "${input.requestedText}" as a VIP request${nextPositionSuffix}`;
+      ? `Your streamer choice request "${input.requestedText}" is now marked as VIP${vipTokenCostSuffix}${nextPositionSuffix}`
+      : `Added streamer choice "${input.requestedText}" as a VIP request${vipTokenCostSuffix}${nextPositionSuffix}`;
   }
 
   return input.existing
@@ -789,6 +813,15 @@ async function removeViewerRequests(
     };
   }
 
+  const removableQueuedRequests = queuedRequests.filter(
+    (item) =>
+      (!input.itemId || item.id === input.itemId) && item.status === "queued"
+  );
+  const refundableVipTokenCount = removableQueuedRequests.reduce(
+    (total, item) => total + getStoredVipTokenCost(item),
+    0
+  );
+
   const result = await removeRequestsFromPlaylist(env, {
     channelId: context.state.channel.id,
     requesterTwitchUserId: context.viewer.twitchUserId,
@@ -797,6 +830,34 @@ async function removeViewerRequests(
     kind: input.kind,
     itemId: input.itemId,
   });
+
+  if (refundableVipTokenCount > 0) {
+    try {
+      await grantVipToken(env, {
+        channelId: context.state.channel.id,
+        login: context.viewer.login,
+        displayName: context.viewer.displayName,
+        twitchUserId: context.viewer.twitchUserId,
+        count: refundableVipTokenCount,
+      });
+    } catch (error) {
+      console.error(
+        "Failed to refund VIP tokens after removing viewer request",
+        {
+          channelId: context.state.channel.id,
+          viewerTwitchUserId: context.viewer.twitchUserId,
+          login: context.viewer.login,
+          refundableVipTokenCount,
+          error: error instanceof Error ? error.message : String(error),
+        }
+      );
+
+      throw new ViewerRequestError(
+        500,
+        "The request was removed, but the VIP token refund could not be completed. Refresh and check your balance."
+      );
+    }
+  }
 
   return {
     ok: true,
@@ -889,8 +950,22 @@ async function submitViewerRequest(
     source: options?.source ?? "web",
     replaceExisting: mutation.replaceExisting,
     requestKind: mutation.requestKind,
+    vipTokenCost: mutation.vipTokenCost,
     query: normalizedQuery,
     requestMode,
+  });
+  const vipTokenDurationThresholds = parseVipTokenDurationThresholds(
+    context.state.settings.vipTokenDurationThresholdsJson
+  );
+  const requiredSongVipTokenCost = getRequiredVipTokenCostForSong(
+    song,
+    vipTokenDurationThresholds
+  );
+  const nextVipTokenCost = getEffectiveVipTokenCost({
+    requestKind: mutation.requestKind,
+    explicitVipTokenCost: mutation.vipTokenCost,
+    song,
+    thresholds: vipTokenDurationThresholds,
   });
 
   const existingActiveCount = await countActiveRequestsForUser(env, {
@@ -955,11 +1030,20 @@ async function submitViewerRequest(
               (item.status === "queued" || item.status === "current")
           ) ?? null)
         : null;
-
+  const matchingRequestStoredVipTokenCost = existingMatchingRequest
+    ? getStoredVipTokenCost(existingMatchingRequest)
+    : 0;
   const kindChangeOnly =
     existingMatchingRequest != null &&
     existingMatchingRequest.requestKind !== mutation.requestKind &&
     !mutation.replaceExisting;
+  const vipTokenCostChangeOnly =
+    existingMatchingRequest != null &&
+    existingMatchingRequest.requestKind === mutation.requestKind &&
+    matchingRequestStoredVipTokenCost !== nextVipTokenCost &&
+    !mutation.replaceExisting;
+  const updateExistingMatchingRequest =
+    kindChangeOnly || vipTokenCostChangeOnly;
   const editTarget = editableExistingRequest;
   const editInPlace = editTarget != null;
   const matchingDifferentExistingRequest = editTarget
@@ -988,15 +1072,26 @@ async function submitViewerRequest(
   const editingSameSong =
     editTarget != null && song != null && editTarget.songId === song.id;
   const editingSameResolvedRequest = editingSameSong || editingSameChoice;
-  const previousRequestKind = editTarget
-    ? editTarget.requestKind
-    : kindChangeOnly && existingMatchingRequest
-      ? existingMatchingRequest.requestKind
-      : null;
-  const vipTokenTransition = getVipTokenTransition(
-    previousRequestKind,
-    mutation.requestKind
-  );
+  const editTargetStoredVipTokenCost = editTarget
+    ? getStoredVipTokenCost(editTarget)
+    : 0;
+  const previousVipTokenCost = editTarget
+    ? editTargetStoredVipTokenCost
+    : updateExistingMatchingRequest && existingMatchingRequest
+      ? matchingRequestStoredVipTokenCost
+      : 0;
+  const replacedQueuedVipTokenCost =
+    mutation.replaceExisting && !editInPlace && !updateExistingMatchingRequest
+      ? existingQueuedRequests.reduce(
+          (total, item) => total + getStoredVipTokenCost(item),
+          0
+        )
+      : 0;
+  const vipTokenDelta =
+    nextVipTokenCost -
+    (updateExistingMatchingRequest || editInPlace
+      ? previousVipTokenCost
+      : replacedQueuedVipTokenCost);
 
   if (matchingDifferentExistingRequest) {
     await createViewerRequestLog(env, {
@@ -1019,6 +1114,7 @@ async function submitViewerRequest(
   if (
     existingMatchingRequest &&
     existingMatchingRequest.requestKind === mutation.requestKind &&
+    matchingRequestStoredVipTokenCost === nextVipTokenCost &&
     !mutation.replaceExisting
   ) {
     await createViewerRequestLog(env, {
@@ -1039,7 +1135,7 @@ async function submitViewerRequest(
   }
 
   if (
-    kindChangeOnly &&
+    updateExistingMatchingRequest &&
     existingMatchingRequest &&
     existingMatchingRequest.status === "current"
   ) {
@@ -1052,7 +1148,8 @@ async function submitViewerRequest(
   if (
     editTarget &&
     editingSameResolvedRequest &&
-    editTarget.requestKind === mutation.requestKind
+    editTarget.requestKind === mutation.requestKind &&
+    editTargetStoredVipTokenCost === nextVipTokenCost
   ) {
     await createViewerRequestLog(env, {
       context,
@@ -1081,7 +1178,7 @@ async function submitViewerRequest(
   if (
     activeLimit != null &&
     effectiveActiveCount >= activeLimit &&
-    !kindChangeOnly
+    !updateExistingMatchingRequest
   ) {
     const message = `You already have ${activeLimit} active request${activeLimit === 1 ? "" : "s"} in this playlist.`;
     await createViewerRequestLog(env, {
@@ -1123,9 +1220,63 @@ async function submitViewerRequest(
     }
   }
 
+  if (mutation.requestKind !== "vip" && requiredSongVipTokenCost > 0) {
+    await createViewerRequestLog(env, {
+      context,
+      rawMessage,
+      normalizedQuery,
+      song,
+      outcome: "rejected",
+      outcomeReason: "vip_token_required_by_duration",
+    });
+
+    throw new ViewerRequestError(
+      409,
+      `This song requires ${formatVipTokenCostLabel(requiredSongVipTokenCost)}. Use a VIP request instead.`
+    );
+  }
+
+  const cooldownSourceItemId = context.vipRequestCooldown?.sourceItemId ?? null;
+  const canBypassVipRequestCooldown =
+    cooldownSourceItemId != null &&
+    ((updateExistingMatchingRequest &&
+      existingMatchingRequest?.id === cooldownSourceItemId) ||
+      editTarget?.id === cooldownSourceItemId ||
+      (mutation.replaceExisting &&
+        !editInPlace &&
+        !updateExistingMatchingRequest &&
+        existingQueuedRequests.some(
+          (item) => item.id === cooldownSourceItemId
+        )));
+
   if (
-    vipTokenTransition === "consume" &&
-    !hasRedeemableVipToken(context.vipTokensAvailable)
+    mutation.requestKind === "vip" &&
+    isVipRequestCooldownEnabled(context.state.settings) &&
+    context.vipRequestCooldown &&
+    !canBypassVipRequestCooldown
+  ) {
+    const countdown = getVipRequestCooldownCountdown(
+      context.vipRequestCooldown.cooldownExpiresAt
+    );
+
+    await createViewerRequestLog(env, {
+      context,
+      rawMessage,
+      normalizedQuery,
+      song,
+      outcome: "rejected",
+      outcomeReason: "vip_request_cooldown",
+    });
+
+    throw new ViewerRequestError(
+      409,
+      getViewerVipRequestCooldownMessage(countdown)
+    );
+  }
+
+  if (
+    vipTokenDelta > 0 &&
+    !hasRedeemableVipToken(context.vipTokensAvailable, vipTokenDelta)
   ) {
     await createViewerRequestLog(env, {
       context,
@@ -1138,7 +1289,11 @@ async function submitViewerRequest(
 
     throw new ViewerRequestError(
       409,
-      "You do not have enough VIP tokens for a VIP request."
+      getVipTokenShortageMessage({
+        requestedVipTokenCost: nextVipTokenCost,
+        additionalVipTokenCost: vipTokenDelta,
+        availableVipTokens: context.vipTokensAvailable,
+      })
     );
   }
 
@@ -1183,7 +1338,7 @@ async function submitViewerRequest(
 
   if (
     song &&
-    !kindChangeOnly &&
+    !updateExistingMatchingRequest &&
     !editingSameResolvedRequest &&
     context.state.settings.duplicateWindowSeconds > 0 &&
     (await wasSongRequestedRecently(env, {
@@ -1207,7 +1362,7 @@ async function submitViewerRequest(
     );
   }
 
-  if (!kindChangeOnly && !editInPlace) {
+  if (!updateExistingMatchingRequest && !editInPlace) {
     const queueCount = context.state.playlist.items.length;
     const effectiveQueueCount = mutation.replaceExisting
       ? Math.max(0, queueCount - existingActiveCount)
@@ -1228,7 +1383,7 @@ async function submitViewerRequest(
   }
 
   const reserveVipToken = async () => {
-    if (vipTokenTransition !== "consume") {
+    if (vipTokenDelta <= 0) {
       return false;
     }
 
@@ -1237,6 +1392,7 @@ async function submitViewerRequest(
       login: context.viewer.login,
       displayName: context.viewer.displayName,
       twitchUserId: context.viewer.twitchUserId,
+      count: vipTokenDelta,
     });
 
     if (reserved) {
@@ -1254,12 +1410,16 @@ async function submitViewerRequest(
 
     throw new ViewerRequestError(
       409,
-      "You do not have enough VIP tokens for a VIP request."
+      getVipTokenShortageMessage({
+        requestedVipTokenCost: nextVipTokenCost,
+        additionalVipTokenCost: vipTokenDelta,
+        availableVipTokens: context.vipTokensAvailable,
+      })
     );
   };
 
   const refundReservedVipToken = async () => {
-    if (vipTokenTransition !== "consume") {
+    if (vipTokenDelta <= 0) {
       return;
     }
 
@@ -1269,6 +1429,7 @@ async function submitViewerRequest(
         login: context.viewer.login,
         displayName: context.viewer.displayName,
         twitchUserId: context.viewer.twitchUserId,
+        count: vipTokenDelta,
       });
     } catch (error) {
       console.error(
@@ -1288,7 +1449,7 @@ async function submitViewerRequest(
     }
   };
 
-  if (kindChangeOnly && existingMatchingRequest) {
+  if (updateExistingMatchingRequest && existingMatchingRequest) {
     const vipReserved = await reserveVipToken();
 
     try {
@@ -1297,6 +1458,7 @@ async function submitViewerRequest(
         itemId: existingMatchingRequest.id,
         actorUserId: null,
         requestKind: mutation.requestKind,
+        vipTokenCost: nextVipTokenCost,
       });
     } catch (error) {
       if (vipReserved) {
@@ -1317,12 +1479,13 @@ async function submitViewerRequest(
           : "vip_request_downgrade",
     });
 
-    if (vipTokenTransition === "refund") {
+    if (vipTokenDelta < 0) {
       await grantVipToken(env, {
         channelId: context.state.channel.id,
         login: context.viewer.login,
         displayName: context.viewer.displayName,
         twitchUserId: context.viewer.twitchUserId,
+        count: Math.abs(vipTokenDelta),
       });
     }
 
@@ -1333,13 +1496,14 @@ async function submitViewerRequest(
           ? formatViewerChoiceRequest({
               requestedText: specialRequestText,
               requestKind: mutation.requestKind,
+              vipTokenCost: nextVipTokenCost,
               status: existingMatchingRequest.status,
               existing: true,
             })
           : mutation.requestKind === "vip"
             ? existingMatchingRequest.status === "current"
-              ? `Your request "${formatSong(song as CatalogSong)}" is now marked as VIP.`
-              : `Your request "${formatSong(song as CatalogSong)}" is now marked as VIP and will play next.`
+              ? `Your request "${formatSong(song as CatalogSong)}" is now marked as VIP${getVipTokenCostMessageSuffix(nextVipTokenCost)}.`
+              : `Your request "${formatSong(song as CatalogSong)}" is now marked as VIP${getVipTokenCostMessageSuffix(nextVipTokenCost)} and will play next.`
             : `Your request "${formatSong(song as CatalogSong)}" is now a regular request again.`,
     };
   }
@@ -1353,6 +1517,7 @@ async function submitViewerRequest(
         itemId: editableExistingRequest.id,
         actorUserId: null,
         requestKind: mutation.requestKind,
+        vipTokenCost: nextVipTokenCost,
         song:
           requestMode === "choice"
             ? buildViewerChoiceSongPayload(specialRequestText)
@@ -1379,12 +1544,13 @@ async function submitViewerRequest(
       outcomeReason: warningCode ?? "request_edited",
     });
 
-    if (vipTokenTransition === "refund") {
+    if (vipTokenDelta < 0) {
       await grantVipToken(env, {
         channelId: context.state.channel.id,
         login: context.viewer.login,
         displayName: context.viewer.displayName,
         twitchUserId: context.viewer.twitchUserId,
+        count: Math.abs(vipTokenDelta),
       });
     }
 
@@ -1393,10 +1559,11 @@ async function submitViewerRequest(
         ? formatViewerChoiceRequest({
             requestedText: specialRequestText,
             requestKind: mutation.requestKind,
+            vipTokenCost: nextVipTokenCost,
             editing: true,
           })
         : mutation.requestKind === "vip"
-          ? `Edited your request to "${formatSong(song as CatalogSong)}" as a VIP request.`
+          ? `Edited your request to "${formatSong(song as CatalogSong)}" as a VIP request${getVipTokenCostMessageSuffix(nextVipTokenCost)}.`
           : `Edited your request to "${formatSong(song as CatalogSong)}".`;
 
     return {
@@ -1427,6 +1594,7 @@ async function submitViewerRequest(
       requestedByDisplayName: context.viewer.displayName,
       prioritizeNext: mutation.requestKind === "vip",
       requestKind: mutation.requestKind,
+      vipTokenCost: nextVipTokenCost,
       song:
         requestMode === "choice"
           ? buildViewerChoiceSongPayload(specialRequestText)
@@ -1454,14 +1622,25 @@ async function submitViewerRequest(
       warningCode ?? (mutation.requestKind === "vip" ? "vip_request" : null),
   });
 
+  if (vipTokenDelta < 0) {
+    await grantVipToken(env, {
+      channelId: context.state.channel.id,
+      login: context.viewer.login,
+      displayName: context.viewer.displayName,
+      twitchUserId: context.viewer.twitchUserId,
+      count: Math.abs(vipTokenDelta),
+    });
+  }
+
   const baseMessage =
     requestMode === "choice"
       ? formatViewerChoiceRequest({
           requestedText: specialRequestText,
           requestKind: mutation.requestKind,
+          vipTokenCost: nextVipTokenCost,
         })
       : mutation.requestKind === "vip"
-        ? `Added "${formatSong(song as CatalogSong)}" as a VIP request.`
+        ? `Added "${formatSong(song as CatalogSong)}" as a VIP request${getVipTokenCostMessageSuffix(nextVipTokenCost)}.`
         : `Added "${formatSong(song as CatalogSong)}" to the playlist.`;
 
   return {
@@ -1528,6 +1707,7 @@ async function addRequestToPlaylist(
     requestedByDisplayName: string;
     prioritizeNext?: boolean;
     requestKind: ViewerRequestKind;
+    vipTokenCost?: number;
     song: ViewerSongPayload;
   }
 ) {
@@ -1555,6 +1735,7 @@ async function changeRequestKindOnPlaylist(
     itemId: string;
     actorUserId: string | null;
     requestKind: ViewerRequestKind;
+    vipTokenCost?: number;
   }
 ) {
   return callPlaylistMutation(env, "/internal/playlist/mutate", {
@@ -1570,6 +1751,7 @@ async function editRequestOnPlaylist(
     itemId: string;
     actorUserId: string | null;
     requestKind: ViewerRequestKind;
+    vipTokenCost?: number;
     song: ViewerSongPayload;
   }
 ) {
@@ -1616,10 +1798,11 @@ function buildViewerRawMessage(input: {
   source: ViewerRequestSource;
   replaceExisting: boolean;
   requestKind: ViewerRequestKind;
+  vipTokenCost?: number;
   query: string;
   requestMode?: "catalog" | "random" | "choice";
 }) {
-  return `${input.source}:${input.replaceExisting ? "edit" : "request"}:${input.requestKind}:${input.requestMode ?? "catalog"}:${input.query}`;
+  return `${input.source}:${input.replaceExisting ? "edit" : "request"}:${input.requestKind}:${input.requestMode ?? "catalog"}:${input.query}${input.requestKind === "vip" && (input.vipTokenCost ?? 1) > 1 ? ` *${input.vipTokenCost}` : ""}`;
 }
 
 function buildViewerSongPayload(input: {
@@ -1648,23 +1831,53 @@ function buildViewerSongPayload(input: {
   };
 }
 
-function getVipTokenTransition(
-  previousRequestKind: string | null,
-  nextRequestKind: ViewerRequestKind
+function getStoredVipTokenCost(input: {
+  requestKind?: string | null;
+  vipTokenCost?: number | null;
+}) {
+  if (
+    typeof input.vipTokenCost === "number" &&
+    Number.isFinite(input.vipTokenCost) &&
+    input.vipTokenCost > 0
+  ) {
+    return Math.trunc(input.vipTokenCost);
+  }
+
+  return input.requestKind === "vip" ? 1 : 0;
+}
+
+function getVipTokenCostMessageSuffix(vipTokenCost?: number | null) {
+  if (vipTokenCost == null || vipTokenCost <= 1) {
+    return "";
+  }
+
+  return ` for ${formatVipTokenCostLabel(vipTokenCost)}`;
+}
+
+function getVipTokenShortageMessage(input: {
+  requestedVipTokenCost: number;
+  additionalVipTokenCost: number;
+  availableVipTokens: number;
+}) {
+  if (input.additionalVipTokenCost > 0 && input.requestedVipTokenCost > 0) {
+    if (input.requestedVipTokenCost === input.additionalVipTokenCost) {
+      return `You need ${formatVipTokenCostLabel(input.requestedVipTokenCost)} for this VIP request. You currently have ${input.availableVipTokens}.`;
+    }
+
+    return `You need ${formatVipTokenCostLabel(input.additionalVipTokenCost)} more for this change. You currently have ${input.availableVipTokens}.`;
+  }
+
+  return "You do not have enough VIP tokens for this request.";
+}
+
+function getViewerVipRequestCooldownMessage(
+  countdown: ReturnType<typeof getVipRequestCooldownCountdown>
 ) {
-  if (previousRequestKind === nextRequestKind) {
-    return "none" as const;
+  if (!countdown) {
+    return "Wait a little longer before adding another VIP request.";
   }
 
-  if (nextRequestKind === "vip") {
-    return "consume" as const;
-  }
-
-  if (previousRequestKind === "vip") {
-    return "refund" as const;
-  }
-
-  return "none" as const;
+  return `Wait ${formatVipRequestCooldownCountdown(countdown)} before adding another VIP request.`;
 }
 
 function formatSong(

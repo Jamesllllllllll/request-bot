@@ -1,5 +1,6 @@
 import { AnimatePresence, motion } from "motion/react";
 import type { CSSProperties } from "react";
+import { PickOrderBadge } from "~/components/pick-order-badge";
 import { decodeHtmlEntities, hexToRgba } from "~/lib/utils";
 
 export type StreamOverlayItem = {
@@ -42,6 +43,7 @@ export function StreamOverlay(props: {
   channelName: string;
   items: StreamOverlayItem[];
   theme: StreamOverlayTheme;
+  showPickOrderBadges?: boolean;
   preview?: boolean;
 }) {
   const maxVisibleItems = 5;
@@ -100,6 +102,7 @@ export function StreamOverlay(props: {
                     transparentBackground={
                       props.theme.overlayBackgroundOpacity === 0
                     }
+                    showPickOrderBadges={!!props.showPickOrderBadges}
                     animateRecord={
                       props.theme.overlayAnimateNowPlaying &&
                       item.status === "current"
@@ -119,6 +122,7 @@ function OverlayCard(props: {
   item: StreamOverlayItem;
   theme: StreamOverlayTheme;
   transparentBackground: boolean;
+  showPickOrderBadges: boolean;
   animateRecord: boolean;
   fadeOut?: boolean;
 }) {
@@ -221,8 +225,11 @@ function OverlayCard(props: {
             </>
           )}
           <div className="mt-2 flex flex-wrap items-center gap-2">
-            {props.item.pickNumber && props.item.pickNumber <= 3 ? (
-              <PickBadge pickNumber={props.item.pickNumber} />
+            {props.showPickOrderBadges && props.item.pickNumber != null ? (
+              <PickOrderBadge
+                pickNumber={props.item.pickNumber}
+                variant="overlay"
+              />
             ) : null}
           </div>
         </div>
@@ -294,36 +301,5 @@ function VipTag() {
     >
       VIP
     </div>
-  );
-}
-
-function PickBadge(props: { pickNumber: number }) {
-  const tone =
-    props.pickNumber === 1
-      ? {
-          label: "1st pick",
-          background: "#16a34a",
-          icon: "✓",
-        }
-      : props.pickNumber === 2
-        ? {
-            label: "2nd pick",
-            background: "#eab308",
-            icon: "!",
-          }
-        : {
-            label: "3rd pick",
-            background: "#f97316",
-            icon: "!",
-          };
-
-  return (
-    <span
-      className="inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.18em] text-white"
-      style={{ background: tone.background }}
-    >
-      <span>{tone.icon}</span>
-      <span>{tone.label}</span>
-    </span>
   );
 }

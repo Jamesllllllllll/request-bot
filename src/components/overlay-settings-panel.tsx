@@ -16,6 +16,7 @@ import {
 import { Checkbox } from "~/components/ui/checkbox";
 import { Input } from "~/components/ui/input";
 import { useLocaleTranslation } from "~/lib/i18n/client";
+import { getPickNumbersForQueuedItems } from "~/lib/pick-order";
 import { getErrorMessage, hexToRgba } from "~/lib/utils";
 import type { OverlaySettingsInputData } from "~/lib/validation";
 
@@ -46,10 +47,21 @@ type PlaylistData = {
     requestedByLogin?: string | null;
     status: string;
   }>;
+  showPickOrderBadges?: boolean;
 };
 
 type ChannelPlaylistPreviewResponse = {
   items?: PlaylistData["items"];
+  playedSongs?: Array<{
+    requestedByTwitchUserId?: string | null;
+    requestedByLogin?: string | null;
+    requestedAt?: number | null;
+    playedAt?: number | null;
+    createdAt?: number | null;
+  }>;
+  settings?: {
+    showPickOrderBadges?: boolean;
+  };
 };
 
 const defaultOverlayForm: OverlaySettingsInputData = {
@@ -135,8 +147,18 @@ export function OverlaySettingsPanel() {
         throw new Error(t("overlay.states.failedPreview"));
       }
 
+      const items = body?.items ?? [];
+      const pickNumbers = getPickNumbersForQueuedItems(
+        items,
+        body?.playedSongs ?? []
+      );
+
       return {
-        items: body?.items ?? [],
+        items: items.map((item, index) => ({
+          ...item,
+          pickNumber: pickNumbers[index] ?? null,
+        })),
+        showPickOrderBadges: !!body?.settings?.showPickOrderBadges,
       } satisfies PlaylistData;
     },
     enabled: !!overlayQuery.data?.channel.slug,
@@ -536,6 +558,9 @@ export function OverlaySettingsPanel() {
                       })}
                       items={previewItems}
                       theme={previewTheme}
+                      showPickOrderBadges={
+                        playlistQuery.data?.showPickOrderBadges ?? false
+                      }
                     />
                   </div>
                 </div>

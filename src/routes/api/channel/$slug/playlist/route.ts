@@ -73,6 +73,9 @@ export const Route = createFileRoute("/api/channel/$slug/playlist")({
                   false,
                 requiredPathsJson:
                   managementState.settings?.requiredPathsJson ?? "[]",
+                vipTokenDurationThresholdsJson:
+                  managementState.settings?.vipTokenDurationThresholdsJson ??
+                  "[]",
                 requiredPathsMatchMode:
                   managementState.settings?.requiredPathsMatchMode ?? "any",
                 canManageRequests: canManageChannelRequests(managementState),
@@ -113,6 +116,8 @@ export const Route = createFileRoute("/api/channel/$slug/playlist")({
                     ?.streamElementsTipAmountPerVipToken ?? 5,
                 showPlaylistPositions:
                   managementState.settings?.showPlaylistPositions ?? false,
+                showPickOrderBadges:
+                  managementState.settings?.showPickOrderBadges ?? false,
               },
               items: await enrichPlaylistItems(
                 runtimeEnv,
@@ -150,6 +155,8 @@ export const Route = createFileRoute("/api/channel/$slug/playlist")({
               subscribersMustFollowSetlist:
                 settings?.subscribersMustFollowSetlist ?? false,
               requiredPathsJson: settings?.requiredPathsJson ?? "[]",
+              vipTokenDurationThresholdsJson:
+                settings?.vipTokenDurationThresholdsJson ?? "[]",
               requiredPathsMatchMode: settings?.requiredPathsMatchMode ?? "any",
               canManageRequests: false,
               canManageBlacklist: false,
@@ -178,6 +185,7 @@ export const Route = createFileRoute("/api/channel/$slug/playlist")({
               streamElementsTipAmountPerVipToken:
                 settings?.streamElementsTipAmountPerVipToken ?? 5,
               showPlaylistPositions: settings?.showPlaylistPositions ?? false,
+              showPickOrderBadges: settings?.showPickOrderBadges ?? false,
             },
             items: await enrichPlaylistItems(runtimeEnv, playlist?.items ?? []),
             playedSongs: playedRows,

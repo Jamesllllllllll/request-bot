@@ -42,12 +42,15 @@ export interface ChannelRequestSettings {
   limitVipRequestsEnabled: boolean;
   vipRequestsPerPeriod: number;
   vipRequestPeriodSeconds: number;
+  vipRequestCooldownEnabled?: boolean;
+  vipRequestCooldownMinutes?: number;
   blacklistEnabled: boolean;
   letSetlistBypassBlacklist: boolean;
   setlistEnabled: boolean;
   subscribersMustFollowSetlist: boolean;
   autoGrantVipTokenToSubscribers: boolean;
   allowRequestPathModifiers: boolean;
+  vipTokenDurationThresholdsJson?: string | null;
   commandPrefix: string;
 }
 
@@ -401,7 +404,7 @@ export function buildHowMessage(input: {
     input.translate?.("commands.how.commands", {
       commandPrefix: normalized,
     }) ??
-      `Commands: ${normalized}sr artist - song; ${normalized}sr artist *random; ${normalized}sr artist *choice; ${normalized}vip; ${normalized}vip artist - song; ${normalized}edit artist - song; ${normalized}remove reg|vip|all; ${normalized}position.`,
+      `Commands: ${normalized}sr artist - song; ${normalized}sr artist *random; ${normalized}sr artist *choice; ${normalized}vip; ${normalized}vip artist - song; ${normalized}vip artist - song *2; ${normalized}edit #2 artist - song; ${normalized}remove reg|vip|all; ${normalized}position.`,
   ];
   if (input.allowRequestPathModifiers) {
     parts.push(

@@ -32,6 +32,7 @@ import { AnimatePresence, motion } from "motion/react";
 import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import { BlacklistPanel } from "~/components/blacklist-panel";
 import { DashboardPageHeader } from "~/components/dashboard-page-header";
+import { PickOrderBadge } from "~/components/pick-order-badge";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -58,6 +59,7 @@ import {
   formatDate as formatLocaleDate,
   formatNumber,
 } from "~/lib/i18n/format";
+import { getPickNumbersForQueuedItems } from "~/lib/pick-order";
 import {
   formatPlaylistItemSummaryLine,
   getResolvedPlaylistCandidates,
@@ -101,6 +103,7 @@ export type PlaylistItem = {
   warningCode?: string;
   warningMessage?: string;
   candidateMatchesJson?: string;
+  pickNumber?: number | null;
   createdAt: number;
   position: number;
   regularPosition?: number | null;
@@ -238,6 +241,7 @@ type PlaylistQueryData = {
   };
   settings?: {
     canManageBlacklist?: boolean;
+    showPickOrderBadges?: boolean;
   };
   items: PlaylistItem[];
   playedSongs: PlayedSong[];
@@ -342,6 +346,7 @@ export function PlaylistManagementSurface(
         };
         settings?: {
           canManageBlacklist?: boolean;
+          showPickOrderBadges?: boolean;
         };
         items: PlaylistItem[];
         playedSongs: PlayedSong[];
@@ -647,15 +652,23 @@ export function PlaylistManagementSurface(
     },
   });
 
+  const playedSongs = playlistQuery.data?.playedSongs ?? [];
+  const showPickOrderBadges =
+    !!playlistQuery.data?.settings?.showPickOrderBadges;
+  const items = useMemo(() => {
+    const baseItems = playlistQuery.data?.items ?? [];
+    const pickNumbers = getPickNumbersForQueuedItems(baseItems, playedSongs);
+
+    return baseItems.map((item, index) => ({
+      ...item,
+      pickNumber: pickNumbers[index] ?? null,
+    }));
+  }, [playedSongs, playlistQuery.data?.items]);
   const currentItemId = useMemo(
-    () =>
-      playlistQuery.data?.items?.find((item) => item.status === "current")
-        ?.id ?? null,
-    [playlistQuery.data?.items]
+    () => items.find((item) => item.status === "current")?.id ?? null,
+    [items]
   );
 
-  const items = playlistQuery.data?.items ?? [];
-  const playedSongs = playlistQuery.data?.playedSongs ?? [];
   const vipTokens = playlistQuery.data?.vipTokens ?? [];
   const blacklistArtists = playlistQuery.data?.blacklistArtists ?? [];
   const blacklistCharters = playlistQuery.data?.blacklistCharters ?? [];
@@ -1005,6 +1018,7 @@ export function PlaylistManagementSurface(
             draggingItemId={draggingItemId}
             dropTargetState={dropTargetState}
             currentItemId={currentItemId}
+            showPickOrderBadges={showPickOrderBadges}
             canManageBlacklist={canManageBlacklist}
             blacklistedArtistIds={blacklistedArtistIds}
             blacklistedSongIds={blacklistedSongIds}
@@ -1200,6 +1214,7 @@ export function PlaylistManagementSurface(
               draggingItemId={draggingItemId}
               dropTargetState={dropTargetState}
               currentItemId={currentItemId}
+              showPickOrderBadges={showPickOrderBadges}
               canManageBlacklist={canManageBlacklist}
               blacklistedArtistIds={blacklistedArtistIds}
               blacklistedSongIds={blacklistedSongIds}
@@ -1494,6 +1509,7 @@ function CurrentPlaylistRows(props: {
   draggingItemId: string | null;
   dropTargetState: { itemId: string; edge: Edge } | null;
   currentItemId: string | null;
+  showPickOrderBadges: boolean;
   canManageBlacklist: boolean;
   blacklistedArtistIds: Set<number>;
   blacklistedSongIds: Set<number>;
@@ -1549,6 +1565,7 @@ function CurrentPlaylistRows(props: {
             draggingItemId={props.draggingItemId}
             dropTargetState={props.dropTargetState}
             currentItemId={props.currentItemId}
+            showPickOrderBadges={props.showPickOrderBadges}
             isDeletingItem={props.isDeletingItem(item.id)}
             isSetCurrentPending={props.isRowPending("setCurrent", item.id)}
             isReturnToQueuePending={props.isRowPending(
@@ -1822,6 +1839,7 @@ function PlaylistQueueItem(props: {
   draggingItemId: string | null;
   dropTargetState: { itemId: string; edge: Edge } | null;
   currentItemId: string | null;
+  showPickOrderBadges: boolean;
   isDeletingItem: boolean;
   isSetCurrentPending: boolean;
   isReturnToQueuePending: boolean;
@@ -2006,7 +2024,7 @@ function PlaylistQueueItem(props: {
       <div className="flex items-stretch">
         {props.useTouchReorderControls ? (
           <div className="dashboard-playlist__drag-handle inline-flex w-14 shrink-0 self-stretch border-r border-(--border) px-1 py-2">
-            <div className="grid w-full grid-cols-2 gap-1">
+            <div className="grid w-full grid-cols-1 gap-1">
               <TouchReorderButton
                 label={t("management.item.moveTop")}
                 icon={ChevronsUp}
@@ -2082,6 +2100,10 @@ function PlaylistQueueItem(props: {
                     <Badge className="border-violet-400/35 bg-violet-500/15 text-violet-100 hover:bg-violet-500/15">
                       {t("management.item.vipBadge")}
                     </Badge>
+                  ) : null}
+                  {props.showPickOrderBadges &&
+                  props.item.pickNumber != null ? (
+                    <PickOrderBadge pickNumber={props.item.pickNumber} />
                   ) : null}
                   {isCurrentItem ? (
                     <Badge className="border-emerald-400/35 bg-emerald-500/15 text-emerald-200 hover:bg-emerald-500/15">
@@ -2882,6 +2904,7 @@ export function PlaylistQueueItemPreview() {
       draggingItemId={null}
       dropTargetState={null}
       currentItemId={item.status === "current" ? item.id : null}
+      showPickOrderBadges
       isDeletingItem={false}
       isSetCurrentPending={false}
       isReturnToQueuePending={false}

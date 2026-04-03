@@ -36,9 +36,13 @@
     "vipBalanceChecking": "Checking your VIP token balance...",
     "vipBalanceUnavailable": "Your VIP token balance is unavailable right now.",
     "replaceQueued": "New adds replace your queued requests.",
+    "editing": "Editing request",
+    "cancelEdit": "Cancel edit",
     "vipHelp": "VIP token help",
     "open": "Open",
     "noRequests": "No requests in the playlist.",
+    "edit": "Edit",
+    "remove": "Remove",
     "removeQueued": "Remove queued requests",
     "removing": "Removing..."
   },
@@ -165,6 +169,8 @@
   "viewerActions": {
     "add": "Add",
     "addVip": "Add VIP",
+    "edit": "Edit",
+    "editVip": "Edit VIP",
     "adding": "Adding...",
     "alreadyVip": "Already in your queue as a VIP request.",
     "alreadyRegular": "Already in your queue as a regular request.",
@@ -174,7 +180,11 @@
     "cannotRequest": "You cannot request songs here.",
     "alreadyActive": "This song is already in your active requests.",
     "activeLimitReached": "You already have {count, plural, one {# active request} other {# active requests}}.",
-    "insufficientVipTokens": "You do not have enough VIP tokens."
+    "insufficientVipTokens": "You do not have enough VIP tokens.",
+    "requiresVipTokens": "Requires {count}.",
+    "copyVipCommandNotice": "Requires {count}. Copy the VIP command{suffix}.",
+    "addVipCost": "Add VIP ({count})",
+    "editVipCost": "Edit VIP ({count})"
   },
   "specialRequest": {
     "titleManage": "Add a custom request",
@@ -189,6 +199,8 @@
     "regular": "Regular",
     "add": "Add",
     "addVip": "Add VIP",
+    "edit": "Edit",
+    "editVip": "Edit VIP",
     "adding": "Adding...",
     "randomHelp": "Adds a random song from the matching songs for this artist.",
     "choiceHelp": "Adds a streamer choice request for this artist."
@@ -219,7 +231,8 @@
     "picks": {
       "first": "1st pick",
       "second": "2nd pick",
-      "third": "3rd pick"
+      "third": "3rd pick",
+      "nth": "{{ordinal}} pick"
     }
   },
   "management": {

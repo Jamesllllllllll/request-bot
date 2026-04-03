@@ -67,6 +67,7 @@ export interface SearchSong {
   tuning?: string;
   parts?: string[];
   durationText?: string;
+  durationSeconds?: number;
   year?: number;
   downloads?: number;
   sourceUpdatedAt?: number;
@@ -101,8 +102,17 @@ export function buildRequestCommand(song: SearchSong) {
   return `!sr ${fragments.join(" - ")}`.trim();
 }
 
-export function buildVipRequestCommand(song: SearchSong) {
-  return buildRequestCommand(song).replace(/^!sr\b/, "!vip");
+export function buildVipRequestCommand(
+  song: SearchSong,
+  vipTokenCost?: number
+) {
+  const baseCommand = buildRequestCommand(song).replace(/^!sr\b/, "!vip");
+
+  if (vipTokenCost == null || vipTokenCost <= 1) {
+    return baseCommand;
+  }
+
+  return `${baseCommand} *${Math.trunc(vipTokenCost)}`;
 }
 
 export function buildEditRequestCommand(song: SearchSong) {
@@ -113,6 +123,7 @@ export type SearchSongResultState = {
   disabled?: boolean;
   reasons?: string[];
   warning?: string;
+  vipTokenCost?: number;
 };
 
 export type SearchSongResultContext = {
@@ -459,11 +470,12 @@ export function SongSearchPanel(props: {
 
   async function copyRequest(
     song: SearchSong,
-    type: "sr" | "edit" | "vip" = "sr"
+    type: "sr" | "edit" | "vip" = "sr",
+    vipTokenCost?: number
   ) {
     const command =
       type === "vip"
-        ? buildVipRequestCommand(song)
+        ? buildVipRequestCommand(song, vipTokenCost)
         : type === "edit"
           ? buildEditRequestCommand(song)
           : buildRequestCommand(song);
@@ -624,10 +636,17 @@ export function SongSearchPanel(props: {
 
   function renderDefaultActions(
     song: SearchSong,
+    resultState: SearchSongResultState,
     isDisabled: boolean,
     disabledReason: string,
     copiedType: "sr" | "edit" | "vip" | null
   ) {
+    const vipTokenCost = resultState.vipTokenCost;
+    const vipButtonLabel =
+      vipTokenCost != null && vipTokenCost > 1
+        ? `!vip *${Math.trunc(vipTokenCost)}`
+        : "!vip";
+
     return (
       <div className="grid grid-cols-3 gap-2">
         <Tooltip>
@@ -684,7 +703,7 @@ export function SongSearchPanel(props: {
           <TooltipTrigger asChild>
             <button
               type="button"
-              onClick={() => void copyRequest(song, "vip")}
+              onClick={() => void copyRequest(song, "vip", vipTokenCost)}
               disabled={isDisabled}
               className={cn(
                 "flex h-11 min-w-[3.5rem] items-center justify-center border border-(--border) bg-(--panel) px-3 text-[11px] font-semibold uppercase tracking-[0.16em] transition-colors",
@@ -694,7 +713,11 @@ export function SongSearchPanel(props: {
                   : "text-(--brand-deep)"
               )}
             >
-              {copiedType === "vip" ? <Check className="h-4 w-4" /> : "!vip"}
+              {copiedType === "vip" ? (
+                <Check className="h-4 w-4" />
+              ) : (
+                vipButtonLabel
+              )}
             </button>
           </TooltipTrigger>
           <TooltipContent>
@@ -1218,6 +1241,7 @@ export function SongSearchPanel(props: {
                           ? props.renderActions?.({ song, resultState })
                           : renderDefaultActions(
                               song,
+                              resultState,
                               isDisabled,
                               disabledReason,
                               copiedType

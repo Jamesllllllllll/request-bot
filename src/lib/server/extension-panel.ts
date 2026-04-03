@@ -11,6 +11,7 @@ import {
 } from "~/lib/db/repositories";
 import type { AppEnv } from "~/lib/env";
 import { defaultLocale } from "~/lib/i18n/locales";
+import { getPickNumbersForQueuedItems } from "~/lib/pick-order";
 import {
   getArraySetting,
   getRequiredPathsMatchMode,
@@ -107,6 +108,7 @@ type ExtensionPanelLiveState = {
     defaultLocale: string;
     requestsEnabled: boolean;
     showPlaylistPositions: boolean;
+    showPickOrderBadges: boolean;
     autoGrantVipTokenToSubscribers: boolean;
     autoGrantVipTokensForSharedSubRenewalMessage: boolean;
     autoGrantVipTokensToSubGifters: boolean;
@@ -212,6 +214,31 @@ function createExtensionStageTimer() {
   };
 }
 
+function withExtensionPanelPickNumbers(
+  items: Array<Record<string, unknown>>,
+  playedSongs: Array<{
+    requestedByTwitchUserId?: string | null;
+    requestedByLogin?: string | null;
+    requestedAt?: number | null;
+    playedAt?: number | null;
+    createdAt?: number | null;
+  }>
+): Array<Record<string, unknown>> {
+  const pickNumbers = getPickNumbersForQueuedItems(
+    items as Array<{
+      requestedByTwitchUserId?: string | null;
+      requestedByLogin?: string | null;
+      createdAt?: number | null;
+    }>,
+    playedSongs
+  );
+
+  return items.map((item, index) => ({
+    ...item,
+    pickNumber: pickNumbers[index] ?? null,
+  })) as Array<Record<string, unknown>>;
+}
+
 export async function getExtensionBootstrapState(input: {
   env: AppEnv;
   auth: ExtensionAuthContext;
@@ -233,6 +260,7 @@ export async function getExtensionBootstrapState(input: {
           defaultLocale,
           requestsEnabled: true,
           showPlaylistPositions: false,
+          showPickOrderBadges: false,
           autoGrantVipTokenToSubscribers: false,
           autoGrantVipTokensForSharedSubRenewalMessage: false,
           autoGrantVipTokensToSubGifters: false,
@@ -634,7 +662,10 @@ async function getExtensionPanelLiveState(input: {
     getExtensionPanelPlaylistByChannelId(input.env, input.channel.id),
     getChannelSettingsByChannelId(input.env, input.channel.id),
   ]);
-  const items = (playlist?.items ?? []) as Array<Record<string, unknown>>;
+  const items = withExtensionPanelPickNumbers(
+    (playlist?.items ?? []) as Array<Record<string, unknown>>,
+    playlist?.playedSongs ?? []
+  ) as Array<Record<string, unknown>>;
   const activeRequests = input.linkedViewer
     ? items.filter(
         (item) =>
@@ -667,6 +698,7 @@ async function getExtensionPanelLiveState(input: {
       defaultLocale: settings?.defaultLocale ?? defaultLocale,
       requestsEnabled: !!settings?.requestsEnabled,
       showPlaylistPositions: !!settings?.showPlaylistPositions,
+      showPickOrderBadges: !!settings?.showPickOrderBadges,
       autoGrantVipTokenToSubscribers:
         !!settings?.autoGrantVipTokenToSubscribers,
       autoGrantVipTokensForSharedSubRenewalMessage:

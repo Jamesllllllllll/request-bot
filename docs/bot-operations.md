@@ -47,7 +47,7 @@ For local development, `TWITCH_BOT_USERNAME` should usually be your dedicated te
 
 `TWITCH_SCOPES` belongs to the broadcaster login flow, not the bot login flow. It should include `channel:bot` so chat replies can use Twitch's bot badge path, plus `channel:read:subscriptions`, `bits:read`, and `channel:manage:redemptions` for VIP token automation and app-owned channel point rewards. If the connected broadcaster account is missing those permissions, reconnect Twitch.
 
-App-owned channel point rewards only work on Twitch Affiliate or Partner channels. If you test this flow on a channel without channel points, Twitch rejects the reward API calls and request-bot leaves the rest of the bot active.
+App-owned channel point rewards only work on Twitch Affiliate or Partner channels. If you test this flow on a channel without channel points, Twitch rejects the reward API calls and RockList.Live leaves the rest of the bot active.
 
 2. Make sure your Twitch developer application has both redirect URIs registered:
 

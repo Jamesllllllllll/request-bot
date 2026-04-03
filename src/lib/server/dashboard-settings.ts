@@ -5,6 +5,7 @@ import { getSessionUserId } from "~/lib/auth/session.server";
 import { callBackend } from "~/lib/backend";
 import {
   createAuditLog,
+  getActiveBroadcasterAuthorizationForChannel,
   getBotAuthorization,
   getDashboardState,
   updateSettings,
@@ -15,9 +16,15 @@ import {
   getArraySetting,
   getRequiredPathsMatchMode,
 } from "~/lib/request-policy";
+import { getTwitchUser } from "~/lib/twitch/api";
+import {
+  getChannelPointRewardEligibility,
+  unknownChannelPointRewardEligibility,
+} from "~/lib/twitch/channel-point-reward-eligibility";
 import { getChannelPointRewardWarningMessageFromWarnings } from "~/lib/twitch/channel-point-reward-warnings";
 import { getErrorMessage } from "~/lib/utils";
 import { type SettingsInputData, settingsInputSchema } from "~/lib/validation";
+import { parseVipTokenDurationThresholds } from "~/lib/vip-token-duration-thresholds";
 
 export type DashboardSettingsFormData = Omit<
   SettingsInputData,
@@ -63,6 +70,10 @@ export type DashboardSettingsData = {
     count: number;
     importedAt: number | null;
   };
+  channelPointRewardsEligibility: {
+    isKnown: boolean;
+    isSupported: boolean;
+  };
   bot: {
     connected: boolean;
     configuredUsername: string;
@@ -73,7 +84,28 @@ export const getDashboardSettings = createServerFn({ method: "GET" }).handler(
   async () => {
     const runtimeEnv = env as AppEnv;
     const state = await requireDashboardState(runtimeEnv);
-    const botAuthorization = await getBotAuthorization(runtimeEnv);
+    const [botAuthorization, broadcasterAuthorization] = await Promise.all([
+      getBotAuthorization(runtimeEnv),
+      getActiveBroadcasterAuthorizationForChannel(runtimeEnv, state.channel.id),
+    ]);
+    let channelPointRewardsEligibility = unknownChannelPointRewardEligibility;
+
+    if (broadcasterAuthorization) {
+      try {
+        const twitchUser = await getTwitchUser(
+          runtimeEnv,
+          broadcasterAuthorization.accessTokenEncrypted
+        );
+        channelPointRewardsEligibility = getChannelPointRewardEligibility(
+          twitchUser.broadcaster_type
+        );
+      } catch (error) {
+        console.error("Failed to resolve Twitch channel point eligibility", {
+          channelId: state.channel.id,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+    }
 
     return {
       channel: state.channel,
@@ -90,9 +122,14 @@ export const getDashboardSettings = createServerFn({ method: "GET" }).handler(
             cheerMinimumTokenPercent: normalizeCheerMinimumTokenPercent(
               state.settings.cheerMinimumTokenPercent
             ),
+            showPickOrderBadges: !!state.settings.showPickOrderBadges,
+            vipTokenDurationThresholds: parseVipTokenDurationThresholds(
+              state.settings.vipTokenDurationThresholdsJson
+            ),
           }
         : null,
       ownedOfficialDlcImport: state.ownedOfficialDlcImport,
+      channelPointRewardsEligibility,
       playedSongs: state.playedSongs,
       bot: {
         connected: !!botAuthorization,

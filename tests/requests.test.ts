@@ -41,6 +41,23 @@ describe("parseChatCommand", () => {
     });
   });
 
+  it("parses vip requests with an explicit token cost", () => {
+    expect(parseChatCommand("!vip cherub rock *2")).toEqual({
+      command: "vip",
+      query: "cherub rock",
+      vipTokenCost: 2,
+    });
+  });
+
+  it("parses vip requests with an explicit token cost and target login", () => {
+    expect(parseChatCommand("!vip cherub rock *2 @viewer_two")).toEqual({
+      command: "vip",
+      query: "cherub rock",
+      targetLogin: "viewer_two",
+      vipTokenCost: 2,
+    });
+  });
+
   it("parses addvip commands", () => {
     expect(parseChatCommand("!addvip viewer_one")).toEqual({
       command: "addvip",
@@ -66,6 +83,14 @@ describe("parseChatCommand", () => {
   it("parses position commands", () => {
     expect(parseChatCommand("!position")).toEqual({
       command: "position",
+    });
+  });
+
+  it("parses edit commands with a playlist position", () => {
+    expect(parseChatCommand("!edit #2 cherub rock")).toEqual({
+      command: "edit",
+      query: "cherub rock",
+      itemPosition: 2,
     });
   });
 });
@@ -186,7 +211,8 @@ describe("request policy", () => {
     expect(message).toContain("!sr artist *choice");
     expect(message).toContain("!vip");
     expect(message).toContain("!vip artist - song");
-    expect(message).toContain("!edit artist - song");
+    expect(message).toContain("!vip artist - song *2");
+    expect(message).toContain("!edit #2 artist - song");
     expect(message).toContain("!position");
     expect(message).toContain(
       "Browse the track list and request songs here: https://example.com/streamer"

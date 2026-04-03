@@ -17,6 +17,8 @@ export interface ParsedChatCommand {
   query?: string;
   targetLogin?: string;
   amount?: number;
+  vipTokenCost?: number;
+  itemPosition?: number;
 }
 
 export interface NormalizedChatEvent {
@@ -58,14 +60,23 @@ export function parseChatCommand(
     }
 
     const requestTarget = extractTrailingTargetLogin(query);
-    if (!requestTarget.query) {
+    const editTarget =
+      command === "edit" || command === "replace"
+        ? extractLeadingItemPosition(requestTarget.query)
+        : {
+            query: requestTarget.query,
+            itemPosition: undefined,
+          };
+
+    if (!editTarget.query) {
       return null;
     }
 
     return {
       command: command === "replace" ? "edit" : command,
-      query: requestTarget.query,
+      query: editTarget.query,
       targetLogin: requestTarget.targetLogin,
+      itemPosition: editTarget.itemPosition,
     };
   }
 
@@ -77,14 +88,16 @@ export function parseChatCommand(
     }
 
     const requestTarget = extractTrailingTargetLogin(query);
-    if (!requestTarget.query) {
+    const vipRequest = extractTrailingVipTokenCost(requestTarget.query);
+    if (!vipRequest.query) {
       return null;
     }
 
     return {
       command,
-      query: requestTarget.query,
+      query: vipRequest.query,
       targetLogin: requestTarget.targetLogin,
+      vipTokenCost: vipRequest.vipTokenCost,
     };
   }
 
@@ -159,6 +172,40 @@ function extractTrailingTargetLogin(query: string) {
   return {
     query: match[1]?.trim() ?? "",
     targetLogin: match[2]?.trim().toLowerCase(),
+  };
+}
+
+function extractTrailingVipTokenCost(query: string) {
+  const trimmed = query.trim();
+  const match = /^(.*?)(?:\s+\*([1-9][0-9]*))$/.exec(trimmed);
+
+  if (!match) {
+    return {
+      query: trimmed,
+      vipTokenCost: undefined,
+    };
+  }
+
+  return {
+    query: match[1]?.trim() ?? "",
+    vipTokenCost: Number(match[2]),
+  };
+}
+
+function extractLeadingItemPosition(query: string) {
+  const trimmed = query.trim();
+  const match = /^#(\d+)\s+(.+)$/.exec(trimmed);
+
+  if (!match) {
+    return {
+      query: trimmed,
+      itemPosition: undefined,
+    };
+  }
+
+  return {
+    query: match[2]?.trim() ?? "",
+    itemPosition: Number(match[1]),
   };
 }
 

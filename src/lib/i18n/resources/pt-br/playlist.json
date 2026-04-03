@@ -36,9 +36,13 @@
     "vipBalanceChecking": "Verificando o seu saldo de tokens VIP...",
     "vipBalanceUnavailable": "Seu saldo de tokens VIP nao esta disponivel agora.",
     "replaceQueued": "Novos itens substituem os seus pedidos na fila.",
+    "editing": "Editando pedido",
+    "cancelEdit": "Cancelar edição",
     "vipHelp": "Ajuda de tokens VIP",
     "open": "Abrir",
     "noRequests": "Nao ha pedidos na playlist.",
+    "edit": "Editar",
+    "remove": "Remover",
     "removeQueued": "Remover pedidos em fila",
     "removing": "Removendo..."
   },
@@ -165,6 +169,8 @@
   "viewerActions": {
     "add": "Adicionar",
     "addVip": "Adicionar VIP",
+    "edit": "Editar",
+    "editVip": "Editar VIP",
     "adding": "Adicionando...",
     "alreadyVip": "Ja esta na sua fila como pedido VIP.",
     "alreadyRegular": "Ja esta na sua fila como pedido normal.",
@@ -174,7 +180,11 @@
     "cannotRequest": "Voce nao pode pedir musicas aqui.",
     "alreadyActive": "Essa musica ja esta nos seus pedidos ativos.",
     "activeLimitReached": "Voce ja tem {count, plural, one {# pedido ativo} other {# pedidos ativos}}.",
-    "insufficientVipTokens": "Voce nao tem tokens VIP suficientes."
+    "insufficientVipTokens": "Voce nao tem tokens VIP suficientes.",
+    "requiresVipTokens": "Requer {count}.",
+    "copyVipCommandNotice": "Requer {count}. Copie o comando VIP{suffix}.",
+    "addVipCost": "Adicionar VIP ({count})",
+    "editVipCost": "Editar VIP ({count})"
   },
   "specialRequest": {
     "titleManage": "Adicionar pedido personalizado",
@@ -189,6 +199,8 @@
     "regular": "Normal",
     "add": "Adicionar",
     "addVip": "Adicionar VIP",
+    "edit": "Editar",
+    "editVip": "Editar VIP",
     "adding": "Adicionando...",
     "randomHelp": "Adiciona uma musica aleatoria entre as musicas correspondentes desse artista.",
     "choiceHelp": "Adiciona um pedido de escolha do streamer para esse artista."
@@ -219,7 +231,8 @@
     "picks": {
       "first": "1a escolha",
       "second": "2a escolha",
-      "third": "3a escolha"
+      "third": "3a escolha",
+      "nth": "{{ordinal}} escolha"
     }
   },
   "management": {

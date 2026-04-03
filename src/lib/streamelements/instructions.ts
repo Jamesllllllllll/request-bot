@@ -61,7 +61,7 @@ public class CPHInline
 
     if (!response.IsSuccessStatusCode)
     {
-      CPH.LogError($"request-bot tip relay failed: {(int)response.StatusCode} {response.ReasonPhrase}");
+      CPH.LogError($"RockList.Live tip relay failed: {(int)response.StatusCode} {response.ReasonPhrase}");
       return false;
     }
 

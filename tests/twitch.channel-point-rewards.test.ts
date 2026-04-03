@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 import { TwitchApiError } from "~/lib/twitch/api";
 import {
+  getChannelPointRewardEligibility,
+  unknownChannelPointRewardEligibility,
+} from "~/lib/twitch/channel-point-reward-eligibility";
+import {
   getChannelPointRewardSetupIssue,
   getChannelPointRewardWarningMessageFromWarnings,
 } from "~/lib/twitch/channel-point-reward-warnings";
@@ -40,6 +44,25 @@ describe("channel point reward helpers", () => {
     expect(vipTokenChannelPointRewardSubscriptionType).toBe(
       "channel.channel_points_custom_reward_redemption.add"
     );
+  });
+
+  it("detects when Twitch channel point rewards are supported", () => {
+    expect(unknownChannelPointRewardEligibility).toEqual({
+      isKnown: false,
+      isSupported: false,
+    });
+    expect(getChannelPointRewardEligibility("affiliate")).toEqual({
+      isKnown: true,
+      isSupported: true,
+    });
+    expect(getChannelPointRewardEligibility("partner")).toEqual({
+      isKnown: true,
+      isSupported: true,
+    });
+    expect(getChannelPointRewardEligibility("")).toEqual({
+      isKnown: true,
+      isSupported: false,
+    });
   });
 
   it("classifies Twitch eligibility and naming failures", () => {

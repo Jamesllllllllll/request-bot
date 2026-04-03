@@ -39,6 +39,7 @@ import {
   useRef,
   useState,
 } from "react";
+import { PickOrderBadge } from "~/components/pick-order-badge";
 import { Button } from "~/components/ui/button";
 import {
   Collapsible,
@@ -107,6 +108,7 @@ type PanelBootstrapResponse = {
     defaultLocale: string;
     requestsEnabled: boolean;
     showPlaylistPositions: boolean;
+    showPickOrderBadges: boolean;
     autoGrantVipTokenToSubscribers: boolean;
     autoGrantVipTokensForSharedSubRenewalMessage: boolean;
     autoGrantVipTokensToSubGifters: boolean;
@@ -344,6 +346,7 @@ function ExtensionPanelAppContent(props: {
   const queueCount = bootstrap?.playlist.items.length ?? 0;
   const showPlaylistPositions =
     bootstrap?.settings.showPlaylistPositions ?? false;
+  const showPickOrderBadges = bootstrap?.settings.showPickOrderBadges ?? false;
   const vipTokenAutomationDetails = getVipTokenAutomationDetails(
     bootstrap?.settings ?? {},
     {
@@ -1430,6 +1433,7 @@ function ExtensionPanelAppContent(props: {
                         itemId={itemId}
                         currentItemId={currentPlaylistItemId}
                         showPlaylistPositions={showPlaylistPositions}
+                        showPickOrderBadges={showPickOrderBadges}
                         viewerProfile={viewerProfile}
                         canManagePlaylist={canManagePlaylist}
                         canManageVipRequests={canManageVipRequests}
@@ -1724,6 +1728,7 @@ export function ExtensionPanelModeratorPreview() {
   const currentPlaylistItemId = playlist.currentItemId;
   const queueCount = playlist.items.length;
   const showPlaylistPositions = false;
+  const showPickOrderBadges = false;
   const footerPlaylistHref = toExtensionAppUrl("/jimmy-pants");
   const footerPlaylistLabel = getPanelPlaylistFooterLabel("Jimmy Pants_", t);
   const queuedPlaylistItems = playlist.items.filter(
@@ -2379,6 +2384,7 @@ export function ExtensionPanelModeratorPreview() {
                     itemId={itemId}
                     currentItemId={playlist.currentItemId}
                     showPlaylistPositions={showPlaylistPositions}
+                    showPickOrderBadges={showPickOrderBadges}
                     viewerProfile={mockModeratorViewerProfile}
                     canManagePlaylist
                     canManageVipRequests
@@ -2580,6 +2586,7 @@ function PanelPlaylistRow(props: {
   itemId: string;
   currentItemId: string | null;
   showPlaylistPositions: boolean;
+  showPickOrderBadges: boolean;
   viewerProfile: PanelBootstrapResponse["viewer"]["profile"];
   canManagePlaylist: boolean;
   canManageVipRequests: boolean;
@@ -2612,6 +2619,9 @@ function PanelPlaylistRow(props: {
   );
   const playlistPosition = props.showPlaylistPositions
     ? getNumber(props.item, "position")
+    : null;
+  const pickNumber = props.showPickOrderBadges
+    ? getNumber(props.item, "pickNumber")
     : null;
   const isVipRequest = getString(props.item, "requestKind") === "vip";
   const isEditingRequest = props.editingRequestItemId === props.itemId;
@@ -2891,6 +2901,11 @@ function PanelPlaylistRow(props: {
                 <p className="mt-0.5 truncate text-[11px] leading-4 text-(--muted)">
                   {formatRequesterLine(props.item, t)}
                 </p>
+                {pickNumber != null ? (
+                  <div className="mt-1 flex flex-wrap items-center gap-1">
+                    <PickOrderBadge pickNumber={pickNumber} variant="panel" />
+                  </div>
+                ) : null}
               </div>
 
               <div className="ml-auto flex shrink-0 self-center items-center gap-1">

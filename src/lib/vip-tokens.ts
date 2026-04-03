@@ -15,12 +15,18 @@ export function clampVipTokenCount(value: number) {
   return Math.max(0, normalizeVipTokenCount(value));
 }
 
-export function hasRedeemableVipToken(value: number) {
-  return clampVipTokenCount(value) >= VIP_TOKEN_REDEMPTION_COST;
+export function hasRedeemableVipToken(
+  value: number,
+  requiredCount = VIP_TOKEN_REDEMPTION_COST
+) {
+  return clampVipTokenCount(value) >= clampVipTokenCount(requiredCount);
 }
 
-export function subtractVipTokenRedemption(value: number) {
-  return clampVipTokenCount(value - VIP_TOKEN_REDEMPTION_COST);
+export function subtractVipTokenRedemption(
+  value: number,
+  requiredCount = VIP_TOKEN_REDEMPTION_COST
+) {
+  return clampVipTokenCount(value - clampVipTokenCount(requiredCount));
 }
 
 export function formatVipTokenCount(value: number) {

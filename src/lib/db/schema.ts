@@ -156,6 +156,14 @@ export const channelSettings = sqliteTable("channel_settings", {
   vipRequestPeriodSeconds: integer("vip_request_period_seconds")
     .notNull()
     .default(0),
+  vipRequestCooldownEnabled: integer("vip_request_cooldown_enabled", {
+    mode: "boolean",
+  })
+    .notNull()
+    .default(false),
+  vipRequestCooldownMinutes: integer("vip_request_cooldown_minutes")
+    .notNull()
+    .default(0),
   blacklistEnabled: integer("blacklist_enabled", { mode: "boolean" })
     .notNull()
     .default(false),
@@ -233,6 +241,9 @@ export const channelSettings = sqliteTable("channel_settings", {
   channelPointRewardCost: integer("channel_point_reward_cost")
     .notNull()
     .default(1000),
+  vipTokenDurationThresholdsJson: text("vip_token_duration_thresholds_json")
+    .notNull()
+    .default("[]"),
   cheerMinimumTokenPercent: integer("cheer_minimum_token_percent")
     .notNull()
     .default(25),
@@ -254,6 +265,11 @@ export const channelSettings = sqliteTable("channel_settings", {
     .notNull()
     .default(900),
   showPlaylistPositions: integer("show_playlist_positions", {
+    mode: "boolean",
+  })
+    .notNull()
+    .default(false),
+  showPickOrderBadges: integer("show_pick_order_badges", {
     mode: "boolean",
   })
     .notNull()
@@ -373,6 +389,7 @@ export const playlistItems = sqliteTable(
     requestedByDisplayName: text("requested_by_display_name"),
     requestMessageId: text("request_message_id"),
     requestKind: text("request_kind").notNull().default("regular"),
+    vipTokenCost: integer("vip_token_cost").notNull().default(0),
     position: integer("position").notNull(),
     regularPosition: integer("regular_position").notNull().default(1),
     editedAt: integer("edited_at"),
@@ -541,6 +558,39 @@ export const vipTokens = sqliteTable(
   ]
 );
 
+export const vipRequestCooldowns = sqliteTable(
+  "vip_request_cooldowns",
+  {
+    channelId: text("channel_id")
+      .notNull()
+      .references(() => channels.id),
+    normalizedLogin: text("normalized_login").notNull(),
+    twitchUserId: text("twitch_user_id"),
+    login: text("login").notNull(),
+    displayName: text("display_name"),
+    sourceItemId: text("source_item_id").notNull(),
+    cooldownStartedAt: integer("cooldown_started_at").notNull(),
+    cooldownExpiresAt: integer("cooldown_expires_at").notNull(),
+    createdAt: integer("created_at")
+      .notNull()
+      .default(sql`(unixepoch() * 1000)`),
+    updatedAt: integer("updated_at")
+      .notNull()
+      .default(sql`(unixepoch() * 1000)`),
+  },
+  (table) => [
+    primaryKey({ columns: [table.channelId, table.normalizedLogin] }),
+    index("vip_request_cooldowns_channel_user_idx").on(
+      table.channelId,
+      table.twitchUserId
+    ),
+    index("vip_request_cooldowns_channel_source_idx").on(
+      table.channelId,
+      table.sourceItemId
+    ),
+  ]
+);
+
 export const requestLogs = sqliteTable(
   "request_logs",
   {
@@ -620,6 +670,7 @@ export const playedSongs = sqliteTable(
     requestedByLogin: text("requested_by_login"),
     requestedByDisplayName: text("requested_by_display_name"),
     requestKind: text("request_kind").notNull().default("regular"),
+    vipTokenCost: integer("vip_token_cost").notNull().default(0),
     requestedAt: integer("requested_at"),
     playedAt: integer("played_at").notNull(),
     createdAt: integer("created_at")
@@ -857,6 +908,7 @@ export type BlacklistedSongGroupInsert =
 export type BlacklistedCharterInsert = typeof blacklistedCharters.$inferInsert;
 export type SetlistArtistInsert = typeof setlistArtists.$inferInsert;
 export type VipTokenInsert = typeof vipTokens.$inferInsert;
+export type VipRequestCooldownInsert = typeof vipRequestCooldowns.$inferInsert;
 export type RequestLogInsert = typeof requestLogs.$inferInsert;
 export type AuditLogInsert = typeof auditLogs.$inferInsert;
 export type PlayedSongInsert = typeof playedSongs.$inferInsert;

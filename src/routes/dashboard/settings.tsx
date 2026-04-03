@@ -47,6 +47,8 @@ import { defaultLocale, localeOptions } from "~/lib/i18n/locales";
 import { getLocalizedPageTitle } from "~/lib/i18n/metadata";
 import { DEFAULT_MAX_QUEUE_SIZE } from "~/lib/settings-defaults";
 import { buildStreamElementsTipRelayCode } from "~/lib/streamelements/instructions";
+import type { ChannelPointRewardEligibility } from "~/lib/twitch/channel-point-reward-eligibility";
+import { unknownChannelPointRewardEligibility } from "~/lib/twitch/channel-point-reward-eligibility";
 import {
   defaultChannelPointRewardCost,
   vipTokenChannelPointRewardTitle,
@@ -54,6 +56,10 @@ import {
 import { getErrorMessage } from "~/lib/utils";
 import type { SettingsInputData } from "~/lib/validation";
 import { viewerSessionQueryOptions } from "~/lib/viewer-session-query";
+import {
+  formatVipDurationThresholdMinutes,
+  normalizeVipTokenDurationThresholds,
+} from "~/lib/vip-token-duration-thresholds";
 
 type DashboardSettingsFormData = Omit<
   SettingsInputData,
@@ -77,6 +83,7 @@ type DashboardSettingsData = {
   integrations: {
     streamElementsTipRelayUrl: string | null;
   };
+  channelPointRewardsEligibility: ChannelPointRewardEligibility;
   bot: {
     connected: boolean;
     configuredUsername: string;
@@ -137,6 +144,8 @@ const defaultForm: DashboardSettingsFormData = {
   limitVipRequestsEnabled: false,
   vipRequestsPerPeriod: 1,
   vipRequestPeriodSeconds: 0,
+  vipRequestCooldownEnabled: false,
+  vipRequestCooldownMinutes: 0,
   blacklistEnabled: false,
   letSetlistBypassBlacklist: false,
   setlistEnabled: false,
@@ -152,11 +161,13 @@ const defaultForm: DashboardSettingsFormData = {
   allowRequestPathModifiers: false,
   cheerBitsPerVipToken: 200,
   channelPointRewardCost: defaultChannelPointRewardCost,
+  vipTokenDurationThresholds: [],
   cheerMinimumTokenPercent: 25,
   raidMinimumViewerCount: 1,
   streamElementsTipAmountPerVipToken: 5,
   duplicateWindowSeconds: 900,
   showPlaylistPositions: false,
+  showPickOrderBadges: false,
   commandPrefix: "!sr",
 };
 const settingsComparisonKeys = Object.keys(defaultForm) as Array<
@@ -393,6 +404,18 @@ function DashboardSettingsPage() {
   );
   const streamElementsTipRelayUrl =
     settingsQuery.data?.integrations.streamElementsTipRelayUrl ?? null;
+  const channelPointRewardsEligibility =
+    settingsQuery.data?.channelPointRewardsEligibility ??
+    unknownChannelPointRewardEligibility;
+  const channelPointRewardsDisabledByEligibility =
+    channelPointRewardsEligibility.isKnown &&
+    !channelPointRewardsEligibility.isSupported;
+  const canEnableChannelPointRewards =
+    !channelPointRewardsEligibility.isKnown ||
+    channelPointRewardsEligibility.isSupported;
+  const showChannelPointRewardDetails =
+    form.autoGrantVipTokensForChannelPointRewards &&
+    canEnableChannelPointRewards;
   const cheerMinimumBits = getCheerMinimumBitsPreview(
     form.cheerBitsPerVipToken,
     form.cheerMinimumTokenPercent
@@ -436,6 +459,54 @@ function DashboardSettingsPage() {
     value: number
   ) {
     setForm((current) => ({ ...current, [key]: value }));
+  }
+
+  function setVipTokenDurationThresholds(
+    nextThresholds: DashboardSettingsFormData["vipTokenDurationThresholds"]
+  ) {
+    setForm((current) => ({
+      ...current,
+      vipTokenDurationThresholds:
+        normalizeVipTokenDurationThresholds(nextThresholds),
+    }));
+  }
+
+  function updateVipTokenDurationThreshold(
+    index: number,
+    field: "minimumDurationMinutes" | "tokenCost",
+    value: number
+  ) {
+    setVipTokenDurationThresholds(
+      form.vipTokenDurationThresholds.map((threshold, thresholdIndex) =>
+        thresholdIndex === index
+          ? {
+              ...threshold,
+              [field]:
+                field === "minimumDurationMinutes"
+                  ? Math.max(0.01, value || 0)
+                  : Math.max(1, Math.trunc(value || 0)),
+            }
+          : threshold
+      )
+    );
+  }
+
+  function addVipTokenDurationThreshold() {
+    setVipTokenDurationThresholds([
+      ...form.vipTokenDurationThresholds,
+      {
+        minimumDurationMinutes: 7,
+        tokenCost: form.vipTokenDurationThresholds.length + 1,
+      },
+    ]);
+  }
+
+  function removeVipTokenDurationThreshold(index: number) {
+    setVipTokenDurationThresholds(
+      form.vipTokenDurationThresholds.filter(
+        (_threshold, thresholdIndex) => thresholdIndex !== index
+      )
+    );
   }
 
   async function copyRelayUrl() {
@@ -704,6 +775,20 @@ function DashboardSettingsPage() {
                         setBoolean("showPlaylistPositions", value)
                       }
                     />
+                    <PermissionRow
+                      label={t(
+                        "settings.sections.channelSetup.showPickOrderBadges"
+                      )}
+                      checked={form.showPickOrderBadges}
+                      onChange={(value) =>
+                        setBoolean("showPickOrderBadges", value)
+                      }
+                    />
+                    <div className="border border-dashed border-(--border) bg-(--panel-muted) p-3 text-sm leading-6 text-(--muted)">
+                      {t(
+                        "settings.sections.channelSetup.showPickOrderBadgesHelp"
+                      )}
+                    </div>
                   </div>
                 </div>
 
@@ -821,26 +906,24 @@ function DashboardSettingsPage() {
                     setBoolean("allowAnyoneToRequest", value)
                   }
                 />
-                <PermissionRow
-                  label={t("settings.sections.requestAccess.subscribers")}
-                  checked={
-                    form.allowAnyoneToRequest
-                      ? true
-                      : form.allowSubscribersToRequest
-                  }
-                  onChange={(value) =>
-                    setBoolean("allowSubscribersToRequest", value)
-                  }
-                  disabled={form.allowAnyoneToRequest}
-                />
-                <PermissionRow
-                  label={t("settings.sections.requestAccess.vips")}
-                  checked={
-                    form.allowAnyoneToRequest ? true : form.allowVipsToRequest
-                  }
-                  onChange={(value) => setBoolean("allowVipsToRequest", value)}
-                  disabled={form.allowAnyoneToRequest}
-                />
+                {!form.allowAnyoneToRequest ? (
+                  <>
+                    <PermissionRow
+                      label={t("settings.sections.requestAccess.subscribers")}
+                      checked={form.allowSubscribersToRequest}
+                      onChange={(value) =>
+                        setBoolean("allowSubscribersToRequest", value)
+                      }
+                    />
+                    <PermissionRow
+                      label={t("settings.sections.requestAccess.vips")}
+                      checked={form.allowVipsToRequest}
+                      onChange={(value) =>
+                        setBoolean("allowVipsToRequest", value)
+                      }
+                    />
+                  </>
+                ) : null}
               </CardContent>
             </Card>
 
@@ -1160,26 +1243,28 @@ function DashboardSettingsPage() {
                         setBoolean("limitRegularRequestsEnabled", value)
                       }
                     />
-                    <div className="divide-y divide-(--border)">
-                      <CompactNumberRow
-                        label={t(
-                          "settings.sections.queueLimits.regularAllowed"
-                        )}
-                        value={form.regularRequestsPerPeriod}
-                        onChange={(value) =>
-                          setNumber("regularRequestsPerPeriod", value)
-                        }
-                        disabled={!form.limitRegularRequestsEnabled}
-                      />
-                      <CompactNumberRow
-                        label={t("settings.sections.queueLimits.regularPeriod")}
-                        value={form.regularRequestPeriodSeconds}
-                        onChange={(value) =>
-                          setNumber("regularRequestPeriodSeconds", value)
-                        }
-                        disabled={!form.limitRegularRequestsEnabled}
-                      />
-                    </div>
+                    {form.limitRegularRequestsEnabled ? (
+                      <div className="divide-y divide-(--border)">
+                        <CompactNumberRow
+                          label={t(
+                            "settings.sections.queueLimits.regularAllowed"
+                          )}
+                          value={form.regularRequestsPerPeriod}
+                          onChange={(value) =>
+                            setNumber("regularRequestsPerPeriod", value)
+                          }
+                        />
+                        <CompactNumberRow
+                          label={t(
+                            "settings.sections.queueLimits.regularPeriod"
+                          )}
+                          value={form.regularRequestPeriodSeconds}
+                          onChange={(value) =>
+                            setNumber("regularRequestPeriodSeconds", value)
+                          }
+                        />
+                      </div>
+                    ) : null}
                   </div>
 
                   <div
@@ -1197,24 +1282,24 @@ function DashboardSettingsPage() {
                         setBoolean("limitVipRequestsEnabled", value)
                       }
                     />
-                    <div className="mt-3 divide-y divide-(--border)">
-                      <CompactNumberRow
-                        label={t("settings.sections.queueLimits.vipAllowed")}
-                        value={form.vipRequestsPerPeriod}
-                        onChange={(value) =>
-                          setNumber("vipRequestsPerPeriod", value)
-                        }
-                        disabled={!form.limitVipRequestsEnabled}
-                      />
-                      <CompactNumberRow
-                        label={t("settings.sections.queueLimits.vipPeriod")}
-                        value={form.vipRequestPeriodSeconds}
-                        onChange={(value) =>
-                          setNumber("vipRequestPeriodSeconds", value)
-                        }
-                        disabled={!form.limitVipRequestsEnabled}
-                      />
-                    </div>
+                    {form.limitVipRequestsEnabled ? (
+                      <div className="mt-3 divide-y divide-(--border)">
+                        <CompactNumberRow
+                          label={t("settings.sections.queueLimits.vipAllowed")}
+                          value={form.vipRequestsPerPeriod}
+                          onChange={(value) =>
+                            setNumber("vipRequestsPerPeriod", value)
+                          }
+                        />
+                        <CompactNumberRow
+                          label={t("settings.sections.queueLimits.vipPeriod")}
+                          value={form.vipRequestPeriodSeconds}
+                          onChange={(value) =>
+                            setNumber("vipRequestPeriodSeconds", value)
+                          }
+                        />
+                      </div>
+                    ) : null}
                   </div>
                 </div>
               </CardContent>
@@ -1235,6 +1320,176 @@ function DashboardSettingsPage() {
               <CardContent className="grid gap-6">
                 <div className="grid items-start gap-4 xl:grid-cols-[minmax(0,0.78fr)_minmax(0,1.22fr)]">
                   <div className="grid min-w-0 gap-4">
+                    <div className="grid min-w-0 gap-3 border border-(--border) bg-(--panel-soft) p-4">
+                      <div className="grid gap-1">
+                        <h3 className="text-sm font-semibold text-(--text)">
+                          {t("settings.sections.vipAutomation.songLength")}
+                        </h3>
+                        <p className="text-sm leading-6 text-(--muted)">
+                          {t("settings.sections.vipAutomation.songLengthHelp")}
+                        </p>
+                      </div>
+                      {form.vipTokenDurationThresholds.length > 0 ? (
+                        <div className="grid gap-3">
+                          {form.vipTokenDurationThresholds.map(
+                            (threshold, index) => (
+                              <div
+                                key={`${threshold.minimumDurationMinutes}-${threshold.tokenCost}-${index}`}
+                                className="grid gap-3 border border-(--border) bg-(--panel-muted) p-3"
+                              >
+                                <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto] md:items-end">
+                                  <FieldBlock
+                                    label={t(
+                                      "settings.sections.vipAutomation.songLengthMinutes"
+                                    )}
+                                  >
+                                    <Input
+                                      type="number"
+                                      min={0.01}
+                                      max={600}
+                                      step={0.25}
+                                      value={threshold.minimumDurationMinutes}
+                                      onChange={(event) =>
+                                        updateVipTokenDurationThreshold(
+                                          index,
+                                          "minimumDurationMinutes",
+                                          Number(event.target.value)
+                                        )
+                                      }
+                                    />
+                                  </FieldBlock>
+                                  <FieldBlock
+                                    label={t(
+                                      "settings.sections.vipAutomation.songLengthTokens"
+                                    )}
+                                  >
+                                    <Input
+                                      type="number"
+                                      min={1}
+                                      max={100}
+                                      step={1}
+                                      value={threshold.tokenCost}
+                                      onChange={(event) =>
+                                        updateVipTokenDurationThreshold(
+                                          index,
+                                          "tokenCost",
+                                          Number(event.target.value)
+                                        )
+                                      }
+                                    />
+                                  </FieldBlock>
+                                  <Button
+                                    type="button"
+                                    variant="outline"
+                                    onClick={() =>
+                                      removeVipTokenDurationThreshold(index)
+                                    }
+                                  >
+                                    {t(
+                                      "settings.sections.vipAutomation.songLengthRemove"
+                                    )}
+                                  </Button>
+                                </div>
+                                <p className="text-sm leading-6 text-(--muted)">
+                                  {t(
+                                    "settings.sections.vipAutomation.songLengthExample",
+                                    {
+                                      minutes:
+                                        formatVipDurationThresholdMinutes(
+                                          threshold.minimumDurationMinutes
+                                        ),
+                                      count: threshold.tokenCost,
+                                    }
+                                  )}
+                                </p>
+                              </div>
+                            )
+                          )}
+                        </div>
+                      ) : (
+                        <div className="border border-dashed border-(--border) bg-(--panel-muted) p-3 text-sm leading-6 text-(--muted)">
+                          {t("settings.sections.vipAutomation.songLengthEmpty")}
+                        </div>
+                      )}
+                      <div className="flex flex-wrap items-center justify-between gap-3 border border-dashed border-(--border) bg-(--panel-muted) p-3">
+                        <p className="text-sm leading-6 text-(--muted)">
+                          {t("settings.sections.vipAutomation.songLengthNote")}
+                        </p>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          onClick={addVipTokenDurationThreshold}
+                          disabled={
+                            form.vipTokenDurationThresholds.length >= 12
+                          }
+                        >
+                          {t("settings.sections.vipAutomation.songLengthAdd")}
+                        </Button>
+                      </div>
+                    </div>
+
+                    <div className="grid min-w-0 gap-3 border border-(--border) bg-(--panel-soft) p-4">
+                      <div className="grid gap-1">
+                        <h3 className="text-sm font-semibold text-(--text)">
+                          {t("settings.sections.vipAutomation.vipCooldown")}
+                        </h3>
+                        <p className="text-sm leading-6 text-(--muted)">
+                          {t("settings.sections.vipAutomation.vipCooldownHelp")}
+                        </p>
+                      </div>
+                      <PermissionRow
+                        label={t(
+                          "settings.sections.vipAutomation.vipCooldownToggle"
+                        )}
+                        checked={form.vipRequestCooldownEnabled}
+                        onChange={(value) =>
+                          setBoolean("vipRequestCooldownEnabled", value)
+                        }
+                      />
+                      {form.vipRequestCooldownEnabled ? (
+                        <div className="grid gap-3 border border-dashed border-(--border) bg-(--panel-muted) p-3">
+                          <FieldBlock
+                            label={t(
+                              "settings.sections.vipAutomation.vipCooldownMinutes"
+                            )}
+                          >
+                            <Input
+                              type="number"
+                              min={1}
+                              max={10080}
+                              step={1}
+                              value={form.vipRequestCooldownMinutes}
+                              onChange={(event) =>
+                                setNumber(
+                                  "vipRequestCooldownMinutes",
+                                  Math.max(
+                                    0,
+                                    Math.trunc(Number(event.target.value) || 0)
+                                  )
+                                )
+                              }
+                            />
+                          </FieldBlock>
+                          <p className="text-sm leading-6 text-(--muted)">
+                            {t(
+                              "settings.sections.vipAutomation.vipCooldownExample",
+                              {
+                                minutes: formatSettingsNumber(
+                                  locale,
+                                  form.vipRequestCooldownMinutes
+                                ),
+                              }
+                            )}
+                          </p>
+                          <p className="text-sm leading-6 text-(--muted)">
+                            {t(
+                              "settings.sections.vipAutomation.vipCooldownNote"
+                            )}
+                          </p>
+                        </div>
+                      ) : null}
+                    </div>
+
                     <div className="grid min-w-0 gap-3 border border-(--border) bg-(--panel-soft) p-4">
                       <h3 className="text-sm font-semibold text-(--text)">
                         {t("settings.sections.vipAutomation.subscribes")}
@@ -1260,9 +1515,13 @@ function DashboardSettingsPage() {
                           )
                         }
                       />
-                      <div className="border border-dashed border-(--border) bg-(--panel-muted) p-3 text-sm leading-6 text-(--muted)">
-                        {t("settings.sections.vipAutomation.sharedRenewalHelp")}
-                      </div>
+                      {form.autoGrantVipTokensForSharedSubRenewalMessage ? (
+                        <div className="border border-dashed border-(--border) bg-(--panel-muted) p-3 text-sm leading-6 text-(--muted)">
+                          {t(
+                            "settings.sections.vipAutomation.sharedRenewalHelp"
+                          )}
+                        </div>
+                      ) : null}
                     </div>
 
                     <div className="grid min-w-0 gap-3 border border-(--border) bg-(--panel-soft) p-4">
@@ -1307,39 +1566,46 @@ function DashboardSettingsPage() {
                           setBoolean("autoGrantVipTokensForRaiders", value)
                         }
                       />
-                      <FieldBlock
-                        label={t("settings.sections.vipAutomation.minimumRaid")}
-                        description={t(
-                          "settings.sections.vipAutomation.minimumRaidHelp"
-                        )}
-                      >
-                        <div className="max-w-32">
-                          <Input
-                            type="number"
-                            min={1}
-                            value={form.raidMinimumViewerCount}
-                            disabled={!form.autoGrantVipTokensForRaiders}
-                            onChange={(event) =>
-                              setNumber(
-                                "raidMinimumViewerCount",
-                                Math.max(1, Number(event.target.value) || 0)
-                              )
-                            }
-                          />
-                        </div>
-                      </FieldBlock>
-                      <div className="border border-dashed border-(--border) bg-(--panel-muted) p-3 text-sm leading-6 text-(--muted)">
-                        {t("settings.sections.vipAutomation.raidNotice")}
-                      </div>
+                      {form.autoGrantVipTokensForRaiders ? (
+                        <>
+                          <FieldBlock
+                            label={t(
+                              "settings.sections.vipAutomation.minimumRaid"
+                            )}
+                            description={t(
+                              "settings.sections.vipAutomation.minimumRaidHelp"
+                            )}
+                          >
+                            <div className="max-w-32">
+                              <Input
+                                type="number"
+                                min={1}
+                                value={form.raidMinimumViewerCount}
+                                onChange={(event) =>
+                                  setNumber(
+                                    "raidMinimumViewerCount",
+                                    Math.max(1, Number(event.target.value) || 0)
+                                  )
+                                }
+                              />
+                            </div>
+                          </FieldBlock>
+                          <div className="border border-dashed border-(--border) bg-(--panel-muted) p-3 text-sm leading-6 text-(--muted)">
+                            {t("settings.sections.vipAutomation.raidNotice")}
+                          </div>
+                        </>
+                      ) : null}
                     </div>
                   </div>
 
                   <div className="grid min-w-0 content-start gap-4">
                     <div
                       className={`grid min-w-0 gap-3 border bg-(--panel-soft) p-4 ${
-                        form.autoGrantVipTokensForChannelPointRewards
+                        showChannelPointRewardDetails
                           ? "border-(--border-strong)"
-                          : "border-(--border) opacity-70"
+                          : channelPointRewardsDisabledByEligibility
+                            ? "border-amber-500/30"
+                            : "border-(--border) opacity-70"
                       }`}
                     >
                       <h3 className="text-sm font-semibold text-(--text)">
@@ -1350,82 +1616,103 @@ function DashboardSettingsPage() {
                           "settings.sections.vipAutomation.channelPointsToggle"
                         )}
                         checked={form.autoGrantVipTokensForChannelPointRewards}
-                        onChange={(value) =>
-                          setBoolean(
-                            "autoGrantVipTokensForChannelPointRewards",
-                            value
-                          )
+                        onChange={(value) => {
+                          if (!value) {
+                            setBoolean(
+                              "autoGrantVipTokensForChannelPointRewards",
+                              false
+                            );
+                            return;
+                          }
+
+                          if (canEnableChannelPointRewards) {
+                            setBoolean(
+                              "autoGrantVipTokensForChannelPointRewards",
+                              true
+                            );
+                          }
+                        }}
+                        disabled={
+                          channelPointRewardsDisabledByEligibility &&
+                          !form.autoGrantVipTokensForChannelPointRewards
                         }
                       />
-                      <div
-                        className={`grid gap-3 ${!form.autoGrantVipTokensForChannelPointRewards ? "opacity-60" : ""}`}
-                      >
-                        <div className="grid gap-4 md:grid-cols-[minmax(0,0.8fr)_minmax(0,1.2fr)]">
-                          <FieldBlock
-                            label={t(
-                              "settings.sections.vipAutomation.channelPointCost"
-                            )}
-                            description={t(
-                              "settings.sections.vipAutomation.channelPointCostHelp"
-                            )}
-                          >
-                            <div className="max-w-40">
+                      {channelPointRewardsDisabledByEligibility ? (
+                        <Banner tone="warning">
+                          {t(
+                            "settings.sections.vipAutomation.channelPointUnavailable"
+                          )}
+                        </Banner>
+                      ) : null}
+                      {showChannelPointRewardDetails ? (
+                        <div className="grid gap-3">
+                          <div className="grid gap-4 md:grid-cols-[minmax(0,0.8fr)_minmax(0,1.2fr)]">
+                            <FieldBlock
+                              label={t(
+                                "settings.sections.vipAutomation.channelPointCost"
+                              )}
+                              description={t(
+                                "settings.sections.vipAutomation.channelPointCostHelp"
+                              )}
+                            >
+                              <div className="max-w-40">
+                                <Input
+                                  type="number"
+                                  min={1}
+                                  step={1}
+                                  value={form.channelPointRewardCost}
+                                  onChange={(event) =>
+                                    setNumber(
+                                      "channelPointRewardCost",
+                                      Math.max(
+                                        1,
+                                        Number(event.target.value) || 0
+                                      )
+                                    )
+                                  }
+                                />
+                              </div>
+                            </FieldBlock>
+                            <FieldBlock
+                              label={t(
+                                "settings.sections.vipAutomation.channelPointRewardName"
+                              )}
+                              description={t(
+                                "settings.sections.vipAutomation.channelPointRewardNameHelp"
+                              )}
+                            >
                               <Input
-                                type="number"
-                                min={1}
-                                step={1}
-                                value={form.channelPointRewardCost}
-                                disabled={
-                                  !form.autoGrantVipTokensForChannelPointRewards
-                                }
-                                onChange={(event) =>
-                                  setNumber(
-                                    "channelPointRewardCost",
-                                    Math.max(1, Number(event.target.value) || 0)
-                                  )
-                                }
+                                value={vipTokenChannelPointRewardTitle}
+                                readOnly
+                              />
+                            </FieldBlock>
+                          </div>
+                          <div className="grid gap-2 border border-(--border) bg-(--panel-muted) p-3">
+                            <div className="flex flex-wrap items-start justify-between gap-3">
+                              <div className="grid min-w-0 gap-1">
+                                <p className="text-sm font-medium text-(--text)">
+                                  {t(
+                                    "settings.sections.vipAutomation.channelPointSetup"
+                                  )}
+                                </p>
+                                <p className="text-sm leading-6 text-(--muted)">
+                                  {t(
+                                    "settings.sections.vipAutomation.channelPointSetupHelp"
+                                  )}
+                                </p>
+                              </div>
+                              <ChannelPointRewardInstructionsDialog
+                                rewardTitle={vipTokenChannelPointRewardTitle}
                               />
                             </div>
-                          </FieldBlock>
-                          <FieldBlock
-                            label={t(
-                              "settings.sections.vipAutomation.channelPointRewardName"
-                            )}
-                            description={t(
-                              "settings.sections.vipAutomation.channelPointRewardNameHelp"
-                            )}
-                          >
-                            <Input
-                              value={vipTokenChannelPointRewardTitle}
-                              readOnly
-                            />
-                          </FieldBlock>
-                        </div>
-                        <div className="grid gap-2 border border-(--border) bg-(--panel-muted) p-3">
-                          <div className="flex flex-wrap items-start justify-between gap-3">
-                            <div className="grid min-w-0 gap-1">
-                              <p className="text-sm font-medium text-(--text)">
-                                {t(
-                                  "settings.sections.vipAutomation.channelPointSetup"
-                                )}
-                              </p>
-                              <p className="text-sm leading-6 text-(--muted)">
-                                {t(
-                                  "settings.sections.vipAutomation.channelPointSetupHelp"
-                                )}
-                              </p>
-                            </div>
-                            <ChannelPointRewardInstructionsDialog
-                              rewardTitle={vipTokenChannelPointRewardTitle}
-                            />
+                            <p className="text-xs leading-5 text-(--muted)">
+                              {t(
+                                "settings.sections.vipAutomation.channelPointSetupNote"
+                              )}
+                            </p>
                           </div>
-                          <p className="text-xs leading-5 text-(--muted)">
-                            {t(
-                              "settings.sections.vipAutomation.channelPointSetupNote"
-                            )}
-                          </p>
                         </div>
-                      </div>
+                      ) : null}
                     </div>
 
                     <div
@@ -1447,119 +1734,117 @@ function DashboardSettingsPage() {
                           setBoolean("autoGrantVipTokensForCheers", value)
                         }
                       />
-                      <div
-                        className={`grid gap-3 ${!form.autoGrantVipTokensForCheers ? "opacity-60" : ""}`}
-                      >
-                        <div className="grid gap-3 md:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]">
-                          <div className="grid gap-1.5">
-                            <p className="text-sm font-medium text-(--text)">
-                              {t(
-                                "settings.sections.vipAutomation.cheerConversion"
-                              )}
-                            </p>
-                            <div className="flex flex-wrap items-center gap-2">
-                              <div className="w-24 shrink-0">
-                                <Input
-                                  id="cheer-bits-per-vip-token"
-                                  type="number"
-                                  min={0}
-                                  value={form.cheerBitsPerVipToken}
-                                  disabled={!form.autoGrantVipTokensForCheers}
-                                  onChange={(event) =>
-                                    setNumber(
-                                      "cheerBitsPerVipToken",
-                                      Number(event.target.value) || 0
-                                    )
-                                  }
-                                />
-                              </div>
-                              <label
-                                htmlFor="cheer-bits-per-vip-token"
-                                className="text-sm text-(--muted)"
-                              >
+                      {form.autoGrantVipTokensForCheers ? (
+                        <div className="grid gap-3">
+                          <div className="grid gap-3 md:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]">
+                            <div className="grid gap-1.5">
+                              <p className="text-sm font-medium text-(--text)">
                                 {t(
-                                  "settings.sections.vipAutomation.bitsPerToken"
+                                  "settings.sections.vipAutomation.cheerConversion"
                                 )}
-                              </label>
-                            </div>
-                          </div>
-                          <div className="grid gap-1.5">
-                            <p className="text-sm font-medium text-(--text)">
-                              {t(
-                                "settings.sections.vipAutomation.minimumCheer"
-                              )}
-                            </p>
-                            <div className="flex flex-wrap gap-2">
-                              {[25, 50, 75, 100].map((percent) => (
-                                <button
-                                  key={percent}
-                                  type="button"
-                                  disabled={!form.autoGrantVipTokensForCheers}
-                                  onClick={() =>
-                                    setNumber(
-                                      "cheerMinimumTokenPercent",
-                                      percent as DashboardSettingsFormData["cheerMinimumTokenPercent"]
-                                    )
-                                  }
-                                  className={`border px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.18em] transition-colors disabled:cursor-not-allowed ${
-                                    form.cheerMinimumTokenPercent === percent
-                                      ? "border-(--brand) bg-(--brand) text-white"
-                                      : "border-(--border) bg-(--panel-muted) text-(--muted)"
-                                  }`}
+                              </p>
+                              <div className="flex flex-wrap items-center gap-2">
+                                <div className="w-24 shrink-0">
+                                  <Input
+                                    id="cheer-bits-per-vip-token"
+                                    type="number"
+                                    min={0}
+                                    value={form.cheerBitsPerVipToken}
+                                    onChange={(event) =>
+                                      setNumber(
+                                        "cheerBitsPerVipToken",
+                                        Number(event.target.value) || 0
+                                      )
+                                    }
+                                  />
+                                </div>
+                                <label
+                                  htmlFor="cheer-bits-per-vip-token"
+                                  className="text-sm text-(--muted)"
                                 >
-                                  {percent}%
-                                </button>
-                              ))}
+                                  {t(
+                                    "settings.sections.vipAutomation.bitsPerToken"
+                                  )}
+                                </label>
+                              </div>
+                            </div>
+                            <div className="grid gap-1.5">
+                              <p className="text-sm font-medium text-(--text)">
+                                {t(
+                                  "settings.sections.vipAutomation.minimumCheer"
+                                )}
+                              </p>
+                              <div className="flex flex-wrap gap-2">
+                                {[25, 50, 75, 100].map((percent) => (
+                                  <button
+                                    key={percent}
+                                    type="button"
+                                    onClick={() =>
+                                      setNumber(
+                                        "cheerMinimumTokenPercent",
+                                        percent as DashboardSettingsFormData["cheerMinimumTokenPercent"]
+                                      )
+                                    }
+                                    className={`border px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.18em] transition-colors ${
+                                      form.cheerMinimumTokenPercent === percent
+                                        ? "border-(--brand) bg-(--brand) text-white"
+                                        : "border-(--border) bg-(--panel-muted) text-(--muted)"
+                                    }`}
+                                  >
+                                    {percent}%
+                                  </button>
+                                ))}
+                              </div>
                             </div>
                           </div>
-                        </div>
-                        <div className="grid gap-1.5 border border-dashed border-(--border) bg-(--panel-muted) p-3">
-                          <p className="text-sm font-medium text-(--text)">
-                            {t("settings.sections.vipAutomation.liveExample")}
-                          </p>
-                          {form.cheerBitsPerVipToken > 0 ? (
-                            <>
-                              <p className="text-sm leading-6 text-(--muted)">
-                                {t(
-                                  "settings.sections.vipAutomation.minimumCheerExample",
-                                  {
-                                    bits: formatSettingsNumber(
-                                      locale,
-                                      cheerMinimumBits
-                                    ),
-                                    tokenCount: formatSettingsNumber(
-                                      locale,
-                                      cheerMinimumPartialTokens
-                                    ),
-                                    percent: form.cheerMinimumTokenPercent,
-                                  }
-                                )}
-                              </p>
-                              <p className="text-sm leading-6 text-(--muted)">
-                                {t(
-                                  "settings.sections.vipAutomation.bitsExample",
-                                  {
-                                    oneTokenBits: formatSettingsNumber(
-                                      locale,
-                                      form.cheerBitsPerVipToken
-                                    ),
-                                    fiveTokenBits: formatSettingsNumber(
-                                      locale,
-                                      form.cheerBitsPerVipToken * 5
-                                    ),
-                                  }
-                                )}
-                              </p>
-                            </>
-                          ) : (
-                            <p className="text-sm leading-6 text-(--muted)">
-                              {t(
-                                "settings.sections.vipAutomation.bitsExampleEmpty"
-                              )}
+                          <div className="grid gap-1.5 border border-dashed border-(--border) bg-(--panel-muted) p-3">
+                            <p className="text-sm font-medium text-(--text)">
+                              {t("settings.sections.vipAutomation.liveExample")}
                             </p>
-                          )}
+                            {form.cheerBitsPerVipToken > 0 ? (
+                              <>
+                                <p className="text-sm leading-6 text-(--muted)">
+                                  {t(
+                                    "settings.sections.vipAutomation.minimumCheerExample",
+                                    {
+                                      bits: formatSettingsNumber(
+                                        locale,
+                                        cheerMinimumBits
+                                      ),
+                                      tokenCount: formatSettingsNumber(
+                                        locale,
+                                        cheerMinimumPartialTokens
+                                      ),
+                                      percent: form.cheerMinimumTokenPercent,
+                                    }
+                                  )}
+                                </p>
+                                <p className="text-sm leading-6 text-(--muted)">
+                                  {t(
+                                    "settings.sections.vipAutomation.bitsExample",
+                                    {
+                                      oneTokenBits: formatSettingsNumber(
+                                        locale,
+                                        form.cheerBitsPerVipToken
+                                      ),
+                                      fiveTokenBits: formatSettingsNumber(
+                                        locale,
+                                        form.cheerBitsPerVipToken * 5
+                                      ),
+                                    }
+                                  )}
+                                </p>
+                              </>
+                            ) : (
+                              <p className="text-sm leading-6 text-(--muted)">
+                                {t(
+                                  "settings.sections.vipAutomation.bitsExampleEmpty"
+                                )}
+                              </p>
+                            )}
+                          </div>
                         </div>
-                      </div>
+                      ) : null}
                     </div>
 
                     <div
@@ -1582,84 +1867,85 @@ function DashboardSettingsPage() {
                           )
                         }
                       />
-                      <div
-                        className={`grid gap-3 ${!form.autoGrantVipTokensForStreamElementsTips ? "opacity-60" : ""}`}
-                      >
-                        <div className="grid gap-4 md:grid-cols-[minmax(0,0.8fr)_minmax(0,1.2fr)]">
-                          <FieldBlock
-                            label={t(
-                              "settings.sections.vipAutomation.tipAmount"
-                            )}
-                            description={t(
-                              "settings.sections.vipAutomation.tipAmountHelp"
-                            )}
-                          >
-                            <div className="max-w-40">
-                              <Input
-                                type="number"
-                                min={0.01}
-                                step={0.01}
-                                value={form.streamElementsTipAmountPerVipToken}
-                                disabled={
-                                  !form.autoGrantVipTokensForStreamElementsTips
-                                }
-                                onChange={(event) =>
-                                  setNumber(
-                                    "streamElementsTipAmountPerVipToken",
-                                    Number(event.target.value) || 0
-                                  )
-                                }
-                              />
-                            </div>
-                          </FieldBlock>
-                          <FieldBlock
-                            label={t(
-                              "settings.sections.vipAutomation.relayUrl"
-                            )}
-                            description={t(
-                              "settings.sections.vipAutomation.relayUrlHelp"
-                            )}
-                          >
-                            <div className="grid min-w-0 grid-cols-[minmax(0,1fr)_auto] items-stretch gap-2">
-                              <Input
-                                value={streamElementsTipRelayUrl ?? ""}
-                                readOnly
-                                disabled={!streamElementsTipRelayUrl}
-                              />
-                              <Button
-                                type="button"
-                                variant="outline"
-                                onClick={copyRelayUrl}
-                                disabled={!streamElementsTipRelayUrl}
-                                className="self-stretch"
-                              >
-                                <Copy className="h-4 w-4" />
-                                {relayUrlCopied
-                                  ? t("settings.actions.copied")
-                                  : t("settings.actions.copyUrl")}
-                              </Button>
-                            </div>
-                          </FieldBlock>
-                        </div>
-                        <div className="grid gap-2 border border-(--border) bg-(--panel-muted) p-3">
-                          <div className="flex flex-wrap items-start justify-between gap-3">
-                            <div className="grid min-w-0 gap-1">
-                              <p className="text-sm font-medium text-(--text)">
-                                {t("settings.sections.vipAutomation.setup")}
-                              </p>
-                              <p className="text-sm leading-6 text-(--muted)">
-                                {t("settings.sections.vipAutomation.setupHelp")}
-                              </p>
-                            </div>
-                            <StreamElementsTipInstructionsDialog
-                              relayUrl={streamElementsTipRelayUrl}
-                            />
+                      {form.autoGrantVipTokensForStreamElementsTips ? (
+                        <div className="grid gap-3">
+                          <div className="grid gap-4 md:grid-cols-[minmax(0,0.8fr)_minmax(0,1.2fr)]">
+                            <FieldBlock
+                              label={t(
+                                "settings.sections.vipAutomation.tipAmount"
+                              )}
+                              description={t(
+                                "settings.sections.vipAutomation.tipAmountHelp"
+                              )}
+                            >
+                              <div className="max-w-40">
+                                <Input
+                                  type="number"
+                                  min={0.01}
+                                  step={0.01}
+                                  value={
+                                    form.streamElementsTipAmountPerVipToken
+                                  }
+                                  onChange={(event) =>
+                                    setNumber(
+                                      "streamElementsTipAmountPerVipToken",
+                                      Number(event.target.value) || 0
+                                    )
+                                  }
+                                />
+                              </div>
+                            </FieldBlock>
+                            <FieldBlock
+                              label={t(
+                                "settings.sections.vipAutomation.relayUrl"
+                              )}
+                              description={t(
+                                "settings.sections.vipAutomation.relayUrlHelp"
+                              )}
+                            >
+                              <div className="grid min-w-0 grid-cols-[minmax(0,1fr)_auto] items-stretch gap-2">
+                                <Input
+                                  value={streamElementsTipRelayUrl ?? ""}
+                                  readOnly
+                                  disabled={!streamElementsTipRelayUrl}
+                                />
+                                <Button
+                                  type="button"
+                                  variant="outline"
+                                  onClick={copyRelayUrl}
+                                  disabled={!streamElementsTipRelayUrl}
+                                  className="self-stretch"
+                                >
+                                  <Copy className="h-4 w-4" />
+                                  {relayUrlCopied
+                                    ? t("settings.actions.copied")
+                                    : t("settings.actions.copyUrl")}
+                                </Button>
+                              </div>
+                            </FieldBlock>
                           </div>
-                          <p className="text-xs leading-5 text-(--muted)">
-                            {t("settings.sections.vipAutomation.setupNote")}
-                          </p>
+                          <div className="grid gap-2 border border-(--border) bg-(--panel-muted) p-3">
+                            <div className="flex flex-wrap items-start justify-between gap-3">
+                              <div className="grid min-w-0 gap-1">
+                                <p className="text-sm font-medium text-(--text)">
+                                  {t("settings.sections.vipAutomation.setup")}
+                                </p>
+                                <p className="text-sm leading-6 text-(--muted)">
+                                  {t(
+                                    "settings.sections.vipAutomation.setupHelp"
+                                  )}
+                                </p>
+                              </div>
+                              <StreamElementsTipInstructionsDialog
+                                relayUrl={streamElementsTipRelayUrl}
+                              />
+                            </div>
+                            <p className="text-xs leading-5 text-(--muted)">
+                              {t("settings.sections.vipAutomation.setupNote")}
+                            </p>
+                          </div>
                         </div>
-                      </div>
+                      ) : null}
                     </div>
                   </div>
                 </div>
@@ -1685,24 +1971,30 @@ function DashboardSettingsPage() {
                   onChange={(value) => setBoolean("blacklistEnabled", value)}
                 />
                 <PermissionRow
-                  label={t("settings.sections.rules.bypassBlacklist")}
-                  checked={form.letSetlistBypassBlacklist}
-                  onChange={(value) =>
-                    setBoolean("letSetlistBypassBlacklist", value)
-                  }
-                />
-                <PermissionRow
                   label={t("settings.sections.rules.enableSetlist")}
                   checked={form.setlistEnabled}
                   onChange={(value) => setBoolean("setlistEnabled", value)}
                 />
-                <PermissionRow
-                  label={t("settings.sections.rules.subscribersFollowSetlist")}
-                  checked={form.subscribersMustFollowSetlist}
-                  onChange={(value) =>
-                    setBoolean("subscribersMustFollowSetlist", value)
-                  }
-                />
+                {form.blacklistEnabled && form.setlistEnabled ? (
+                  <PermissionRow
+                    label={t("settings.sections.rules.bypassBlacklist")}
+                    checked={form.letSetlistBypassBlacklist}
+                    onChange={(value) =>
+                      setBoolean("letSetlistBypassBlacklist", value)
+                    }
+                  />
+                ) : null}
+                {form.setlistEnabled ? (
+                  <PermissionRow
+                    label={t(
+                      "settings.sections.rules.subscribersFollowSetlist"
+                    )}
+                    checked={form.subscribersMustFollowSetlist}
+                    onChange={(value) =>
+                      setBoolean("subscribersMustFollowSetlist", value)
+                    }
+                  />
+                ) : null}
               </CardContent>
             </Card>
 
@@ -1911,7 +2203,7 @@ function StreamElementsTipInstructionsDialog(props: {
           {t("settings.actions.instructions")}
         </Button>
       </DialogTrigger>
-      <DialogContent className="max-h-[calc(100vh-2rem)] overflow-y-auto sm:max-w-3xl">
+      <DialogContent className="max-h-[calc(100vh-2rem)] overflow-y-auto bg-(--panel-strong) sm:max-w-3xl">
         <DialogHeader className="gap-3">
           <p className="text-xs font-semibold uppercase tracking-[0.16em] text-(--muted)">
             {t("settings.sections.vipAutomation.instructions.progress", {
@@ -2017,10 +2309,10 @@ function StreamElementsTipInstructionsDialog(props: {
           ) : null}
         </div>
 
-        <DialogFooter className="items-center justify-between sm:justify-between">
+        <DialogFooter className="flex-row items-center justify-between gap-2">
           <Button
             type="button"
-            variant="ghost"
+            variant="outline"
             size="sm"
             onClick={() => {
               setStepIndex((current) => Math.max(0, current - 1));
@@ -2284,7 +2576,7 @@ function ChannelPointRewardInstructionsDialog(props: { rewardTitle: string }) {
           {t("settings.actions.instructions")}
         </Button>
       </DialogTrigger>
-      <DialogContent className="max-h-[calc(100vh-2rem)] overflow-y-auto sm:max-w-2xl">
+      <DialogContent className="max-h-[calc(100vh-2rem)] overflow-y-auto bg-(--panel-strong) sm:max-w-2xl">
         <DialogHeader className="gap-3">
           <p className="text-xs font-semibold uppercase tracking-[0.16em] text-(--muted)">
             {t(
@@ -2343,10 +2635,10 @@ function ChannelPointRewardInstructionsDialog(props: { rewardTitle: string }) {
           ) : null}
         </div>
 
-        <DialogFooter className="items-center justify-between sm:justify-between">
+        <DialogFooter className="flex-row items-center justify-between gap-2">
           <Button
             type="button"
-            variant="ghost"
+            variant="outline"
             size="sm"
             onClick={() => {
               setStepIndex((current) => Math.max(0, current - 1));
@@ -2389,6 +2681,12 @@ function normalizeSettingsFormData(
     allowedTunings: settings.allowedTunings.length
       ? settings.allowedTunings
       : allTuningOptions,
+    vipRequestCooldownEnabled: settings.vipRequestCooldownEnabled ?? false,
+    vipRequestCooldownMinutes: settings.vipRequestCooldownMinutes ?? 0,
+    showPickOrderBadges: settings.showPickOrderBadges ?? false,
+    vipTokenDurationThresholds: normalizeVipTokenDurationThresholds(
+      settings.vipTokenDurationThresholds ?? []
+    ),
     moderatorCanViewVipTokens: true,
   };
 }

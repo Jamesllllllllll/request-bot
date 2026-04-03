@@ -17,7 +17,9 @@ type OverlayPageData = {
     slug: string;
     displayName: string;
   };
-  settings: StreamOverlayTheme & {};
+  settings: StreamOverlayTheme & {
+    showPickOrderBadges?: boolean;
+  };
   items: StreamOverlayItem[];
 };
 
@@ -133,6 +135,7 @@ function StreamPlaylistOverlayPage() {
         channelName={`${data.channel.displayName}'s Playlist`}
         items={data.items}
         theme={data.settings}
+        showPickOrderBadges={!!data.settings.showPickOrderBadges}
       />
     </div>
   );

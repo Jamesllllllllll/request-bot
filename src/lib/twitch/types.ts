@@ -13,6 +13,7 @@ export interface TwitchUserResponse {
     login: string;
     display_name: string;
     profile_image_url: string;
+    broadcaster_type?: string;
   }>;
 }
 

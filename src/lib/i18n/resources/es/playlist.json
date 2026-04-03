@@ -36,9 +36,13 @@
     "vipBalanceChecking": "Comprobando tu saldo de tokens VIP...",
     "vipBalanceUnavailable": "Tu saldo de tokens VIP no está disponible ahora mismo.",
     "replaceQueued": "Las nuevas canciones sustituyen tus solicitudes en cola.",
+    "editing": "Editando solicitud",
+    "cancelEdit": "Cancelar edición",
     "vipHelp": "Ayuda de tokens VIP",
     "open": "Abrir",
     "noRequests": "No hay solicitudes en la playlist.",
+    "edit": "Editar",
+    "remove": "Quitar",
     "removeQueued": "Quitar solicitudes en cola",
     "removing": "Quitando..."
   },
@@ -165,6 +169,8 @@
   "viewerActions": {
     "add": "Añadir",
     "addVip": "Añadir VIP",
+    "edit": "Editar",
+    "editVip": "Editar VIP",
     "adding": "Añadiendo...",
     "alreadyVip": "Ya está en tu cola como solicitud VIP.",
     "alreadyRegular": "Ya está en tu cola como solicitud normal.",
@@ -174,7 +180,11 @@
     "cannotRequest": "No puedes pedir canciones aquí.",
     "alreadyActive": "Esa canción ya está en tus solicitudes activas.",
     "activeLimitReached": "Ya tienes {count, plural, one {# solicitud activa} other {# solicitudes activas}}.",
-    "insufficientVipTokens": "No tienes suficientes tokens VIP."
+    "insufficientVipTokens": "No tienes suficientes tokens VIP.",
+    "requiresVipTokens": "Requiere {count}.",
+    "copyVipCommandNotice": "Requiere {count}. Copia el comando VIP{suffix}.",
+    "addVipCost": "Anadir VIP ({count})",
+    "editVipCost": "Editar VIP ({count})"
   },
   "specialRequest": {
     "titleManage": "Añadir una solicitud personalizada",
@@ -189,6 +199,8 @@
     "regular": "Normal",
     "add": "Añadir",
     "addVip": "Añadir VIP",
+    "edit": "Editar",
+    "editVip": "Editar VIP",
     "adding": "Añadiendo...",
     "randomHelp": "Añade una canción aleatoria entre las canciones coincidentes de ese artista.",
     "choiceHelp": "Añade una solicitud de elección del streamer para ese artista."
@@ -219,7 +231,8 @@
     "picks": {
       "first": "1.ª elección",
       "second": "2.ª elección",
-      "third": "3.ª elección"
+      "third": "3.ª elección",
+      "nth": "{{ordinal}} elección"
     }
   },
   "management": {

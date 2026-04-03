@@ -10,6 +10,7 @@ export type SongSearchResult = {
   tuning?: string;
   parts?: string[];
   durationText?: string;
+  durationSeconds?: number;
   year?: number;
   sourceUpdatedAt?: number;
   sourceId?: number;

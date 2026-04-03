@@ -21,6 +21,11 @@ const searchFieldSchema = z.enum([
   "album",
   "creator",
 ]);
+const vipTokenDurationThresholdSchema = z.object({
+  minimumDurationMinutes: z.number().min(0.01).max(600),
+  tokenCost: z.number().int().min(1).max(100),
+});
+const vipTokenCostSchema = z.number().int().min(1).max(100);
 
 export const searchInputSchema = z
   .object({
@@ -181,6 +186,8 @@ export const settingsInputSchema = z
     limitVipRequestsEnabled: z.boolean(),
     vipRequestsPerPeriod: z.number().int().min(1).max(100),
     vipRequestPeriodSeconds: z.number().int().min(0).max(86400),
+    vipRequestCooldownEnabled: z.boolean(),
+    vipRequestCooldownMinutes: z.number().int().min(0).max(10080),
     blacklistEnabled: z.boolean(),
     letSetlistBypassBlacklist: z.boolean(),
     setlistEnabled: z.boolean(),
@@ -201,6 +208,10 @@ export const settingsInputSchema = z
       .min(1)
       .max(1_000_000)
       .default(defaultChannelPointRewardCost),
+    vipTokenDurationThresholds: z
+      .array(vipTokenDurationThresholdSchema)
+      .max(12)
+      .default([]),
     cheerMinimumTokenPercent: z.union([
       z.literal(25),
       z.literal(50),
@@ -211,6 +222,7 @@ export const settingsInputSchema = z
     streamElementsTipAmountPerVipToken: z.number().min(0.01).max(100_000),
     duplicateWindowSeconds: z.number().int().min(0).max(86400),
     showPlaylistPositions: z.boolean(),
+    showPickOrderBadges: z.boolean(),
     commandPrefix: z.string().trim().min(2).max(12),
   })
   .superRefine((input, ctx) => {
@@ -243,6 +255,17 @@ export const settingsInputSchema = z
         message:
           "Moderators must be allowed to view VIP tokens before they can manage them.",
         path: ["moderatorCanManageVipTokens"],
+      });
+    }
+
+    if (
+      input.vipRequestCooldownEnabled &&
+      input.vipRequestCooldownMinutes <= 0
+    ) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "Set a VIP request cooldown longer than 0 minutes.",
+        path: ["vipRequestCooldownMinutes"],
       });
     }
   });
@@ -315,6 +338,7 @@ export const playlistMutationSchema = z.discriminatedUnion("action", [
     action: z.literal("changeRequestKind"),
     itemId: z.string(),
     requestKind: z.enum(["regular", "vip"]),
+    vipTokenCost: vipTokenCostSchema.optional(),
   }),
   z.object({
     action: z.literal("chooseVersion"),
@@ -356,6 +380,7 @@ const viewerSubmitCatalogSchema = z.object({
   songId: z.string().trim().min(1).max(80),
   requestMode: z.literal("catalog").optional(),
   requestKind: z.enum(["regular", "vip"]),
+  vipTokenCost: vipTokenCostSchema.optional(),
   replaceExisting: z.boolean().optional().default(false),
   itemId: z.string().trim().min(1).max(80).optional(),
 });
@@ -365,6 +390,7 @@ const viewerSubmitSpecialSchema = z.object({
   query: z.string().trim().min(2).max(200),
   requestMode: z.enum(["random", "choice"]),
   requestKind: z.enum(["regular", "vip"]),
+  vipTokenCost: vipTokenCostSchema.optional(),
   replaceExisting: z.boolean().optional().default(false),
   itemId: z.string().trim().min(1).max(80).optional(),
 });
@@ -392,12 +418,14 @@ export const extensionSubmitRequestSchema = z.union([
     songId: z.string().trim().min(1).max(80),
     requestMode: z.literal("catalog").optional(),
     requestKind: z.enum(["regular", "vip"]),
+    vipTokenCost: vipTokenCostSchema.optional(),
     itemId: z.string().trim().min(1).max(80).optional(),
   }),
   z.object({
     query: z.string().trim().min(2).max(200),
     requestMode: z.enum(["random", "choice"]),
     requestKind: z.enum(["regular", "vip"]),
+    vipTokenCost: vipTokenCostSchema.optional(),
     itemId: z.string().trim().min(1).max(80).optional(),
   }),
 ]);
@@ -448,6 +476,7 @@ export const extensionPlaylistMutationSchema = z.discriminatedUnion("action", [
     action: z.literal("changeRequestKind"),
     itemId: z.string().trim().min(1).max(80),
     requestKind: z.enum(["regular", "vip"]),
+    vipTokenCost: vipTokenCostSchema.optional(),
   }),
   z.object({
     action: z.literal("shufflePlaylist"),

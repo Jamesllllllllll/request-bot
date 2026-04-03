@@ -34,6 +34,11 @@ import {
 import { getArraySetting } from "~/lib/request-policy";
 import { json } from "~/lib/utils";
 import type { playlistMutationSchema } from "~/lib/validation";
+import {
+  formatVipTokenCostLabel,
+  getRequiredVipTokenCostForSong,
+  parseVipTokenDurationThresholds,
+} from "~/lib/vip-token-duration-thresholds";
 import { formatVipTokenCount, hasRedeemableVipToken } from "~/lib/vip-tokens";
 
 type PlaylistMutation = z.infer<typeof playlistMutationSchema>;
@@ -415,16 +420,44 @@ function formatPlaylistItemReplyTitle(item: {
 function getRequestKindChangeReplyMessage(input: {
   login: string;
   songTitle: string;
+  previousRequestKind: "regular" | "vip";
   nextRequestKind: "regular" | "vip";
   status: string;
+  nextVipTokenCost: number;
+  vipTokenDelta: number;
 }) {
-  if (input.nextRequestKind === "vip") {
+  if (
+    input.previousRequestKind !== input.nextRequestKind &&
+    input.nextRequestKind === "vip"
+  ) {
     const nextPositionSuffix =
       input.status === "current" ? "." : " and will play next.";
-    return `@${input.login} your request "${input.songTitle}" was upgraded to VIP${nextPositionSuffix}`;
+    return `@${input.login} your request "${input.songTitle}" was upgraded to VIP for ${formatVipTokenCostLabel(input.nextVipTokenCost)}${nextPositionSuffix}`;
   }
 
-  return `@${input.login} your VIP request "${input.songTitle}" was changed back to a regular request. 1 VIP token was refunded.`;
+  if (
+    input.previousRequestKind !== input.nextRequestKind &&
+    input.nextRequestKind === "regular"
+  ) {
+    return `@${input.login} your VIP request "${input.songTitle}" was changed back to a regular request. ${formatVipTokenCostLabel(Math.abs(input.vipTokenDelta))} ${Math.abs(input.vipTokenDelta) === 1 ? "was" : "were"} refunded.`;
+  }
+
+  return `@${input.login} the VIP token cost for your request "${input.songTitle}" is now ${formatVipTokenCostLabel(input.nextVipTokenCost)}.`;
+}
+
+function getStoredVipTokenCost(input: {
+  requestKind?: string | null;
+  vipTokenCost?: number | null;
+}) {
+  if (
+    typeof input.vipTokenCost === "number" &&
+    Number.isFinite(input.vipTokenCost) &&
+    input.vipTokenCost > 0
+  ) {
+    return Math.trunc(input.vipTokenCost);
+  }
+
+  return input.requestKind === "vip" ? 1 : 0;
 }
 
 export async function performPlaylistMutation(
@@ -499,7 +532,34 @@ export async function performPlaylistMutation(
       );
     }
 
-    if (item.requestKind === body.requestKind) {
+    if (!item.requestedByLogin) {
+      return json(
+        {
+          error:
+            "This request has no requester username, so it cannot be switched between regular and VIP.",
+        },
+        { status: 400 }
+      );
+    }
+
+    const actorType = state.accessRole === "moderator" ? "moderator" : "owner";
+    const songTitle = formatPlaylistItemReplyTitle(item);
+    const currentVipTokenCost = getStoredVipTokenCost(item);
+    const requiredVipTokenCost = getRequiredVipTokenCostForSong(
+      {
+        durationText: item.songDurationText,
+      },
+      parseVipTokenDurationThresholds(
+        state.settings?.vipTokenDurationThresholdsJson
+      )
+    );
+    const nextVipTokenCost =
+      body.requestKind === "vip"
+        ? Math.max(body.vipTokenCost ?? requiredVipTokenCost, 1)
+        : 0;
+    const vipTokenDelta = nextVipTokenCost - currentVipTokenCost;
+
+    if (item.requestKind === body.requestKind && vipTokenDelta === 0) {
       logPlaylistMutationStep(
         "Playlist mutation skipped; request kind unchanged",
         {
@@ -514,31 +574,21 @@ export async function performPlaylistMutation(
       return json({ ok: true });
     }
 
-    if (!item.requestedByLogin) {
-      return json(
-        {
-          error:
-            "This request has no requester username, so it cannot be switched between regular and VIP.",
-        },
-        { status: 400 }
-      );
-    }
-
-    const actorType = state.accessRole === "moderator" ? "moderator" : "owner";
-    const songTitle = formatPlaylistItemReplyTitle(item);
-
-    if (body.requestKind === "vip") {
+    if (vipTokenDelta > 0) {
       const balance = await getVipTokenBalance(runtimeEnv, {
         channelId: state.channel.id,
         login: item.requestedByLogin,
       });
 
-      if (!balance || !hasRedeemableVipToken(balance.availableCount)) {
+      if (
+        !balance ||
+        !hasRedeemableVipToken(balance.availableCount, vipTokenDelta)
+      ) {
         const availableCount = balance?.availableCount ?? 0;
         const formattedCount = formatVipTokenCount(availableCount);
         return json(
           {
-            error: `@${item.requestedByLogin} does not have enough VIP tokens. Current balance: ${formattedCount}.`,
+            error: `@${item.requestedByLogin} does not have enough VIP tokens. They need ${formatVipTokenCostLabel(vipTokenDelta)} more. Current balance: ${formattedCount}.`,
           },
           { status: 400 }
         );
@@ -549,94 +599,17 @@ export async function performPlaylistMutation(
         login: item.requestedByLogin,
         displayName: item.requestedByDisplayName,
         twitchUserId: item.requestedByTwitchUserId,
+        count: vipTokenDelta,
       });
 
       if (!consumed) {
         return json(
           {
-            error: `@${item.requestedByLogin} no longer has enough VIP tokens for this upgrade.`,
+            error: `@${item.requestedByLogin} no longer has enough VIP tokens for this change.`,
           },
           { status: 409 }
         );
       }
-
-      try {
-        logPlaylistMutationStep("Playlist mutation forwarding to backend", {
-          traceId,
-          state,
-          body,
-          extra: {
-            path: "/internal/playlist/mutate",
-          },
-        });
-        const response = await callBackend(
-          runtimeEnv,
-          "/internal/playlist/mutate",
-          {
-            method: "POST",
-            headers: {
-              "content-type": "application/json",
-            },
-            body: JSON.stringify({
-              channelId: state.channel.id,
-              actorUserId: state.actorUserId,
-              traceId,
-              ...body,
-            }),
-          }
-        );
-
-        if (!response.ok) {
-          throw new Error(await response.text());
-        }
-        logPlaylistMutationStep("Playlist mutation backend call succeeded", {
-          traceId,
-          state,
-          body,
-        });
-      } catch (error) {
-        await grantVipToken(runtimeEnv, {
-          channelId: state.channel.id,
-          login: item.requestedByLogin,
-          displayName: item.requestedByDisplayName,
-          twitchUserId: item.requestedByTwitchUserId,
-        });
-        console.error("Playlist mutation backend call failed", {
-          traceId,
-          channelId: state.channel.id,
-          channelSlug: state.channel.slug,
-          accessRole: state.accessRole,
-          actorUserId: state.actorUserId,
-          ...summarizePlaylistMutation(body),
-          itemId: item.id,
-          error: error instanceof Error ? error.message : String(error),
-        });
-        throw error;
-      }
-
-      void queuePlaylistReply(runtimeEnv, {
-        channelId: state.channel.id,
-        broadcasterUserId: state.channel.twitchChannelId,
-        message: getRequestKindChangeReplyMessage({
-          login: item.requestedByLogin,
-          songTitle,
-          nextRequestKind: "vip",
-          status: item.status,
-        }),
-      });
-
-      void logPlaylistRequestKindChange(runtimeEnv, {
-        channelId: state.channel.id,
-        actorUserId: state.actorUserId,
-        actorType,
-        action: "upgrade_request_to_vip",
-        itemId: item.id,
-        requestKind: body.requestKind,
-        requestedByLogin: item.requestedByLogin,
-        songTitle,
-      });
-
-      return json({ ok: true });
     }
 
     logPlaylistMutationStep("Playlist mutation forwarding to backend", {
@@ -660,11 +633,21 @@ export async function performPlaylistMutation(
           actorUserId: state.actorUserId,
           traceId,
           ...body,
+          vipTokenCost: nextVipTokenCost,
         }),
       }
     );
 
     if (!response.ok) {
+      if (vipTokenDelta > 0) {
+        await grantVipToken(runtimeEnv, {
+          channelId: state.channel.id,
+          login: item.requestedByLogin,
+          displayName: item.requestedByDisplayName,
+          twitchUserId: item.requestedByTwitchUserId,
+          count: vipTokenDelta,
+        });
+      }
       console.error("Playlist mutation backend call returned error", {
         traceId,
         channelId: state.channel.id,
@@ -683,12 +666,15 @@ export async function performPlaylistMutation(
     }
 
     try {
-      await grantVipToken(runtimeEnv, {
-        channelId: state.channel.id,
-        login: item.requestedByLogin,
-        displayName: item.requestedByDisplayName,
-        twitchUserId: item.requestedByTwitchUserId,
-      });
+      if (vipTokenDelta < 0) {
+        await grantVipToken(runtimeEnv, {
+          channelId: state.channel.id,
+          login: item.requestedByLogin,
+          displayName: item.requestedByDisplayName,
+          twitchUserId: item.requestedByTwitchUserId,
+          count: Math.abs(vipTokenDelta),
+        });
+      }
     } catch (error) {
       await callBackend(runtimeEnv, "/internal/playlist/mutate", {
         method: "POST",
@@ -702,6 +688,7 @@ export async function performPlaylistMutation(
           action: "changeRequestKind",
           itemId: item.id,
           requestKind: item.requestKind ?? "vip",
+          vipTokenCost: currentVipTokenCost,
         }),
       });
       console.error("Playlist mutation post-backend refund step failed", {
@@ -723,21 +710,29 @@ export async function performPlaylistMutation(
       message: getRequestKindChangeReplyMessage({
         login: item.requestedByLogin,
         songTitle,
-        nextRequestKind: "regular",
+        previousRequestKind: item.requestKind === "vip" ? "vip" : "regular",
+        nextRequestKind: body.requestKind,
         status: item.status,
+        nextVipTokenCost,
+        vipTokenDelta,
       }),
     });
 
-    void logPlaylistRequestKindChange(runtimeEnv, {
-      channelId: state.channel.id,
-      actorUserId: state.actorUserId,
-      actorType,
-      action: "downgrade_request_to_regular",
-      itemId: item.id,
-      requestKind: body.requestKind,
-      requestedByLogin: item.requestedByLogin,
-      songTitle,
-    });
+    if (item.requestKind !== body.requestKind) {
+      void logPlaylistRequestKindChange(runtimeEnv, {
+        channelId: state.channel.id,
+        actorUserId: state.actorUserId,
+        actorType,
+        action:
+          body.requestKind === "vip"
+            ? "upgrade_request_to_vip"
+            : "downgrade_request_to_regular",
+        itemId: item.id,
+        requestKind: body.requestKind,
+        requestedByLogin: item.requestedByLogin,
+        songTitle,
+      });
+    }
 
     logPlaylistMutationStep("Playlist mutation completed", {
       traceId,

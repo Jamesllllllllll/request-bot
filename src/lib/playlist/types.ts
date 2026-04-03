@@ -6,6 +6,7 @@ export interface AddRequestInput {
   messageId?: string;
   prioritizeNext?: boolean;
   requestKind?: "regular" | "vip";
+  vipTokenCost?: number;
   song: {
     id: string;
     title: string;
@@ -41,6 +42,7 @@ export interface ChangeRequestKindInput {
   itemId: string;
   actorUserId: string | null;
   requestKind: "regular" | "vip";
+  vipTokenCost?: number;
 }
 
 export interface EditRequestInput {
@@ -48,6 +50,7 @@ export interface EditRequestInput {
   itemId: string;
   actorUserId: string | null;
   requestKind: "regular" | "vip";
+  vipTokenCost?: number;
   song: {
     id: string;
     title: string;

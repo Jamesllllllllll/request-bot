@@ -112,11 +112,13 @@
         "reconnectNotice": "Les permissions Twitch doivent etre actualisees avant que le bot puisse fonctionner.",
         "mainToggles": "Interrupteurs principaux",
         "enableBot": "Activer le bot sur cette chaine",
-        "enableBotHelp": "Desactivez ceci quand vous ne voulez pas d'actions request-bot, y compris l'attribution de tokens VIP pour les abonnements, raids, etc.",
+        "enableBotHelp": "Desactivez ceci quand vous ne voulez pas d'actions RockList.Live, y compris l'attribution de tokens VIP pour les abonnements, raids, etc.",
         "enableRequests": "Activer les demandes",
         "enableRequestsHelp": "Desactiver les demandes vous laisse, vous et vos moderateurs, gerer la playlist, mais les viewers ne peuvent plus ajouter de morceaux.",
         "playlistDisplay": "Affichage de la playlist",
         "showPositions": "Afficher les positions de la playlist",
+        "showPickOrderBadges": "Afficher les badges de tour",
+        "showPickOrderBadgesHelp": "Affiche des badges comme 1er pick et 2e pick pour voir quel morceau est le prochain pick de chaque viewer apres un melange.",
         "commandPrefix": "Prefixe de commande",
         "commandPrefixHelp": "Utilisez la commande que les viewers tapent dans le chat.",
         "requestModifiers": "Modificateurs de demande",
@@ -210,24 +212,25 @@
         "channelPointCost": "Cout en points de chaine",
         "channelPointCostHelp": "Chaque utilisation de cette recompense donne 1 token VIP.",
         "channelPointRewardName": "Nom de la recompense",
-        "channelPointRewardNameHelp": "request-bot cree et garde cette recompense Twitch synchronisee pour vous.",
+        "channelPointRewardNameHelp": "RockList.Live cree et garde cette recompense Twitch synchronisee pour vous.",
         "channelPointSetup": "Configuration",
-        "channelPointSetupHelp": "request-bot cree cette recompense apres l'enregistrement des parametres. Les viewers peuvent l'utiliser sur Twitch quand votre chaine est en direct.",
+        "channelPointSetupHelp": "RockList.Live cree cette recompense apres l'enregistrement des parametres. Les viewers peuvent l'utiliser sur Twitch quand votre chaine est en direct.",
         "channelPointSetupNote": "Cela necessite une chaine Twitch Affiliate ou Partner et fonctionne quand le bot est active pour votre chaine. Si Twitch vous demande de reconnecter votre compte, reconnectez Twitch puis enregistrez a nouveau.",
+        "channelPointUnavailable": "Cette chaine Twitch n'est pas Affiliate ni Partner pour le moment, donc RockList.Live ne peut pas encore y creer une recompense de points de chaine.",
         "channelPointInstructions": {
           "title": "Configuration de la recompense de points de chaine",
-          "description": "Activez-la ici, reconnectez Twitch si besoin, puis laissez request-bot creer et gerer la recompense pour vous. Cela necessite une chaine Twitch Affiliate ou Partner.",
+          "description": "Activez-la ici, reconnectez Twitch si besoin, puis laissez RockList.Live creer et gerer la recompense pour vous. Cela necessite une chaine Twitch Affiliate ou Partner.",
           "progress": "Etape {current} sur {total}",
           "rewardNameLabel": "Nom de la recompense",
-          "rewardNameHelp": "C'est le nom exact de la recompense Twitch creee par request-bot.",
+          "rewardNameHelp": "C'est le nom exact de la recompense Twitch creee par RockList.Live.",
           "pages": {
             "enable": {
               "title": "Activez la recompense ici",
-              "body": "Commencez dans ce tableau de bord pour que request-bot connaisse le cout en points et puisse creer la recompense.",
+              "body": "Commencez dans ce tableau de bord pour que RockList.Live connaisse le cout en points et puisse creer la recompense.",
               "steps": {
                 "toggle": "Activez Donner 1 token VIP pour une recompense de points de chaine geree par l'app.",
                 "cost": "Choisissez combien de points de chaine coute chaque utilisation.",
-                "save": "Enregistrez les parametres pour que request-bot puisse creer ou mettre a jour la recompense."
+                "save": "Enregistrez les parametres pour que RockList.Live puisse creer ou mettre a jour la recompense."
               }
             },
             "reconnect": {
@@ -236,7 +239,7 @@
               "steps": {
                 "notice": "Si cette page affiche un message de reconnexion, cliquez sur Reconnecter Twitch.",
                 "signIn": "Terminez cette connexion Twitch avec le compte broadcaster proprietaire de cette chaine.",
-                "saveAgain": "Revenez ici puis enregistrez encore une fois pour que request-bot termine la creation de la recompense."
+                "saveAgain": "Revenez ici puis enregistrez encore une fois pour que RockList.Live termine la creation de la recompense."
               }
             },
             "check": {
@@ -245,7 +248,7 @@
               "steps": {
                 "reward": "Cherchez le nom de recompense affiche ci-dessous dans votre liste de recompenses de points de chaine Twitch.",
                 "live": "Quand votre chaine est en direct, les viewers peuvent l'utiliser pour obtenir 1 token VIP.",
-                "fulfill": "request-bot valide l'utilisation et ajoute automatiquement le token VIP."
+                "fulfill": "RockList.Live valide l'utilisation et ajoute automatiquement le token VIP."
               }
             }
           }
@@ -273,9 +276,24 @@
         "setup": "Configuration",
         "setupHelp": "StreamElements peut continuer a afficher les alertes de tip dans OBS comme aujourd'hui. Les recompenses de tokens VIP ont besoin que Streamer.bot transfere l'evenement ici.",
         "setupNote": "Les recompenses de tip fonctionnent uniquement quand le nom du tip StreamElements correspond au pseudo Twitch du viewer.",
+        "songLength": "Duree du morceau",
+        "songLengthHelp": "Exigez plus de tokens VIP pour les morceaux plus longs lorsque leur duree est connue.",
+        "songLengthMinutes": "Au-dessus de cette duree en minutes",
+        "songLengthTokens": "Tokens VIP requis",
+        "songLengthRemove": "Retirer",
+        "songLengthExample": "Les morceaux de plus de {minutes} minutes demandent {count} tokens VIP.",
+        "songLengthEmpty": "Aucun palier VIP par duree n'est encore actif.",
+        "songLengthNote": "Si un morceau n'a pas de duree connue, les viewers peuvent quand meme l'ajouter normalement et vous pouvez gerer les tokens VIP manuellement.",
+        "songLengthAdd": "Ajouter un palier",
+        "vipCooldown": "Delai entre les demandes VIP",
+        "vipCooldownHelp": "Apres qu'un viewer ajoute une demande VIP, faites-lui attendre avant d'en ajouter une autre. Les demandes normales suivent toujours vos regles habituelles.",
+        "vipCooldownToggle": "Exiger un delai avant qu'un viewer puisse ajouter une autre demande VIP",
+        "vipCooldownMinutes": "Delai en minutes",
+        "vipCooldownExample": "Apres avoir ajoute une demande VIP, ce viewer doit attendre {minutes} minutes avant d'ajouter une autre demande VIP.",
+        "vipCooldownNote": "Si le viewer retire cette demande VIP avant qu'elle soit jouee, le delai prend fin et il peut ajouter une autre demande VIP tout de suite.",
         "instructions": {
           "title": "Configuration du relais de tips StreamElements",
-          "description": "Utilisez Streamer.bot pour transferer chaque tip StreamElements ici afin que request-bot attribue automatiquement les tokens VIP.",
+          "description": "Utilisez Streamer.bot pour transferer chaque tip StreamElements ici afin que RockList.Live attribue automatiquement les tokens VIP.",
           "progress": "Etape {current} sur {total}",
           "pages": {
             "enable": {
@@ -314,8 +332,8 @@
               "body": "Faites un test complet avant de compter dessus en direct.",
               "steps": {
                 "tip": "Envoyez un tip de test via StreamElements une fois l'Action activee.",
-                "chat": "Regardez le message request-bot dans le chat qui confirme l'ajout des tokens VIP.",
-                "username": "Assurez-vous que le nom du tip StreamElements est bien le pseudo Twitch du viewer. Sinon, request-bot ne peut pas associer le tip a cette personne.",
+                "chat": "Regardez le message RockList.Live dans le chat qui confirme l'ajout des tokens VIP.",
+                "username": "Assurez-vous que le nom du tip StreamElements est bien le pseudo Twitch du viewer. Sinon, RockList.Live ne peut pas associer le tip a cette personne.",
                 "obs": "Si Streamer.bot ne transfere pas l'evenement, les alertes StreamElements peuvent toujours apparaitre dans OBS, mais aucun token VIP n'est attribue ici."
               }
             }

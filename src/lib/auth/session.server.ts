@@ -110,7 +110,7 @@ export async function verifyOauthState(
   })();
 
   const kvValid = storedSignature === expected;
-  if (!cookieValid && !kvValid) {
+  if (!cookieValid || !kvValid) {
     return false;
   }
 

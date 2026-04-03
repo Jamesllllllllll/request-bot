@@ -2,6 +2,7 @@
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "request-bot-backend",
   "main": "./src/workers/backend/index.ts",
+  "workers_dev": false,
   "compatibility_date": "2026-03-12",
   "compatibility_flags": ["nodejs_compat"],
   "durable_objects": {

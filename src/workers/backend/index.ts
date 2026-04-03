@@ -22,6 +22,7 @@ import {
 } from "~/lib/db/schema";
 import { assertDatabaseSchemaCurrent } from "~/lib/db/schema-version";
 import type { AppEnv, BackendEnv } from "~/lib/env";
+import { hasValidInternalApiSecret } from "~/lib/internal-api";
 import {
   getCompactedRegularPositionAssignments,
   getNextRegularPosition,
@@ -1996,6 +1997,13 @@ const backendHandler = {
     void ctx;
     await assertDatabaseSchemaCurrent(env);
     const url = new URL(request.url);
+
+    if (
+      url.pathname.startsWith("/internal/") &&
+      !hasValidInternalApiSecret(request, env)
+    ) {
+      return new Response("Unauthorized", { status: 401 });
+    }
 
     if (
       url.pathname === "/internal/playlist/add-request" &&

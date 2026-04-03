@@ -92,6 +92,7 @@ TWITCH_CLIENT_ID=
 TWITCH_EXTENSION_CLIENT_ID=
 TWITCH_CLIENT_SECRET=
 TWITCH_TOKEN_ENCRYPTION_SECRET=
+INTERNAL_API_SECRET=
 TWITCH_EVENTSUB_SECRET=local-dev-eventsub-secret
 TWITCH_EXTENSION_SECRET=
 SESSION_SECRET=local-dev-session-secret
@@ -108,6 +109,7 @@ For basic local development, set:
 - `APP_URL=http://localhost:9000`
 - `TWITCH_EVENTSUB_SECRET`
 - `SESSION_SECRET`
+- `INTERNAL_API_SECRET`
 - `TWITCH_BOT_USERNAME`
 - `TWITCH_SCOPES=openid user:read:moderated_channels moderator:read:chatters channel:bot channel:read:subscriptions bits:read channel:manage:redemptions`
 - `VITE_ALLOWED_HOSTS=` if you need extra Vite hostnames
@@ -118,6 +120,7 @@ To test Twitch sign-in, bot behavior, and EventSub locally, also set:
 - `TWITCH_CLIENT_ID`
 - `TWITCH_CLIENT_SECRET`
 - `TWITCH_TOKEN_ENCRYPTION_SECRET`
+- `INTERNAL_API_SECRET`
 - `ADMIN_TWITCH_USER_IDS`
 
 To test the Twitch panel extension locally, also set:

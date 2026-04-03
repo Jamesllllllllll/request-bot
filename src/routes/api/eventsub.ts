@@ -8,6 +8,11 @@ import {
   processEventSubChatMessage,
 } from "~/lib/eventsub/chat-message";
 import {
+  createEventSubStreamLifecycleDependencies,
+  processEventSubStreamOffline,
+  processEventSubStreamOnline,
+} from "~/lib/eventsub/stream-lifecycle";
+import {
   createEventSubSupportDependencies,
   processEventSubChannelCheer,
   processEventSubChannelPointRewardRedemption,
@@ -29,13 +34,10 @@ import {
   isStreamOnlineEvent,
   isSubscriptionGiftEvent,
 } from "~/lib/twitch/api";
-import {
-  markChannelLiveAndReconcile,
-  markChannelOfflineAndReconcile,
-} from "~/lib/twitch/bot";
 import { verifyEventSubSignature } from "~/lib/twitch/eventsub";
 
 const chatDeps = createEventSubChatDependencies();
+const streamLifecycleDeps = createEventSubStreamLifecycleDependencies();
 const supportDeps = createEventSubSupportDependencies();
 
 export const Route = createFileRoute("/api/eventsub")({
@@ -70,22 +72,26 @@ export const Route = createFileRoute("/api/eventsub")({
           console.info("EventSub stream online received", {
             broadcasterLogin: payload.event.broadcaster_user_login,
           });
-          await markChannelLiveAndReconcile(
-            runtimeEnv,
-            payload.event.broadcaster_user_id
-          );
-          return new Response("Accepted", { status: 202 });
+          const result = await processEventSubStreamOnline({
+            env: runtimeEnv,
+            deps: streamLifecycleDeps,
+            messageId,
+            event: payload.event,
+          });
+          return new Response(result.body, { status: result.status });
         }
 
         if (isStreamOfflineEvent(payload)) {
           console.info("EventSub stream offline received", {
             broadcasterLogin: payload.event.broadcaster_user_login,
           });
-          await markChannelOfflineAndReconcile(
-            runtimeEnv,
-            payload.event.broadcaster_user_id
-          );
-          return new Response("Accepted", { status: 202 });
+          const result = await processEventSubStreamOffline({
+            env: runtimeEnv,
+            deps: streamLifecycleDeps,
+            messageId,
+            event: payload.event,
+          });
+          return new Response(result.body, { status: result.status });
         }
 
         if (isSubscriptionGiftEvent(payload)) {

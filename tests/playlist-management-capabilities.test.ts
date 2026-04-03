@@ -127,6 +127,7 @@ describe("settings capability validation", () => {
       streamElementsTipAmountPerVipToken: 5,
       duplicateWindowSeconds: 900,
       showPlaylistPositions: false,
+      showPickOrderBadges: false,
       commandPrefix: "!sr",
     });
 

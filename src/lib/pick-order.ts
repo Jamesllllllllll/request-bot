@@ -1,3 +1,5 @@
+import type { AppLocale } from "./i18n/locales";
+
 export type PickOrderQueueItem = {
   requestedByTwitchUserId?: string | null;
   requestedByLogin?: string | null;
@@ -73,4 +75,87 @@ export function getPickNumbersForQueuedItems<TItem extends PickOrderQueueItem>(
   return items.map((item, index) =>
     getRequesterKey(item) ? (pickNumbersByIndex.get(index) ?? null) : null
   );
+}
+
+function normalizePickLocale(locale: AppLocale) {
+  return locale.toLowerCase();
+}
+
+export function formatPickOrdinal(locale: AppLocale, pickNumber: number) {
+  const normalizedLocale = normalizePickLocale(locale);
+
+  if (normalizedLocale === "fr") {
+    return pickNumber === 1 ? "1er" : `${pickNumber}e`;
+  }
+
+  if (normalizedLocale === "es") {
+    return `${pickNumber}.a`;
+  }
+
+  if (normalizedLocale === "pt-br") {
+    return `${pickNumber}a`;
+  }
+
+  const remainderTen = pickNumber % 10;
+  const remainderHundred = pickNumber % 100;
+
+  if (remainderTen === 1 && remainderHundred !== 11) {
+    return `${pickNumber}st`;
+  }
+
+  if (remainderTen === 2 && remainderHundred !== 12) {
+    return `${pickNumber}nd`;
+  }
+
+  if (remainderTen === 3 && remainderHundred !== 13) {
+    return `${pickNumber}rd`;
+  }
+
+  return `${pickNumber}th`;
+}
+
+export function getPickBadgeAppearance(pickNumber: number) {
+  if (pickNumber === 1) {
+    return {
+      background: "#16a34a",
+    };
+  }
+
+  if (pickNumber === 2) {
+    return {
+      background: "#eab308",
+    };
+  }
+
+  if (pickNumber === 3) {
+    return {
+      background: "#f97316",
+    };
+  }
+
+  return {
+    background: "#475569",
+  };
+}
+
+export function getPickBadgeLabel(input: {
+  locale: AppLocale;
+  pickNumber: number;
+  translate: (key: string, options?: Record<string, unknown>) => string;
+}) {
+  if (input.pickNumber === 1) {
+    return input.translate("row.picks.first");
+  }
+
+  if (input.pickNumber === 2) {
+    return input.translate("row.picks.second");
+  }
+
+  if (input.pickNumber === 3) {
+    return input.translate("row.picks.third");
+  }
+
+  return input.translate("row.picks.nth", {
+    ordinal: formatPickOrdinal(input.locale, input.pickNumber),
+  });
 }

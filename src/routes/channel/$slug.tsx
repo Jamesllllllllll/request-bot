@@ -4,6 +4,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { AnimatePresence, motion } from "motion/react";
 import { useEffect, useMemo } from "react";
 import { BlacklistPanel } from "~/components/blacklist-panel";
+import { PickOrderBadge } from "~/components/pick-order-badge";
 import { PublicPlayedHistoryCard } from "~/components/public-played-history-card";
 import { getBlacklistReasons as getChannelBlacklistReasons } from "~/lib/channel-blacklist";
 import { getLocalizedPageTitle } from "~/lib/i18n/metadata";
@@ -51,6 +52,7 @@ type ChannelPageData = {
     settings?: {
       blacklistEnabled?: boolean;
       showPlaylistPositions?: boolean;
+      showPickOrderBadges?: boolean;
     };
     items?: EnrichedChannelPlaylistItem[];
     playedSongs?: PlayedSongRow[];
@@ -176,6 +178,7 @@ function ChannelPage() {
   const blacklistEnabled = !!data?.playlist.settings?.blacklistEnabled;
   const showPlaylistPositions =
     !!data?.playlist.settings?.showPlaylistPositions;
+  const showPickOrderBadges = !!data?.playlist.settings?.showPickOrderBadges;
   const filteredItems = useMemo(
     () =>
       blacklistEnabled
@@ -213,6 +216,7 @@ function ChannelPage() {
                 item={item}
                 index={index}
                 showPlaylistPositions={showPlaylistPositions}
+                showPickOrderBadges={showPickOrderBadges}
                 blacklistReasons={
                   blacklistEnabled
                     ? getBlacklistReasons(item, {
@@ -257,6 +261,7 @@ function PublicPlaylistRow(props: {
   item: EnrichedChannelPlaylistItem;
   index: number;
   showPlaylistPositions: boolean;
+  showPickOrderBadges: boolean;
   blacklistReasons: string[];
 }) {
   const requesterName =
@@ -300,8 +305,8 @@ function PublicPlaylistRow(props: {
             {requesterName}
           </p>
           <div className="mt-2 flex flex-wrap items-center gap-2">
-            {props.item.pickNumber && props.item.pickNumber <= 3 ? (
-              <PickBadge pickNumber={props.item.pickNumber} />
+            {props.showPickOrderBadges && props.item.pickNumber != null ? (
+              <PickOrderBadge pickNumber={props.item.pickNumber} />
             ) : null}
             {props.blacklistReasons.map((reason) => (
               <BlacklistReasonBadge key={reason} reason={reason} />
@@ -380,25 +385,6 @@ function VipTag() {
     <div className="inline-flex min-h-7 items-center border border-white/15 bg-[#a855f7] px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.24em] text-white">
       VIP
     </div>
-  );
-}
-
-function PickBadge(props: { pickNumber: number }) {
-  const tone =
-    props.pickNumber === 1
-      ? { label: "1st pick", background: "#16a34a", icon: "✓" }
-      : props.pickNumber === 2
-        ? { label: "2nd pick", background: "#eab308", icon: "!" }
-        : { label: "3rd pick", background: "#f97316", icon: "!" };
-
-  return (
-    <span
-      className="inline-flex items-center gap-1 border border-transparent px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.16em] text-white"
-      style={{ background: tone.background }}
-    >
-      <span>{tone.icon}</span>
-      <span>{tone.label}</span>
-    </span>
   );
 }
 

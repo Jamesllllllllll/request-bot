@@ -91,6 +91,7 @@ SENTRY_TRACES_SAMPLE_RATE=
 TWITCH_CLIENT_ID=
 TWITCH_EXTENSION_CLIENT_ID=
 TWITCH_CLIENT_SECRET=
+TWITCH_TOKEN_ENCRYPTION_SECRET=
 TWITCH_EVENTSUB_SECRET=local-dev-eventsub-secret
 TWITCH_EXTENSION_SECRET=
 SESSION_SECRET=local-dev-session-secret
@@ -116,6 +117,7 @@ To test Twitch sign-in, bot behavior, and EventSub locally, also set:
 
 - `TWITCH_CLIENT_ID`
 - `TWITCH_CLIENT_SECRET`
+- `TWITCH_TOKEN_ENCRYPTION_SECRET`
 - `ADMIN_TWITCH_USER_IDS`
 
 To test the Twitch panel extension locally, also set:
@@ -410,6 +412,7 @@ Frontend Worker:
 ```bash
 echo "<TWITCH_CLIENT_ID>" | npx wrangler secret put TWITCH_CLIENT_ID --config wrangler.jsonc
 echo "<TWITCH_CLIENT_SECRET>" | npx wrangler secret put TWITCH_CLIENT_SECRET --config wrangler.jsonc
+echo "<TWITCH_TOKEN_ENCRYPTION_SECRET>" | npx wrangler secret put TWITCH_TOKEN_ENCRYPTION_SECRET --config wrangler.jsonc
 echo "<TWITCH_EVENTSUB_SECRET>" | npx wrangler secret put TWITCH_EVENTSUB_SECRET --config wrangler.jsonc
 echo "<TWITCH_EXTENSION_SECRET>" | npx wrangler secret put TWITCH_EXTENSION_SECRET --config wrangler.jsonc
 echo "<SESSION_SECRET>" | npx wrangler secret put SESSION_SECRET --config wrangler.jsonc
@@ -427,6 +430,7 @@ Backend Worker:
 ```bash
 echo "<TWITCH_CLIENT_ID>" | npx wrangler secret put TWITCH_CLIENT_ID --config wrangler.aux.jsonc
 echo "<TWITCH_CLIENT_SECRET>" | npx wrangler secret put TWITCH_CLIENT_SECRET --config wrangler.aux.jsonc
+echo "<TWITCH_TOKEN_ENCRYPTION_SECRET>" | npx wrangler secret put TWITCH_TOKEN_ENCRYPTION_SECRET --config wrangler.aux.jsonc
 echo "<TWITCH_EVENTSUB_SECRET>" | npx wrangler secret put TWITCH_EVENTSUB_SECRET --config wrangler.aux.jsonc
 echo "<SENTRY_DSN>" | npx wrangler secret put SENTRY_DSN --config wrangler.aux.jsonc
 ```
@@ -585,6 +589,7 @@ Set these as Codespaces repository secrets or add them to `.env` inside the Code
 - `TWITCH_CLIENT_ID`
 - `TWITCH_EXTENSION_CLIENT_ID`
 - `TWITCH_CLIENT_SECRET`
+- `TWITCH_TOKEN_ENCRYPTION_SECRET`
 - `TWITCH_EVENTSUB_SECRET`
 - `TWITCH_EXTENSION_SECRET`
 - `SESSION_SECRET`

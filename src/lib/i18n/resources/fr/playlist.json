@@ -36,9 +36,13 @@
     "vipBalanceChecking": "Verification de votre solde de tokens VIP...",
     "vipBalanceUnavailable": "Votre solde de tokens VIP est indisponible pour le moment.",
     "replaceQueued": "Les nouveaux ajouts remplacent vos demandes en file.",
+    "editing": "Modification de la demande",
+    "cancelEdit": "Annuler la modification",
     "vipHelp": "Aide des tokens VIP",
     "open": "Ouvrir",
     "noRequests": "Aucune demande dans la playlist.",
+    "edit": "Modifier",
+    "remove": "Retirer",
     "removeQueued": "Retirer les demandes en file",
     "removing": "Retrait..."
   },
@@ -165,6 +169,8 @@
   "viewerActions": {
     "add": "Ajouter",
     "addVip": "Ajouter VIP",
+    "edit": "Modifier",
+    "editVip": "Modifier VIP",
     "adding": "Ajout...",
     "alreadyVip": "Deja dans votre file comme demande VIP.",
     "alreadyRegular": "Deja dans votre file comme demande normale.",
@@ -174,7 +180,11 @@
     "cannotRequest": "Vous ne pouvez pas demander de morceaux ici.",
     "alreadyActive": "Ce morceau est deja dans vos demandes actives.",
     "activeLimitReached": "Vous avez deja {count, plural, one {# demande active} other {# demandes actives}}.",
-    "insufficientVipTokens": "Vous n'avez pas assez de tokens VIP."
+    "insufficientVipTokens": "Vous n'avez pas assez de tokens VIP.",
+    "requiresVipTokens": "Necessite {count}.",
+    "copyVipCommandNotice": "Necessite {count}. Copiez la commande VIP{suffix}.",
+    "addVipCost": "Ajouter VIP ({count})",
+    "editVipCost": "Modifier VIP ({count})"
   },
   "specialRequest": {
     "titleManage": "Ajouter une demande personnalisee",
@@ -189,6 +199,8 @@
     "regular": "Normal",
     "add": "Ajouter",
     "addVip": "Ajouter VIP",
+    "edit": "Modifier",
+    "editVip": "Modifier VIP",
     "adding": "Ajout...",
     "randomHelp": "Ajoute un morceau aleatoire parmi les morceaux correspondants pour cet artiste.",
     "choiceHelp": "Ajoute une demande de choix du streamer pour cet artiste."
@@ -219,7 +231,8 @@
     "picks": {
       "first": "1er pick",
       "second": "2e pick",
-      "third": "3e pick"
+      "third": "3e pick",
+      "nth": "{{ordinal}} pick"
     }
   },
   "management": {

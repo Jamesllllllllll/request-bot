@@ -104,6 +104,7 @@ describe("extension panel service", () => {
           requestKind: "regular",
         },
       ],
+      playedSongs: [],
     } as never);
     vi.mocked(getUserByTwitchUserId).mockResolvedValue({
       id: "user-1",
@@ -177,6 +178,7 @@ describe("extension panel service", () => {
       defaultLocale: "es",
       blacklistEnabled: true,
       showPlaylistPositions: true,
+      showPickOrderBadges: true,
       moderatorCanManageRequests: true,
       moderatorCanManageBlacklist: false,
       moderatorCanManageSetlist: false,
@@ -389,6 +391,53 @@ describe("extension panel service", () => {
     });
   });
 
+  it("includes pick numbers when pick order badges are enabled", async () => {
+    vi.mocked(getExtensionPanelPlaylistByChannelId).mockResolvedValue({
+      playlist: {
+        id: "playlist-1",
+        currentItemId: null,
+      },
+      items: [
+        {
+          id: "item-queued",
+          songId: "song-2",
+          requestedByTwitchUserId: "viewer-1",
+          requestedByLogin: "viewer_one",
+          songTitle: "Song Two",
+          status: "queued",
+          requestKind: "regular",
+          createdAt: 2_000,
+        },
+      ],
+      playedSongs: [
+        {
+          requestedByTwitchUserId: "viewer-1",
+          requestedByLogin: "viewer_one",
+          playedAt: 1_000,
+        },
+      ],
+    } as never);
+
+    await expect(
+      getExtensionPanelState({
+        env,
+        auth,
+      })
+    ).resolves.toMatchObject({
+      settings: {
+        showPickOrderBadges: true,
+      },
+      playlist: {
+        items: [
+          expect.objectContaining({
+            id: "item-queued",
+            pickNumber: 2,
+          }),
+        ],
+      },
+    });
+  });
+
   it("keeps viewer edit capability when multiple active requests are present", async () => {
     vi.mocked(getExtensionPanelPlaylistByChannelId).mockResolvedValue({
       playlist: {
@@ -413,6 +462,7 @@ describe("extension panel service", () => {
           requestKind: "vip",
         },
       ],
+      playedSongs: [],
     } as never);
 
     await expect(

@@ -1,5 +1,5 @@
 import "@tanstack/react-start/server-only";
-import { and, asc, desc, eq, inArray, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gt, inArray, sql } from "drizzle-orm";
 import { tuningOptions } from "~/lib/channel-options";
 import type { AppEnv } from "~/lib/env";
 import { DEFAULT_MAX_QUEUE_SIZE } from "~/lib/settings-defaults";
@@ -12,6 +12,10 @@ import {
 } from "~/lib/twitch/api";
 import { channelPointRewardManageScope } from "~/lib/twitch/channel-point-rewards";
 import {
+  encryptTwitchToken,
+  readStoredTwitchToken,
+} from "~/lib/twitch/token-encryption";
+import {
   createId,
   decodeHtmlEntities,
   encodeHtmlEntities,
@@ -19,6 +23,11 @@ import {
   parseJsonStringArray,
   slugify,
 } from "~/lib/utils";
+import {
+  getVipRequestCooldownExpiresAt,
+  normalizeVipRequestCooldownMinutes,
+} from "~/lib/vip-request-cooldowns";
+import { serializeVipTokenDurationThresholds } from "~/lib/vip-token-duration-thresholds";
 import {
   clampVipTokenCount,
   hasRedeemableVipToken,
@@ -60,6 +69,8 @@ import {
   setlistArtists,
   twitchAuthorizations,
   users,
+  type VipRequestCooldownInsert,
+  vipRequestCooldowns,
   vipTokens,
 } from "./schema";
 
@@ -119,6 +130,8 @@ const CATALOG_SONG_MUTABLE_FIELDS: Array<keyof CatalogSongInsert> = [
   "lastSeenAt",
   "updatedAt",
 ];
+
+type TwitchAuthorizationRow = typeof twitchAuthorizations.$inferSelect;
 
 function parseAdminTwitchUserIds(env: AppEnv) {
   return new Set(
@@ -369,6 +382,11 @@ export async function saveTwitchAuthorization(
     expiresAt?: number;
   }
 ) {
+  const encryptedTokens = await encryptTwitchAuthorizationTokens(env, {
+    accessToken: input.accessToken,
+    refreshToken: input.refreshToken ?? null,
+  });
+
   await getDb(env)
     .insert(twitchAuthorizations)
     .values({
@@ -377,8 +395,8 @@ export async function saveTwitchAuthorization(
       userId: input.userId,
       channelId: input.channelId ?? null,
       twitchUserId: input.twitchUserId,
-      accessTokenEncrypted: input.accessToken,
-      refreshTokenEncrypted: input.refreshToken,
+      accessTokenEncrypted: encryptedTokens.accessTokenEncrypted,
+      refreshTokenEncrypted: encryptedTokens.refreshTokenEncrypted,
       tokenType: input.tokenType,
       scopes: JSON.stringify(input.scopes),
       expiresAt: input.expiresAt,
@@ -391,8 +409,8 @@ export async function saveTwitchAuthorization(
       set: {
         userId: input.userId,
         channelId: input.channelId ?? null,
-        accessTokenEncrypted: input.accessToken,
-        refreshTokenEncrypted: input.refreshToken,
+        accessTokenEncrypted: encryptedTokens.accessTokenEncrypted,
+        refreshTokenEncrypted: encryptedTokens.refreshTokenEncrypted,
         tokenType: input.tokenType,
         scopes: JSON.stringify(input.scopes),
         expiresAt: input.expiresAt,
@@ -814,6 +832,7 @@ export async function getExtensionPanelPlaylistByChannelId(
       requestedByLogin: true,
       requestedByDisplayName: true,
       requestKind: true,
+      vipTokenCost: true,
       createdAt: true,
       updatedAt: true,
       editedAt: true,
@@ -823,9 +842,23 @@ export async function getExtensionPanelPlaylistByChannelId(
     },
   });
 
+  const playedRows = await db.query.playedSongs.findMany({
+    where: eq(playedSongs.channelId, channelId),
+    orderBy: [desc(playedSongs.playedAt)],
+    limit: 500,
+    columns: {
+      requestedByTwitchUserId: true,
+      requestedByLogin: true,
+      requestedAt: true,
+      playedAt: true,
+      createdAt: true,
+    },
+  });
+
   return {
     playlist,
     items,
+    playedSongs: playedRows,
   };
 }
 
@@ -2008,6 +2041,7 @@ export async function searchCatalogSongs(
           : undefined,
         parts: parseJsonStringArray(row.partsJson),
         durationText: row.durationText ?? undefined,
+        durationSeconds: row.durationSeconds ?? undefined,
         year: row.year ?? undefined,
         sourceUpdatedAt: row.sourceUpdatedAt ?? undefined,
         sourceId: row.sourceSongId,
@@ -2754,6 +2788,8 @@ export async function updateSettings(
     limitVipRequestsEnabled: boolean;
     vipRequestsPerPeriod: number;
     vipRequestPeriodSeconds: number;
+    vipRequestCooldownEnabled: boolean;
+    vipRequestCooldownMinutes: number;
     blacklistEnabled: boolean;
     letSetlistBypassBlacklist: boolean;
     setlistEnabled: boolean;
@@ -2769,11 +2805,16 @@ export async function updateSettings(
     allowRequestPathModifiers: boolean;
     cheerBitsPerVipToken: number;
     channelPointRewardCost: number;
+    vipTokenDurationThresholds: Array<{
+      minimumDurationMinutes: number;
+      tokenCost: number;
+    }>;
     cheerMinimumTokenPercent: 25 | 50 | 75 | 100;
     raidMinimumViewerCount: number;
     streamElementsTipAmountPerVipToken: number;
     duplicateWindowSeconds: number;
     showPlaylistPositions: boolean;
+    showPickOrderBadges: boolean;
     commandPrefix: string;
   }
 ) {
@@ -2811,6 +2852,8 @@ export async function updateSettings(
       limitVipRequestsEnabled: input.limitVipRequestsEnabled,
       vipRequestsPerPeriod: input.vipRequestsPerPeriod,
       vipRequestPeriodSeconds: input.vipRequestPeriodSeconds,
+      vipRequestCooldownEnabled: input.vipRequestCooldownEnabled,
+      vipRequestCooldownMinutes: input.vipRequestCooldownMinutes,
       blacklistEnabled: input.blacklistEnabled,
       letSetlistBypassBlacklist: input.letSetlistBypassBlacklist,
       setlistEnabled: input.setlistEnabled,
@@ -2830,12 +2873,16 @@ export async function updateSettings(
       allowRequestPathModifiers: input.allowRequestPathModifiers,
       cheerBitsPerVipToken: input.cheerBitsPerVipToken,
       channelPointRewardCost: input.channelPointRewardCost,
+      vipTokenDurationThresholdsJson: serializeVipTokenDurationThresholds(
+        input.vipTokenDurationThresholds
+      ),
       cheerMinimumTokenPercent: input.cheerMinimumTokenPercent,
       raidMinimumViewerCount: input.raidMinimumViewerCount,
       streamElementsTipAmountPerVipToken:
         input.streamElementsTipAmountPerVipToken,
       duplicateWindowSeconds: input.duplicateWindowSeconds,
       showPlaylistPositions: input.showPlaylistPositions,
+      showPickOrderBadges: input.showPickOrderBadges,
       commandPrefix: input.commandPrefix,
       updatedAt: Date.now(),
     })
@@ -3134,6 +3181,121 @@ export async function getVipTokenBalance(
   });
 }
 
+export async function getVipRequestCooldown(
+  env: AppEnv,
+  input: {
+    channelId: string;
+    login: string;
+  }
+) {
+  return getDb(env).query.vipRequestCooldowns.findFirst({
+    where: and(
+      eq(vipRequestCooldowns.channelId, input.channelId),
+      eq(vipRequestCooldowns.normalizedLogin, normalizeLogin(input.login)),
+      gt(vipRequestCooldowns.cooldownExpiresAt, Date.now())
+    ),
+  });
+}
+
+export async function upsertVipRequestCooldown(
+  env: AppEnv,
+  input: {
+    channelId: string;
+    login: string;
+    displayName?: string | null;
+    twitchUserId?: string | null;
+    sourceItemId: string;
+    cooldownMinutes: number;
+    cooldownStartedAt?: number;
+  }
+) {
+  const cooldownMinutes = normalizeVipRequestCooldownMinutes(
+    input.cooldownMinutes
+  );
+
+  if (cooldownMinutes <= 0) {
+    return null;
+  }
+
+  const cooldownStartedAt = input.cooldownStartedAt ?? Date.now();
+  const values = {
+    channelId: input.channelId,
+    normalizedLogin: normalizeLogin(input.login),
+    twitchUserId: input.twitchUserId ?? null,
+    login: input.login,
+    displayName: input.displayName ?? null,
+    sourceItemId: input.sourceItemId,
+    cooldownStartedAt,
+    cooldownExpiresAt: getVipRequestCooldownExpiresAt({
+      cooldownMinutes,
+      cooldownStartedAt,
+    }),
+    createdAt: cooldownStartedAt,
+    updatedAt: cooldownStartedAt,
+  } satisfies VipRequestCooldownInsert;
+
+  await getDb(env)
+    .insert(vipRequestCooldowns)
+    .values(values)
+    .onConflictDoUpdate({
+      target: [
+        vipRequestCooldowns.channelId,
+        vipRequestCooldowns.normalizedLogin,
+      ],
+      set: {
+        twitchUserId: values.twitchUserId,
+        login: values.login,
+        displayName: values.displayName,
+        sourceItemId: values.sourceItemId,
+        cooldownStartedAt: values.cooldownStartedAt,
+        cooldownExpiresAt: values.cooldownExpiresAt,
+        updatedAt: values.updatedAt,
+      },
+    });
+
+  return getVipRequestCooldown(env, input);
+}
+
+export async function clearVipRequestCooldownBySourceItem(
+  env: AppEnv,
+  input: {
+    channelId: string;
+    sourceItemId: string;
+  }
+) {
+  await getDb(env)
+    .delete(vipRequestCooldowns)
+    .where(
+      and(
+        eq(vipRequestCooldowns.channelId, input.channelId),
+        eq(vipRequestCooldowns.sourceItemId, input.sourceItemId)
+      )
+    );
+}
+
+export async function clearVipRequestCooldownsBySourceItems(
+  env: AppEnv,
+  input: {
+    channelId: string;
+    sourceItemIds: string[];
+  }
+) {
+  const sourceItemIds = [...new Set(input.sourceItemIds.filter(Boolean))];
+
+  if (sourceItemIds.length === 0) {
+    return;
+  }
+
+  await getDb(env)
+    .delete(vipRequestCooldowns)
+    .where(
+      and(
+        eq(vipRequestCooldowns.channelId, input.channelId),
+        inArray(vipRequestCooldowns.sourceItemId, sourceItemIds)
+      )
+    );
+}
+
 export async function grantVipToken(
   env: AppEnv,
   input: {
@@ -3212,9 +3374,19 @@ export async function consumeVipToken(
     login: string;
     displayName?: string | null;
     twitchUserId?: string | null;
+    count?: number;
   }
 ) {
   const now = Date.now();
+  const count = clampVipTokenCount(input.count ?? 1);
+
+  if (count <= 0) {
+    return getVipTokenBalance(env, {
+      channelId: input.channelId,
+      login: input.login,
+    });
+  }
+
   const rows = unwrapD1Rows(
     await getDb(env).all<{
       channelId: string;
@@ -3236,13 +3408,13 @@ export async function consumeVipToken(
         twitch_user_id = COALESCE(${input.twitchUserId ?? null}, twitch_user_id),
         login = ${input.login},
         display_name = COALESCE(${input.displayName ?? null}, display_name),
-        available_count = available_count - 1,
-        consumed_count = consumed_count + 1,
+        available_count = available_count - ${count},
+        consumed_count = consumed_count + ${count},
         last_consumed_at = ${now},
         updated_at = ${now}
       WHERE channel_id = ${input.channelId}
         AND normalized_login = ${normalizeLogin(input.login)}
-        AND available_count >= 1
+        AND available_count >= ${count}
       RETURNING
         channel_id AS channelId,
         normalized_login AS normalizedLogin,
@@ -3276,18 +3448,24 @@ export async function revokeVipToken(
   input: {
     channelId: string;
     login: string;
+    count?: number;
   }
 ) {
   const existing = await getVipTokenBalance(env, {
     channelId: input.channelId,
     login: input.login,
   });
+  const count = clampVipTokenCount(input.count ?? 1);
 
-  if (!existing || !hasRedeemableVipToken(existing.availableCount)) {
+  if (
+    !existing ||
+    count <= 0 ||
+    !hasRedeemableVipToken(existing.availableCount, count)
+  ) {
     return null;
   }
 
-  const nextCount = subtractVipTokenRedemption(existing.availableCount);
+  const nextCount = subtractVipTokenRedemption(existing.availableCount, count);
 
   await getDb(env)
     .update(vipTokens)
@@ -3423,24 +3601,28 @@ export async function getAuthorizationForChannel(
   env: AppEnv,
   channelId: string
 ) {
-  return getDb(env).query.twitchAuthorizations.findFirst({
+  const authorization = await getDb(env).query.twitchAuthorizations.findFirst({
     where: and(
       eq(twitchAuthorizations.channelId, channelId),
       eq(twitchAuthorizations.authorizationType, "broadcaster")
     ),
   });
+
+  return resolveTwitchAuthorization(env, authorization);
 }
 
 export async function getBroadcasterAuthorizationForUser(
   env: AppEnv,
   userId: string
 ) {
-  return getDb(env).query.twitchAuthorizations.findFirst({
+  const authorization = await getDb(env).query.twitchAuthorizations.findFirst({
     where: and(
       eq(twitchAuthorizations.userId, userId),
       eq(twitchAuthorizations.authorizationType, "broadcaster")
     ),
   });
+
+  return resolveTwitchAuthorization(env, authorization);
 }
 
 export async function getActiveBroadcasterAuthorizationForUser(
@@ -3468,9 +3650,11 @@ export async function getActiveBroadcasterAuthorizationForChannel(
 }
 
 export async function getBotAuthorization(env: AppEnv) {
-  return getDb(env).query.twitchAuthorizations.findFirst({
+  const authorization = await getDb(env).query.twitchAuthorizations.findFirst({
     where: eq(twitchAuthorizations.authorizationType, "bot"),
   });
+
+  return resolveTwitchAuthorization(env, authorization);
 }
 
 export async function deleteBotAuthorization(env: AppEnv) {
@@ -3490,17 +3674,90 @@ export async function updateTwitchAuthorizationTokens(
     tokenType?: string;
   }
 ) {
+  const encryptedTokens = await encryptTwitchAuthorizationTokens(env, {
+    accessToken: input.accessToken,
+    refreshToken: input.refreshToken ?? null,
+  });
+
   await getDb(env)
     .update(twitchAuthorizations)
     .set({
-      accessTokenEncrypted: input.accessToken,
-      refreshTokenEncrypted: input.refreshToken ?? null,
+      accessTokenEncrypted: encryptedTokens.accessTokenEncrypted,
+      refreshTokenEncrypted: encryptedTokens.refreshTokenEncrypted,
       expiresAt: input.expiresAt ?? null,
       scopes: input.scopes ? JSON.stringify(input.scopes) : undefined,
       tokenType: input.tokenType ?? undefined,
       updatedAt: Date.now(),
     })
     .where(eq(twitchAuthorizations.id, authorizationId));
+}
+
+async function encryptTwitchAuthorizationTokens(
+  env: AppEnv,
+  input: {
+    accessToken: string;
+    refreshToken?: string | null;
+  }
+) {
+  const [accessTokenEncrypted, refreshTokenEncrypted] = await Promise.all([
+    encryptTwitchToken(env, input.accessToken),
+    input.refreshToken == null
+      ? Promise.resolve(null)
+      : encryptTwitchToken(env, input.refreshToken),
+  ]);
+
+  return {
+    accessTokenEncrypted,
+    refreshTokenEncrypted,
+  };
+}
+
+async function resolveTwitchAuthorization(
+  env: AppEnv,
+  authorization: TwitchAuthorizationRow | undefined
+) {
+  if (!authorization) {
+    return authorization;
+  }
+
+  const [accessToken, refreshToken] = await Promise.all([
+    readStoredTwitchToken(env, authorization.accessTokenEncrypted),
+    authorization.refreshTokenEncrypted == null
+      ? Promise.resolve(null)
+      : readStoredTwitchToken(env, authorization.refreshTokenEncrypted),
+  ]);
+
+  if (accessToken.needsReencryption || refreshToken?.needsReencryption) {
+    const encryptedUpdates: {
+      accessTokenEncrypted?: string;
+      refreshTokenEncrypted?: string | null;
+    } = {};
+
+    if (accessToken.needsReencryption) {
+      encryptedUpdates.accessTokenEncrypted = await encryptTwitchToken(
+        env,
+        accessToken.value
+      );
+    }
+
+    if (refreshToken?.needsReencryption) {
+      encryptedUpdates.refreshTokenEncrypted = await encryptTwitchToken(
+        env,
+        refreshToken.value
+      );
+    }
+
+    await getDb(env)
+      .update(twitchAuthorizations)
+      .set(encryptedUpdates)
+      .where(eq(twitchAuthorizations.id, authorization.id));
+  }
+
+  return {
+    ...authorization,
+    accessTokenEncrypted: accessToken.value,
+    refreshTokenEncrypted: refreshToken?.value ?? null,
+  };
 }
 
 export async function getEventSubSubscription(

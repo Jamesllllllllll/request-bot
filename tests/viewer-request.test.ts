@@ -23,6 +23,7 @@ vi.mock("~/lib/db/repositories", () => ({
   getChannelBlacklistByChannelId: vi.fn(),
   getChannelBySlug: vi.fn(),
   getChannelSettingsByChannelId: vi.fn(),
+  getVipRequestCooldown: vi.fn(),
   getPlaylistByChannelId: vi.fn(),
   searchCatalogSongs: vi.fn(),
   getUserById: vi.fn(),
@@ -61,6 +62,7 @@ import {
   getChannelSettingsByChannelId,
   getPlaylistByChannelId,
   getUserById,
+  getVipRequestCooldown,
   getVipTokenBalance,
   grantVipToken,
   isBlockedUser,
@@ -142,11 +144,14 @@ describe("viewer request service", () => {
     limitVipRequestsEnabled: false,
     vipRequestsPerPeriod: 1,
     vipRequestPeriodSeconds: 0,
+    vipRequestCooldownEnabled: false,
+    vipRequestCooldownMinutes: 0,
     blacklistEnabled: false,
     letSetlistBypassBlacklist: false,
     setlistEnabled: false,
     subscribersMustFollowSetlist: false,
     autoGrantVipTokenToSubscribers: false,
+    vipTokenDurationThresholdsJson: "[]",
     duplicateWindowSeconds: 900,
     commandPrefix: "!",
   };
@@ -178,6 +183,7 @@ describe("viewer request service", () => {
     vi.mocked(getChannelSettingsByChannelId).mockResolvedValue(
       baseSettings as never
     );
+    vi.mocked(getVipRequestCooldown).mockResolvedValue(null as never);
     vi.mocked(getPlaylistByChannelId).mockResolvedValue({
       playlist: {
         id: "playlist-1",
@@ -526,6 +532,7 @@ describe("viewer request service", () => {
       itemId: "item-1",
       actorUserId: null,
       requestKind: "vip",
+      vipTokenCost: 1,
     });
     expect(consumeVipToken).toHaveBeenCalledWith(
       env,
@@ -533,6 +540,497 @@ describe("viewer request service", () => {
         channelId: "channel-1",
         login: "viewer_one",
       })
+    );
+  });
+
+  it("rejects a regular request when the song duration requires VIP tokens", async () => {
+    vi.mocked(getChannelSettingsByChannelId).mockResolvedValue({
+      ...baseSettings,
+      vipTokenDurationThresholdsJson: JSON.stringify([
+        {
+          minimumDurationMinutes: 7,
+          tokenCost: 1,
+        },
+        {
+          minimumDurationMinutes: 9,
+          tokenCost: 2,
+        },
+      ]),
+    } as never);
+    vi.mocked(getCatalogSongById).mockResolvedValue({
+      ...baseSong,
+      durationText: "9:30",
+    } as never);
+
+    await expect(
+      performViewerRequestMutation({
+        env,
+        request,
+        slug: "streamer",
+        mutation: {
+          action: "submit",
+          songId: "song-1",
+          requestKind: "regular",
+          replaceExisting: false,
+        },
+      })
+    ).rejects.toMatchObject({
+      status: 409,
+      message: "This song requires 2 VIP tokens. Use a VIP request instead.",
+    });
+
+    expect(callBackend).not.toHaveBeenCalled();
+  });
+
+  it("adds a VIP request that consumes multiple tokens when the song duration requires it", async () => {
+    vi.mocked(getChannelSettingsByChannelId).mockResolvedValue({
+      ...baseSettings,
+      vipTokenDurationThresholdsJson: JSON.stringify([
+        {
+          minimumDurationMinutes: 7,
+          tokenCost: 1,
+        },
+        {
+          minimumDurationMinutes: 9,
+          tokenCost: 2,
+        },
+      ]),
+    } as never);
+    vi.mocked(getCatalogSongById).mockResolvedValue({
+      ...baseSong,
+      durationText: "9:30",
+    } as never);
+    vi.mocked(consumeVipToken).mockResolvedValue({
+      availableCount: 0,
+      consumedCount: 2,
+    } as never);
+
+    await expect(
+      performViewerRequestMutation({
+        env,
+        request,
+        slug: "streamer",
+        mutation: {
+          action: "submit",
+          songId: "song-1",
+          requestKind: "vip",
+          replaceExisting: false,
+        },
+      })
+    ).resolves.toEqual({
+      ok: true,
+      message:
+        'Added "The Smashing Pumpkins - Cherub Rock" as a VIP request for 2 VIP tokens.',
+    });
+
+    const body = JSON.parse(
+      String(vi.mocked(callBackend).mock.calls[0]?.[2]?.body)
+    ) as Record<string, unknown>;
+
+    expect(body).toMatchObject({
+      channelId: "channel-1",
+      requestKind: "vip",
+      vipTokenCost: 2,
+    });
+    expect(consumeVipToken).toHaveBeenCalledWith(
+      env,
+      expect.objectContaining({
+        channelId: "channel-1",
+        login: "viewer_one",
+        count: 2,
+      })
+    );
+  });
+
+  it("upgrades an existing VIP request to a higher VIP token cost", async () => {
+    vi.mocked(getChannelSettingsByChannelId).mockResolvedValue({
+      ...baseSettings,
+      vipTokenDurationThresholdsJson: JSON.stringify([
+        {
+          minimumDurationMinutes: 7,
+          tokenCost: 1,
+        },
+        {
+          minimumDurationMinutes: 9,
+          tokenCost: 2,
+        },
+      ]),
+    } as never);
+    vi.mocked(getCatalogSongById).mockResolvedValue({
+      ...baseSong,
+      durationText: "9:30",
+    } as never);
+    vi.mocked(getPlaylistByChannelId).mockResolvedValue({
+      playlist: {
+        id: "playlist-1",
+        currentItemId: null,
+      },
+      items: [
+        {
+          id: "item-1",
+          songId: "song-1",
+          requestedByTwitchUserId: "viewer-1",
+          status: "queued",
+          requestKind: "vip",
+          vipTokenCost: 1,
+        },
+      ],
+    } as never);
+
+    await expect(
+      performViewerRequestMutation({
+        env,
+        request,
+        slug: "streamer",
+        mutation: {
+          action: "submit",
+          songId: "song-1",
+          requestKind: "vip",
+          replaceExisting: false,
+        },
+      })
+    ).resolves.toEqual({
+      ok: true,
+      message:
+        'Your request "The Smashing Pumpkins - Cherub Rock" is now marked as VIP for 2 VIP tokens and will play next.',
+    });
+
+    const body = JSON.parse(
+      String(vi.mocked(callBackend).mock.calls[0]?.[2]?.body)
+    ) as Record<string, unknown>;
+
+    expect(body).toEqual({
+      action: "changeRequestKind",
+      channelId: "channel-1",
+      itemId: "item-1",
+      actorUserId: null,
+      requestKind: "vip",
+      vipTokenCost: 2,
+    });
+    expect(consumeVipToken).toHaveBeenCalledWith(
+      env,
+      expect.objectContaining({
+        channelId: "channel-1",
+        login: "viewer_one",
+        count: 1,
+      })
+    );
+  });
+
+  it("rejects another VIP request while a VIP cooldown is active", async () => {
+    vi.mocked(getVipRequestCooldown).mockResolvedValue({
+      channelId: "channel-1",
+      normalizedLogin: "viewer_one",
+      login: "viewer_one",
+      displayName: "Viewer One",
+      twitchUserId: "viewer-1",
+      sourceItemId: "item-vip",
+      cooldownStartedAt: Date.now() - 60_000,
+      cooldownExpiresAt: Date.now() + 5 * 60_000,
+      createdAt: Date.now() - 60_000,
+      updatedAt: Date.now() - 60_000,
+    } as never);
+    vi.mocked(getPlaylistByChannelId).mockResolvedValue({
+      playlist: {
+        id: "playlist-1",
+        currentItemId: "item-current",
+      },
+      items: [
+        {
+          id: "item-current",
+          songId: "song-current",
+          requestedByTwitchUserId: "viewer-1",
+          status: "current",
+          requestKind: "regular",
+        },
+        {
+          id: "item-vip",
+          songId: "song-1",
+          requestedByTwitchUserId: "viewer-1",
+          status: "queued",
+          requestKind: "vip",
+          vipTokenCost: 1,
+        },
+      ],
+    } as never);
+    vi.mocked(getChannelSettingsByChannelId).mockResolvedValue({
+      ...baseSettings,
+      vipRequestCooldownEnabled: true,
+      vipRequestCooldownMinutes: 5,
+      maxViewerRequestsAtOnce: 2,
+      maxVipViewerRequestsAtOnce: 2,
+    } as never);
+    vi.mocked(getCatalogSongById).mockResolvedValue({
+      ...baseSong,
+      id: "song-2",
+      sourceId: 54321,
+      title: "Everlong",
+      artist: "Foo Fighters",
+    } as never);
+    vi.mocked(countActiveRequestsForUser).mockResolvedValue(1);
+
+    await expect(
+      performViewerRequestMutation({
+        env,
+        request,
+        slug: "streamer",
+        mutation: {
+          action: "submit",
+          songId: "song-2",
+          requestKind: "vip",
+          replaceExisting: false,
+        },
+      })
+    ).rejects.toMatchObject({
+      status: 409,
+      message: expect.stringContaining("before adding another VIP request"),
+    });
+
+    expect(callBackend).not.toHaveBeenCalled();
+    expect(createRequestLog).toHaveBeenCalledWith(
+      env,
+      expect.objectContaining({
+        outcome: "rejected",
+        outcomeReason: "vip_request_cooldown",
+      })
+    );
+  });
+
+  it("allows a regular request while a VIP cooldown is active", async () => {
+    vi.mocked(getVipRequestCooldown).mockResolvedValue({
+      channelId: "channel-1",
+      normalizedLogin: "viewer_one",
+      login: "viewer_one",
+      displayName: "Viewer One",
+      twitchUserId: "viewer-1",
+      sourceItemId: "item-vip",
+      cooldownStartedAt: Date.now() - 60_000,
+      cooldownExpiresAt: Date.now() + 5 * 60_000,
+      createdAt: Date.now() - 60_000,
+      updatedAt: Date.now() - 60_000,
+    } as never);
+    vi.mocked(getPlaylistByChannelId).mockResolvedValue({
+      playlist: {
+        id: "playlist-1",
+        currentItemId: "item-current",
+      },
+      items: [
+        {
+          id: "item-current",
+          songId: "song-current",
+          requestedByTwitchUserId: "viewer-1",
+          status: "current",
+          requestKind: "regular",
+        },
+        {
+          id: "item-vip",
+          songId: "song-1",
+          requestedByTwitchUserId: "viewer-1",
+          status: "queued",
+          requestKind: "vip",
+          vipTokenCost: 1,
+        },
+      ],
+    } as never);
+    vi.mocked(getChannelSettingsByChannelId).mockResolvedValue({
+      ...baseSettings,
+      vipRequestCooldownEnabled: true,
+      vipRequestCooldownMinutes: 5,
+      maxViewerRequestsAtOnce: 2,
+    } as never);
+    vi.mocked(getCatalogSongById).mockResolvedValue({
+      ...baseSong,
+      id: "song-2",
+      sourceId: 54321,
+      title: "Everlong",
+      artist: "Foo Fighters",
+    } as never);
+    vi.mocked(countActiveRequestsForUser).mockResolvedValue(1);
+
+    await expect(
+      performViewerRequestMutation({
+        env,
+        request,
+        slug: "streamer",
+        mutation: {
+          action: "submit",
+          songId: "song-2",
+          requestKind: "regular",
+          replaceExisting: false,
+        },
+      })
+    ).resolves.toEqual({
+      ok: true,
+      message: 'Added "Foo Fighters - Everlong" to the playlist.',
+    });
+
+    expect(callBackend).toHaveBeenCalledTimes(1);
+  });
+
+  it("allows editing the same VIP request during its cooldown", async () => {
+    vi.mocked(getVipRequestCooldown).mockResolvedValue({
+      channelId: "channel-1",
+      normalizedLogin: "viewer_one",
+      login: "viewer_one",
+      displayName: "Viewer One",
+      twitchUserId: "viewer-1",
+      sourceItemId: "item-vip",
+      cooldownStartedAt: Date.now() - 60_000,
+      cooldownExpiresAt: Date.now() + 5 * 60_000,
+      createdAt: Date.now() - 60_000,
+      updatedAt: Date.now() - 60_000,
+    } as never);
+    vi.mocked(getPlaylistByChannelId).mockResolvedValue({
+      playlist: {
+        id: "playlist-1",
+        currentItemId: null,
+      },
+      items: [
+        {
+          id: "item-vip",
+          songId: "song-1",
+          requestedByTwitchUserId: "viewer-1",
+          status: "queued",
+          requestKind: "vip",
+          vipTokenCost: 1,
+        },
+      ],
+    } as never);
+    vi.mocked(getChannelSettingsByChannelId).mockResolvedValue({
+      ...baseSettings,
+      vipRequestCooldownEnabled: true,
+      vipRequestCooldownMinutes: 5,
+      maxViewerRequestsAtOnce: 2,
+    } as never);
+    vi.mocked(getCatalogSongById).mockResolvedValue({
+      ...baseSong,
+      id: "song-2",
+      sourceId: 54321,
+      title: "Everlong",
+      artist: "Foo Fighters",
+    } as never);
+    vi.mocked(countActiveRequestsForUser).mockResolvedValue(2);
+    vi.mocked(callBackend).mockResolvedValueOnce(
+      jsonResponse({
+        ok: true,
+        playlistId: "playlist-1",
+        changedItemId: "item-vip",
+        currentItemId: null,
+        message: "Request edited",
+      })
+    );
+
+    await expect(
+      performViewerRequestMutation({
+        env,
+        request,
+        slug: "streamer",
+        mutation: {
+          action: "submit",
+          songId: "song-2",
+          requestKind: "vip",
+          replaceExisting: true,
+          itemId: "item-vip",
+        },
+      })
+    ).resolves.toEqual({
+      ok: true,
+      message:
+        'Edited your request to "Foo Fighters - Everlong" as a VIP request.',
+    });
+
+    expect(callBackend).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(callBackend).mock.calls[0]?.[1]).toBe(
+      "/internal/playlist/mutate"
+    );
+  });
+
+  it("allows replacing the queued VIP request that started the cooldown", async () => {
+    vi.mocked(getVipRequestCooldown).mockResolvedValue({
+      channelId: "channel-1",
+      normalizedLogin: "viewer_one",
+      login: "viewer_one",
+      displayName: "Viewer One",
+      twitchUserId: "viewer-1",
+      sourceItemId: "item-vip",
+      cooldownStartedAt: Date.now() - 60_000,
+      cooldownExpiresAt: Date.now() + 5 * 60_000,
+      createdAt: Date.now() - 60_000,
+      updatedAt: Date.now() - 60_000,
+    } as never);
+    vi.mocked(getPlaylistByChannelId).mockResolvedValue({
+      playlist: {
+        id: "playlist-1",
+        currentItemId: null,
+      },
+      items: [
+        {
+          id: "item-vip",
+          songId: "song-1",
+          requestedByTwitchUserId: "viewer-1",
+          status: "queued",
+          requestKind: "vip",
+          vipTokenCost: 1,
+        },
+      ],
+    } as never);
+    vi.mocked(getChannelSettingsByChannelId).mockResolvedValue({
+      ...baseSettings,
+      vipRequestCooldownEnabled: true,
+      vipRequestCooldownMinutes: 5,
+      maxViewerRequestsAtOnce: 2,
+    } as never);
+    vi.mocked(getCatalogSongById).mockResolvedValue({
+      ...baseSong,
+      id: "song-2",
+      sourceId: 54321,
+      title: "Everlong",
+      artist: "Foo Fighters",
+    } as never);
+    vi.mocked(countActiveRequestsForUser).mockResolvedValue(2);
+    vi.mocked(callBackend)
+      .mockResolvedValueOnce(
+        jsonResponse({
+          ok: true,
+          playlistId: "playlist-1",
+          changedItemId: "item-vip",
+          currentItemId: null,
+          message: "Removed 1 request",
+        })
+      )
+      .mockResolvedValueOnce(
+        jsonResponse({
+          ok: true,
+          playlistId: "playlist-1",
+          changedItemId: "item-new",
+          currentItemId: null,
+          message: "Request added",
+        })
+      );
+
+    await expect(
+      performViewerRequestMutation({
+        env,
+        request,
+        slug: "streamer",
+        mutation: {
+          action: "submit",
+          songId: "song-2",
+          requestKind: "vip",
+          replaceExisting: true,
+        },
+      })
+    ).resolves.toEqual({
+      ok: true,
+      message: 'Added "Foo Fighters - Everlong" as a VIP request.',
+    });
+
+    expect(callBackend).toHaveBeenCalledTimes(2);
+    expect(vi.mocked(callBackend).mock.calls[0]?.[1]).toBe(
+      "/internal/playlist/remove-requests"
+    );
+    expect(vi.mocked(callBackend).mock.calls[1]?.[1]).toBe(
+      "/internal/playlist/add-request"
     );
   });
 
@@ -553,7 +1051,8 @@ describe("viewer request service", () => {
       })
     ).rejects.toMatchObject({
       status: 409,
-      message: "You do not have enough VIP tokens for a VIP request.",
+      message:
+        "You need 1 VIP token for this VIP request. You currently have 2.",
     });
 
     expect(callBackend).not.toHaveBeenCalled();
@@ -708,6 +1207,63 @@ describe("viewer request service", () => {
         requestedQuery: "song:12345",
       },
     });
+  });
+
+  it("refunds the VIP token difference when editing a VIP request to a lower cost", async () => {
+    vi.mocked(getPlaylistByChannelId).mockResolvedValue({
+      playlist: {
+        id: "playlist-1",
+        currentItemId: null,
+      },
+      items: [
+        {
+          id: "item-target",
+          songId: "song-target",
+          requestedByTwitchUserId: "viewer-1",
+          status: "queued",
+          requestKind: "vip",
+          vipTokenCost: 2,
+        },
+      ],
+    } as never);
+    vi.mocked(countActiveRequestsForUser).mockResolvedValue(1);
+    vi.mocked(callBackend).mockResolvedValue(
+      jsonResponse({
+        ok: true,
+        playlistId: "playlist-1",
+        changedItemId: "item-target",
+        currentItemId: null,
+        message: "Request edited",
+      })
+    );
+
+    await expect(
+      performViewerRequestMutation({
+        env,
+        request,
+        slug: "streamer",
+        mutation: {
+          action: "submit",
+          songId: "song-1",
+          requestKind: "vip",
+          replaceExisting: true,
+          itemId: "item-target",
+        },
+      })
+    ).resolves.toEqual({
+      ok: true,
+      message:
+        'Edited your request to "The Smashing Pumpkins - Cherub Rock" as a VIP request.',
+    });
+
+    expect(grantVipToken).toHaveBeenCalledWith(
+      env,
+      expect.objectContaining({
+        channelId: "channel-1",
+        login: "viewer_one",
+        count: 1,
+      })
+    );
   });
 
   it("rejects editing a current request in place when it is already playing", async () => {
@@ -868,7 +1424,8 @@ describe("viewer request service", () => {
       })
     ).rejects.toMatchObject({
       status: 409,
-      message: "You do not have enough VIP tokens for a VIP request.",
+      message:
+        "You need 1 VIP token for this VIP request. You currently have 0.5.",
     });
 
     expect(callBackend).not.toHaveBeenCalled();
@@ -945,6 +1502,7 @@ describe("viewer request service", () => {
           requestedByTwitchUserId: "viewer-1",
           status: "queued",
           requestKind: "vip",
+          vipTokenCost: 2,
         },
       ],
     } as never);
@@ -978,6 +1536,14 @@ describe("viewer request service", () => {
       "/internal/playlist/remove-requests",
       expect.objectContaining({
         method: "POST",
+      })
+    );
+    expect(grantVipToken).toHaveBeenCalledWith(
+      env,
+      expect.objectContaining({
+        channelId: "channel-1",
+        login: "viewer_one",
+        count: 2,
       })
     );
   });
@@ -1073,6 +1639,7 @@ describe("viewer request service", () => {
           requestedByTwitchUserId: "viewer-1",
           status: "queued",
           requestKind: "vip",
+          vipTokenCost: 2,
         },
       ],
     } as never);
@@ -1122,6 +1689,60 @@ describe("viewer request service", () => {
       kind: "all",
       itemId: "item-1",
     });
+    expect(grantVipToken).not.toHaveBeenCalled();
+  });
+
+  it("refunds VIP tokens when removing a single VIP request by item id", async () => {
+    vi.mocked(getPlaylistByChannelId).mockResolvedValue({
+      playlist: {
+        id: "playlist-1",
+        currentItemId: null,
+      },
+      items: [
+        {
+          id: "item-1",
+          songId: "song-1",
+          requestedByTwitchUserId: "viewer-1",
+          status: "queued",
+          requestKind: "vip",
+          vipTokenCost: 2,
+        },
+      ],
+    } as never);
+    vi.mocked(callBackend).mockResolvedValue(
+      jsonResponse({
+        ok: true,
+        playlistId: "playlist-1",
+        changedItemId: "item-1",
+        currentItemId: null,
+        message: "Removed 1 request",
+      })
+    );
+
+    await expect(
+      performViewerRequestMutation({
+        env,
+        request,
+        slug: "streamer",
+        mutation: {
+          action: "remove",
+          kind: "all",
+          itemId: "item-1",
+        },
+      })
+    ).resolves.toEqual({
+      ok: true,
+      message: "Removed your request from the playlist.",
+    });
+
+    expect(grantVipToken).toHaveBeenCalledWith(
+      env,
+      expect.objectContaining({
+        channelId: "channel-1",
+        login: "viewer_one",
+        count: 2,
+      })
+    );
   });
 
   it("throws a viewer request error when the viewer is not allowed to request", async () => {

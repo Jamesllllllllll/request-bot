@@ -7,7 +7,13 @@ import {
   getCoreRowModel,
   useReactTable,
 } from "@tanstack/react-table";
-import { ScrollText, ShieldAlert } from "lucide-react";
+import {
+  AlertTriangle,
+  Bot,
+  MessageSquare,
+  ScrollText,
+  ShieldAlert,
+} from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { DashboardPageHeader } from "~/components/dashboard-page-header";
 import { PlaylistQueueItemPreview } from "~/components/playlist-management-surface";
@@ -47,6 +53,20 @@ type AuditLogRow = {
   createdAt: number;
 };
 
+type EventSubChannelRow = {
+  channelId?: string | null;
+  twitchChannelId: string;
+  displayName: string;
+  login?: string | null;
+  botReadyState?: string | null;
+  totalSubscriptionCount: number;
+  chatSubscriptionCount: number;
+  duplicateChatSubscriptions: boolean;
+  chatSubscriptionIds: string[];
+  chatBotUserIds: string[];
+  chatCallbacks: string[];
+};
+
 type DashboardAdminData = {
   error?: string;
   bot?: {
@@ -62,6 +82,16 @@ type DashboardAdminData = {
   settings?: {
     adminForceBotWhileOffline: boolean;
   } | null;
+  eventSub?: {
+    error?: string;
+    currentBotUserId: string | null;
+    currentCallbackUrl: string;
+    totalRemoteSubscriptions: number;
+    totalChatSubscriptions: number;
+    channelsWithChatSubscription: number;
+    channelsWithDuplicateChatSubscriptions: number;
+    channels: EventSubChannelRow[];
+  };
 };
 
 type RequestLogsPageData = {
@@ -134,6 +164,8 @@ function DashboardAdminPage() {
   const queryClient = useQueryClient();
   const [togglingOfflineTesting, setTogglingOfflineTesting] = useState(false);
   const [updatingBotAuth, setUpdatingBotAuth] = useState(false);
+  const [cleaningChatSubscriptionsFor, setCleaningChatSubscriptionsFor] =
+    useState<string | null>(null);
   const [actionMessage, setActionMessage] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [logsOffset, setLogsOffset] = useState(0);
@@ -145,7 +177,9 @@ function DashboardAdminPage() {
   const { data, refetch } = useQuery<DashboardAdminData>({
     queryKey: ["dashboard-admin-base"],
     queryFn: fetchAdminBaseState,
-    staleTime: 30_000,
+    staleTime: 15_000,
+    refetchInterval: 15_000,
+    refetchIntervalInBackground: true,
   });
   const canLoadActivity = !!data && !data.error;
   const logsQuery = useQuery<RequestLogsPageData>({
@@ -325,6 +359,55 @@ function DashboardAdminPage() {
     }
   }
 
+  async function cleanupChatSubscriptions(row: EventSubChannelRow) {
+    setCleaningChatSubscriptionsFor(row.twitchChannelId);
+    setActionMessage(null);
+    setActionError(null);
+
+    try {
+      const response = await fetch("/api/dashboard/admin", {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({
+          action: "cleanupChatSubscriptions",
+          twitchChannelId: row.twitchChannelId,
+        }),
+      });
+      const payload = (await response.json().catch(() => null)) as {
+        message?: string;
+        warning?: string | null;
+      } | null;
+
+      if (!response.ok) {
+        throw new Error(
+          payload?.message ?? t("states.chatSubscriptionCleanupFailed")
+        );
+      }
+
+      setActionMessage(
+        payload?.warning
+          ? `${payload.message ?? t("states.updated")} ${payload.warning}`
+          : (payload?.message ?? t("states.updated"))
+      );
+      await Promise.all([
+        refetch(),
+        queryClient.invalidateQueries({
+          queryKey: ["dashboard-admin-audits"],
+        }),
+      ]);
+    } catch (error) {
+      setActionError(
+        error instanceof Error
+          ? error.message
+          : t("states.chatSubscriptionCleanupFailed")
+      );
+    } finally {
+      setCleaningChatSubscriptionsFor(null);
+    }
+  }
+
   if (data?.error) {
     return (
       <div className="grid gap-6">
@@ -366,6 +449,26 @@ function DashboardAdminPage() {
   const requestLogColumns = useMemo(
     () => getRequestLogColumns(t, locale),
     [locale, t]
+  );
+  const eventSubColumns = useMemo(
+    () =>
+      getEventSubColumns({
+        t,
+        cleanupLabel:
+          cleaningChatSubscriptionsFor != null
+            ? t("actions.cleaningUp")
+            : t("actions.cleanupCurrentCallback"),
+        currentCallbackUrl: data?.eventSub?.currentCallbackUrl ?? null,
+        currentBotUserId: data?.eventSub?.currentBotUserId ?? null,
+        cleaningChatSubscriptionsFor,
+        onCleanup: (row) => void cleanupChatSubscriptions(row),
+      }),
+    [
+      cleaningChatSubscriptionsFor,
+      data?.eventSub?.currentBotUserId,
+      data?.eventSub?.currentCallbackUrl,
+      t,
+    ]
   );
   const auditLogColumns = useMemo(
     () => getAuditLogColumns(t, locale),
@@ -502,10 +605,61 @@ function DashboardAdminPage() {
         </div>
       </section>
 
+      <section className="grid gap-4">
+        <div className="grid gap-1">
+          <h2 className="text-3xl font-semibold text-(--text)">
+            {t("eventSub.title")}
+          </h2>
+          <p className="text-sm text-(--muted)">{t("eventSub.description")}</p>
+          <p className="text-xs text-(--muted)">
+            {t("eventSub.currentCallback", {
+              callback: data?.eventSub?.currentCallbackUrl ?? t("table.none"),
+            })}
+          </p>
+          <p className="text-xs text-(--muted)">
+            {t("eventSub.currentBotUserId", {
+              userId: data?.eventSub?.currentBotUserId ?? t("table.none"),
+            })}
+          </p>
+        </div>
+        {data?.eventSub?.error ? (
+          <div className="border border-amber-400/40 bg-amber-500/10 p-4 text-sm text-amber-100">
+            {data.eventSub.error}
+          </div>
+        ) : null}
+        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+          <AdminMetric
+            icon={Bot}
+            label={t("metrics.botChatChannels.label")}
+            value={String(data?.eventSub?.channelsWithChatSubscription ?? 0)}
+            description={t("metrics.botChatChannels.description")}
+          />
+          <AdminMetric
+            icon={MessageSquare}
+            label={t("metrics.chatSubscriptions.label")}
+            value={String(data?.eventSub?.totalChatSubscriptions ?? 0)}
+            description={t("metrics.chatSubscriptions.description")}
+          />
+          <AdminMetric
+            icon={AlertTriangle}
+            label={t("metrics.duplicateChatChannels.label")}
+            value={String(
+              data?.eventSub?.channelsWithDuplicateChatSubscriptions ?? 0
+            )}
+            description={t("metrics.duplicateChatChannels.description")}
+          />
+        </div>
+        <AdminTable
+          data={data?.eventSub?.channels ?? []}
+          columns={eventSubColumns}
+          emptyMessage={t("eventSub.empty")}
+        />
+      </section>
+
       {showPlaylistPrototype ? (
         <section className="grid gap-4">
           <div className="grid gap-1">
-            <h2 className="text-2xl font-semibold text-(--text)">
+            <h2 className="text-3xl font-semibold text-(--text)">
               {t("prototype.title")}
             </h2>
             <p className="text-sm text-(--muted)">
@@ -519,7 +673,7 @@ function DashboardAdminPage() {
       <section className="grid gap-4">
         <div className="flex flex-wrap items-end justify-between gap-3">
           <div className="grid gap-1">
-            <h2 className="text-2xl font-semibold text-(--text)">
+            <h2 className="text-3xl font-semibold text-(--text)">
               {t("logs.title")}
             </h2>
             <p className="text-sm text-(--muted)">{t("logs.description")}</p>
@@ -557,7 +711,7 @@ function DashboardAdminPage() {
       <section className="grid gap-4">
         <div className="flex flex-wrap items-end justify-between gap-3">
           <div className="grid gap-1">
-            <h2 className="text-2xl font-semibold text-(--text)">
+            <h2 className="text-3xl font-semibold text-(--text)">
               {t("audits.title")}
             </h2>
             <p className="text-sm text-(--muted)">{t("audits.description")}</p>
@@ -949,6 +1103,138 @@ function getAuditLogColumns(
         <div className="min-w-[18rem] text-(--muted)">
           {summarizeAuditPayload(row.original.payloadJson, t) ??
             t("table.noExtraValues")}
+        </div>
+      ),
+    },
+  ];
+}
+
+function getEventSubColumns(input: {
+  t: (key: string, options?: Record<string, unknown>) => string;
+  currentCallbackUrl: string | null;
+  currentBotUserId: string | null;
+  cleaningChatSubscriptionsFor: string | null;
+  cleanupLabel: string;
+  onCleanup: (row: EventSubChannelRow) => void;
+}): ColumnDef<EventSubChannelRow>[] {
+  const { t } = input;
+
+  return [
+    {
+      header: t("eventSub.columns.channel"),
+      id: "channel",
+      cell: ({ row }) => (
+        <div className="grid min-w-[14rem] gap-1">
+          <p className="font-medium text-(--text)">
+            {row.original.displayName}
+          </p>
+          <p className="text-xs text-(--muted)">
+            {row.original.login
+              ? `@${row.original.login}`
+              : row.original.twitchChannelId}
+          </p>
+        </div>
+      ),
+    },
+    {
+      header: t("eventSub.columns.chatSubscriptions"),
+      accessorKey: "chatSubscriptionCount",
+      cell: ({ row }) => (
+        <div className="min-w-[10rem]">
+          <p className="font-medium text-(--text)">
+            {row.original.chatSubscriptionCount}
+          </p>
+          {row.original.duplicateChatSubscriptions ? (
+            <p className="text-xs text-amber-300">
+              {t("eventSub.duplicateWarning")}
+            </p>
+          ) : null}
+        </div>
+      ),
+    },
+    {
+      header: t("eventSub.columns.totalSubscriptions"),
+      accessorKey: "totalSubscriptionCount",
+      cell: ({ row }) => (
+        <div className="min-w-[8rem] font-medium text-(--text)">
+          {row.original.totalSubscriptionCount}
+        </div>
+      ),
+    },
+    {
+      header: t("eventSub.columns.chatSubscriptionIds"),
+      id: "chatSubscriptionIds",
+      cell: ({ row }) => (
+        <div className="min-w-[18rem] break-all font-mono text-xs text-(--muted)">
+          {row.original.chatSubscriptionIds.join(", ")}
+        </div>
+      ),
+    },
+    {
+      header: t("eventSub.columns.chatBotUserIds"),
+      id: "chatBotUserIds",
+      cell: ({ row }) => (
+        <div className="min-w-[12rem] break-all font-mono text-xs text-(--muted)">
+          {row.original.chatBotUserIds.join(", ")}
+        </div>
+      ),
+    },
+    {
+      header: t("eventSub.columns.chatCallbacks"),
+      id: "chatCallbacks",
+      cell: ({ row }) => (
+        <div className="grid min-w-[18rem] gap-1 text-xs">
+          {row.original.chatCallbacks.map((callback) => (
+            <p
+              key={callback}
+              className={
+                callback === input.currentCallbackUrl
+                  ? "break-all font-mono text-emerald-300"
+                  : "break-all font-mono text-(--muted)"
+              }
+            >
+              {callback}
+            </p>
+          ))}
+        </div>
+      ),
+    },
+    {
+      header: t("eventSub.columns.actions"),
+      id: "actions",
+      cell: ({ row }) => (
+        <div className="min-w-[13rem]">
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="w-full justify-center"
+            disabled={
+              input.cleaningChatSubscriptionsFor ===
+              row.original.twitchChannelId
+            }
+            onClick={() => input.onCleanup(row.original)}
+          >
+            {input.cleaningChatSubscriptionsFor === row.original.twitchChannelId
+              ? input.cleanupLabel
+              : t("actions.cleanupCurrentCallback")}
+          </Button>
+          <p className="mt-2 text-xs text-(--muted)">
+            {row.original.chatCallbacks.includes(input.currentCallbackUrl ?? "")
+              ? t("eventSub.cleanupHelpCurrent")
+              : t("eventSub.cleanupHelpOther")}
+          </p>
+          {input.currentBotUserId ? (
+            <p className="mt-1 text-xs text-(--muted)">
+              {t("eventSub.currentBotMatch", {
+                matchesCurrentBotUserId: row.original.chatBotUserIds.includes(
+                  input.currentBotUserId
+                )
+                  ? t("table.yes")
+                  : t("table.no"),
+              })}
+            </p>
+          ) : null}
         </div>
       ),
     },

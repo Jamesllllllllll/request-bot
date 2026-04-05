@@ -10,6 +10,7 @@
   "states": {
     "offlineTestingFailed": "Não foi possível atualizar o teste offline.",
     "botUpdateFailed": "Não foi possível atualizar a conta do bot.",
+    "chatSubscriptionCleanupFailed": "Não foi possível limpar as assinaturas de chat.",
     "updated": "Atualizado."
   },
   "status": {
@@ -22,6 +23,8 @@
     "connectBot": "Conectar {username}",
     "reconnectBot": "Reconectar bot",
     "reconnecting": "Reconectando...",
+    "cleanupCurrentCallback": "Limpar callback atual",
+    "cleaningUp": "Limpando...",
     "enable": "Ativar",
     "enabling": "Ativando...",
     "disable": "Desativar",
@@ -35,6 +38,38 @@
     "auditRows": {
       "label": "Total de linhas de auditoria",
       "description": "Ações administrativas e de gerenciamento do canal registradas."
+    },
+    "botChatChannels": {
+      "label": "Canais com chat do bot",
+      "description": "Canais que atualmente têm uma assinatura ativa de chat do bot."
+    },
+    "chatSubscriptions": {
+      "label": "Assinaturas de chat",
+      "description": "Assinaturas ativas de chat da Twitch conectadas ao bot."
+    },
+    "duplicateChatChannels": {
+      "label": "Canais duplicados",
+      "description": "Canais que atualmente têm mais de uma assinatura ativa de chat."
+    }
+  },
+  "eventSub": {
+    "title": "Assinaturas ativas do bot",
+    "description": "Mostra as assinaturas atuais de chat da Twitch para a conta do bot para identificar assinaturas duplicadas por canal.",
+    "currentCallback": "Callback atual: {callback}",
+    "currentBotUserId": "ID atual do usuário do bot: {userId}",
+    "empty": "Nenhuma assinatura ativa de chat do bot foi encontrada.",
+    "duplicateWarning": "Há mais de uma assinatura de chat ativa para este canal.",
+    "cleanupHelpCurrent": "Esta limpeza remove assinaturas antigas apenas para a URL de callback atual.",
+    "cleanupHelpOther": "Esta linha usa apenas outras URLs de callback. A limpeza do callback atual não vai removê-las.",
+    "currentBotMatch": "Usa o ID atual do bot: {matchesCurrentBotUserId}",
+    "columns": {
+      "channel": "Canal",
+      "chatSubscriptions": "Subs de chat",
+      "totalSubscriptions": "Subs totais",
+      "chatSubscriptionIds": "IDs das assinaturas de chat",
+      "chatBotUserIds": "IDs do bot de chat",
+      "chatCallbacks": "Callbacks de chat",
+      "actions": "Ações"
     }
   },
   "offlineTesting": {

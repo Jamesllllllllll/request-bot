@@ -6,8 +6,24 @@ import {
   getBlacklistReasonCodes,
 } from "./channel-blacklist";
 import type { SongSearchResult } from "./song-search/types";
+import { formatVipTokenCostLabel } from "./vip-token-duration-thresholds";
 
 type Translate = (key: string, options?: Record<string, unknown>) => string;
+
+export const requestPathModifierOptions = [
+  "guitar",
+  "lead",
+  "rhythm",
+  "bass",
+] as const;
+export const legacyRequestPathModifierOptions = [
+  "lead",
+  "rhythm",
+  "bass",
+] as const;
+
+export type RequestPathModifierOption =
+  (typeof requestPathModifierOptions)[number];
 
 function normalize(value: string | undefined | null) {
   return (value ?? "").trim().toLowerCase();
@@ -50,6 +66,9 @@ export interface ChannelRequestSettings {
   subscribersMustFollowSetlist: boolean;
   autoGrantVipTokenToSubscribers: boolean;
   allowRequestPathModifiers: boolean;
+  allowedRequestPathsJson?: string | null;
+  requestPathModifierVipTokenCost?: number | null;
+  requestPathModifierUsesVipPriority?: boolean | null;
   vipTokenDurationThresholdsJson?: string | null;
   commandPrefix: string;
 }
@@ -74,6 +93,88 @@ export function getRequiredPathsMatchMode(
   value: string | null | undefined
 ): "any" | "all" {
   return value === "all" ? "all" : "any";
+}
+
+export function normalizeRequestPathModifier(
+  value: string | null | undefined
+): RequestPathModifierOption | null {
+  const normalized = normalize(value);
+  return requestPathModifierOptions.includes(
+    normalized as RequestPathModifierOption
+  )
+    ? (normalized as RequestPathModifierOption)
+    : null;
+}
+
+export function normalizeAllowedRequestPaths(
+  paths: Array<string | null | undefined> | null | undefined
+) {
+  const normalized = new Set<RequestPathModifierOption>();
+
+  for (const path of paths ?? []) {
+    const normalizedPath = normalizeRequestPathModifier(path);
+    if (normalizedPath) {
+      normalized.add(normalizedPath);
+    }
+  }
+
+  return requestPathModifierOptions.filter((path) => normalized.has(path));
+}
+
+export function getAllowedRequestPathsSetting(
+  settings: Pick<
+    ChannelRequestSettings,
+    "allowRequestPathModifiers" | "allowedRequestPathsJson"
+  >
+) {
+  if (!settings.allowRequestPathModifiers) {
+    return [];
+  }
+
+  const configured = normalizeAllowedRequestPaths(
+    getArraySetting(settings.allowedRequestPathsJson)
+  );
+
+  if (configured.length > 0) {
+    return configured;
+  }
+
+  return settings.allowedRequestPathsJson == null
+    ? [...legacyRequestPathModifierOptions]
+    : [];
+}
+
+export function normalizeRequestPathModifierVipTokenCost(
+  value: number | null | undefined
+) {
+  if (typeof value !== "number" || !Number.isFinite(value)) {
+    return 0;
+  }
+
+  return Math.max(0, Math.trunc(value));
+}
+
+export function getRequiredVipTokenCostForRequestedPaths(input: {
+  requestedPaths: string[];
+  settings: Pick<
+    ChannelRequestSettings,
+    | "allowRequestPathModifiers"
+    | "allowedRequestPathsJson"
+    | "requestPathModifierVipTokenCost"
+  >;
+}) {
+  const allowedRequestPaths = getAllowedRequestPathsSetting(input.settings);
+  const matchedRequestedPaths = normalizeAllowedRequestPaths(
+    input.requestedPaths
+  ).filter((path) => allowedRequestPaths.includes(path));
+
+  if (matchedRequestedPaths.length === 0) {
+    return 0;
+  }
+
+  return normalizeRequestPathModifierVipTokenCost(
+    input.settings.requestPathModifierVipTokenCost
+  );
 }
 
 export function isRequesterAllowed(
@@ -362,8 +463,25 @@ export function songMatchesRequestedPaths(input: {
 
   const songParts = (input.song.parts ?? []).map((part) => normalize(part));
   return input.requestedPaths.every((path) =>
-    songParts.includes(normalize(path))
+    songSupportsRequestedPath(songParts, path)
   );
+}
+
+export function songSupportsRequestedPath(
+  songParts: string[] | null | undefined,
+  requestedPath: string
+) {
+  const normalizedSongParts = (songParts ?? []).map((part) => normalize(part));
+  const normalizedRequestedPath = normalize(requestedPath);
+
+  if (normalizedRequestedPath === "guitar") {
+    return (
+      normalizedSongParts.includes("lead") ||
+      normalizedSongParts.includes("rhythm")
+    );
+  }
+
+  return normalizedSongParts.includes(normalizedRequestedPath);
 }
 
 export function formatPathLabel(path: string) {
@@ -372,6 +490,8 @@ export function formatPathLabel(path: string) {
 
 export function formatLocalizedPathLabel(path: string, translate?: Translate) {
   switch (normalize(path)) {
+    case "guitar":
+      return translate?.("paths.guitar") ?? "Guitar";
     case "lead":
       return translate?.("paths.lead") ?? "Lead";
     case "rhythm":
@@ -392,26 +512,58 @@ export function formatPathList(paths: string[], translate?: Translate) {
     .join(", ");
 }
 
+export function formatRequestPathModifierTokens(paths: string[]) {
+  return normalizeAllowedRequestPaths(paths)
+    .map((path) => `*${path}`)
+    .join(", ");
+}
+
 export function buildHowMessage(input: {
   commandPrefix: string;
   appUrl: string;
   channelSlug?: string;
   allowRequestPathModifiers?: boolean;
+  allowedRequestPaths?: string[];
+  requestPathModifierVipTokenCost?: number | null;
   translate?: Translate;
 }) {
   const normalized = normalizeCommandPrefix(input.commandPrefix);
+  const configuredAllowedRequestPaths = normalizeAllowedRequestPaths(
+    input.allowedRequestPaths
+  );
+  const requestPathModifiersEnabled =
+    input.allowRequestPathModifiers ?? configuredAllowedRequestPaths.length > 0;
+  const allowedRequestPaths = !requestPathModifiersEnabled
+    ? []
+    : configuredAllowedRequestPaths.length > 0
+      ? configuredAllowedRequestPaths
+      : input.allowedRequestPaths === undefined
+        ? [...legacyRequestPathModifierOptions]
+        : [];
   const parts = [
     input.translate?.("commands.how.commands", {
       commandPrefix: normalized,
     }) ??
       `Commands: ${normalized}sr artist - song; ${normalized}sr artist *random; ${normalized}sr artist *choice; ${normalized}vip; ${normalized}vip artist - song; ${normalized}vip artist - song *2; ${normalized}edit #2 artist - song; ${normalized}remove reg|vip|all; ${normalized}position.`,
   ];
-  if (input.allowRequestPathModifiers) {
+  if (allowedRequestPaths.length > 0) {
+    const requiredVipTokenCost = normalizeRequestPathModifierVipTokenCost(
+      input.requestPathModifierVipTokenCost
+    );
+    const modifiers = formatRequestPathModifierTokens(allowedRequestPaths);
     parts.push(
-      input.translate?.("commands.how.bassRequests", {
-        commandPrefix: normalized,
-      }) ??
-        `Bass requests: add *bass to ${normalized}sr, ${normalized}vip, or ${normalized}edit.`
+      requiredVipTokenCost > 0
+        ? (input.translate?.("commands.how.partRequestsVip", {
+            commandPrefix: normalized,
+            countText: formatVipTokenCostLabel(requiredVipTokenCost),
+            modifiers,
+          }) ??
+            `Part requests: add ${modifiers} to ${normalized}sr, ${normalized}vip, or ${normalized}edit. They require ${formatVipTokenCostLabel(requiredVipTokenCost)}.`)
+        : (input.translate?.("commands.how.partRequests", {
+            commandPrefix: normalized,
+            modifiers,
+          }) ??
+            `Part requests: add ${modifiers} to ${normalized}sr, ${normalized}vip, or ${normalized}edit.`)
     );
   }
 

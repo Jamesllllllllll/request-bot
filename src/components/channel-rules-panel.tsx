@@ -219,12 +219,10 @@ export function ChannelRulesPanel(props: {
   );
   const showBlacklistedArtistsCard =
     props.canManageBlacklist || props.artists.length > 0;
-  const showBlacklistedChartersCard =
-    props.canManageBlacklist || props.charters.length > 0;
+  const showBlacklistedChartersCard = props.canManageBlacklist;
   const showBlacklistedSongsCard =
     props.canManageBlacklist || props.songGroups.length > 0;
-  const showBlacklistedVersionsCard =
-    props.canManageBlacklist || props.songs.length > 0;
+  const showBlacklistedVersionsCard = props.canManageBlacklist;
   const showSetlistArtistsCard =
     props.canManageSetlist || props.setlistArtists.length > 0;
   const showBlacklistSection =
@@ -246,7 +244,7 @@ export function ChannelRulesPanel(props: {
   return (
     <section className="grid gap-6 max-[960px]:gap-4 max-[960px]:border-t max-[960px]:border-(--border) max-[960px]:pt-4">
       <div className="grid gap-2 px-8 max-[960px]:px-6">
-        <h2 className="text-3xl font-semibold tracking-tight text-(--text)">
+        <h2 className="text-4xl font-semibold tracking-tight text-(--text)">
           {props.channelDisplayName
             ? t("rules.sectionTitleWithChannel", {
                 channel: props.channelDisplayName,

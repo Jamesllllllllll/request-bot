@@ -13,6 +13,7 @@ import {
 import type { AppEnv } from "~/lib/env";
 import { defaultLocale, normalizeLocale } from "~/lib/i18n/locales";
 import {
+  getAllowedRequestPathsSetting,
   getArraySetting,
   getRequiredPathsMatchMode,
 } from "~/lib/request-policy";
@@ -117,6 +118,9 @@ export const getDashboardSettings = createServerFn({ method: "GET" }).handler(
             requiredPathsMatchMode: getRequiredPathsMatchMode(
               state.settings.requiredPathsMatchMode
             ),
+            allowedRequestPaths: getAllowedRequestPathsSetting(state.settings),
+            allowRequestPathModifiers:
+              getAllowedRequestPathsSetting(state.settings).length > 0,
             defaultLocale:
               normalizeLocale(state.settings.defaultLocale) ?? defaultLocale,
             cheerMinimumTokenPercent: normalizeCheerMinimumTokenPercent(

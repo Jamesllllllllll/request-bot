@@ -213,6 +213,9 @@ export function ChannelCommunityPanel(props: {
         queryClient.invalidateQueries({
           queryKey: ["channel-playlist", props.slug],
         }),
+        queryClient.invalidateQueries({
+          queryKey: ["channel-viewer-request-state", props.slug],
+        }),
       ]);
     },
   });
@@ -395,7 +398,7 @@ export function ChannelCommunityPanel(props: {
   return (
     <section className="grid gap-6 max-[960px]:gap-4 max-[960px]:border-t max-[960px]:border-(--border) max-[960px]:pt-4">
       <div className="px-8 max-[960px]:px-6">
-        <h2 className="text-3xl font-semibold tracking-tight text-(--text)">
+        <h2 className="text-4xl font-semibold tracking-tight text-(--text)">
           {t("community.title")}
         </h2>
       </div>

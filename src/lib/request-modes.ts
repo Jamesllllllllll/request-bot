@@ -4,20 +4,20 @@ export const STREAMER_CHOICE_WARNING_CODE = "streamer_choice";
 export const STREAMER_CHOICE_TITLE = "Streamer choice";
 
 const requestPathModifierMap: Record<string, string> = {
+  "*guitar": "guitar",
+  "*lead": "lead",
+  "*rhythm": "rhythm",
   "*bass": "bass",
 };
 
-const ignoredPathModifiers = new Set([
-  "*lead",
-  "*rhythm",
-  "*voice",
-  "*vocals",
-  "*lyrics",
-]);
+const ignoredPathModifiers = new Set(["*voice", "*vocals", "*lyrics"]);
 
 export function parseRequestModifiers(
   query: string,
-  options?: { allowPathModifiers?: boolean }
+  options?: {
+    allowPathModifiers?: boolean;
+    allowedPathModifiers?: readonly string[];
+  }
 ) {
   const tokens = query
     .trim()
@@ -30,6 +30,13 @@ export function parseRequestModifiers(
   let hasChoiceModifier = false;
   let ignoredOfficialModifier = false;
   const requestedPaths: string[] = [];
+  const hasConfiguredPathModifiers =
+    options?.allowPathModifiers !== undefined ||
+    options?.allowedPathModifiers !== undefined;
+  const allowedPathModifiers = new Set(
+    options?.allowedPathModifiers?.map((path) => path.trim().toLowerCase()) ??
+      (options?.allowPathModifiers ? Object.values(requestPathModifierMap) : [])
+  );
 
   for (const token of tokens) {
     const normalized = token.toLowerCase();
@@ -49,12 +56,17 @@ export function parseRequestModifiers(
       continue;
     }
 
-    if (options?.allowPathModifiers && requestPathModifierMap[normalized]) {
-      requestedPaths.push(requestPathModifierMap[normalized]);
-      continue;
+    if (requestPathModifierMap[normalized]) {
+      const requestedPath = requestPathModifierMap[normalized];
+      if (allowedPathModifiers.has(requestedPath)) {
+        requestedPaths.push(requestedPath);
+      }
+      if (hasConfiguredPathModifiers) {
+        continue;
+      }
     }
 
-    if (options?.allowPathModifiers && ignoredPathModifiers.has(normalized)) {
+    if (ignoredPathModifiers.has(normalized) && hasConfiguredPathModifiers) {
       continue;
     }
 

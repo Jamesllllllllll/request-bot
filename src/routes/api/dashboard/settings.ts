@@ -15,6 +15,7 @@ import type { AppEnv } from "~/lib/env";
 import {
   getArraySetting,
   getRequiredPathsMatchMode,
+  normalizeAllowedRequestPaths,
 } from "~/lib/request-policy";
 import { getTwitchUser } from "~/lib/twitch/api";
 import {
@@ -97,12 +98,17 @@ export const Route = createFileRoute("/api/dashboard/settings")({
                 requiredPaths: getArraySetting(
                   state.settings.requiredPathsJson
                 ),
+                allowedRequestPaths: normalizeAllowedRequestPaths(
+                  getArraySetting(state.settings.allowedRequestPathsJson)
+                ),
                 vipTokenDurationThresholds: parseVipTokenDurationThresholds(
                   state.settings.vipTokenDurationThresholdsJson
                 ),
                 requiredPathsMatchMode: getRequiredPathsMatchMode(
                   state.settings.requiredPathsMatchMode
                 ),
+                allowRequestPathModifiers:
+                  state.settings.allowRequestPathModifiers,
               }
             : null,
           integrations: {

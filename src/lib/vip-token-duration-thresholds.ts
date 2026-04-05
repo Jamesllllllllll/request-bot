@@ -112,6 +112,41 @@ export function parseVipTokenDurationThresholds(
   }
 }
 
+export function getNextVipTokenDurationThreshold(
+  thresholds: VipTokenDurationThreshold[]
+): VipTokenDurationThreshold {
+  const normalizedThresholds = normalizeVipTokenDurationThresholds(thresholds);
+  const lastThreshold = normalizedThresholds.at(-1);
+
+  if (!lastThreshold) {
+    return {
+      minimumDurationMinutes: 7,
+      tokenCost: 1,
+    };
+  }
+
+  const previousThreshold = normalizedThresholds.at(-2);
+  const defaultStepMinutes =
+    previousThreshold == null
+      ? 2
+      : Math.max(
+          0.25,
+          Math.round(
+            (lastThreshold.minimumDurationMinutes -
+              previousThreshold.minimumDurationMinutes) *
+              100
+          ) / 100
+        );
+
+  return {
+    minimumDurationMinutes:
+      Math.round(
+        (lastThreshold.minimumDurationMinutes + defaultStepMinutes) * 100
+      ) / 100,
+    tokenCost: lastThreshold.tokenCost + 1,
+  };
+}
+
 export function parseDurationTextToSeconds(value: string | null | undefined) {
   const trimmed = value?.trim();
 
@@ -196,6 +231,7 @@ export function getEffectiveVipTokenCost(input: {
     durationText?: string | null;
   } | null;
   thresholds: VipTokenDurationThreshold[];
+  minimumVipTokenCost?: number | null;
 }) {
   if (input.requestKind !== "vip") {
     return 0;
@@ -209,7 +245,11 @@ export function getEffectiveVipTokenCost(input: {
 
   return Math.max(
     normalizedExplicitVipTokenCost,
-    getRequiredVipTokenCostForSong(input.song, input.thresholds)
+    getRequiredVipTokenCostForSong(input.song, input.thresholds),
+    input.minimumVipTokenCost != null &&
+      Number.isFinite(input.minimumVipTokenCost)
+      ? Math.max(0, Math.trunc(input.minimumVipTokenCost))
+      : 0
   );
 }
 

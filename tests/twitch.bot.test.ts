@@ -174,4 +174,95 @@ describe("twitch bot reconcile", () => {
         )
     ).toBe(false);
   });
+
+  it("removes stale duplicate chat subscriptions for the same channel", async () => {
+    vi.mocked(getChannelSettingsByChannelId).mockResolvedValue({
+      botChannelEnabled: true,
+      adminForceBotWhileOffline: false,
+      autoGrantVipTokenToSubscribers: false,
+      autoGrantVipTokensForSharedSubRenewalMessage: false,
+      autoGrantVipTokensToSubGifters: false,
+      autoGrantVipTokensToGiftRecipients: false,
+      autoGrantVipTokensForCheers: false,
+      autoGrantVipTokensForChannelPointRewards: false,
+      autoGrantVipTokensForRaiders: false,
+      channelPointRewardCost: 1000,
+      twitchChannelPointRewardId: "",
+    } as never);
+    vi.mocked(getEventSubSubscription).mockImplementation(
+      async (_env, _channelId, subscriptionType) =>
+        subscriptionType === "channel.chat.message"
+          ? ({
+              twitchSubscriptionId: "sub-stale",
+            } as never)
+          : (undefined as never)
+    );
+    vi.mocked(listEventSubSubscriptions).mockImplementation(async ({ type }) =>
+      type === "channel.chat.message"
+        ? ([
+            {
+              id: "sub-stale",
+              status: "enabled",
+              type: "channel.chat.message",
+              version: "1",
+              condition: {
+                broadcaster_user_id: "broadcaster-1",
+                user_id: "broadcaster-1",
+              },
+              created_at: "2026-01-01T00:00:00Z",
+              transport: {
+                method: "webhook",
+                callback: "https://example.com/api/eventsub",
+              },
+              cost: 0,
+            },
+            {
+              id: "sub-correct",
+              status: "enabled",
+              type: "channel.chat.message",
+              version: "1",
+              condition: {
+                broadcaster_user_id: "broadcaster-1",
+                user_id: "bot-1",
+              },
+              created_at: "2026-01-01T00:00:00Z",
+              transport: {
+                method: "webhook",
+                callback: "https://example.com/api/eventsub",
+              },
+              cost: 0,
+            },
+          ] as never)
+        : ([] as never)
+    );
+
+    const result = await reconcileChannelBotState(env, "channel-1", {
+      refreshLiveState: false,
+    });
+
+    expect(result).toEqual({
+      ok: true,
+      state: "active",
+      warnings: [],
+    });
+    expect(deleteEventSubSubscription).toHaveBeenCalledWith({
+      env,
+      appAccessToken: "app-token",
+      subscriptionId: "sub-stale",
+    });
+    expect(
+      vi
+        .mocked(createEventSubSubscription)
+        .mock.calls.some(([input]) => input.type === "channel.chat.message")
+    ).toBe(false);
+    expect(
+      vi
+        .mocked(upsertEventSubSubscription)
+        .mock.calls.some(
+          ([, input]) =>
+            input.subscriptionType === "channel.chat.message" &&
+            input.twitchSubscriptionId === "sub-correct"
+        )
+    ).toBe(true);
+  });
 });

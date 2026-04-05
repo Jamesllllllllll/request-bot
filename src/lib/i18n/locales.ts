@@ -4,11 +4,15 @@ export type AppLocale = (typeof supportedLocales)[number];
 
 export const defaultLocale: AppLocale = "en";
 
-export const localeOptions: Array<{ value: AppLocale; nativeLabel: string }> = [
-  { value: "en", nativeLabel: "English" },
-  { value: "es", nativeLabel: "Español" },
-  { value: "fr", nativeLabel: "Français" },
-  { value: "pt-BR", nativeLabel: "Português (Brasil)" },
+export const localeOptions: Array<{
+  value: AppLocale;
+  nativeLabel: string;
+  shortLabel: string;
+}> = [
+  { value: "en", nativeLabel: "English", shortLabel: "EN" },
+  { value: "es", nativeLabel: "Español", shortLabel: "ES" },
+  { value: "fr", nativeLabel: "Français", shortLabel: "FR" },
+  { value: "pt-BR", nativeLabel: "Português (Brasil)", shortLabel: "PT" },
 ];
 
 export function isSupportedLocale(value: string): value is AppLocale {

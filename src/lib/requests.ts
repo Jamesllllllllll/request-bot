@@ -1,3 +1,7 @@
+import {
+  type RequesterChatBadgeReference,
+  toRequesterChatBadgeReferences,
+} from "./twitch/chat-badges";
 import type { EventSubChatMessageEvent } from "./twitch/types";
 
 export type SupportedChatCommand =
@@ -30,6 +34,7 @@ export interface NormalizedChatEvent {
   chatterDisplayName: string;
   messageId: string;
   rawMessage: string;
+  badges: RequesterChatBadgeReference[];
   isBroadcaster: boolean;
   isModerator: boolean;
   isVip: boolean;
@@ -258,6 +263,7 @@ export function normalizeChatEvent(
     chatterDisplayName: event.chatter_user_name,
     messageId: event.message_id,
     rawMessage: event.message.text,
+    badges: toRequesterChatBadgeReferences(event.badges),
     isBroadcaster:
       event.broadcaster_user_id === event.chatter_user_id ||
       hasBadge(event, "broadcaster"),

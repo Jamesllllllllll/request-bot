@@ -754,6 +754,20 @@ export async function getChannelByTwitchChannelId(
   });
 }
 
+export async function getChannelsByTwitchChannelIds(
+  env: AppEnv,
+  twitchChannelIds: string[]
+) {
+  if (twitchChannelIds.length === 0) {
+    return [];
+  }
+
+  return getDb(env).query.channels.findMany({
+    where: inArray(channels.twitchChannelId, [...new Set(twitchChannelIds)]),
+    orderBy: [asc(channels.displayName)],
+  });
+}
+
 export async function getChannelSettingsByChannelId(
   env: AppEnv,
   channelId: string
@@ -2785,6 +2799,9 @@ export async function updateSettings(
     autoGrantVipTokensForRaiders: boolean;
     autoGrantVipTokensForStreamElementsTips: boolean;
     allowRequestPathModifiers: boolean;
+    allowedRequestPaths: string[];
+    requestPathModifierVipTokenCost: number;
+    requestPathModifierUsesVipPriority: boolean;
     cheerBitsPerVipToken: number;
     channelPointRewardCost: number;
     vipTokenDurationThresholds: Array<{
@@ -2853,6 +2870,10 @@ export async function updateSettings(
       autoGrantVipTokensForStreamElementsTips:
         input.autoGrantVipTokensForStreamElementsTips,
       allowRequestPathModifiers: input.allowRequestPathModifiers,
+      allowedRequestPathsJson: JSON.stringify(input.allowedRequestPaths),
+      requestPathModifierVipTokenCost: input.requestPathModifierVipTokenCost,
+      requestPathModifierUsesVipPriority:
+        input.requestPathModifierUsesVipPriority,
       cheerBitsPerVipToken: input.cheerBitsPerVipToken,
       channelPointRewardCost: input.channelPointRewardCost,
       vipTokenDurationThresholdsJson: serializeVipTokenDurationThresholds(
@@ -2940,10 +2961,25 @@ export async function updateAdminBotOfflineTesting(
     .where(eq(channelSettings.channelId, channelId));
 }
 
+export async function updateChannelBotEnabled(
+  env: AppEnv,
+  channelId: string,
+  enabled: boolean
+) {
+  await getDb(env)
+    .update(channelSettings)
+    .set({
+      botChannelEnabled: enabled,
+      updatedAt: Date.now(),
+    })
+    .where(eq(channelSettings.channelId, channelId));
+}
+
 export async function updateOverlaySettings(
   env: AppEnv,
   channelId: string,
   input: {
+    overlayShowTitle: boolean;
     overlayShowCreator: boolean;
     overlayShowAlbum: boolean;
     overlayAnimateNowPlaying: boolean;
@@ -2967,6 +3003,7 @@ export async function updateOverlaySettings(
   await getDb(env)
     .update(channelSettings)
     .set({
+      overlayShowTitle: input.overlayShowTitle,
       overlayShowCreator: input.overlayShowCreator,
       overlayShowAlbum: input.overlayShowAlbum,
       overlayAnimateNowPlaying: input.overlayAnimateNowPlaying,
@@ -3793,6 +3830,40 @@ export async function upsertEventSubSubscription(
     });
 }
 
+export function isDuplicateConstraintError(error: unknown) {
+  const seen = new Set<unknown>();
+  const pending = [error];
+
+  while (pending.length > 0) {
+    const current = pending.pop();
+    if (!current || seen.has(current)) {
+      continue;
+    }
+    seen.add(current);
+
+    const message =
+      current instanceof Error
+        ? current.message
+        : typeof current === "string"
+          ? current
+          : "";
+
+    if (
+      message.includes("UNIQUE constraint failed") ||
+      message.includes("PRIMARY KEY constraint failed") ||
+      message.includes("SQLITE_CONSTRAINT")
+    ) {
+      return true;
+    }
+
+    if (typeof current === "object" && current !== null && "cause" in current) {
+      pending.push((current as { cause?: unknown }).cause);
+    }
+  }
+
+  return false;
+}
+
 export async function claimEventSubDelivery(
   env: AppEnv,
   input: Omit<EventSubDeliveryInsert, "createdAt">
@@ -3806,11 +3877,7 @@ export async function claimEventSubDelivery(
       });
     return true;
   } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    if (
-      message.includes("UNIQUE constraint failed") ||
-      message.includes("PRIMARY KEY constraint failed")
-    ) {
+    if (isDuplicateConstraintError(error)) {
       return false;
     }
 

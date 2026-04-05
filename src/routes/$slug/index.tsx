@@ -1,6 +1,7 @@
 // Route: Shows the public playlist page for a single channel by slug.
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
+import { CircleQuestionMark } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
 import { useEffect, useMemo, useState } from "react";
 import { ChannelCommunityPanel } from "~/components/channel-community-panel";
@@ -8,12 +9,24 @@ import { ChannelRulesPanel } from "~/components/channel-rules-panel";
 import { PickOrderBadge } from "~/components/pick-order-badge";
 import { PlaylistManagementSurface } from "~/components/playlist-management-surface";
 import { PublicPlayedHistoryCard } from "~/components/public-played-history-card";
+import { RequesterChatBadges } from "~/components/requester-chat-badges";
 import type {
   SearchSong,
   SearchSongActionRenderArgs,
   SearchSongResultState,
 } from "~/components/song-search-panel";
 import { SongSearchPanel } from "~/components/song-search-panel";
+import { StatusToggleBadge } from "~/components/status-toggle-badge";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "~/components/ui/alert-dialog";
 import { Badge } from "~/components/ui/badge";
 import { Button } from "~/components/ui/button";
 import { Checkbox } from "~/components/ui/checkbox";
@@ -30,6 +43,13 @@ import {
   PopoverTrigger,
 } from "~/components/ui/popover";
 import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "~/components/ui/select";
+import {
   formatBlacklistReasonLabel,
   getBlacklistReasonCodes,
 } from "~/lib/channel-blacklist";
@@ -43,6 +63,15 @@ import {
 } from "~/lib/request-availability";
 import { STREAMER_CHOICE_WARNING_CODE } from "~/lib/request-modes";
 import { formatPathLabel, getArraySetting } from "~/lib/request-policy";
+import {
+  getAvailableRequestedPaths,
+  getPrimaryRequestedPath,
+  getRequestVipTokenPlan,
+  getStoredRequestedPaths,
+  type RequestPathOption,
+  requestedPathsMatch,
+} from "~/lib/requested-paths";
+import type { RequesterChatBadge } from "~/lib/twitch/chat-badges";
 import { cn, decodeHtmlEntities, getErrorMessage } from "~/lib/utils";
 import { viewerSessionQueryOptions } from "~/lib/viewer-session-query";
 import {
@@ -72,6 +101,7 @@ type PublicPlaylistItem = {
   requestedByTwitchUserId?: string | null;
   requestedByLogin?: string | null;
   requestedByDisplayName?: string | null;
+  requesterChatBadges?: RequesterChatBadge[] | null;
   requestKind?: "regular" | "vip" | null;
   vipTokenCost?: number | null;
   requestedQuery?: string | null;
@@ -135,6 +165,7 @@ type PendingViewerRequestState = {
   query?: string;
   requestMode?: "catalog" | "random" | "choice";
   requestKind?: "regular" | "vip";
+  requestedPath?: RequestPathOption | null;
   itemId?: string;
 } | null;
 
@@ -151,11 +182,16 @@ type PublicChannelPageData = {
     botReadyState?: string | null;
   };
   settings?: {
+    botChannelEnabled?: boolean;
     requestsEnabled?: boolean;
     blacklistEnabled?: boolean;
     setlistEnabled?: boolean;
     letSetlistBypassBlacklist?: boolean;
     subscribersMustFollowSetlist?: boolean;
+    allowRequestPathModifiers?: boolean;
+    allowedRequestPaths?: string[];
+    requestPathModifierVipTokenCost?: number;
+    requestPathModifierUsesVipPriority?: boolean;
     requiredPathsJson?: string | null;
     vipTokenDurationThresholdsJson?: string | null;
     requiredPathsMatchMode?: string | null;
@@ -312,6 +348,7 @@ function PublicChannelPage() {
   const [viewerRequestError, setViewerRequestError] = useState<string | null>(
     null
   );
+  const [showDisableBotDialog, setShowDisableBotDialog] = useState(false);
   const [pendingViewerRequest, setPendingViewerRequest] =
     useState<PendingViewerRequestState>(null);
   const [editingViewerRequestItemId, setEditingViewerRequestItemId] = useState<
@@ -380,15 +417,21 @@ function PublicChannelPage() {
       return body as ViewerRequestStateData;
     },
     enabled: !!signedInViewer,
+    refetchInterval: 2_000,
+    refetchIntervalInBackground: false,
   });
 
   const channelDisplayName = data?.channel?.displayName ?? slug;
   const channelIsLive = !!data?.channel?.isLive;
   const channelRequestsOpen = areChannelRequestsOpen(data?.channel ?? {});
+  const botChannelEnabled = data?.settings?.botChannelEnabled ?? false;
   const requestsEnabled = data?.settings?.requestsEnabled ?? true;
   const requestsAvailableNow = requestsEnabled && channelRequestsOpen;
   const channelStatusTone = channelIsLive
     ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-100"
+    : "border-slate-400/30 bg-slate-500/10 text-slate-100";
+  const botStatusTone = botChannelEnabled
+    ? "border-emerald-500/35 bg-emerald-500/10 text-emerald-100"
     : "border-slate-400/30 bg-slate-500/10 text-slate-100";
   const requestStatusTone = requestsAvailableNow
     ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-100"
@@ -507,6 +550,7 @@ function PublicChannelPage() {
   );
   const playlistItems = data?.items ?? [];
   const filteredItems = playlistItems;
+  const accessRole = data?.accessRole ?? "anonymous";
   const canManagePlaylist = !!data?.settings?.canManageRequests;
   const canManageBlacklist = !!data?.settings?.canManageBlacklist;
   const canManageSetlist = !!data?.settings?.canManageSetlist;
@@ -582,6 +626,75 @@ function PublicChannelPage() {
           queryKey: ["channel-viewer-request-state", slug],
         }),
       ]);
+    },
+  });
+  const botEnabledMutation = useMutation({
+    mutationFn: async (nextBotEnabled: boolean) => {
+      const response = await fetch(`/api/channel/${slug}/playlist`, {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({
+          action: "setBotChannelEnabled",
+          enabled: nextBotEnabled,
+        }),
+      });
+      const body = (await response.json().catch(() => null)) as {
+        error?: string;
+        ok?: boolean;
+      } | null;
+
+      if (!response.ok || body?.ok === false) {
+        throw new Error(
+          body?.error ??
+            t("management.states.playlistUpdateFailed", { ns: "playlist" })
+        );
+      }
+
+      return {
+        botChannelEnabled: nextBotEnabled,
+      };
+    },
+    onMutate: async (nextBotEnabled) => {
+      setViewerRequestError(null);
+      await queryClient.cancelQueries({
+        queryKey: ["channel-playlist", slug],
+      });
+      const previous = queryClient.getQueryData<PublicChannelPageData>([
+        "channel-playlist",
+        slug,
+      ]);
+
+      queryClient.setQueryData<PublicChannelPageData>(
+        ["channel-playlist", slug],
+        (current) =>
+          current
+            ? {
+                ...current,
+                settings: {
+                  ...current.settings,
+                  botChannelEnabled: nextBotEnabled,
+                },
+              }
+            : current
+      );
+
+      return { previous };
+    },
+    onError: (error, _nextBotEnabled, context) => {
+      if (context?.previous) {
+        queryClient.setQueryData(["channel-playlist", slug], context.previous);
+      }
+      setViewerRequestError(
+        getErrorMessage(error) ||
+          t("management.states.playlistUpdateFailed", { ns: "playlist" })
+      );
+    },
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({
+        queryKey: ["channel-playlist", slug],
+      });
     },
   });
 
@@ -671,6 +784,7 @@ function PublicChannelPage() {
             song: SearchSong;
             requestKind: "regular" | "vip";
             vipTokenCost?: number;
+            requestedPath?: RequestPathOption;
             replaceExisting: boolean;
             itemId?: string;
           }
@@ -695,6 +809,7 @@ function PublicChannelPage() {
             ? {
                 songId: input.song.id,
                 requestMode: "catalog",
+                requestedPath: input.requestedPath,
               }
             : {
                 query: input.query,
@@ -730,6 +845,7 @@ function PublicChannelPage() {
         query: "query" in input ? input.query : undefined,
         requestMode: "query" in input ? input.requestMode : "catalog",
         requestKind: input.requestKind,
+        requestedPath: "song" in input ? (input.requestedPath ?? null) : null,
         itemId: input.itemId,
       });
     },
@@ -916,7 +1032,7 @@ function PublicChannelPage() {
         <div className="px-8 max-[960px]:px-6">
           <div className="flex flex-wrap items-start justify-between gap-4">
             <div>
-              <h1 className="text-3xl font-semibold">
+              <h1 className="text-4xl font-semibold">
                 {t("page.title", {
                   ns: "playlist",
                   channel: channelDisplayName,
@@ -924,11 +1040,35 @@ function PublicChannelPage() {
               </h1>
             </div>
             {!isLoading && data?.settings ? (
-              <div className="flex flex-wrap items-center justify-end gap-2">
+              <div className="flex flex-wrap items-center justify-end gap-2 max-[960px]:w-full max-[960px]:justify-center">
                 <ChannelStatusBadge
                   isLive={channelIsLive}
                   toneClassName={channelStatusTone}
                 />
+                {accessRole === "owner" ? (
+                  <StatusToggleBadge
+                    enabled={botChannelEnabled}
+                    toneClassName={botStatusTone}
+                    enabledLabel={t("management.bot.enabled", {
+                      ns: "playlist",
+                    })}
+                    disabledLabel={t("management.bot.disabled", {
+                      ns: "playlist",
+                    })}
+                    toggleAriaLabel={t("management.bot.toggleAria", {
+                      ns: "playlist",
+                    })}
+                    disabled={botEnabledMutation.isPending}
+                    onToggle={() => {
+                      if (botChannelEnabled) {
+                        setShowDisableBotDialog(true);
+                        return;
+                      }
+
+                      botEnabledMutation.mutate(true);
+                    }}
+                  />
+                ) : null}
                 <RequestsStatusBadge
                   requestsEnabled={requestsEnabled}
                   toneClassName={requestStatusTone}
@@ -996,6 +1136,44 @@ function PublicChannelPage() {
             ) : null}
           </div>
         )}
+        <AlertDialog
+          open={showDisableBotDialog}
+          onOpenChange={setShowDisableBotDialog}
+        >
+          <AlertDialogContent className="bg-(--panel)">
+            <AlertDialogHeader>
+              <AlertDialogTitle>
+                {t("management.bot.disableDialog.title", {
+                  ns: "playlist",
+                })}
+              </AlertDialogTitle>
+              <AlertDialogDescription>
+                {t("management.bot.disableDialog.description", {
+                  ns: "playlist",
+                })}
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel disabled={botEnabledMutation.isPending}>
+                {t("management.bot.disableDialog.cancel", {
+                  ns: "playlist",
+                })}
+              </AlertDialogCancel>
+              <AlertDialogAction
+                onClick={() => {
+                  setShowDisableBotDialog(false);
+                  botEnabledMutation.mutate(false);
+                }}
+                disabled={botEnabledMutation.isPending}
+                className="border-transparent bg-rose-600 text-white shadow-none hover:bg-rose-700"
+              >
+                {t("management.bot.disableDialog.confirm", {
+                  ns: "playlist",
+                })}
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
       </div>
 
       {!canManagePlaylist && viewerRequestFeedback ? (
@@ -1008,7 +1186,7 @@ function PublicChannelPage() {
           {t("page.requestsLiveOnly", { ns: "playlist" })}
         </InlineStatusBanner>
       ) : null}
-      {!canManagePlaylist && viewerRequestError ? (
+      {viewerRequestError ? (
         <InlineStatusBanner tone="danger">
           {viewerRequestError}
         </InlineStatusBanner>
@@ -1131,6 +1309,20 @@ function PublicChannelPage() {
                     <ViewerSearchSongActions
                       song={song}
                       resultState={resultState}
+                      allowRequestPathModifiers={
+                        !!data?.settings?.allowRequestPathModifiers
+                      }
+                      allowedRequestPaths={
+                        data?.settings?.allowedRequestPaths ?? []
+                      }
+                      requestPathModifierVipTokenCost={
+                        data?.settings?.requestPathModifierVipTokenCost ?? 0
+                      }
+                      requestPathModifierUsesVipPriority={
+                        data?.settings?.requestPathModifierUsesVipPriority ??
+                        true
+                      }
+                      vipTokenDurationThresholds={vipTokenDurationThresholds}
                       requestsOpen={channelRequestsOpen}
                       viewerState={viewerRequestState}
                       viewerStateLoading={viewerRequestStateQuery.isLoading}
@@ -1143,12 +1335,13 @@ function PublicChannelPage() {
                       replaceExisting={effectiveViewerReplaceExisting}
                       mutationIsPending={viewerRequestMutation.isPending}
                       pendingViewerRequest={pendingViewerRequest}
-                      onSubmit={(requestKind, vipTokenCost) =>
+                      onSubmit={(requestKind, vipTokenCost, requestedPath) =>
                         viewerRequestMutation.mutate({
                           action: "submit",
                           song,
                           requestKind,
                           vipTokenCost,
+                          requestedPath,
                           replaceExisting: effectiveViewerReplaceExisting,
                           itemId: editingViewerRequest?.id,
                         })
@@ -1258,7 +1451,8 @@ function ViewerRequestSummaryWidget(props: {
     props.viewerState != null
       ? t("viewerSummary.vipTokensLabel", {
           ns: "playlist",
-          count: formatVipTokenCount(props.viewerState.vipTokensAvailable),
+          count: props.viewerState.vipTokensAvailable,
+          countText: formatVipTokenCount(props.viewerState.vipTokensAvailable),
         })
       : props.viewerStateLoading
         ? t("viewerSummary.vipBalanceLoading", { ns: "playlist" })
@@ -1278,7 +1472,8 @@ function ViewerRequestSummaryWidget(props: {
     props.viewerState != null
       ? t("viewerSummary.vipBalanceSummary", {
           ns: "playlist",
-          count: formatVipTokenCount(props.viewerState.vipTokensAvailable),
+          count: props.viewerState.vipTokensAvailable,
+          countText: formatVipTokenCount(props.viewerState.vipTokensAvailable),
         })
       : props.viewerStateLoading
         ? t("viewerSummary.vipBalanceChecking", { ns: "playlist" })
@@ -1430,8 +1625,15 @@ function ViewerRequestSummaryWidget(props: {
                         ? t("badges.vip", { ns: "playlist" })
                         : t("badges.regular", { ns: "playlist" })}
                     </Badge>
-                    {item.requestKind === "vip" &&
-                    getStoredVipTokenCost(item) > 1 ? (
+                    {getRequestedPathLabel(item) ? (
+                      <Badge variant="outline">
+                        {getRequestedPathLabel(item)}
+                      </Badge>
+                    ) : null}
+                    {(item.requestKind === "vip" &&
+                      getStoredVipTokenCost(item) > 1) ||
+                    (item.requestKind !== "vip" &&
+                      getStoredVipTokenCost(item) > 0) ? (
                       <Badge variant="outline">
                         {t("management.item.vipTokens", {
                           ns: "playlist",
@@ -1520,67 +1722,31 @@ function RequestsStatusBadge(props: {
   const { t } = useLocaleTranslation("playlist");
   if (!props.canManageRequests) {
     return (
-      <button
-        type="button"
-        className={cn(
-          "inline-flex items-center border px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.16em] transition-opacity hover:opacity-85",
-          props.toneClassName
-        )}
-        onClick={props.onScrollToSearch}
-      >
-        {props.requestsEnabled
-          ? t("badges.requestsOn")
-          : t("badges.requestsOff")}
-      </button>
+      <StatusToggleBadge
+        enabled={props.requestsEnabled}
+        toneClassName={props.toneClassName}
+        enabledLabel={t("badges.requestsOn")}
+        disabledLabel={t("badges.requestsOff")}
+        onLabelClick={props.onScrollToSearch}
+      />
     );
   }
 
   return (
-    <div
-      className={cn(
-        "inline-flex items-center gap-3 border px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.16em]",
-        props.toneClassName
-      )}
-    >
-      <button
-        type="button"
-        className="transition-opacity hover:opacity-85"
-        onClick={props.onScrollToSearch}
-      >
-        {props.requestsEnabled
-          ? t("badges.requestsOn")
-          : t("badges.requestsOff")}
-      </button>
-      <button
-        type="button"
-        role="switch"
-        aria-checked={props.requestsEnabled}
-        aria-label={
-          props.requestsEnabled
-            ? t("badges.turnRequestsOff")
-            : t("badges.turnRequestsOn")
-        }
-        disabled={props.isPending}
-        onClick={(event) => {
-          event.stopPropagation();
-          props.onToggle();
-        }}
-        className={cn(
-          "relative inline-flex h-5 w-9 shrink-0 items-center rounded-full border transition-colors",
-          props.requestsEnabled
-            ? "border-emerald-400/40 bg-emerald-500/25"
-            : "border-white/15 bg-black/20",
-          props.isPending ? "cursor-wait opacity-70" : "hover:opacity-90"
-        )}
-      >
-        <span
-          className={cn(
-            "block h-3.5 w-3.5 rounded-full bg-white transition-transform",
-            props.requestsEnabled ? "translate-x-[1.1rem]" : "translate-x-0.5"
-          )}
-        />
-      </button>
-    </div>
+    <StatusToggleBadge
+      enabled={props.requestsEnabled}
+      toneClassName={props.toneClassName}
+      enabledLabel={t("badges.requestsOn")}
+      disabledLabel={t("badges.requestsOff")}
+      toggleAriaLabel={
+        props.requestsEnabled
+          ? t("badges.turnRequestsOff")
+          : t("badges.turnRequestsOn")
+      }
+      disabled={props.isPending}
+      onLabelClick={props.onScrollToSearch}
+      onToggle={props.onToggle}
+    />
   );
 }
 
@@ -1589,7 +1755,7 @@ function ChannelStatusBadge(props: { isLive: boolean; toneClassName: string }) {
   return (
     <span
       className={cn(
-        "inline-flex items-center border px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.16em]",
+        "inline-flex items-center border px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.16em] select-none",
         props.toneClassName
       )}
     >
@@ -1607,7 +1773,8 @@ function VipTokenInfoBadge(props: {
   const balanceLabel =
     props.balanceCount != null
       ? t("badges.vipBalance", {
-          count: formatVipTokenCount(props.balanceCount),
+          count: props.balanceCount,
+          countText: formatVipTokenCount(props.balanceCount),
         })
       : t("badges.vipTokens");
 
@@ -1619,9 +1786,7 @@ function VipTokenInfoBadge(props: {
           className="inline-flex items-center gap-2 border border-sky-400/30 bg-sky-500/10 px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.16em] text-sky-100 transition-colors hover:bg-sky-500/15"
         >
           <span>{balanceLabel}</span>
-          <span className="flex h-4 w-4 items-center justify-center border border-sky-300/40 bg-sky-500/15 text-[10px] leading-none text-sky-50">
-            ?
-          </span>
+          <CircleQuestionMark size={13} />
         </button>
       </PopoverTrigger>
       <PopoverContent
@@ -1727,9 +1892,21 @@ function getStoredVipTokenCost(input: {
   return input.requestKind === "vip" ? 1 : 0;
 }
 
+function getRequestedPathLabel(input: { requestedQuery?: string | null }) {
+  const requestedPath = getPrimaryRequestedPath(input);
+  return requestedPath ? formatPathLabel(requestedPath) : null;
+}
+
 function ViewerSearchSongActions(props: {
   song: SearchSong;
   resultState: SearchSongResultState;
+  allowRequestPathModifiers: boolean;
+  allowedRequestPaths: string[];
+  requestPathModifierVipTokenCost: number;
+  requestPathModifierUsesVipPriority: boolean;
+  vipTokenDurationThresholds: ReturnType<
+    typeof parseVipTokenDurationThresholds
+  >;
   requestsOpen: boolean;
   viewerState: ViewerRequestStateData["viewer"];
   viewerStateLoading: boolean;
@@ -1739,9 +1916,52 @@ function ViewerSearchSongActions(props: {
   replaceExisting: boolean;
   mutationIsPending: boolean;
   pendingViewerRequest: PendingViewerRequestState;
-  onSubmit: (requestKind: "regular" | "vip", vipTokenCost?: number) => void;
+  onSubmit: (
+    requestKind: "regular" | "vip",
+    vipTokenCost?: number,
+    requestedPath?: RequestPathOption
+  ) => void;
 }) {
   const { t } = useLocaleTranslation("playlist");
+  const availableRequestedPaths = useMemo(
+    () =>
+      props.allowRequestPathModifiers
+        ? getAvailableRequestedPaths(
+            props.song.parts,
+            props.allowedRequestPaths
+          )
+        : [],
+    [
+      props.allowRequestPathModifiers,
+      props.allowedRequestPaths,
+      props.song.parts,
+    ]
+  );
+  const editingRequestedPath =
+    props.editingRequest?.songId === props.song.id
+      ? getPrimaryRequestedPath(props.editingRequest)
+      : null;
+  const [requestedPath, setRequestedPath] = useState<RequestPathOption | "">(
+    editingRequestedPath ?? ""
+  );
+
+  useEffect(() => {
+    setRequestedPath(editingRequestedPath ?? "");
+  }, [editingRequestedPath, props.song.id]);
+
+  useEffect(() => {
+    if (
+      requestedPath &&
+      !availableRequestedPaths.includes(requestedPath as RequestPathOption)
+    ) {
+      setRequestedPath("");
+    }
+  }, [availableRequestedPaths, requestedPath]);
+
+  const selectedRequestedPath = requestedPath || undefined;
+  const selectedRequestedPaths = selectedRequestedPath
+    ? [selectedRequestedPath]
+    : [];
   const matchingRequest =
     props.activeRequests.find(
       (item) =>
@@ -1750,10 +1970,39 @@ function ViewerSearchSongActions(props: {
   const activeLimit = props.viewerState?.activeRequestLimit ?? null;
   const atActiveLimit =
     activeLimit != null && props.activeRequests.length >= activeLimit;
+  const regularRequestPlan = getRequestVipTokenPlan({
+    requestKind: "regular",
+    song: props.song,
+    requestedPaths: selectedRequestedPaths,
+    thresholds: props.vipTokenDurationThresholds,
+    settings: {
+      requestPathModifierVipTokenCost: props.requestPathModifierVipTokenCost,
+      requestPathModifierUsesVipPriority:
+        props.requestPathModifierUsesVipPriority,
+    },
+  });
+  const vipRequestPlan = getRequestVipTokenPlan({
+    requestKind: "vip",
+    song: props.song,
+    requestedPaths: selectedRequestedPaths,
+    thresholds: props.vipTokenDurationThresholds,
+    settings: {
+      requestPathModifierVipTokenCost: props.requestPathModifierVipTokenCost,
+      requestPathModifierUsesVipPriority:
+        props.requestPathModifierUsesVipPriority,
+    },
+  });
+  const matchingRequestHasSameRequestedPaths =
+    matchingRequest != null &&
+    requestedPathsMatch(
+      getStoredRequestedPaths(matchingRequest),
+      selectedRequestedPaths
+    );
 
   const regularDisabledReason = getViewerSongActionDisabledReason({
     requestKind: "regular",
-    requestedVipTokenCost: 0,
+    requestedVipTokenCost: regularRequestPlan.totalVipTokenCost,
+    regularRequestRequiresVip: regularRequestPlan.regularRequestRequiresVip,
     resultState: props.resultState,
     requestsOpen: props.requestsOpen,
     viewerState: props.viewerState,
@@ -1761,6 +2010,7 @@ function ViewerSearchSongActions(props: {
     viewerStateError: props.viewerStateError,
     editingRequest: props.editingRequest,
     requestedSongId: props.song.id,
+    requestedPaths: selectedRequestedPaths,
     activeRequests: props.activeRequests,
     matchingRequest,
     atActiveLimit,
@@ -1769,7 +2019,8 @@ function ViewerSearchSongActions(props: {
   });
   const vipDisabledReason = getViewerSongActionDisabledReason({
     requestKind: "vip",
-    requestedVipTokenCost: props.resultState.vipTokenCost ?? 1,
+    requestedVipTokenCost: vipRequestPlan.totalVipTokenCost,
+    regularRequestRequiresVip: false,
     resultState: props.resultState,
     requestsOpen: props.requestsOpen,
     viewerState: props.viewerState,
@@ -1777,6 +2028,7 @@ function ViewerSearchSongActions(props: {
     viewerStateError: props.viewerStateError,
     editingRequest: props.editingRequest,
     requestedSongId: props.song.id,
+    requestedPaths: selectedRequestedPaths,
     activeRequests: props.activeRequests,
     matchingRequest,
     atActiveLimit,
@@ -1787,25 +2039,61 @@ function ViewerSearchSongActions(props: {
     props.mutationIsPending &&
     props.pendingViewerRequest?.action === "submit" &&
     props.pendingViewerRequest.songId === props.song.id &&
-    props.pendingViewerRequest.requestKind === "regular";
+    props.pendingViewerRequest.requestKind === "regular" &&
+    (props.pendingViewerRequest.requestedPath ?? null) ===
+      (selectedRequestedPath ?? null);
   const vipPending =
     props.mutationIsPending &&
     props.pendingViewerRequest?.action === "submit" &&
     props.pendingViewerRequest.songId === props.song.id &&
-    props.pendingViewerRequest.requestKind === "vip";
-  const disabledReason = regularDisabledReason || vipDisabledReason;
-  const helperText = disabledReason || props.resultState.warning || "";
-  const regularActionLabel = props.editingRequest
-    ? t("viewerActions.edit")
-    : t("viewerActions.add");
+    props.pendingViewerRequest.requestKind === "vip" &&
+    (props.pendingViewerRequest.requestedPath ?? null) ===
+      (selectedRequestedPath ?? null);
+  const requestedPathHelperText =
+    selectedRequestedPath && regularRequestPlan.requestedPathVipTokenCost > 0
+      ? props.requestPathModifierUsesVipPriority
+        ? t("viewerActions.pathRequiresVip", {
+            path: formatPathLabel(selectedRequestedPath),
+            count: formatVipTokenCostLabel(
+              regularRequestPlan.requestedPathVipTokenCost
+            ),
+          })
+        : t("viewerActions.pathCostsVipTokens", {
+            path: formatPathLabel(selectedRequestedPath),
+            count: formatVipTokenCostLabel(
+              regularRequestPlan.requestedPathVipTokenCost
+            ),
+          })
+      : "";
+  const helperText =
+    regularDisabledReason ||
+    vipDisabledReason ||
+    requestedPathHelperText ||
+    props.resultState.warning ||
+    "";
+  const regularActionLabel =
+    regularRequestPlan.totalVipTokenCost > 0
+      ? t(
+          props.editingRequest
+            ? "viewerActions.editCost"
+            : "viewerActions.addCost",
+          {
+            count: formatVipTokenCostLabel(
+              regularRequestPlan.totalVipTokenCost
+            ),
+          }
+        )
+      : props.editingRequest
+        ? t("viewerActions.edit")
+        : t("viewerActions.add");
   const vipActionLabel =
-    props.resultState.vipTokenCost != null && props.resultState.vipTokenCost > 1
+    vipRequestPlan.totalVipTokenCost > 1
       ? t(
           props.editingRequest
             ? "viewerActions.editVipCost"
             : "viewerActions.addVipCost",
           {
-            count: Math.trunc(props.resultState.vipTokenCost),
+            count: Math.trunc(vipRequestPlan.totalVipTokenCost),
           }
         )
       : props.editingRequest
@@ -1814,11 +2102,46 @@ function ViewerSearchSongActions(props: {
 
   return (
     <div className="grid gap-2">
+      {availableRequestedPaths.length > 0 ? (
+        <div className="grid gap-1">
+          <Label className="text-[11px] font-semibold uppercase tracking-[0.12em] text-(--muted)">
+            {t("viewerActions.choosePath")}
+          </Label>
+          <Select
+            value={selectedRequestedPath ?? "__none"}
+            onValueChange={(value) =>
+              setRequestedPath(
+                value === "__none" ? "" : (value as RequestPathOption)
+              )
+            }
+          >
+            <SelectTrigger className="h-9 bg-(--panel) text-left text-sm">
+              <SelectValue placeholder={t("viewerActions.noPathPreference")} />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="__none">
+                {t("viewerActions.noPathPreference")}
+              </SelectItem>
+              {availableRequestedPaths.map((path) => (
+                <SelectItem key={path} value={path}>
+                  {formatPathLabel(path)}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+      ) : null}
       <div className="grid grid-cols-2 gap-2">
         <Button
           type="button"
           className="w-full px-4 shadow-none"
-          onClick={() => props.onSubmit("regular")}
+          onClick={() =>
+            props.onSubmit(
+              "regular",
+              regularRequestPlan.totalVipTokenCost || undefined,
+              selectedRequestedPath
+            )
+          }
           disabled={!!regularDisabledReason || props.mutationIsPending}
         >
           {regularPending ? t("viewerActions.adding") : regularActionLabel}
@@ -1828,7 +2151,11 @@ function ViewerSearchSongActions(props: {
           variant="outline"
           className="w-full px-4"
           onClick={() =>
-            props.onSubmit("vip", props.resultState.vipTokenCost ?? 1)
+            props.onSubmit(
+              "vip",
+              vipRequestPlan.totalVipTokenCost || 1,
+              selectedRequestedPath
+            )
           }
           disabled={!!vipDisabledReason || props.mutationIsPending}
         >
@@ -1839,11 +2166,14 @@ function ViewerSearchSongActions(props: {
         <p className="text-right text-xs text-(--muted)">{helperText}</p>
       ) : matchingRequest ? (
         <p className="text-right text-xs text-(--muted)">
-          {matchingRequest.requestKind === "vip" &&
+          {matchingRequestHasSameRequestedPaths &&
+          matchingRequest.requestKind === "vip" &&
           getStoredVipTokenCost(matchingRequest) >=
-            (props.resultState.vipTokenCost ?? 1)
+            vipRequestPlan.totalVipTokenCost
             ? t("viewerActions.alreadyVip")
-            : t("viewerActions.alreadyRegular")}
+            : matchingRequestHasSameRequestedPaths
+              ? t("viewerActions.alreadyRegular")
+              : t("viewerActions.updateExisting")}
         </p>
       ) : null}
     </div>
@@ -2056,6 +2386,7 @@ function ViewerSpecialRequestControls(props: {
 function getViewerSongActionDisabledReason(input: {
   requestKind: "regular" | "vip";
   requestedVipTokenCost: number;
+  regularRequestRequiresVip: boolean;
   resultState: SearchSongResultState;
   requestsOpen?: boolean;
   viewerState: ViewerRequestStateData["viewer"];
@@ -2063,6 +2394,7 @@ function getViewerSongActionDisabledReason(input: {
   viewerStateError: string;
   editingRequest: EnrichedPublicPlaylistItem | null;
   requestedSongId: string;
+  requestedPaths: string[];
   activeRequests: EnrichedPublicPlaylistItem[];
   matchingRequest: EnrichedPublicPlaylistItem | null;
   atActiveLimit: boolean;
@@ -2095,24 +2427,38 @@ function getViewerSongActionDisabledReason(input: {
 
   if (
     input.requestKind === "regular" &&
-    (input.resultState.vipTokenCost ?? 0) > 0
+    input.regularRequestRequiresVip &&
+    input.requestedVipTokenCost > 0
   ) {
     return input.t("viewerActions.requiresVipTokens", {
-      count: formatVipTokenCostLabel(input.resultState.vipTokenCost ?? 0),
+      count: formatVipTokenCostLabel(input.requestedVipTokenCost),
     });
   }
 
   const matchingRequestVipTokenCost = input.matchingRequest
     ? getStoredVipTokenCost(input.matchingRequest)
     : 0;
+  const matchingRequestHasSameRequestedPaths =
+    input.matchingRequest != null &&
+    requestedPathsMatch(
+      getStoredRequestedPaths(input.matchingRequest),
+      input.requestedPaths
+    );
   const editingRequestVipTokenCost = input.editingRequest
     ? getStoredVipTokenCost(input.editingRequest)
     : 0;
+  const editingRequestHasSameRequestedPaths =
+    input.editingRequest != null &&
+    requestedPathsMatch(
+      getStoredRequestedPaths(input.editingRequest),
+      input.requestedPaths
+    );
   const editingSameRequest =
     input.editingRequest != null &&
     input.editingRequest.songId === input.requestedSongId &&
     input.editingRequest.requestKind === input.requestKind &&
-    editingRequestVipTokenCost === input.requestedVipTokenCost;
+    editingRequestVipTokenCost === input.requestedVipTokenCost &&
+    editingRequestHasSameRequestedPaths;
 
   if (editingSameRequest) {
     return input.t("viewerActions.alreadyActive");
@@ -2122,6 +2468,7 @@ function getViewerSongActionDisabledReason(input: {
     input.matchingRequest &&
     input.matchingRequest.requestKind === input.requestKind &&
     matchingRequestVipTokenCost === input.requestedVipTokenCost &&
+    matchingRequestHasSameRequestedPaths &&
     !input.replaceExisting
   ) {
     return input.t("viewerActions.alreadyActive");
@@ -2133,7 +2480,8 @@ function getViewerSongActionDisabledReason(input: {
     !(
       input.matchingRequest &&
       (input.matchingRequest.requestKind !== input.requestKind ||
-        matchingRequestVipTokenCost !== input.requestedVipTokenCost)
+        matchingRequestVipTokenCost !== input.requestedVipTokenCost ||
+        !matchingRequestHasSameRequestedPaths)
     )
   ) {
     const activeLimit =
@@ -2142,7 +2490,7 @@ function getViewerSongActionDisabledReason(input: {
   }
 
   if (
-    input.requestKind === "vip" &&
+    input.requestedVipTokenCost > 0 &&
     !hasRedeemableVipToken(
       input.viewerState.vipTokensAvailable,
       Math.max(0, input.requestedVipTokenCost - editingRequestVipTokenCost)
@@ -2406,6 +2754,7 @@ function PublicPlaylistRow(props: {
   isViewerRequest: boolean;
 }) {
   const { t } = useLocaleTranslation("playlist");
+  const isVipRequest = props.item.requestKind === "vip";
   const requesterName =
     props.item.requestedByDisplayName ??
     props.item.requestedByLogin ??
@@ -2424,7 +2773,6 @@ function PublicPlaylistRow(props: {
     editedLabel != null &&
     (props.item.createdAt == null || editedTimestamp > props.item.createdAt);
   const metadataLine = [
-    requesterName,
     addedLabel ? t("row.added", { time: addedLabel }) : null,
     showEditedLabel && editedLabel
       ? t("row.edited", { time: editedLabel })
@@ -2432,6 +2780,8 @@ function PublicPlaylistRow(props: {
   ]
     .filter((value): value is string => Boolean(value))
     .join(" - ");
+  const rowStripeClass =
+    props.index % 2 === 0 ? "bg-(--panel-soft)" : "bg-(--panel-muted)";
 
   return (
     <motion.div
@@ -2443,13 +2793,17 @@ function PublicPlaylistRow(props: {
       className={cn(
         "border-(--border) px-5 py-4 max-[960px]:px-6",
         props.index > 0 ? "border-t" : "",
-        props.index % 2 === 0 ? "bg-(--panel-soft)" : "bg-(--panel-muted)"
+        isVipRequest
+          ? `${rowStripeClass} border-violet-400/45 shadow-[0_0_0_1px_rgba(168,85,247,0.08),0_0_28px_rgba(168,85,247,0.12)]`
+          : rowStripeClass
       )}
       style={
         props.isViewerRequest
           ? {
-              borderColor: "var(--viewer-highlight-border)",
               backgroundColor: "var(--viewer-highlight-bg)",
+              ...(isVipRequest
+                ? {}
+                : { borderColor: "var(--viewer-highlight-border)" }),
             }
           : undefined
       }
@@ -2458,26 +2812,47 @@ function PublicPlaylistRow(props: {
         <StatusColumn
           position={props.showPlaylistPositions ? props.item.position : null}
           isCurrent={props.item.status === "current"}
-          isVip={props.item.requestKind === "vip"}
         />
         <div className="min-w-0 flex-1">
-          <p className="truncate text-lg font-semibold text-(--text)">
-            {titleLine}
-          </p>
+          <div className="flex min-w-0 flex-wrap items-start justify-between gap-2">
+            <div className="min-w-0 flex flex-1 flex-wrap items-center gap-2">
+              <p className="min-w-0 flex-1 truncate text-lg font-semibold text-(--text)">
+                {titleLine}
+              </p>
+              {isVipRequest ? (
+                <Badge className="border-violet-400/35 bg-violet-500/15 text-violet-100 hover:bg-violet-500/15">
+                  {t("management.item.vipBadge")}
+                </Badge>
+              ) : null}
+              {getRequestedPathLabel(props.item) ? (
+                <Badge variant="outline">
+                  {getRequestedPathLabel(props.item)}
+                </Badge>
+              ) : null}
+            </div>
+            {metadataLine ? (
+              <p className="shrink-0 text-sm font-medium text-(--muted)">
+                {metadataLine}
+              </p>
+            ) : null}
+          </div>
           {secondaryLine ? (
             <p className="mt-1 truncate text-sm text-(--brand-deep)">
               {secondaryLine}
             </p>
           ) : null}
-          <p className="mt-1 truncate text-sm font-medium text-(--muted)">
-            {metadataLine}
-          </p>
+          <div className="mt-1 flex min-w-0 flex-wrap items-center gap-2">
+            <RequesterChatBadges badges={props.item.requesterChatBadges} />
+            <p className="min-w-0 truncate text-base font-semibold text-(--text)">
+              {requesterName}
+            </p>
+          </div>
           <div className="mt-2 flex flex-wrap items-center gap-2">
             {props.showPickOrderBadges && props.item.pickNumber != null ? (
               <PickOrderBadge pickNumber={props.item.pickNumber} />
             ) : null}
-            {props.item.requestKind === "vip" &&
-            getStoredVipTokenCost(props.item) > 1 ? (
+            {(isVipRequest && getStoredVipTokenCost(props.item) > 1) ||
+            (!isVipRequest && getStoredVipTokenCost(props.item) > 0) ? (
               <Badge variant="outline">
                 {t("management.item.vipTokens", {
                   count: getStoredVipTokenCost(props.item),
@@ -2518,9 +2893,8 @@ function formatCompactPlaylistRelativeTime(
 function StatusColumn(props: {
   position: number | null | undefined;
   isCurrent: boolean;
-  isVip: boolean;
 }) {
-  if (!props.isCurrent && !props.isVip && props.position == null) {
+  if (!props.isCurrent && props.position == null) {
     return null;
   }
 
@@ -2532,7 +2906,6 @@ function StatusColumn(props: {
       {props.isCurrent ? (
         <RecordBadge spinning={props.isCurrent} active={props.isCurrent} />
       ) : null}
-      {props.isVip ? <VipTag /> : null}
     </div>
   );
 }
@@ -2574,14 +2947,6 @@ function RecordBadge(props: { spinning: boolean; active: boolean }) {
           strokeWidth="1.5"
         />
       </svg>
-    </div>
-  );
-}
-
-function VipTag() {
-  return (
-    <div className="inline-flex min-h-7 items-center border border-white/15 bg-[#a855f7] px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.24em] text-white">
-      VIP
     </div>
   );
 }

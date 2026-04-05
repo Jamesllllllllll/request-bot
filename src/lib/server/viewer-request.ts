@@ -34,7 +34,9 @@ import {
   STREAMER_CHOICE_WARNING_CODE,
 } from "~/lib/request-modes";
 import {
+  formatPathLabel,
   getActiveRequestLimit,
+  getAllowedRequestPathsSetting,
   getArraySetting,
   getRateLimitWindow,
   getRequiredPathsMatchMode,
@@ -42,8 +44,18 @@ import {
   isRequesterAllowed,
   isSongAllowed,
   type RequesterContext,
+  songMatchesRequestedPaths,
 } from "~/lib/request-policy";
+import {
+  buildRequestedPathQuery,
+  getRequestVipTokenPlan,
+  getStoredRequestedPaths,
+  normalizeRequestedPath,
+  type RequestPathOption,
+  requestedPathsMatch,
+} from "~/lib/requested-paths";
 import { getBroadcasterSubscriptions, TwitchApiError } from "~/lib/twitch/api";
+import type { RequesterChatBadge } from "~/lib/twitch/chat-badges";
 import { createId, getErrorMessage } from "~/lib/utils";
 import {
   formatVipRequestCooldownCountdown,
@@ -52,8 +64,6 @@ import {
 } from "~/lib/vip-request-cooldowns";
 import {
   formatVipTokenCostLabel,
-  getEffectiveVipTokenCost,
-  getRequiredVipTokenCostForSong,
   parseVipTokenDurationThresholds,
 } from "~/lib/vip-token-duration-thresholds";
 import { hasRedeemableVipToken } from "~/lib/vip-tokens";
@@ -72,6 +82,7 @@ export type ViewerRequestMutationInput =
       itemId?: string;
       requestKind: ViewerRequestKind;
       vipTokenCost?: number;
+      requestedPath?: RequestPathOption;
       replaceExisting: boolean;
     }
   | {
@@ -888,6 +899,20 @@ async function submitViewerRequest(
   const requestMode = mutation.requestMode ?? "catalog";
   const requestedText =
     typeof mutation.query === "string" ? mutation.query.trim() : undefined;
+  const allowedRequestPaths = getAllowedRequestPathsSetting(
+    context.state.settings
+  );
+  const requestedPath =
+    requestMode === "catalog" && "requestedPath" in mutation
+      ? normalizeRequestedPath(mutation.requestedPath ?? null)
+      : null;
+  if (requestedPath && !allowedRequestPaths.includes(requestedPath)) {
+    throw new ViewerRequestError(
+      409,
+      "That part is not enabled for this channel."
+    );
+  }
+  const requestedPaths = requestedPath ? [requestedPath] : [];
 
   if (
     (requestMode === "choice" || requestMode === "random") &&
@@ -914,6 +939,19 @@ async function submitViewerRequest(
     song = await getCatalogSongById(env, requestedSongId);
     if (!song) {
       throw new ViewerRequestError(404, "Song not found.");
+    }
+
+    if (
+      requestedPaths.length > 0 &&
+      !songMatchesRequestedPaths({
+        song,
+        requestedPaths,
+      })
+    ) {
+      throw new ViewerRequestError(
+        409,
+        getRequestedPathMismatchMessage(requestedPaths)
+      );
     }
 
     normalizedQuery = buildViewerQuery(song);
@@ -952,21 +990,25 @@ async function submitViewerRequest(
     requestKind: mutation.requestKind,
     vipTokenCost: mutation.vipTokenCost,
     query: normalizedQuery,
+    requestedPath,
     requestMode,
   });
   const vipTokenDurationThresholds = parseVipTokenDurationThresholds(
     context.state.settings.vipTokenDurationThresholdsJson
   );
-  const requiredSongVipTokenCost = getRequiredVipTokenCostForSong(
-    song,
-    vipTokenDurationThresholds
-  );
-  const nextVipTokenCost = getEffectiveVipTokenCost({
+  const requestVipTokenPlan = getRequestVipTokenPlan({
     requestKind: mutation.requestKind,
     explicitVipTokenCost: mutation.vipTokenCost,
     song,
+    requestedPaths,
     thresholds: vipTokenDurationThresholds,
+    settings: context.state.settings,
   });
+  const requiredRequestVipTokenCost = Math.max(
+    requestVipTokenPlan.requiredSongVipTokenCost,
+    requestVipTokenPlan.requestedPathVipTokenCost
+  );
+  const nextVipTokenCost = requestVipTokenPlan.totalVipTokenCost;
 
   const existingActiveCount = await countActiveRequestsForUser(env, {
     channelId: context.state.channel.id,
@@ -1033,6 +1075,15 @@ async function submitViewerRequest(
   const matchingRequestStoredVipTokenCost = existingMatchingRequest
     ? getStoredVipTokenCost(existingMatchingRequest)
     : 0;
+  const existingMatchingRequestPaths = existingMatchingRequest
+    ? getStoredRequestedPaths(existingMatchingRequest)
+    : [];
+  const matchingRequestHasSameRequestedPaths = requestedPathsMatch(
+    existingMatchingRequestPaths,
+    requestedPaths
+  );
+  const existingRequestNeedsSongRewrite =
+    requestMode !== "choice" && !matchingRequestHasSameRequestedPaths;
   const kindChangeOnly =
     existingMatchingRequest != null &&
     existingMatchingRequest.requestKind !== mutation.requestKind &&
@@ -1042,8 +1093,14 @@ async function submitViewerRequest(
     existingMatchingRequest.requestKind === mutation.requestKind &&
     matchingRequestStoredVipTokenCost !== nextVipTokenCost &&
     !mutation.replaceExisting;
+  const requestedPathsChangeOnly =
+    existingMatchingRequest != null &&
+    existingMatchingRequest.requestKind === mutation.requestKind &&
+    matchingRequestStoredVipTokenCost === nextVipTokenCost &&
+    !matchingRequestHasSameRequestedPaths &&
+    !mutation.replaceExisting;
   const updateExistingMatchingRequest =
-    kindChangeOnly || vipTokenCostChangeOnly;
+    kindChangeOnly || vipTokenCostChangeOnly || requestedPathsChangeOnly;
   const editTarget = editableExistingRequest;
   const editInPlace = editTarget != null;
   const matchingDifferentExistingRequest = editTarget
@@ -1071,6 +1128,13 @@ async function submitViewerRequest(
       requestedText?.trim().toLowerCase();
   const editingSameSong =
     editTarget != null && song != null && editTarget.songId === song.id;
+  const editTargetHasSameRequestedPaths =
+    editTarget == null
+      ? true
+      : requestedPathsMatch(
+          getStoredRequestedPaths(editTarget),
+          requestedPaths
+        );
   const editingSameResolvedRequest = editingSameSong || editingSameChoice;
   const editTargetStoredVipTokenCost = editTarget
     ? getStoredVipTokenCost(editTarget)
@@ -1115,6 +1179,7 @@ async function submitViewerRequest(
     existingMatchingRequest &&
     existingMatchingRequest.requestKind === mutation.requestKind &&
     matchingRequestStoredVipTokenCost === nextVipTokenCost &&
+    matchingRequestHasSameRequestedPaths &&
     !mutation.replaceExisting
   ) {
     await createViewerRequestLog(env, {
@@ -1149,7 +1214,10 @@ async function submitViewerRequest(
     editTarget &&
     editingSameResolvedRequest &&
     editTarget.requestKind === mutation.requestKind &&
-    editTargetStoredVipTokenCost === nextVipTokenCost
+    editTargetStoredVipTokenCost === nextVipTokenCost &&
+    (requestMode === "choice"
+      ? editingSameChoice
+      : editTargetHasSameRequestedPaths)
   ) {
     await createViewerRequestLog(env, {
       context,
@@ -1220,19 +1288,25 @@ async function submitViewerRequest(
     }
   }
 
-  if (mutation.requestKind !== "vip" && requiredSongVipTokenCost > 0) {
+  if (
+    mutation.requestKind !== "vip" &&
+    requestVipTokenPlan.regularRequestRequiresVip
+  ) {
     await createViewerRequestLog(env, {
       context,
       rawMessage,
       normalizedQuery,
       song,
       outcome: "rejected",
-      outcomeReason: "vip_token_required_by_duration",
+      outcomeReason:
+        requestVipTokenPlan.requestedPathVipTokenCost > 0
+          ? "vip_token_required_by_requested_path"
+          : "vip_token_required_by_duration",
     });
 
     throw new ViewerRequestError(
       409,
-      `This song requires ${formatVipTokenCostLabel(requiredSongVipTokenCost)}. Use a VIP request instead.`
+      `This request requires ${formatVipTokenCostLabel(requiredRequestVipTokenCost)}. Use a VIP request instead.`
     );
   }
 
@@ -1290,6 +1364,7 @@ async function submitViewerRequest(
     throw new ViewerRequestError(
       409,
       getVipTokenShortageMessage({
+        requestKind: mutation.requestKind,
         requestedVipTokenCost: nextVipTokenCost,
         additionalVipTokenCost: vipTokenDelta,
         availableVipTokens: context.vipTokensAvailable,
@@ -1411,6 +1486,7 @@ async function submitViewerRequest(
     throw new ViewerRequestError(
       409,
       getVipTokenShortageMessage({
+        requestKind: mutation.requestKind,
         requestedVipTokenCost: nextVipTokenCost,
         additionalVipTokenCost: vipTokenDelta,
         availableVipTokens: context.vipTokensAvailable,
@@ -1453,13 +1529,29 @@ async function submitViewerRequest(
     const vipReserved = await reserveVipToken();
 
     try {
-      await changeRequestKindOnPlaylist(env, {
-        channelId: context.state.channel.id,
-        itemId: existingMatchingRequest.id,
-        actorUserId: null,
-        requestKind: mutation.requestKind,
-        vipTokenCost: nextVipTokenCost,
-      });
+      if (existingRequestNeedsSongRewrite) {
+        await editRequestOnPlaylist(env, {
+          channelId: context.state.channel.id,
+          itemId: existingMatchingRequest.id,
+          actorUserId: null,
+          requestKind: mutation.requestKind,
+          vipTokenCost: nextVipTokenCost,
+          song: buildViewerSongPayload({
+            song: song as CatalogSong,
+            requestedQuery: buildRequestedPathQuery(requestedPaths),
+            warningCode,
+            warningMessage,
+          }),
+        });
+      } else {
+        await changeRequestKindOnPlaylist(env, {
+          channelId: context.state.channel.id,
+          itemId: existingMatchingRequest.id,
+          actorUserId: null,
+          requestKind: mutation.requestKind,
+          vipTokenCost: nextVipTokenCost,
+        });
+      }
     } catch (error) {
       if (vipReserved) {
         await refundReservedVipToken();
@@ -1474,9 +1566,13 @@ async function submitViewerRequest(
       song,
       outcome: "accepted",
       outcomeReason:
-        mutation.requestKind === "vip"
-          ? "vip_request_upgrade"
-          : "vip_request_downgrade",
+        existingRequestNeedsSongRewrite ||
+        requestedPathsChangeOnly ||
+        vipTokenCostChangeOnly
+          ? (warningCode ?? "request_edited")
+          : mutation.requestKind === "vip"
+            ? "vip_request_upgrade"
+            : "vip_request_downgrade",
     });
 
     if (vipTokenDelta < 0) {
@@ -1500,11 +1596,36 @@ async function submitViewerRequest(
               status: existingMatchingRequest.status,
               existing: true,
             })
-          : mutation.requestKind === "vip"
-            ? existingMatchingRequest.status === "current"
-              ? `Your request "${formatSong(song as CatalogSong)}" is now marked as VIP${getVipTokenCostMessageSuffix(nextVipTokenCost)}.`
-              : `Your request "${formatSong(song as CatalogSong)}" is now marked as VIP${getVipTokenCostMessageSuffix(nextVipTokenCost)} and will play next.`
-            : `Your request "${formatSong(song as CatalogSong)}" is now a regular request again.`,
+          : existingRequestNeedsSongRewrite &&
+              existingMatchingRequest.requestKind === mutation.requestKind
+            ? mutation.requestKind === "vip"
+              ? existingMatchingRequest.status === "current"
+                ? `Updated your VIP request to "${formatCatalogRequestTarget(
+                    song as CatalogSong,
+                    requestedPaths
+                  )}"${getVipTokenCostMessageSuffix(nextVipTokenCost)}.`
+                : `Updated your VIP request to "${formatCatalogRequestTarget(
+                    song as CatalogSong,
+                    requestedPaths
+                  )}"${getVipTokenCostMessageSuffix(nextVipTokenCost)} and it will stay next.`
+              : `Updated your request to "${formatCatalogRequestTarget(
+                  song as CatalogSong,
+                  requestedPaths
+                )}".`
+            : mutation.requestKind === "vip"
+              ? existingMatchingRequest.status === "current"
+                ? `Your request "${formatCatalogRequestTarget(
+                    song as CatalogSong,
+                    requestedPaths
+                  )}" is now marked as VIP${getVipTokenCostMessageSuffix(nextVipTokenCost)}.`
+                : `Your request "${formatCatalogRequestTarget(
+                    song as CatalogSong,
+                    requestedPaths
+                  )}" is now marked as VIP${getVipTokenCostMessageSuffix(nextVipTokenCost)} and will play next.`
+              : `Your request "${formatCatalogRequestTarget(
+                  song as CatalogSong,
+                  requestedPaths
+                )}" is now a regular request again.`,
     };
   }
 
@@ -1523,7 +1644,7 @@ async function submitViewerRequest(
             ? buildViewerChoiceSongPayload(specialRequestText)
             : buildViewerSongPayload({
                 song: song as CatalogSong,
-                normalizedQuery,
+                requestedQuery: buildRequestedPathQuery(requestedPaths),
                 warningCode,
                 warningMessage,
               }),
@@ -1563,8 +1684,14 @@ async function submitViewerRequest(
             editing: true,
           })
         : mutation.requestKind === "vip"
-          ? `Edited your request to "${formatSong(song as CatalogSong)}" as a VIP request${getVipTokenCostMessageSuffix(nextVipTokenCost)}.`
-          : `Edited your request to "${formatSong(song as CatalogSong)}".`;
+          ? `Edited your request to "${formatCatalogRequestTarget(
+              song as CatalogSong,
+              requestedPaths
+            )}" as a VIP request${getVipTokenCostMessageSuffix(nextVipTokenCost)}.`
+          : `Edited your request to "${formatCatalogRequestTarget(
+              song as CatalogSong,
+              requestedPaths
+            )}".`;
 
     return {
       ok: true,
@@ -1600,7 +1727,7 @@ async function submitViewerRequest(
           ? buildViewerChoiceSongPayload(specialRequestText)
           : buildViewerSongPayload({
               song: song as CatalogSong,
-              normalizedQuery,
+              requestedQuery: buildRequestedPathQuery(requestedPaths),
               warningCode,
               warningMessage,
             }),
@@ -1640,8 +1767,14 @@ async function submitViewerRequest(
           vipTokenCost: nextVipTokenCost,
         })
       : mutation.requestKind === "vip"
-        ? `Added "${formatSong(song as CatalogSong)}" as a VIP request${getVipTokenCostMessageSuffix(nextVipTokenCost)}.`
-        : `Added "${formatSong(song as CatalogSong)}" to the playlist.`;
+        ? `Added "${formatCatalogRequestTarget(
+            song as CatalogSong,
+            requestedPaths
+          )}" as a VIP request${getVipTokenCostMessageSuffix(nextVipTokenCost)}.`
+        : `Added "${formatCatalogRequestTarget(
+            song as CatalogSong,
+            requestedPaths
+          )}" to the playlist.`;
 
   return {
     ok: true,
@@ -1705,6 +1838,7 @@ async function addRequestToPlaylist(
     requestedByTwitchUserId: string;
     requestedByLogin: string;
     requestedByDisplayName: string;
+    requesterChatBadges?: RequesterChatBadge[];
     prioritizeNext?: boolean;
     requestKind: ViewerRequestKind;
     vipTokenCost?: number;
@@ -1800,14 +1934,23 @@ function buildViewerRawMessage(input: {
   requestKind: ViewerRequestKind;
   vipTokenCost?: number;
   query: string;
+  requestedPath?: RequestPathOption | null;
   requestMode?: "catalog" | "random" | "choice";
 }) {
-  return `${input.source}:${input.replaceExisting ? "edit" : "request"}:${input.requestKind}:${input.requestMode ?? "catalog"}:${input.query}${input.requestKind === "vip" && (input.vipTokenCost ?? 1) > 1 ? ` *${input.vipTokenCost}` : ""}`;
+  const requestedPathSuffix = input.requestedPath
+    ? ` *${input.requestedPath}`
+    : "";
+  const vipTokenCostSuffix =
+    input.requestKind === "vip" && (input.vipTokenCost ?? 1) > 1
+      ? ` *${input.vipTokenCost}`
+      : "";
+
+  return `${input.source}:${input.replaceExisting ? "edit" : "request"}:${input.requestKind}:${input.requestMode ?? "catalog"}:${input.query}${requestedPathSuffix}${vipTokenCostSuffix}`;
 }
 
 function buildViewerSongPayload(input: {
   song: NonNullable<Awaited<ReturnType<typeof getCatalogSongById>>>;
-  normalizedQuery: string;
+  requestedQuery?: string | null;
   warningCode?: string | null;
   warningMessage?: string | null;
 }): ViewerSongPayload {
@@ -1825,10 +1968,29 @@ function buildViewerSongPayload(input: {
     cdlcId: input.song.sourceId ?? undefined,
     source: input.song.source,
     sourceUrl: input.song.sourceUrl ?? undefined,
-    requestedQuery: input.normalizedQuery,
+    requestedQuery: input.requestedQuery ?? undefined,
     warningCode: input.warningCode ?? undefined,
     warningMessage: input.warningMessage ?? undefined,
   };
+}
+
+function formatCatalogRequestTarget(
+  song: CatalogSong,
+  requestedPaths: string[]
+) {
+  if (requestedPaths.length === 0) {
+    return formatSong(song);
+  }
+
+  return `${formatSong(song)} (${requestedPaths
+    .map((path) => formatPathLabel(path))
+    .join(", ")})`;
+}
+
+function getRequestedPathMismatchMessage(requestedPaths: string[]) {
+  const formattedPaths = requestedPaths.map((path) => formatPathLabel(path));
+
+  return `That song does not include the requested part${formattedPaths.length === 1 ? "" : "s"}: ${formattedPaths.join(", ")}.`;
 }
 
 function getStoredVipTokenCost(input: {
@@ -1855,13 +2017,14 @@ function getVipTokenCostMessageSuffix(vipTokenCost?: number | null) {
 }
 
 function getVipTokenShortageMessage(input: {
+  requestKind: ViewerRequestKind;
   requestedVipTokenCost: number;
   additionalVipTokenCost: number;
   availableVipTokens: number;
 }) {
   if (input.additionalVipTokenCost > 0 && input.requestedVipTokenCost > 0) {
     if (input.requestedVipTokenCost === input.additionalVipTokenCost) {
-      return `You need ${formatVipTokenCostLabel(input.requestedVipTokenCost)} for this VIP request. You currently have ${input.availableVipTokens}.`;
+      return `You need ${formatVipTokenCostLabel(input.requestedVipTokenCost)} for this ${input.requestKind === "vip" ? "VIP request" : "request"}. You currently have ${input.availableVipTokens}.`;
     }
 
     return `You need ${formatVipTokenCostLabel(input.additionalVipTokenCost)} more for this change. You currently have ${input.availableVipTokens}.`;

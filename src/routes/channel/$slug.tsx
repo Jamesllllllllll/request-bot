@@ -6,10 +6,16 @@ import { useEffect, useMemo } from "react";
 import { BlacklistPanel } from "~/components/blacklist-panel";
 import { PickOrderBadge } from "~/components/pick-order-badge";
 import { PublicPlayedHistoryCard } from "~/components/public-played-history-card";
+import { RequesterChatBadges } from "~/components/requester-chat-badges";
+import { Badge } from "~/components/ui/badge";
 import { getBlacklistReasons as getChannelBlacklistReasons } from "~/lib/channel-blacklist";
+import { useLocaleTranslation } from "~/lib/i18n/client";
 import { getLocalizedPageTitle } from "~/lib/i18n/metadata";
 import { formatSlugTitle } from "~/lib/page-title";
 import { getPickNumbersForQueuedItems } from "~/lib/pick-order";
+import { formatPathLabel } from "~/lib/request-policy";
+import { getPrimaryRequestedPath } from "~/lib/requested-paths";
+import type { RequesterChatBadge } from "~/lib/twitch/chat-badges";
 import { cn, decodeHtmlEntities } from "~/lib/utils";
 
 type ChannelPlaylistItem = {
@@ -25,7 +31,10 @@ type ChannelPlaylistItem = {
   requestedByTwitchUserId?: string | null;
   requestedByLogin?: string | null;
   requestedByDisplayName?: string | null;
+  requesterChatBadges?: RequesterChatBadge[] | null;
   requestKind?: "regular" | "vip" | null;
+  vipTokenCost?: number | null;
+  requestedQuery?: string | null;
   status: string;
   createdAt?: number | null;
   pickNumber?: number | null;
@@ -112,8 +121,53 @@ function toPlaylistItems(
   });
 }
 
+function getStoredVipTokenCost(input: {
+  requestKind?: "regular" | "vip" | null;
+  vipTokenCost?: number | null;
+}) {
+  if (
+    typeof input.vipTokenCost === "number" &&
+    Number.isFinite(input.vipTokenCost) &&
+    input.vipTokenCost > 0
+  ) {
+    return Math.trunc(input.vipTokenCost);
+  }
+
+  return input.requestKind === "vip" ? 1 : 0;
+}
+
+function getRequestedPathLabel(input: { requestedQuery?: string | null }) {
+  const requestedPath = getPrimaryRequestedPath(input);
+  return requestedPath ? formatPathLabel(requestedPath) : null;
+}
+
+function formatCompactPlaylistRelativeTime(
+  timestamp: number,
+  t: (key: string, options?: Record<string, unknown>) => string
+) {
+  const elapsedMs = Math.max(0, Date.now() - timestamp);
+
+  if (elapsedMs < 60_000) {
+    return t("row.relative.now");
+  }
+
+  const minutes = Math.floor(elapsedMs / 60_000);
+  if (minutes < 60) {
+    return t("row.relative.minutes", { count: minutes });
+  }
+
+  const hours = Math.floor(elapsedMs / 3_600_000);
+  if (hours < 24) {
+    return t("row.relative.hours", { count: hours });
+  }
+
+  const days = Math.floor(elapsedMs / 86_400_000);
+  return t("row.relative.days", { count: days });
+}
+
 function ChannelPage() {
   const { slug } = Route.useParams();
+  const { t } = useLocaleTranslation("playlist");
   const queryClient = useQueryClient();
   const { data, isLoading } = useQuery({
     queryKey: ["channel-page", slug],
@@ -204,8 +258,10 @@ function ChannelPage() {
   return (
     <section className="page-section-stack grid gap-6">
       <div className="border border-(--border) bg-(--panel-strong) p-8 shadow-none max-[960px]:border-x-0 max-[960px]:bg-transparent max-[960px]:px-0 max-[960px]:py-6">
-        <h1 className="text-3xl font-semibold">
-          {`${data?.playlist?.channel?.displayName ?? slug}'s Playlist`}
+        <h1 className="text-4xl font-semibold">
+          {t("page.title", {
+            channel: data?.playlist?.channel?.displayName ?? slug,
+          })}
         </h1>
         {isLoading ? <p className="mt-4">Loading playlist...</p> : null}
         <div className="mt-6 overflow-hidden border border-(--border) max-[960px]:border-x-0">
@@ -245,9 +301,11 @@ function ChannelPage() {
         charters={data?.playlist.blacklistCharters ?? []}
         songs={data?.playlist.blacklistSongs ?? []}
         songGroups={data?.playlist.blacklistSongGroups ?? []}
+        showCharters={false}
+        showVersions={false}
         description={
           blacklistEnabled
-            ? "Artists, charters, songs, and specific versions are blocked for requests in this channel."
+            ? "Blacklisted artists and songs are blocked for requests in this channel."
             : "Blacklist rules are off for this channel."
         }
       />
@@ -264,16 +322,24 @@ function PublicPlaylistRow(props: {
   showPickOrderBadges: boolean;
   blacklistReasons: string[];
 }) {
+  const { t } = useLocaleTranslation("playlist");
+  const isVipRequest = props.item.requestKind === "vip";
   const requesterName =
     props.item.requestedByDisplayName ??
     props.item.requestedByLogin ??
     "viewer";
+  const addedLabel = props.item.createdAt
+    ? formatCompactPlaylistRelativeTime(props.item.createdAt, t)
+    : null;
+  const metadataLine = addedLabel ? t("row.added", { time: addedLabel }) : null;
   const titleLine = [
     decodeHtmlEntities(props.item.songTitle),
     decodeHtmlEntities(props.item.songArtist),
   ]
     .filter(Boolean)
     .join(" - ");
+  const rowStripeClass =
+    props.index % 2 === 0 ? "bg-(--panel-soft)" : "bg-(--panel-muted)";
 
   return (
     <motion.div
@@ -285,28 +351,58 @@ function PublicPlaylistRow(props: {
       className={cn(
         "px-5 py-4",
         props.index > 0 ? "border-t" : "",
-        props.index % 2 === 0 ? "bg-(--panel-soft)" : "bg-(--panel-muted)",
         props.blacklistReasons.length > 0
           ? "border-amber-400/35 bg-amber-500/8"
-          : "border-(--border)"
+          : isVipRequest
+            ? `${rowStripeClass} border-violet-400/45 shadow-[0_0_0_1px_rgba(168,85,247,0.08),0_0_28px_rgba(168,85,247,0.12)]`
+            : `border-(--border) ${rowStripeClass}`
       )}
     >
       <div className="flex items-start gap-4">
         <StatusColumn
           position={props.showPlaylistPositions ? props.item.position : null}
           isCurrent={props.item.status === "current"}
-          isVip={props.item.requestKind === "vip"}
         />
         <div className="min-w-0 flex-1">
-          <p className="truncate text-lg font-semibold text-(--text)">
-            {titleLine}
-          </p>
-          <p className="mt-1 truncate text-sm font-medium text-(--muted)">
-            {requesterName}
-          </p>
+          <div className="flex min-w-0 flex-wrap items-start justify-between gap-2">
+            <div className="min-w-0 flex flex-1 flex-wrap items-center gap-2">
+              <p className="min-w-0 flex-1 truncate text-lg font-semibold text-(--text)">
+                {titleLine}
+              </p>
+              {isVipRequest ? (
+                <Badge className="border-violet-400/35 bg-violet-500/15 text-violet-100 hover:bg-violet-500/15">
+                  {t("management.item.vipBadge")}
+                </Badge>
+              ) : null}
+              {getRequestedPathLabel(props.item) ? (
+                <Badge variant="outline">
+                  {getRequestedPathLabel(props.item)}
+                </Badge>
+              ) : null}
+            </div>
+            {metadataLine ? (
+              <p className="shrink-0 text-sm font-medium text-(--muted)">
+                {metadataLine}
+              </p>
+            ) : null}
+          </div>
+          <div className="mt-1 flex min-w-0 flex-wrap items-center gap-2">
+            <RequesterChatBadges badges={props.item.requesterChatBadges} />
+            <p className="min-w-0 truncate text-base font-semibold text-(--text)">
+              {requesterName}
+            </p>
+          </div>
           <div className="mt-2 flex flex-wrap items-center gap-2">
             {props.showPickOrderBadges && props.item.pickNumber != null ? (
               <PickOrderBadge pickNumber={props.item.pickNumber} />
+            ) : null}
+            {(isVipRequest && getStoredVipTokenCost(props.item) > 1) ||
+            (!isVipRequest && getStoredVipTokenCost(props.item) > 0) ? (
+              <Badge variant="outline">
+                {t("management.item.vipTokens", {
+                  count: getStoredVipTokenCost(props.item),
+                })}
+              </Badge>
             ) : null}
             {props.blacklistReasons.map((reason) => (
               <BlacklistReasonBadge key={reason} reason={reason} />
@@ -321,9 +417,8 @@ function PublicPlaylistRow(props: {
 function StatusColumn(props: {
   position: number | null | undefined;
   isCurrent: boolean;
-  isVip: boolean;
 }) {
-  if (!props.isCurrent && !props.isVip && props.position == null) {
+  if (!props.isCurrent && props.position == null) {
     return null;
   }
 
@@ -335,7 +430,6 @@ function StatusColumn(props: {
       {props.isCurrent ? (
         <RecordBadge spinning={props.isCurrent} active={props.isCurrent} />
       ) : null}
-      {props.isVip ? <VipTag /> : null}
     </div>
   );
 }
@@ -376,14 +470,6 @@ function RecordBadge(props: { spinning: boolean; active: boolean }) {
           strokeWidth="1.5"
         />
       </svg>
-    </div>
-  );
-}
-
-function VipTag() {
-  return (
-    <div className="inline-flex min-h-7 items-center border border-white/15 bg-[#a855f7] px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.24em] text-white">
-      VIP
     </div>
   );
 }

@@ -106,6 +106,31 @@ function hasChannelPointRewardManageScope(scopesJson: string) {
   );
 }
 
+function getEventSubCallbackUrl(env: AppEnv) {
+  return `${env.APP_URL}/api/eventsub`;
+}
+
+function isExactSubscriptionConditionMatch(
+  actual: Record<string, string> | undefined,
+  expected: Record<string, string>
+) {
+  if (!actual) {
+    return false;
+  }
+
+  const actualKeys = Object.keys(actual).sort();
+  const expectedKeys = Object.keys(expected).sort();
+
+  if (
+    actualKeys.length !== expectedKeys.length ||
+    actualKeys.some((key, index) => key !== expectedKeys[index])
+  ) {
+    return false;
+  }
+
+  return expectedKeys.every((key) => actual[key] === expected[key]);
+}
+
 async function ensureSubscription(input: {
   env: RuntimeEnv;
   appAccessToken: string;
@@ -128,6 +153,55 @@ async function ensureSubscription(input: {
     input.channelId,
     input.subscriptionType
   );
+
+  if (input.subscriptionType === CHAT_MESSAGE) {
+    const remoteSubscriptions = await listEventSubSubscriptions({
+      env: runtimeEnv,
+      appAccessToken: input.appAccessToken,
+      type: CHAT_MESSAGE,
+    });
+    const callbackUrl = getEventSubCallbackUrl(runtimeEnv);
+    const relatedSubscriptions = remoteSubscriptions.filter(
+      (subscription) =>
+        subscription.type === CHAT_MESSAGE &&
+        subscription.transport?.callback === callbackUrl &&
+        subscription.condition?.broadcaster_user_id ===
+          input.condition.broadcaster_user_id
+    );
+    const matchingSubscriptions = relatedSubscriptions.filter((subscription) =>
+      isExactSubscriptionConditionMatch(subscription.condition, input.condition)
+    );
+    const keptSubscription =
+      matchingSubscriptions.find(
+        (subscription) => subscription.id === existing?.twitchSubscriptionId
+      ) ??
+      matchingSubscriptions[0] ??
+      null;
+
+    await Promise.all(
+      relatedSubscriptions
+        .filter((subscription) => subscription.id !== keptSubscription?.id)
+        .map((subscription) =>
+          deleteEventSubSubscription({
+            env: runtimeEnv,
+            appAccessToken: input.appAccessToken,
+            subscriptionId: subscription.id,
+          })
+        )
+    );
+
+    if (keptSubscription) {
+      await upsertEventSubSubscription(runtimeEnv, {
+        channelId: input.channelId,
+        subscriptionType: input.subscriptionType,
+        twitchSubscriptionId: keptSubscription.id,
+        status: keptSubscription.status,
+        errorMessage: null,
+        lastVerifiedAt: Date.now(),
+      });
+      return keptSubscription;
+    }
+  }
 
   if (existing) {
     await upsertEventSubSubscription(runtimeEnv, {
@@ -170,7 +244,7 @@ async function ensureSubscription(input: {
         );
         const callbackMatches =
           subscription.transport?.callback ===
-          `${runtimeEnv.APP_URL}/api/eventsub`;
+          getEventSubCallbackUrl(runtimeEnv);
 
         return conditionMatches && callbackMatches;
       });

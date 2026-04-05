@@ -1,6 +1,8 @@
 import { AnimatePresence, motion } from "motion/react";
 import type { CSSProperties } from "react";
 import { PickOrderBadge } from "~/components/pick-order-badge";
+import { formatPathLabel } from "~/lib/request-policy";
+import { getPrimaryRequestedPath } from "~/lib/requested-paths";
 import { decodeHtmlEntities, hexToRgba } from "~/lib/utils";
 
 export type StreamOverlayItem = {
@@ -14,6 +16,7 @@ export type StreamOverlayItem = {
   requestedByTwitchUserId?: string | null;
   requestedByDisplayName?: string | null;
   requestedByLogin?: string | null;
+  requestedQuery?: string | null;
   requestKind?: "regular" | "vip";
   pickNumber?: number | null;
   status: string;
@@ -21,6 +24,7 @@ export type StreamOverlayItem = {
 };
 
 export type StreamOverlayTheme = {
+  overlayShowTitle: boolean;
   overlayShowCreator: boolean;
   overlayShowAlbum: boolean;
   overlayAnimateNowPlaying: boolean;
@@ -80,11 +84,13 @@ export function StreamOverlay(props: {
       }}
     >
       <div className="mx-auto flex max-w-[720px] flex-col p-4" style={style}>
-        <div className="px-1 pb-3">
-          <p className="text-lg font-semibold text-(--overlay-text)">
-            {props.channelName}
-          </p>
-        </div>
+        {props.theme.overlayShowTitle ? (
+          <div className="px-1 pb-3">
+            <p className="text-lg font-semibold text-(--overlay-text)">
+              {props.channelName}
+            </p>
+          </div>
+        ) : null}
         <div
           className="grid"
           style={{
@@ -146,10 +152,11 @@ function OverlayCard(props: {
       ? decodeHtmlEntities(props.item.songCreator)
       : null,
   ].filter((value): value is string => !!value);
+  const requestedPath = getPrimaryRequestedPath(props.item);
 
   return (
     <motion.div
-      layout
+      layout="position"
       className="relative overflow-hidden rounded-(--overlay-radius) border"
       initial={{ opacity: 0, y: 10, scale: 0.99 }}
       animate={{ opacity: 1, y: 0, scale: 1 }}
@@ -175,7 +182,7 @@ function OverlayCard(props: {
           }}
         />
       ) : null}
-      <div className="flex items-center gap-4">
+      <motion.div layout="position" className="flex items-center gap-4">
         {showStatusBadge ? (
           <StatusBadge
             animate={props.animateRecord}
@@ -183,7 +190,7 @@ function OverlayCard(props: {
             playing={props.item.status === "current"}
           />
         ) : null}
-        <div className="min-w-0 flex-1">
+        <motion.div layout="position" className="min-w-0 flex-1">
           <p
             className="truncate font-semibold leading-tight text-(--overlay-text)"
             style={{
@@ -231,9 +238,22 @@ function OverlayCard(props: {
                 variant="overlay"
               />
             ) : null}
+            {requestedPath ? (
+              <span
+                className="inline-flex items-center rounded-full border px-2 py-0.5 font-medium"
+                style={{
+                  fontSize: "calc(var(--overlay-meta-size) - 1px)",
+                  color: "var(--overlay-text)",
+                  borderColor: "var(--overlay-border)",
+                  background: "rgba(255, 255, 255, 0.06)",
+                }}
+              >
+                {formatPathLabel(requestedPath)}
+              </span>
+            ) : null}
           </div>
-        </div>
-      </div>
+        </motion.div>
+      </motion.div>
     </motion.div>
   );
 }
@@ -246,10 +266,7 @@ function StatusBadge(props: {
   return (
     <div className="flex w-[72px] shrink-0 flex-col items-center justify-center gap-2">
       {props.playing ? (
-        <RecordBadge
-          animate={props.animate || props.playing}
-          playing={props.playing}
-        />
+        <RecordBadge animate={props.animate} playing={props.playing} />
       ) : null}
       {props.vip ? <VipTag /> : null}
     </div>

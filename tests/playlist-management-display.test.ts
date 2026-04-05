@@ -69,6 +69,7 @@ describe("playlist management display helpers", () => {
       songTitle: "Neon Noir",
       songArtist: "VV",
       songAlbum: "Neon Noir",
+      songCharterId: 2638,
       songCreator: "JohnCryx",
       songTuning: "E Standard | A Standard",
       songPartsJson: JSON.stringify(["lead", "bass"]),
@@ -81,6 +82,7 @@ describe("playlist management display helpers", () => {
     expect(resolved).toHaveLength(1);
     expect(resolved[0]).toMatchObject({
       id: "item-1",
+      authorId: 2638,
       title: "Neon Noir",
       artist: "VV",
       creator: "JohnCryx",

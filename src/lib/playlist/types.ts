@@ -1,8 +1,11 @@
+import type { RequesterChatBadge } from "~/lib/twitch/chat-badges";
+
 export interface AddRequestInput {
   channelId: string;
   requestedByTwitchUserId: string;
   requestedByLogin: string;
   requestedByDisplayName: string;
+  requesterChatBadges?: RequesterChatBadge[];
   messageId?: string;
   prioritizeNext?: boolean;
   requestKind?: "regular" | "vip";
@@ -133,6 +136,7 @@ export interface ResetSessionInput {
 export interface ShufflePlaylistInput {
   channelId: string;
   actorUserId: string;
+  keepVipAtTop?: boolean;
 }
 
 export interface ManualAddInput {

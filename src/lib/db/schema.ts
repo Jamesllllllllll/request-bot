@@ -235,6 +235,22 @@ export const channelSettings = sqliteTable("channel_settings", {
   })
     .notNull()
     .default(false),
+  allowedRequestPathsJson: text("allowed_request_paths_json")
+    .notNull()
+    .default("[]"),
+  requestPathModifierVipTokenCost: integer(
+    "request_path_modifier_vip_token_cost"
+  )
+    .notNull()
+    .default(0),
+  requestPathModifierUsesVipPriority: integer(
+    "request_path_modifier_uses_vip_priority",
+    {
+      mode: "boolean",
+    }
+  )
+    .notNull()
+    .default(true),
   cheerBitsPerVipToken: integer("cheer_bits_per_vip_token")
     .notNull()
     .default(200),
@@ -275,6 +291,9 @@ export const channelSettings = sqliteTable("channel_settings", {
     .notNull()
     .default(false),
   overlayAccessToken: text("overlay_access_token").notNull().default(""),
+  overlayShowTitle: integer("overlay_show_title", { mode: "boolean" })
+    .notNull()
+    .default(true),
   overlayShowCreator: integer("overlay_show_creator", { mode: "boolean" })
     .notNull()
     .default(false),
@@ -387,6 +406,7 @@ export const playlistItems = sqliteTable(
     requestedByTwitchUserId: text("requested_by_twitch_user_id"),
     requestedByLogin: text("requested_by_login"),
     requestedByDisplayName: text("requested_by_display_name"),
+    requesterChatBadgesJson: text("requester_chat_badges_json"),
     requestMessageId: text("request_message_id"),
     requestKind: text("request_kind").notNull().default("regular"),
     vipTokenCost: integer("vip_token_cost").notNull().default(0),
@@ -669,6 +689,7 @@ export const playedSongs = sqliteTable(
     requestedByTwitchUserId: text("requested_by_twitch_user_id"),
     requestedByLogin: text("requested_by_login"),
     requestedByDisplayName: text("requested_by_display_name"),
+    requesterChatBadgesJson: text("requester_chat_badges_json"),
     requestKind: text("request_kind").notNull().default("regular"),
     vipTokenCost: integer("vip_token_cost").notNull().default(0),
     requestedAt: integer("requested_at"),

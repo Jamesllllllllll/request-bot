@@ -118,23 +118,27 @@ export function getPickBadgeAppearance(pickNumber: number) {
   if (pickNumber === 1) {
     return {
       background: "#16a34a",
+      color: "#052e16",
     };
   }
 
   if (pickNumber === 2) {
     return {
       background: "#eab308",
+      color: "#422006",
     };
   }
 
   if (pickNumber === 3) {
     return {
       background: "#f97316",
+      color: "#431407",
     };
   }
 
   return {
     background: "#475569",
+    color: "#f8fafc",
   };
 }
 

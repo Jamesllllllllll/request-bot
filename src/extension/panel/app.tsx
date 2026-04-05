@@ -36,6 +36,7 @@ import {
   type RefObject,
   startTransition,
   useEffect,
+  useMemo,
   useRef,
   useState,
 } from "react";
@@ -52,6 +53,7 @@ import {
   SelectContent,
   SelectItem,
   SelectTrigger,
+  SelectValue,
 } from "~/components/ui/select";
 import { Skeleton } from "~/components/ui/skeleton";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "~/components/ui/tabs";
@@ -73,7 +75,19 @@ import {
   getUpdatedQueuedPositionsAfterKindChange,
 } from "~/lib/playlist/order";
 import { areChannelRequestsOpen } from "~/lib/request-availability";
+import { formatPathLabel } from "~/lib/request-policy";
+import {
+  getAvailableRequestedPaths,
+  getPrimaryRequestedPath,
+  getRequestVipTokenPlan,
+  type RequestPathOption,
+} from "~/lib/requested-paths";
 import { getVipTokenAutomationDetails } from "~/lib/vip-token-automation";
+import {
+  formatVipTokenCostLabel,
+  parseVipTokenDurationThresholds,
+  type VipTokenDurationThreshold,
+} from "~/lib/vip-token-duration-thresholds";
 import { toExtensionApiUrl, toExtensionAppUrl } from "./config";
 import {
   applyDemoViewerRequestMutation,
@@ -107,6 +121,11 @@ type PanelBootstrapResponse = {
   settings: {
     defaultLocale: string;
     requestsEnabled: boolean;
+    allowRequestPathModifiers: boolean;
+    allowedRequestPaths: string[];
+    requestPathModifierVipTokenCost: number;
+    requestPathModifierUsesVipPriority: boolean;
+    vipTokenDurationThresholdsJson: string;
     showPlaylistPositions: boolean;
     showPickOrderBadges: boolean;
     autoGrantVipTokenToSubscribers: boolean;
@@ -251,11 +270,14 @@ type PanelViewerRequestSubmitInput =
       songId: string;
       requestKind: "regular" | "vip";
       requestMode?: "catalog";
+      requestedPath?: RequestPathOption;
+      vipTokenCost?: number;
     }
   | {
       query: string;
       requestKind: "regular" | "vip";
       requestMode: "random" | "choice";
+      vipTokenCost?: number;
     };
 
 type PanelDropTargetState = {
@@ -354,6 +376,13 @@ function ExtensionPanelAppContent(props: {
       translate: (key, options) => t(key, options),
     }
   );
+  const vipTokenDurationThresholds = useMemo(
+    () =>
+      parseVipTokenDurationThresholds(
+        bootstrap?.settings.vipTokenDurationThresholdsJson
+      ),
+    [bootstrap?.settings.vipTokenDurationThresholdsJson]
+  );
   const addRequestsWhenLiveMessage = t("requests.addWhenLive");
   const managementPermissions = bootstrap?.management.permissions;
   const canManagePlaylist = managementPermissions?.canManageRequests ?? false;
@@ -386,11 +415,6 @@ function ExtensionPanelAppContent(props: {
   const showSpecialRequestControls = canQuickRequest || canQuickVipRequest;
   const showManagerSearchActions = canManagePlaylist;
   const searchTabBlockedByRequestsOff = !canManagePlaylist && !requestsEnabled;
-  const vipSearchDisabledReason = !viewerRequestsAvailable
-    ? addRequestsWhenLiveMessage
-    : viewerProfile && viewerProfile.vipTokensAvailable < 1
-      ? t("vip.notEnough")
-      : null;
   const playlistItems = bootstrap?.playlist.items ?? [];
   const currentPlaylistItemId = bootstrap?.playlist.currentItemId ?? null;
   const queuedPlaylistItems = playlistItems.filter(
@@ -912,12 +936,14 @@ function ExtensionPanelAppContent(props: {
               ? {
                   songId: input.songId,
                   requestMode: "catalog",
+                  requestedPath: input.requestedPath,
                 }
               : {
                   query: input.query.trim(),
                   requestMode: input.requestMode,
                 }),
             requestKind: input.requestKind,
+            vipTokenCost: input.vipTokenCost,
             itemId: editingRequestItemId ?? undefined,
           }),
         }
@@ -1198,7 +1224,7 @@ function ExtensionPanelAppContent(props: {
               >
                 <div className="flex items-start justify-between gap-2">
                   <div className="min-w-0 flex-1">
-                    <h1 className="truncate text-sm font-semibold text-(--text)">
+                    <h1 className="truncate text-base font-semibold text-(--text)">
                       {channelTitle}
                     </h1>
                     {viewerProfile ? (
@@ -1563,8 +1589,6 @@ function ExtensionPanelAppContent(props: {
                     <div>
                       {searchResults.items.map((item, index) => {
                         const songId = getString(item, "id");
-                        const actionKey = `${songId ?? "unknown"}:regular`;
-                        const vipActionKey = `${songId ?? "unknown"}:vip`;
                         const managerActionKey = `${songId ?? "unknown"}:manualAdd`;
 
                         return (
@@ -1603,63 +1627,52 @@ function ExtensionPanelAppContent(props: {
                                   </Button>
                                 </div>
                               ) : showViewerSearchActions ? (
-                                <div className="flex shrink-0 items-center gap-1">
-                                  <Button
-                                    size="sm"
-                                    variant="outline"
-                                    className="h-7 rounded-none px-2 text-[11px] shadow-none"
-                                    disabled={
-                                      !songId ||
-                                      !viewerRequestsAvailable ||
-                                      !bootstrap?.viewer.canRequest ||
-                                      pendingAction === actionKey
-                                    }
-                                    title={
-                                      !viewerRequestsAvailable
-                                        ? addRequestsWhenLiveMessage
-                                        : undefined
-                                    }
-                                    onClick={() => {
-                                      if (!songId) {
-                                        return;
-                                      }
-
-                                      void handleSubmitRequest({
-                                        songId,
-                                        requestKind: "regular",
-                                      });
-                                    }}
-                                  >
-                                    {pendingAction === actionKey
-                                      ? isEditingRequest
-                                        ? t("buttons.editing")
-                                        : t("buttons.adding")
-                                      : isEditingRequest
-                                        ? t("buttons.edit")
-                                        : t("buttons.add")}
-                                  </Button>
-                                  <PanelSearchVipButton
-                                    disabledReason={vipSearchDisabledReason}
-                                    disabled={
-                                      !songId ||
-                                      !viewerRequestsAvailable ||
-                                      !bootstrap?.viewer.canVipRequest ||
-                                      pendingAction === vipActionKey
-                                    }
-                                    pending={pendingAction === vipActionKey}
-                                    isEditingRequest={isEditingRequest}
-                                    onClick={() => {
-                                      if (!songId) {
-                                        return;
-                                      }
-
-                                      void handleSubmitRequest({
-                                        songId,
-                                        requestKind: "vip",
-                                      });
-                                    }}
-                                  />
-                                </div>
+                                <PanelSearchSongActions
+                                  item={item}
+                                  canRequest={
+                                    viewerRequestsAvailable &&
+                                    !!bootstrap?.viewer.canRequest
+                                  }
+                                  canVipRequest={
+                                    viewerRequestsAvailable &&
+                                    !!bootstrap?.viewer.canVipRequest
+                                  }
+                                  requestUnavailableReason={
+                                    !viewerRequestsAvailable
+                                      ? addRequestsWhenLiveMessage
+                                      : null
+                                  }
+                                  vipUnavailableReason={quickVipDisabledReason}
+                                  viewerVipTokenCount={
+                                    bootstrap?.viewer.profile
+                                      ?.vipTokensAvailable ?? 0
+                                  }
+                                  editingRequest={editingRequest}
+                                  pendingAction={pendingAction}
+                                  allowRequestPathModifiers={
+                                    bootstrap?.settings
+                                      .allowRequestPathModifiers ?? false
+                                  }
+                                  allowedRequestPaths={
+                                    bootstrap?.settings?.allowedRequestPaths ??
+                                    []
+                                  }
+                                  requestPathModifierVipTokenCost={
+                                    bootstrap?.settings
+                                      .requestPathModifierVipTokenCost ?? 0
+                                  }
+                                  requestPathModifierUsesVipPriority={
+                                    bootstrap?.settings
+                                      .requestPathModifierUsesVipPriority ??
+                                    true
+                                  }
+                                  vipTokenDurationThresholds={
+                                    vipTokenDurationThresholds
+                                  }
+                                  onSubmit={(requestInput) => {
+                                    void handleSubmitRequest(requestInput);
+                                  }}
+                                />
                               ) : null}
                             </div>
                           </div>
@@ -1745,6 +1758,7 @@ export function ExtensionPanelModeratorPreview() {
     mockModeratorViewerProfile.vipTokensAvailable < 1
       ? t("vip.notEnough")
       : null;
+  const vipTokenDurationThresholds: VipTokenDurationThreshold[] = [];
   const editingRequest = getViewerEditablePanelItem(
     playlist.items,
     mockModeratorViewerProfile,
@@ -2144,12 +2158,15 @@ export function ExtensionPanelModeratorPreview() {
             ? {
                 song: song as Record<string, unknown>,
                 requestMode: "catalog",
+                requestedPath:
+                  "songId" in input ? input.requestedPath : undefined,
               }
             : {
                 query: normalizedQuery ?? "",
                 requestMode: input.requestMode,
               }),
           requestKind: input.requestKind,
+          vipTokenCost: input.vipTokenCost,
           replaceExisting: false,
           replaceItemId: editingRequestItemId ?? undefined,
         })
@@ -2267,7 +2284,7 @@ export function ExtensionPanelModeratorPreview() {
         <section className="border-b border-(--border-strong) px-3 py-2">
           <div className="flex items-start justify-between gap-2">
             <div className="min-w-0 flex-1">
-              <h1 className="truncate text-sm font-semibold text-(--text)">
+              <h1 className="truncate text-base font-semibold text-(--text)">
                 {t("panel.titleWithChannel", {
                   displayName: "Jimmy Pants_",
                 })}
@@ -2492,8 +2509,6 @@ export function ExtensionPanelModeratorPreview() {
                   <div>
                     {searchResults.items.map((item, index) => {
                       const songId = getString(item, "id");
-                      const actionKey = `${songId ?? "unknown"}:regular`;
-                      const vipActionKey = `${songId ?? "unknown"}:vip`;
 
                       return (
                         <div
@@ -2509,55 +2524,30 @@ export function ExtensionPanelModeratorPreview() {
                                 {formatSearchSongMeta(item)}
                               </p>
                             </div>
-                            <div className="flex shrink-0 items-center gap-1">
-                              <Button
-                                size="sm"
-                                variant="outline"
-                                className="h-7 rounded-none px-2 text-[11px] shadow-none"
-                                disabled={
-                                  !songId || pendingAction === actionKey
-                                }
-                                onClick={() => {
-                                  if (!songId) {
-                                    return;
-                                  }
-
-                                  void handleSubmitRequest({
-                                    songId,
-                                    requestKind: "regular",
-                                  });
-                                }}
-                              >
-                                {pendingAction === actionKey
-                                  ? isEditingRequest
-                                    ? t("buttons.editing")
-                                    : t("buttons.adding")
-                                  : isEditingRequest
-                                    ? t("buttons.edit")
-                                    : t("buttons.add")}
-                              </Button>
-                              <PanelSearchVipButton
-                                disabledReason={vipSearchDisabledReason}
-                                disabled={
-                                  !songId ||
-                                  mockModeratorViewerProfile.vipTokensAvailable <
-                                    1 ||
-                                  pendingAction === vipActionKey
-                                }
-                                pending={pendingAction === vipActionKey}
-                                isEditingRequest={isEditingRequest}
-                                onClick={() => {
-                                  if (!songId) {
-                                    return;
-                                  }
-
-                                  void handleSubmitRequest({
-                                    songId,
-                                    requestKind: "vip",
-                                  });
-                                }}
-                              />
-                            </div>
+                            <PanelSearchSongActions
+                              item={item}
+                              canRequest
+                              canVipRequest={
+                                mockModeratorViewerProfile.vipTokensAvailable >=
+                                1
+                              }
+                              vipUnavailableReason={vipSearchDisabledReason}
+                              viewerVipTokenCount={
+                                mockModeratorViewerProfile.vipTokensAvailable
+                              }
+                              editingRequest={editingRequest}
+                              pendingAction={pendingAction}
+                              allowRequestPathModifiers
+                              allowedRequestPaths={["lead", "rhythm", "bass"]}
+                              requestPathModifierVipTokenCost={1}
+                              requestPathModifierUsesVipPriority
+                              vipTokenDurationThresholds={
+                                vipTokenDurationThresholds
+                              }
+                              onSubmit={(requestInput) => {
+                                void handleSubmitRequest(requestInput);
+                              }}
+                            />
                           </div>
                         </div>
                       );
@@ -2901,9 +2891,30 @@ function PanelPlaylistRow(props: {
                 <p className="mt-0.5 truncate text-[11px] leading-4 text-(--muted)">
                   {formatRequesterLine(props.item, t)}
                 </p>
-                {pickNumber != null ? (
+                {pickNumber != null ||
+                getPanelRequestedPathLabel(props.item) ||
+                (isVipRequest && getPanelStoredVipTokenCost(props.item) > 1) ||
+                (!isVipRequest &&
+                  getPanelStoredVipTokenCost(props.item) > 0) ? (
                   <div className="mt-1 flex flex-wrap items-center gap-1">
-                    <PickOrderBadge pickNumber={pickNumber} variant="panel" />
+                    {pickNumber != null ? (
+                      <PickOrderBadge pickNumber={pickNumber} variant="panel" />
+                    ) : null}
+                    {getPanelRequestedPathLabel(props.item) ? (
+                      <span className="inline-flex h-5 items-center border border-(--border-strong) bg-(--panel-soft) px-1.5 text-[9px] leading-none font-semibold tracking-[0.12em] text-(--text) uppercase">
+                        {getPanelRequestedPathLabel(props.item)}
+                      </span>
+                    ) : null}
+                    {(isVipRequest &&
+                      getPanelStoredVipTokenCost(props.item) > 1) ||
+                    (!isVipRequest &&
+                      getPanelStoredVipTokenCost(props.item) > 0) ? (
+                      <span className="inline-flex h-5 items-center border border-(--border-strong) bg-(--panel-soft) px-1.5 text-[9px] leading-none font-semibold text-(--text)">
+                        {t("vip.balance", {
+                          count: getPanelStoredVipTokenCost(props.item),
+                        })}
+                      </span>
+                    ) : null}
                   </div>
                 ) : null}
               </div>
@@ -3835,6 +3846,285 @@ function getStringArray(input: Record<string, unknown>, key: string) {
     : null;
 }
 
+function getPanelStoredVipTokenCost(item: Record<string, unknown>) {
+  const vipTokenCost = getNumber(item, "vipTokenCost");
+  if (vipTokenCost != null && vipTokenCost > 0) {
+    return Math.trunc(vipTokenCost);
+  }
+
+  return getString(item, "requestKind") === "vip" ? 1 : 0;
+}
+
+function getPanelRequestedPathLabel(item: Record<string, unknown>) {
+  const requestedPath = getPrimaryRequestedPath({
+    requestedQuery: getString(item, "requestedQuery"),
+  });
+
+  return requestedPath ? formatPathLabel(requestedPath) : null;
+}
+
+function PanelSearchSongActions(props: {
+  item: Record<string, unknown>;
+  canRequest: boolean;
+  canVipRequest: boolean;
+  requestUnavailableReason?: string | null;
+  vipUnavailableReason?: string | null;
+  viewerVipTokenCount: number;
+  editingRequest: PanelPlaylistItem | null;
+  pendingAction: string | null;
+  allowRequestPathModifiers: boolean;
+  allowedRequestPaths: string[];
+  requestPathModifierVipTokenCost: number;
+  requestPathModifierUsesVipPriority: boolean;
+  vipTokenDurationThresholds: VipTokenDurationThreshold[];
+  onSubmit: (input: PanelViewerRequestSubmitInput) => void;
+}) {
+  const { t } = useLocaleTranslation("extension");
+  const songId = getString(props.item, "id");
+  const availableRequestedPaths = props.allowRequestPathModifiers
+    ? getAvailableRequestedPaths(
+        getStringArray(props.item, "parts"),
+        props.allowedRequestPaths
+      )
+    : [];
+  const editingRequestedPath =
+    getString(props.editingRequest ?? {}, "songId") === songId
+      ? getPrimaryRequestedPath({
+          requestedQuery: getString(
+            props.editingRequest ?? {},
+            "requestedQuery"
+          ),
+        })
+      : null;
+  const [requestedPath, setRequestedPath] = useState<RequestPathOption | "">(
+    editingRequestedPath ?? ""
+  );
+
+  useEffect(() => {
+    setRequestedPath(editingRequestedPath ?? "");
+  }, [editingRequestedPath, songId]);
+
+  useEffect(() => {
+    if (
+      requestedPath &&
+      !availableRequestedPaths.includes(requestedPath as RequestPathOption)
+    ) {
+      setRequestedPath("");
+    }
+  }, [availableRequestedPaths, requestedPath]);
+
+  const selectedRequestedPath = requestedPath || undefined;
+  const selectedRequestedPaths = selectedRequestedPath
+    ? [selectedRequestedPath]
+    : [];
+  const songDurationText = getString(props.item, "durationText");
+  const editingVipTokenCost = props.editingRequest
+    ? getPanelStoredVipTokenCost(props.editingRequest)
+    : 0;
+  const regularPlan = getRequestVipTokenPlan({
+    requestKind: "regular",
+    song: {
+      durationText: songDurationText,
+    },
+    requestedPaths: selectedRequestedPaths,
+    thresholds: props.vipTokenDurationThresholds,
+    settings: {
+      requestPathModifierVipTokenCost: props.requestPathModifierVipTokenCost,
+      requestPathModifierUsesVipPriority:
+        props.requestPathModifierUsesVipPriority,
+    },
+  });
+  const vipPlan = getRequestVipTokenPlan({
+    requestKind: "vip",
+    song: {
+      durationText: songDurationText,
+    },
+    requestedPaths: selectedRequestedPaths,
+    thresholds: props.vipTokenDurationThresholds,
+    settings: {
+      requestPathModifierVipTokenCost: props.requestPathModifierVipTokenCost,
+      requestPathModifierUsesVipPriority:
+        props.requestPathModifierUsesVipPriority,
+    },
+  });
+  const regularActionKey = songId
+    ? getPanelViewerRequestActionKey({
+        songId,
+        requestKind: "regular",
+        requestMode: "catalog",
+        requestedPath: selectedRequestedPath,
+      })
+    : "unknown:regular";
+  const vipActionKey = songId
+    ? getPanelViewerRequestActionKey({
+        songId,
+        requestKind: "vip",
+        requestMode: "catalog",
+        requestedPath: selectedRequestedPath,
+      })
+    : "unknown:vip";
+  const regularPending = props.pendingAction === regularActionKey;
+  const vipPending = props.pendingAction === vipActionKey;
+  const regularAdditionalCost = Math.max(
+    0,
+    regularPlan.totalVipTokenCost - editingVipTokenCost
+  );
+  const vipAdditionalCost = Math.max(
+    0,
+    vipPlan.totalVipTokenCost - editingVipTokenCost
+  );
+
+  const regularDisabledReason = !songId
+    ? t("search.unavailable")
+    : !props.canRequest
+      ? (props.requestUnavailableReason ?? t("requests.noPermission"))
+      : regularPlan.regularRequestRequiresVip &&
+          regularPlan.totalVipTokenCost > 0
+        ? t("requests.requestRequiresVip", {
+            count: formatVipTokenCostLabel(regularPlan.totalVipTokenCost),
+          })
+        : regularPlan.totalVipTokenCost > 0 &&
+            props.viewerVipTokenCount < regularAdditionalCost
+          ? t("vip.insufficient")
+          : null;
+  const vipDisabledReason = !songId
+    ? t("search.unavailable")
+    : !props.canVipRequest
+      ? (props.vipUnavailableReason ??
+        props.requestUnavailableReason ??
+        t("requests.noPermission"))
+      : props.viewerVipTokenCount < vipAdditionalCost
+        ? t("vip.insufficient")
+        : null;
+  const helperText =
+    regularDisabledReason ||
+    vipDisabledReason ||
+    (selectedRequestedPath && regularPlan.requestedPathVipTokenCost > 0
+      ? props.requestPathModifierUsesVipPriority
+        ? t("requests.pathRequiresVip", {
+            path: formatPathLabel(selectedRequestedPath),
+            count: formatVipTokenCostLabel(
+              regularPlan.requestedPathVipTokenCost
+            ),
+          })
+        : t("requests.pathCostsVipTokens", {
+            path: formatPathLabel(selectedRequestedPath),
+            count: formatVipTokenCostLabel(
+              regularPlan.requestedPathVipTokenCost
+            ),
+          })
+      : null);
+
+  return (
+    <div className="grid gap-2">
+      {availableRequestedPaths.length > 0 ? (
+        <div className="grid gap-1">
+          <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-(--muted)">
+            {t("requests.choosePath")}
+          </p>
+          <Select
+            value={selectedRequestedPath ?? "__none"}
+            onValueChange={(value) =>
+              setRequestedPath(
+                value === "__none" ? "" : (value as RequestPathOption)
+              )
+            }
+          >
+            <SelectTrigger className="h-8 min-w-[9rem] rounded-none px-2 text-[11px] shadow-none">
+              <SelectValue placeholder={t("requests.noPathPreference")} />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="__none">
+                {t("requests.noPathPreference")}
+              </SelectItem>
+              {availableRequestedPaths.map((path) => (
+                <SelectItem key={path} value={path}>
+                  {formatPathLabel(path)}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+      ) : null}
+      <div className="flex shrink-0 items-center gap-1">
+        <Button
+          size="sm"
+          variant="outline"
+          className="h-7 rounded-none px-2 text-[11px] shadow-none"
+          disabled={!!regularDisabledReason || regularPending}
+          title={regularDisabledReason ?? undefined}
+          onClick={() => {
+            if (!songId) {
+              return;
+            }
+
+            props.onSubmit({
+              songId,
+              requestKind: "regular",
+              requestedPath: selectedRequestedPath,
+              vipTokenCost: regularPlan.totalVipTokenCost || undefined,
+            });
+          }}
+        >
+          {regularPending
+            ? props.editingRequest
+              ? t("buttons.editing")
+              : t("buttons.adding")
+            : props.editingRequest
+              ? regularPlan.totalVipTokenCost > 0
+                ? t("buttons.editWithCost", {
+                    count: regularPlan.totalVipTokenCost,
+                  })
+                : t("buttons.edit")
+              : regularPlan.totalVipTokenCost > 0
+                ? t("buttons.addWithCost", {
+                    count: regularPlan.totalVipTokenCost,
+                  })
+                : t("buttons.add")}
+        </Button>
+        <Button
+          size="sm"
+          variant="outline"
+          className="h-7 rounded-none px-2 text-[11px] shadow-none"
+          disabled={!!vipDisabledReason || vipPending}
+          title={vipDisabledReason ?? undefined}
+          onClick={() => {
+            if (!songId) {
+              return;
+            }
+
+            props.onSubmit({
+              songId,
+              requestKind: "vip",
+              requestedPath: selectedRequestedPath,
+              vipTokenCost: vipPlan.totalVipTokenCost || 1,
+            });
+          }}
+        >
+          {vipPending
+            ? props.editingRequest
+              ? t("buttons.editing")
+              : t("buttons.adding")
+            : props.editingRequest
+              ? vipPlan.totalVipTokenCost > 1
+                ? t("buttons.editVipWithCost", {
+                    count: vipPlan.totalVipTokenCost,
+                  })
+                : t("buttons.editVip")
+              : vipPlan.totalVipTokenCost > 1
+                ? t("buttons.vipWithCost", {
+                    count: vipPlan.totalVipTokenCost,
+                  })
+                : t("buttons.vip")}
+        </Button>
+      </div>
+      {helperText ? (
+        <p className="text-[11px] leading-4 text-(--muted)">{helperText}</p>
+      ) : null}
+    </div>
+  );
+}
+
 function formatSongLabel(item: Record<string, unknown>, t: TFunction) {
   const warningCode = getString(item, "warningCode");
   const requestedQuery = getString(item, "requestedQuery");
@@ -3934,7 +4224,7 @@ function formatSearchSongMeta(item: Record<string, unknown>) {
 
 function getPanelViewerRequestActionKey(input: PanelViewerRequestSubmitInput) {
   if ("songId" in input) {
-    return `${input.songId}:${input.requestKind}`;
+    return `${input.songId}:${input.requestKind}:${input.requestedPath ?? "none"}`;
   }
 
   return `special:${input.requestMode}:${input.requestKind}:${input.query.trim().toLowerCase()}`;

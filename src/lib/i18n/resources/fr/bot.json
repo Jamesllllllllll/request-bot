@@ -1,9 +1,10 @@
 {
   "dashboard": {
     "botLanguage": "Langue des réponses du bot",
-    "botLanguageHelp": "Choisissez la langue utilisée pour les réponses dans le chat et l’aide des commandes. Le panneau Twitch utilise aussi cette langue par défaut quand un spectateur n’a pas sa propre préférence."
+    "botLanguageHelp": "Choisissez la langue utilisée pour les réponses dans le chat et l’aide des commandes."
   },
   "paths": {
+    "guitar": "Guitar",
     "lead": "Lead",
     "rhythm": "Rhythm",
     "bass": "Bass",
@@ -17,7 +18,8 @@
   "commands": {
     "how": {
       "commands": "Commands: {commandPrefix}sr artist - song; {commandPrefix}sr artist *random; {commandPrefix}sr artist *choice; {commandPrefix}vip; {commandPrefix}vip artist - song; {commandPrefix}vip artist - song *2; {commandPrefix}edit #2 artist - song; {commandPrefix}remove reg|vip|all; {commandPrefix}position.",
-      "bassRequests": "Bass requests: add *bass to {commandPrefix}sr, {commandPrefix}vip, or {commandPrefix}edit.",
+      "partRequests": "Demandes de partie : ajoutez {modifiers} a {commandPrefix}sr, {commandPrefix}vip ou {commandPrefix}edit.",
+      "partRequestsVip": "Demandes de partie : ajoutez {modifiers} a {commandPrefix}sr, {commandPrefix}vip ou {commandPrefix}edit. Elles necessitent {countText}.",
       "browse": "Browse the track list and request songs here: {url}"
     },
     "search": "Recherchez dans la base de chansons ici : {url}",
@@ -39,7 +41,7 @@
     "only_official_dlc": "Only official DLC requests are allowed.",
     "disallowed_tuning": "That song's tuning is not allowed in this channel.",
     "artist_not_in_setlist": "That artist is not in the current setlist.",
-    "requested_paths_not_matched": "That song does not include the requested path{count, plural, one {} other {s}}: {paths}."
+    "requested_paths_not_matched": "That song does not include the requested part{count, plural, one {} other {s}}: {paths}."
   },
   "replies": {
     "vipPermissionDenied": "Only the broadcaster or an allowed moderator can grant VIP tokens.",
@@ -78,6 +80,7 @@
     "vipRequestCooldownMinutes": "{mention} attends encore {count} minute{count, plural, one {} other {s}} avant d'utiliser une autre demande VIP.",
     "vipRequestCooldownSeconds": "{mention} attends encore {count} seconde{count, plural, one {} other {s}} avant d'utiliser une autre demande VIP.",
     "notEnoughVipTokens": "You do not have enough VIP tokens for this channel.{balanceSuffix}",
+    "requestRequiresVipTokens": "{mention} cette demande nécessite {countText}. Utilisez une demande VIP.",
     "requestQueryMissing": "{mention} ajoutez un artiste ou une chanson avant d'utiliser les modificateurs de demande.",
     "songLookupFailed": "{mention} I ran into a problem searching for that song. Please try again.",
     "randomNotFound": "{mention} je n'ai pas trouvé de correspondance aléatoire autorisée pour \"{query}\".",

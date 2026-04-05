@@ -27,12 +27,12 @@
     "pathWarning": "Ne correspond pas {count, plural, one {au chemin par defaut de la chaine} other {aux chemins par defaut de la chaine}} : {paths}."
   },
   "viewerSummary": {
-    "vipTokensLabel": "{count} tokens VIP",
+    "vipTokensLabel": "{countText} token{count, plural, one {} other {s}} VIP",
     "vipBalanceLoading": "Solde VIP...",
     "vipTokensShort": "Tokens VIP",
     "requestsWithLimit": "{count}/{limit} demandes",
     "requestsNoLimit": "{count} demandes",
-    "vipBalanceSummary": "{count} tokens VIP disponibles",
+    "vipBalanceSummary": "{countText} token{count, plural, one {} other {s}} VIP disponibles",
     "vipBalanceChecking": "Verification de votre solde de tokens VIP...",
     "vipBalanceUnavailable": "Votre solde de tokens VIP est indisponible pour le moment.",
     "replaceQueued": "Les nouveaux ajouts remplacent vos demandes en file.",
@@ -55,9 +55,9 @@
     "requestsOff": "Les demandes sont desactivees",
     "turnRequestsOn": "Activer les demandes",
     "turnRequestsOff": "Desactiver les demandes",
-    "online": "En ligne",
-    "offline": "Hors ligne",
-    "vipBalance": "Vous avez {count} tokens VIP",
+    "online": "Stream en ligne",
+    "offline": "Stream hors ligne",
+    "vipBalance": "Vous avez {countText} token{count, plural, one {} other {s}} VIP",
     "vipTokens": "Tokens VIP"
   },
   "vipInfo": {
@@ -172,6 +172,8 @@
     "edit": "Modifier",
     "editVip": "Modifier VIP",
     "adding": "Ajout...",
+    "choosePath": "Partie",
+    "noPathPreference": "Aucune preference de partie",
     "alreadyVip": "Deja dans votre file comme demande VIP.",
     "alreadyRegular": "Deja dans votre file comme demande normale.",
     "blacklistedPrefix": "Blackliste",
@@ -182,6 +184,11 @@
     "activeLimitReached": "Vous avez deja {count, plural, one {# demande active} other {# demandes actives}}.",
     "insufficientVipTokens": "Vous n'avez pas assez de tokens VIP.",
     "requiresVipTokens": "Necessite {count}.",
+    "pathRequiresVip": "{path} necessite {count}.",
+    "pathCostsVipTokens": "{path} coute {count}.",
+    "addCost": "Ajouter ({count})",
+    "editCost": "Modifier ({count})",
+    "updateExisting": "Met a jour votre demande existante.",
     "copyVipCommandNotice": "Necessite {count}. Copiez la commande VIP{suffix}.",
     "addVipCost": "Ajouter VIP ({count})",
     "editVipCost": "Modifier VIP ({count})"
@@ -223,16 +230,16 @@
     "streamerChoiceTitle": "Choix du streamer : {query}",
     "streamerChoiceSubtitle": "Le streamer choisit le morceau exact.",
     "relative": {
-      "now": "maintenant",
-      "minutes": "{count} min",
-      "hours": "{count} h",
-      "days": "{count} j"
+      "now": "a l'instant",
+      "minutes": "il y a {count} min",
+      "hours": "il y a {count} h",
+      "days": "il y a {count} j"
     },
     "picks": {
       "first": "1er pick",
       "second": "2e pick",
       "third": "3e pick",
-      "nth": "{{ordinal}} pick"
+      "nth": "{ordinal} pick"
     }
   },
   "management": {
@@ -268,10 +275,43 @@
     },
     "actions": {
       "shuffle": "Melanger",
+      "shuffleTooltip": "Melange l'ordre des morceaux en file.",
+      "shuffleDialog": {
+        "title": "Garder les demandes VIP en haut ?",
+        "description": "Oui garde les demandes VIP devant les demandes normales pendant que les deux groupes sont melanges separement.",
+        "cancel": "Annuler",
+        "no": "Non",
+        "yes": "Oui"
+      },
       "clearPlaylist": "Vider la playlist",
-      "resetSession": "Reinitialiser la session",
-      "confirmClear": "Vider toute la playlist ? Cette action est definitive.",
-      "confirmReset": "Reinitialiser la session ? Cela videra la playlist actuelle."
+      "clearPlaylistTooltip": "Retire tous les morceaux de la playlist.",
+      "clearDialog": {
+        "title": "Vider la playlist ?",
+        "description": "Cela retire tous les morceaux de la playlist.",
+        "cancel": "Garder la playlist",
+        "confirm": "Vider la playlist"
+      },
+      "resetSession": "Terminer la session",
+      "resetSessionTooltip": "Vide la playlist et coupe les demandes.",
+      "resetSessionTooltipWithPickOrder": "Vide la playlist, coupe les demandes et remet l'ordre des picks au premier pick.",
+      "resetDialog": {
+        "title": "Terminer la session ?",
+        "description": "Cela vide la playlist et coupe les demandes.",
+        "descriptionWithPickOrder": "Cela vide la playlist, coupe les demandes et reinitialise l'ordre des picks pour que la prochaine demande redevienne un premier pick.",
+        "cancel": "Garder la session",
+        "confirm": "Terminer la session"
+      }
+    },
+    "bot": {
+      "enabled": "Bot active",
+      "disabled": "Bot desactive",
+      "toggleAria": "Basculer le bot de la chaine",
+      "disableDialog": {
+        "title": "Desactiver le bot ?",
+        "description": "Cela coupe le bot pour cette chaine. Les attributions de jetons VIP pour les raids, abonnements, cheers ou tips ne fonctionneront pas tant que le bot est desactive si ces recompenses sont actives.",
+        "cancel": "Garder le bot active",
+        "confirm": "Desactiver le bot"
+      }
     },
     "currentTitle": "Playlist actuelle",
     "blacklistErrors": {
@@ -329,6 +369,7 @@
       "saving": "Enregistrement...",
       "makeRegular": "Passer en normal",
       "makeVip": "Passer en VIP",
+      "makeVipDisabledTooltip": "Necessite {requiredCount, plural, one {# token VIP} other {# tokens VIP}}, {requester} a {availableCount}.",
       "returnToQueue": "Remettre en file",
       "playNow": "Jouer maintenant",
       "markComplete": "Marquer termine",
@@ -351,13 +392,13 @@
       "blockVersionFallbackDescription": "Bloque uniquement la version exacte associee a cette demande.",
       "songBlocked": "Morceau blackliste",
       "blacklistSongGroup": "Blacklister toutes les versions de ce morceau",
-      "blockSongDescription": "Bloque toutes les versions groupees sous ce morceau.",
+      "blockSongDescription": "Bloque toutes les versions de ce morceau.",
       "artistBlocked": "Artiste blackliste : {artist}",
       "blacklistArtist": "Blacklister l'artiste : {artist}",
-      "blockArtistDescription": "Bloque tous les morceaux de cet ID artiste.",
+      "blockArtistDescription": "Bloque tous les morceaux de cet artiste.",
       "charterBlocked": "Charter blackliste : {charter}",
       "blacklistCharter": "Blacklister le charter : {charter}",
-      "blockCharterDescription": "Bloque tous les morceaux de cet ID charter.",
+      "blockCharterDescription": "Bloque tous les morceaux de ce charter.",
       "noCharterIds": "Aucun ID de charter disponible pour ces versions."
     },
     "versionsTable": {

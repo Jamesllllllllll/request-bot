@@ -35,6 +35,6 @@ In practice, that likely means:
 
 ## Related code
 
-- Runtime request handling: [chat-message.ts](/C:/Users/james/Documents/Projects/request-bot/src/lib/eventsub/chat-message.ts)
-- VIP token persistence: [repositories.ts](/C:/Users/james/Documents/Projects/request-bot/src/lib/db/repositories.ts)
-- Settings UI: [settings.tsx](/C:/Users/james/Documents/Projects/request-bot/src/routes/dashboard/settings.tsx)
+- Runtime request handling: [chat-message.ts](../src/lib/eventsub/chat-message.ts)
+- VIP token persistence: [repositories.ts](../src/lib/db/repositories.ts)
+- Settings UI: [settings.tsx](../src/routes/dashboard/settings.tsx)

@@ -1,4 +1,5 @@
 import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 import { formatPickOrdinal, getPickBadgeLabel } from "~/lib/pick-order";
 
@@ -21,12 +22,17 @@ describe("pick order labels", () => {
   });
 
   it("uses ICU-style ordinal placeholders in playlist locale resources", () => {
-    const resourcePaths = [
-      "C:/Users/james/Documents/Projects/request-bot/src/lib/i18n/resources/en/playlist.json",
-      "C:/Users/james/Documents/Projects/request-bot/src/lib/i18n/resources/es/playlist.json",
-      "C:/Users/james/Documents/Projects/request-bot/src/lib/i18n/resources/fr/playlist.json",
-      "C:/Users/james/Documents/Projects/request-bot/src/lib/i18n/resources/pt-br/playlist.json",
-    ];
+    const resourcePaths = ["en", "es", "fr", "pt-br"].map((locale) =>
+      resolve(
+        process.cwd(),
+        "src",
+        "lib",
+        "i18n",
+        "resources",
+        locale,
+        "playlist.json"
+      )
+    );
 
     for (const resourcePath of resourcePaths) {
       const resource = JSON.parse(readFileSync(resourcePath, "utf8")) as {

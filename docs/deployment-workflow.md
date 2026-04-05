@@ -53,7 +53,7 @@ Keep the command output. You will need:
 
 ### Keep committed Wrangler files as templates
 
-The committed [wrangler.jsonc](/C:/Users/james/Documents/Projects/request-bot/wrangler.jsonc) and [wrangler.aux.jsonc](/C:/Users/james/Documents/Projects/request-bot/wrangler.aux.jsonc) keep placeholder IDs on purpose.
+The committed [wrangler.jsonc](../wrangler.jsonc) and [wrangler.aux.jsonc](../wrangler.aux.jsonc) keep placeholder IDs on purpose.
 
 Do not commit your real Cloudflare resource IDs into those files.
 
@@ -66,7 +66,7 @@ The committed template files keep these stable values:
 - frontend service binding: `BACKEND_SERVICE -> request-bot-backend`
 - queue name: `twitch-reply-queue`
 
-The Durable Object migration for `ChannelPlaylistDurableObject` is already declared in [wrangler.aux.jsonc](/C:/Users/james/Documents/Projects/request-bot/wrangler.aux.jsonc). You do not need to create it separately.
+The Durable Object migration for `ChannelPlaylistDurableObject` is already declared in [wrangler.aux.jsonc](../wrangler.aux.jsonc). You do not need to create it separately.
 
 ### Environment values
 

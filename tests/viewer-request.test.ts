@@ -574,9 +574,13 @@ describe("viewer request service", () => {
           replaceExisting: false,
         },
       })
-    ).rejects.toMatchObject({
-      status: 409,
-      message: "This song requires 2 VIP tokens. Use a VIP request instead.",
+    ).rejects.toSatisfy((error) => {
+      expect(error).toBeInstanceOf(ViewerRequestError);
+      expect((error as ViewerRequestError).status).toBe(409);
+      expect((error as Error).message).toBe(
+        "This request requires 2 VIP tokens. Use a VIP request instead."
+      );
+      return true;
     });
 
     expect(callBackend).not.toHaveBeenCalled();
@@ -1128,7 +1132,6 @@ describe("viewer request service", () => {
         id: "song-1",
         title: "Cherub Rock",
         artist: "The Smashing Pumpkins",
-        requestedQuery: "song:12345",
       },
     });
   });
@@ -1204,7 +1207,6 @@ describe("viewer request service", () => {
         id: "song-1",
         title: "Cherub Rock",
         artist: "The Smashing Pumpkins",
-        requestedQuery: "song:12345",
       },
     });
   });

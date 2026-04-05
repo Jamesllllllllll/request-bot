@@ -109,6 +109,8 @@ export function applyDemoViewerRequestMutation(input: {
   query?: string;
   requestMode?: "catalog" | "random" | "choice";
   requestKind: "regular" | "vip";
+  requestedPath?: string;
+  vipTokenCost?: number;
   replaceExisting: boolean;
   replaceItemId?: string;
   now?: number;
@@ -182,9 +184,17 @@ export function applyDemoViewerRequestMutation(input: {
                   ? null
                   : getNumber(songRecord, "authorId"),
               requestedQuery:
-                requestMode === "choice" ? (input.query?.trim() ?? null) : null,
+                requestMode === "choice"
+                  ? (input.query?.trim() ?? null)
+                  : input.requestedPath
+                    ? `*${input.requestedPath}`
+                    : null,
               warningCode: requestMode === "choice" ? "streamer_choice" : null,
               requestKind: input.requestKind,
+              vipTokenCost:
+                typeof input.vipTokenCost === "number" && input.vipTokenCost > 0
+                  ? input.vipTokenCost
+                  : null,
               editedAt: now,
               updatedAt: now,
               position: index + 1,
@@ -237,12 +247,20 @@ export function applyDemoViewerRequestMutation(input: {
     songCharterId:
       requestMode === "choice" ? null : getNumber(songRecord, "authorId"),
     requestedQuery:
-      requestMode === "choice" ? (input.query?.trim() ?? null) : null,
+      requestMode === "choice"
+        ? (input.query?.trim() ?? null)
+        : input.requestedPath
+          ? `*${input.requestedPath}`
+          : null,
     warningCode: requestMode === "choice" ? "streamer_choice" : null,
     requestedByTwitchUserId: input.viewerProfile.twitchUserId,
     requestedByLogin: input.viewerProfile.login,
     requestedByDisplayName: input.viewerProfile.displayName,
     requestKind: input.requestKind,
+    vipTokenCost:
+      typeof input.vipTokenCost === "number" && input.vipTokenCost > 0
+        ? input.vipTokenCost
+        : null,
     createdAt: now,
     updatedAt: now,
     status: "queued",

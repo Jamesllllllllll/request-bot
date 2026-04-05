@@ -19,6 +19,7 @@ function toOverlayItems(input: {
         requestedByTwitchUserId?: string | null;
         requestedByDisplayName?: string | null;
         requestedByLogin?: string | null;
+        requestedQuery?: string | null;
         requestKind?: string | null;
         status: string;
         createdAt?: number | null;
@@ -50,6 +51,7 @@ function toOverlayItems(input: {
     songDurationText: item.songDurationText,
     requestedByDisplayName: item.requestedByDisplayName,
     requestedByLogin: item.requestedByLogin,
+    requestedQuery: item.requestedQuery,
     requestKind:
       item.requestKind === "vip" || item.status === "vip" ? "vip" : "regular",
     pickNumber: pickNumbers[index] ?? null,

@@ -37,6 +37,7 @@ export const Route = createFileRoute("/api/extension/request/edit")({
                   requestMode: body.requestMode ?? "catalog",
                   requestKind: body.requestKind,
                   vipTokenCost: body.vipTokenCost,
+                  requestedPath: body.requestedPath,
                   replaceExisting: true,
                   itemId: body.itemId,
                 }

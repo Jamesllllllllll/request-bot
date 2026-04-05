@@ -14,7 +14,7 @@ const SelectTrigger = React.forwardRef<
   <SelectPrimitive.Trigger
     ref={ref}
     className={cn(
-      "flex h-12 w-full items-center justify-between rounded-none border border-(--border) bg-(--panel-soft) px-4 py-3 text-sm text-(--text) shadow-none transition-[border-color,background,box-shadow] focus-visible:border-(--brand) focus-visible:bg-(--bg-elevated) focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-(--brand) disabled:cursor-not-allowed disabled:opacity-50 [&>span]:line-clamp-1",
+      "flex h-12 w-full items-center justify-between rounded-[3px] border border-(--border) bg-(--panel-soft) px-4 py-3 text-sm text-(--text) shadow-none transition-[border-color,background,box-shadow] focus-visible:border-(--brand) focus-visible:bg-(--bg-elevated) focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-(--brand) disabled:cursor-not-allowed disabled:opacity-50 [&>span]:line-clamp-1",
       className
     )}
     {...props}
@@ -70,7 +70,7 @@ const SelectContent = React.forwardRef<
     <SelectPrimitive.Content
       ref={ref}
       className={cn(
-        "relative z-50 max-h-96 min-w-[8rem] overflow-hidden rounded-none border border-(--border) bg-(--panel-strong) text-(--text) shadow-(--shadow) animate-in fade-in-0 zoom-in-95",
+        "relative z-50 max-h-96 min-w-[8rem] overflow-hidden rounded-[3px] border border-(--border) bg-(--panel-strong) text-(--text) shadow-(--shadow) animate-in fade-in-0 zoom-in-95",
         position === "popper" && "translate-y-1",
         className
       )}

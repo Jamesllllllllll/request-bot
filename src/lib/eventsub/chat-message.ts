@@ -1,6 +1,7 @@
 import { callBackend } from "~/lib/backend";
 import {
   type CatalogSearchInput,
+  claimEventSubDelivery,
   consumeVipToken,
   countAcceptedRequestsInPeriod,
   countActiveRequestsForUser,
@@ -32,6 +33,7 @@ import {
   buildSetlistMessage,
   formatPathList,
   getActiveRequestLimit,
+  getAllowedRequestPathsSetting,
   getArraySetting,
   getMissingRequiredPaths,
   getRateLimitWindow,
@@ -41,8 +43,13 @@ import {
   isSongAllowed,
   songMatchesRequestedPaths,
 } from "~/lib/request-policy";
+import { getRequestVipTokenPlan } from "~/lib/requested-paths";
 import type { NormalizedChatEvent, ParsedChatCommand } from "~/lib/requests";
 import type { SongSearchResult } from "~/lib/song-search/types";
+import {
+  type RequesterChatBadge,
+  resolveRequesterChatBadges,
+} from "~/lib/twitch/chat-badges";
 import { createId } from "~/lib/utils";
 import {
   getVipRequestCooldownCountdown,
@@ -50,8 +57,6 @@ import {
 } from "~/lib/vip-request-cooldowns";
 import {
   formatVipTokenCostLabel,
-  getEffectiveVipTokenCost,
-  getRequiredVipTokenCostForSong,
   parseVipTokenDurationThresholds,
 } from "~/lib/vip-token-duration-thresholds";
 import { formatVipTokenCount, hasRedeemableVipToken } from "~/lib/vip-tokens";
@@ -70,6 +75,10 @@ export interface EventSubChatSettings {
   autoGrantVipTokenToSubscribers: boolean;
   duplicateWindowSeconds: number;
   maxQueueSize: number;
+  allowRequestPathModifiers: boolean;
+  allowedRequestPathsJson?: string | null;
+  requestPathModifierVipTokenCost?: number | null;
+  requestPathModifierUsesVipPriority?: boolean | null;
   vipTokenDurationThresholdsJson?: string | null;
   vipRequestCooldownEnabled?: boolean;
   vipRequestCooldownMinutes?: number;
@@ -143,6 +152,14 @@ export interface EventSubChatDependencies {
     env: AppEnv,
     login: string
   ): Promise<EventSubChatChannel | null>;
+  claimEventSubDelivery(
+    env: AppEnv,
+    input: {
+      channelId: string;
+      messageId: string;
+      subscriptionType: string;
+    }
+  ): Promise<boolean>;
   getRequestLogByMessageId(
     env: AppEnv,
     input: { channelId: string; twitchMessageId: string }
@@ -219,6 +236,7 @@ export interface EventSubChatDependencies {
       requestedByTwitchUserId: string;
       requestedByLogin: string;
       requestedByDisplayName: string;
+      requesterChatBadges?: RequesterChatBadge[];
       messageId: string;
       prioritizeNext: boolean;
       requestKind: "regular" | "vip";
@@ -437,7 +455,7 @@ function getRequestedPathMismatchMessage(
 ) {
   if (!translate) {
     const formattedPaths = formatPathList(requestedPaths);
-    return `That song does not include the requested path${requestedPaths.length === 1 ? "" : "s"}: ${formattedPaths}.`;
+    return `That song does not include the requested part${requestedPaths.length === 1 ? "" : "s"}: ${formattedPaths}.`;
   }
 
   return translate("reasons.requested_paths_not_matched", {
@@ -822,6 +840,40 @@ function getStoredVipTokenCost(input: {
   return input.requestKind === "vip" ? 1 : 0;
 }
 
+function getStoredRequestedPaths(input: { requestedQuery?: string | null }) {
+  return parseRequestModifiers(input.requestedQuery?.trim() ?? "", {
+    allowPathModifiers: true,
+  }).requestedPaths;
+}
+
+function requestedPathsMatch(left: string[], right: string[]) {
+  if (left.length !== right.length) {
+    return false;
+  }
+
+  const normalizedLeft = [...left].sort();
+  const normalizedRight = [...right].sort();
+
+  return normalizedLeft.every((path, index) => path === normalizedRight[index]);
+}
+
+function getRequestedQueryForStorage(input: {
+  parsedQuery?: string | null;
+  normalizedQuery: string;
+  requestMode: "catalog" | "random" | "choice";
+  requestedPaths: string[];
+}) {
+  if (input.requestMode === "choice") {
+    return input.normalizedQuery;
+  }
+
+  if (input.requestedPaths.length > 0) {
+    return input.parsedQuery?.trim() || input.normalizedQuery;
+  }
+
+  return input.normalizedQuery;
+}
+
 function getVipTokenCostMessageSuffix(vipTokenCost?: number | null) {
   if (vipTokenCost == null || vipTokenCost <= 1) {
     return "";
@@ -831,6 +883,7 @@ function getVipTokenCostMessageSuffix(vipTokenCost?: number | null) {
 }
 
 function getVipTokenShortageReplyMessage(input: {
+  requestKind: "regular" | "vip";
   requestedVipTokenCost: number;
   additionalVipTokenCost: number;
   availableVipTokens: number;
@@ -841,7 +894,7 @@ function getVipTokenShortageReplyMessage(input: {
   const balanceSuffix = ` You have ${formattedBalance}.`;
 
   if (input.requestedVipTokenCost <= 1 && input.additionalVipTokenCost <= 1) {
-    return `You do not have enough VIP tokens for a VIP request.${balanceSuffix}`;
+    return `You do not have enough VIP tokens for this ${input.requestKind === "vip" ? "VIP request" : "request"}.${balanceSuffix}`;
   }
 
   if (input.additionalVipTokenCost === input.requestedVipTokenCost) {
@@ -1002,6 +1055,25 @@ export async function processEventSubChatMessage(input: {
   }
 
   if (event.messageId) {
+    const claimed = await deps.claimEventSubDelivery(env, {
+      channelId: channel.id,
+      messageId: event.messageId,
+      subscriptionType: "channel.chat.message",
+    });
+
+    if (!claimed) {
+      console.info(
+        "EventSub chat message ignored because delivery was already claimed",
+        {
+          channelId: channel.id,
+          messageId: event.messageId,
+        }
+      );
+      return { body: "Duplicate", status: 202 };
+    }
+  }
+
+  if (event.messageId) {
     const existingLog = await deps.getRequestLogByMessageId(env, {
       channelId: channel.id,
       twitchMessageId: event.messageId,
@@ -1159,6 +1231,17 @@ export async function processEventSubChatMessage(input: {
       translate: t,
     });
     if (!effectiveRequester.allowed) {
+      await deps.createRequestLog(env, {
+        channelId: channel.id,
+        twitchMessageId: event.messageId,
+        twitchUserId: event.chatterTwitchUserId,
+        requesterLogin: event.chatterLogin,
+        requesterDisplayName: event.chatterDisplayName,
+        rawMessage: event.rawMessage,
+        normalizedQuery: parsed.query,
+        outcome: "rejected",
+        outcomeReason: "remove_permission_denied",
+      });
       await deps.sendChatReply(env, {
         channelId: channel.id,
         broadcasterUserId: channel.twitchChannelId,
@@ -1169,6 +1252,17 @@ export async function processEventSubChatMessage(input: {
 
     const kind = parseRemoveKind(parsed.query);
     if (!kind) {
+      await deps.createRequestLog(env, {
+        channelId: channel.id,
+        twitchMessageId: event.messageId,
+        twitchUserId: event.chatterTwitchUserId,
+        requesterLogin: event.chatterLogin,
+        requesterDisplayName: event.chatterDisplayName,
+        rawMessage: event.rawMessage,
+        normalizedQuery: parsed.query,
+        outcome: "rejected",
+        outcomeReason: "remove_invalid_kind",
+      });
       await deps.sendChatReply(env, {
         channelId: channel.id,
         broadcasterUserId: channel.twitchChannelId,
@@ -1214,6 +1308,18 @@ export async function processEventSubChatMessage(input: {
         });
       }
 
+      await deps.createRequestLog(env, {
+        channelId: channel.id,
+        twitchMessageId: event.messageId,
+        twitchUserId: effectiveRequester.requester.twitchUserId,
+        requesterLogin: effectiveRequester.requester.login,
+        requesterDisplayName: effectiveRequester.requester.displayName,
+        rawMessage: event.rawMessage,
+        normalizedQuery: parsed.query,
+        outcome: "accepted",
+        outcomeReason: removedCount > 0 ? "remove_requests" : "remove_empty",
+      });
+
       await deps.sendChatReply(env, {
         channelId: channel.id,
         broadcasterUserId: channel.twitchChannelId,
@@ -1238,6 +1344,17 @@ export async function processEventSubChatMessage(input: {
         requesterLogin: event.chatterLogin,
         kind,
         error: error instanceof Error ? error.message : String(error),
+      });
+      await deps.createRequestLog(env, {
+        channelId: channel.id,
+        twitchMessageId: event.messageId,
+        twitchUserId: effectiveRequester.requester.twitchUserId,
+        requesterLogin: effectiveRequester.requester.login,
+        requesterDisplayName: effectiveRequester.requester.displayName,
+        rawMessage: event.rawMessage,
+        normalizedQuery: parsed.query,
+        outcome: "error",
+        outcomeReason: "remove_failed",
       });
       await deps.sendChatReply(env, {
         channelId: channel.id,
@@ -1265,8 +1382,27 @@ export async function processEventSubChatMessage(input: {
 
   const requesterContext = effectiveRequester.requester.context;
   const requesterIdentity = effectiveRequester.requester;
+  let requesterChatBadges: RequesterChatBadge[] = [];
+
+  if (requesterIdentity.twitchUserId === event.chatterTwitchUserId) {
+    try {
+      requesterChatBadges = await resolveRequesterChatBadges({
+        env,
+        broadcasterUserId: channel.twitchChannelId,
+        references: event.badges,
+      });
+    } catch (error) {
+      console.warn("Failed to resolve requester chat badges", {
+        channelId: channel.id,
+        broadcasterUserId: channel.twitchChannelId,
+        requesterTwitchUserId: requesterIdentity.twitchUserId,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
 
   if (parsed.command === "how") {
+    const allowedRequestPaths = getAllowedRequestPathsSetting(state.settings);
     await deps.sendChatReply(env, {
       channelId: channel.id,
       broadcasterUserId: channel.twitchChannelId,
@@ -1274,7 +1410,10 @@ export async function processEventSubChatMessage(input: {
         commandPrefix: state.settings.commandPrefix,
         appUrl: env.APP_URL,
         channelSlug: channel.slug,
-        allowRequestPathModifiers: state.settings.allowRequestPathModifiers,
+        allowRequestPathModifiers: allowedRequestPaths.length > 0,
+        allowedRequestPaths,
+        requestPathModifierVipTokenCost:
+          state.settings.requestPathModifierVipTokenCost,
         translate: t,
       }),
     });
@@ -1570,14 +1709,21 @@ export async function processEventSubChatMessage(input: {
   // Keep this disabled here so VIP redemption does not quietly mint tokens,
   // especially for renewal cases that Twitch does not expose automatically.
   const canAutoGrantVipToken = false;
+  const allowedRequestPaths = getAllowedRequestPathsSetting(state.settings);
 
   const parsedRequest = parseRequestModifiers(parsed.query?.trim() ?? "", {
-    allowPathModifiers: state.settings.allowRequestPathModifiers,
+    allowedPathModifiers: allowedRequestPaths,
   });
   const requestMode = parsedRequest.mode;
   const normalizedQuery = parsedRequest.query;
   const unmatchedQuery = normalizedQuery;
   const requestedPaths = parsedRequest.requestedPaths;
+  const requestedQueryForStorage = getRequestedQueryForStorage({
+    parsedQuery: parsed.query,
+    normalizedQuery,
+    requestMode,
+    requestedPaths,
+  });
 
   if (!normalizedQuery) {
     await deps.createRequestLog(env, {
@@ -1895,19 +2041,31 @@ export async function processEventSubChatMessage(input: {
   const vipTokenDurationThresholds = parseVipTokenDurationThresholds(
     state.settings.vipTokenDurationThresholdsJson
   );
-  const requiredSongVipTokenCost = getRequiredVipTokenCostForSong(
-    firstMatch,
-    vipTokenDurationThresholds
-  );
-  const nextVipTokenCost = getEffectiveVipTokenCost({
+  const requestVipTokenPlan = getRequestVipTokenPlan({
     requestKind: effectiveRequestKind,
     explicitVipTokenCost: parsed.vipTokenCost,
     song: firstMatch,
+    requestedPaths,
     thresholds: vipTokenDurationThresholds,
+    settings: state.settings,
   });
+  const requiredRequestVipTokenCost = Math.max(
+    requestVipTokenPlan.requiredSongVipTokenCost,
+    requestVipTokenPlan.requestedPathVipTokenCost
+  );
+  const nextVipTokenCost = requestVipTokenPlan.totalVipTokenCost;
   const matchingRequestStoredVipTokenCost = existingMatchingRequest
     ? getStoredVipTokenCost(existingMatchingRequest)
     : 0;
+  const existingMatchingRequestPaths = existingMatchingRequest
+    ? getStoredRequestedPaths(existingMatchingRequest)
+    : [];
+  const matchingRequestHasSameRequestedPaths = requestedPathsMatch(
+    existingMatchingRequestPaths,
+    requestedPaths
+  );
+  const existingRequestNeedsSongRewrite =
+    requestMode !== "choice" && !matchingRequestHasSameRequestedPaths;
   const kindChangeOnly =
     existingMatchingRequest != null &&
     existingMatchingRequest.requestKind !== effectiveRequestKind &&
@@ -1917,18 +2075,33 @@ export async function processEventSubChatMessage(input: {
     existingMatchingRequest.requestKind === effectiveRequestKind &&
     matchingRequestStoredVipTokenCost !== nextVipTokenCost &&
     !isEditCommand;
+  const requestedPathsChangeOnly =
+    existingMatchingRequest != null &&
+    existingMatchingRequest.requestKind === effectiveRequestKind &&
+    matchingRequestStoredVipTokenCost === nextVipTokenCost &&
+    !matchingRequestHasSameRequestedPaths &&
+    !isEditCommand;
   const updateExistingMatchingRequest =
-    kindChangeOnly || vipTokenCostChangeOnly;
+    kindChangeOnly || vipTokenCostChangeOnly || requestedPathsChangeOnly;
   const editingSameChoice =
     editTarget != null &&
     requestMode === "choice" &&
-    editTarget.warningCode === STREAMER_CHOICE_WARNING_CODE &&
-    editTarget.requestedQuery?.trim().toLowerCase() ===
-      unmatchedQuery.trim().toLowerCase();
+    editTarget.warningCode === STREAMER_CHOICE_WARNING_CODE;
   const editingSameSong =
     editTarget != null &&
     firstMatch != null &&
     editTarget.songId === firstMatch.id;
+  const editTargetHasSameRequestedPaths =
+    editTarget == null
+      ? true
+      : requestedPathsMatch(
+          getStoredRequestedPaths(editTarget),
+          requestedPaths
+        );
+  const editingSameChoiceQuery =
+    editTarget != null &&
+    editTarget.requestedQuery?.trim().toLowerCase() ===
+      requestedQueryForStorage.trim().toLowerCase();
   const editingSameResolvedRequest = editingSameChoice || editingSameSong;
   const editTargetStoredVipTokenCost = editTarget
     ? getStoredVipTokenCost(editTarget)
@@ -1976,6 +2149,7 @@ export async function processEventSubChatMessage(input: {
     existingMatchingRequest &&
     existingMatchingRequest.requestKind === effectiveRequestKind &&
     matchingRequestStoredVipTokenCost === nextVipTokenCost &&
+    matchingRequestHasSameRequestedPaths &&
     !isEditCommand
   ) {
     await deps.createRequestLog(env, {
@@ -2011,7 +2185,10 @@ export async function processEventSubChatMessage(input: {
     editTarget &&
     editingSameResolvedRequest &&
     editTarget.requestKind === effectiveRequestKind &&
-    editTargetStoredVipTokenCost === nextVipTokenCost
+    editTargetStoredVipTokenCost === nextVipTokenCost &&
+    (requestMode === "choice"
+      ? editingSameChoiceQuery
+      : editTargetHasSameRequestedPaths)
   ) {
     await deps.createRequestLog(env, {
       channelId: channel.id,
@@ -2042,7 +2219,10 @@ export async function processEventSubChatMessage(input: {
     return { body: "Rejected", status: 202 };
   }
 
-  if (effectiveRequestKind !== "vip" && requiredSongVipTokenCost > 0) {
+  if (
+    effectiveRequestKind !== "vip" &&
+    requestVipTokenPlan.regularRequestRequiresVip
+  ) {
     await deps.createRequestLog(env, {
       channelId: channel.id,
       twitchMessageId: event.messageId,
@@ -2055,14 +2235,18 @@ export async function processEventSubChatMessage(input: {
       matchedSongTitle: firstMatch?.title ?? null,
       matchedSongArtist: firstMatch?.artist ?? null,
       outcome: "rejected",
-      outcomeReason: "vip_token_required_by_duration",
+      outcomeReason:
+        requestVipTokenPlan.requestedPathVipTokenCost > 0
+          ? "vip_token_required_by_requested_path"
+          : "vip_token_required_by_duration",
     });
     await deps.sendChatReply(env, {
       channelId: channel.id,
       broadcasterUserId: channel.twitchChannelId,
-      message: `${mention(requesterIdentity.login)} this song requires ${formatVipTokenCostLabel(
-        requiredSongVipTokenCost
-      )}. Use a VIP request instead.`,
+      message: t("replies.requestRequiresVipTokens", {
+        mention: mention(requesterIdentity.login),
+        countText: formatVipTokenCostLabel(requiredRequestVipTokenCost),
+      }),
     });
     return { body: "Rejected", status: 202 };
   }
@@ -2144,6 +2328,7 @@ export async function processEventSubChatMessage(input: {
       channelId: channel.id,
       broadcasterUserId: channel.twitchChannelId,
       message: getVipTokenShortageReplyMessage({
+        requestKind: effectiveRequestKind,
         requestedVipTokenCost: nextVipTokenCost,
         additionalVipTokenCost: vipTokenDelta,
         availableVipTokens: vipTokenBalance?.availableCount ?? 0,
@@ -2289,6 +2474,7 @@ export async function processEventSubChatMessage(input: {
         channelId: channel.id,
         broadcasterUserId: channel.twitchChannelId,
         message: getVipTokenShortageReplyMessage({
+          requestKind: effectiveRequestKind,
           requestedVipTokenCost: nextVipTokenCost,
           additionalVipTokenCost: vipTokenDelta,
           availableVipTokens: vipTokenBalance?.availableCount ?? 0,
@@ -2318,12 +2504,40 @@ export async function processEventSubChatMessage(input: {
       }
 
       try {
-        await deps.changeRequestKind(env, {
-          channelId: channel.id,
-          itemId: existingMatchingRequest.id,
-          requestKind: effectiveRequestKind,
-          vipTokenCost: nextVipTokenCost,
-        });
+        if (existingRequestNeedsSongRewrite) {
+          await deps.editRequest(env, {
+            channelId: channel.id,
+            itemId: existingMatchingRequest.id,
+            requestKind: effectiveRequestKind,
+            vipTokenCost: nextVipTokenCost,
+            song: {
+              id: firstMatch?.id ?? createId("rqm"),
+              title: firstMatch?.title ?? unmatchedQuery,
+              groupedProjectId: firstMatch?.groupedProjectId,
+              artist: firstMatch?.artist,
+              album: firstMatch?.album,
+              creator: firstMatch?.creator,
+              tuning: firstMatch?.tuning,
+              parts: firstMatch?.parts,
+              durationText: firstMatch?.durationText,
+              cdlcId: firstMatch?.sourceId,
+              source: firstMatch?.source ?? "unmatched",
+              sourceUrl: firstMatch?.sourceUrl,
+              requestedQuery: requestedQueryForStorage || undefined,
+              warningCode,
+              warningMessage,
+              candidateMatchesJson,
+              vipTokenCost: nextVipTokenCost,
+            },
+          });
+        } else {
+          await deps.changeRequestKind(env, {
+            channelId: channel.id,
+            itemId: existingMatchingRequest.id,
+            requestKind: effectiveRequestKind,
+            vipTokenCost: nextVipTokenCost,
+          });
+        }
       } catch (error) {
         if (vipReserved) {
           await refundReservedVipToken();
@@ -2343,8 +2557,9 @@ export async function processEventSubChatMessage(input: {
         matchedSongTitle: firstMatch?.title ?? null,
         matchedSongArtist: firstMatch?.artist ?? null,
         outcome: "accepted",
-        outcomeReason:
-          existingMatchingRequest.requestKind !== effectiveRequestKind
+        outcomeReason: existingRequestNeedsSongRewrite
+          ? "request_edited"
+          : existingMatchingRequest.requestKind !== effectiveRequestKind
             ? effectiveRequestKind === "vip"
               ? "vip_request_upgrade"
               : "vip_request_downgrade"
@@ -2364,9 +2579,23 @@ export async function processEventSubChatMessage(input: {
       await deps.sendChatReply(env, {
         channelId: channel.id,
         broadcasterUserId: channel.twitchChannelId,
-        message:
-          existingMatchingRequest.requestKind === effectiveRequestKind &&
-          effectiveRequestKind === "vip"
+        message: existingRequestNeedsSongRewrite
+          ? effectiveRequestKind === "vip"
+            ? t("replies.songEditedVip", {
+                mention: mention(requesterIdentity.login),
+                song: firstMatch
+                  ? formatSongForReply(firstMatch)
+                  : unmatchedQuery,
+                suffix: getVipTokenCostMessageSuffix(nextVipTokenCost),
+              })
+            : t("replies.songEditedRegular", {
+                mention: mention(requesterIdentity.login),
+                song: firstMatch
+                  ? formatSongForReply(firstMatch)
+                  : unmatchedQuery,
+              })
+          : existingMatchingRequest.requestKind === effectiveRequestKind &&
+              effectiveRequestKind === "vip"
             ? requestMode === "choice"
               ? `${mention(requesterIdentity.login)} the VIP token cost for your streamer choice request "${unmatchedQuery}" is now ${formatVipTokenCostLabel(
                   nextVipTokenCost
@@ -2435,7 +2664,7 @@ export async function processEventSubChatMessage(input: {
                   cdlcId: firstMatch?.sourceId,
                   source: firstMatch?.source ?? "unmatched",
                   sourceUrl: firstMatch?.sourceUrl,
-                  requestedQuery: unmatchedQuery || undefined,
+                  requestedQuery: requestedQueryForStorage || undefined,
                   warningCode,
                   warningMessage,
                   candidateMatchesJson,
@@ -2517,6 +2746,7 @@ export async function processEventSubChatMessage(input: {
       requestedByTwitchUserId: requesterIdentity.twitchUserId,
       requestedByLogin: requesterIdentity.login,
       requestedByDisplayName: requesterIdentity.displayName,
+      requesterChatBadges,
       messageId: event.messageId,
       prioritizeNext: effectiveRequestKind === "vip",
       requestKind: effectiveRequestKind,
@@ -2537,7 +2767,7 @@ export async function processEventSubChatMessage(input: {
               cdlcId: firstMatch?.sourceId,
               source: firstMatch?.source ?? "unmatched",
               sourceUrl: firstMatch?.sourceUrl,
-              requestedQuery: unmatchedQuery || undefined,
+              requestedQuery: requestedQueryForStorage || undefined,
               warningCode,
               warningMessage,
               candidateMatchesJson,
@@ -2749,6 +2979,7 @@ export function createEventSubChatDependencies(): EventSubChatDependencies {
   return {
     getChannelByLogin: async (env, login) =>
       (await getChannelByLogin(env, login)) ?? null,
+    claimEventSubDelivery,
     getRequestLogByMessageId,
     getDashboardState: async (env, ownerUserId) =>
       getDashboardState(env, ownerUserId) as Promise<EventSubChatState | null>,

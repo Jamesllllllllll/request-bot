@@ -13,6 +13,7 @@ import type { AppEnv } from "~/lib/env";
 import { defaultLocale } from "~/lib/i18n/locales";
 import { getPickNumbersForQueuedItems } from "~/lib/pick-order";
 import {
+  getAllowedRequestPathsSetting,
   getArraySetting,
   getRequiredPathsMatchMode,
 } from "~/lib/request-policy";
@@ -107,6 +108,11 @@ type ExtensionPanelLiveState = {
   settings: {
     defaultLocale: string;
     requestsEnabled: boolean;
+    allowRequestPathModifiers: boolean;
+    allowedRequestPaths: string[];
+    requestPathModifierVipTokenCost: number;
+    requestPathModifierUsesVipPriority: boolean;
+    vipTokenDurationThresholdsJson: string;
     showPlaylistPositions: boolean;
     showPickOrderBadges: boolean;
     autoGrantVipTokenToSubscribers: boolean;
@@ -259,6 +265,11 @@ export async function getExtensionBootstrapState(input: {
         settings: {
           defaultLocale,
           requestsEnabled: true,
+          allowRequestPathModifiers: false,
+          allowedRequestPaths: [],
+          requestPathModifierVipTokenCost: 0,
+          requestPathModifierUsesVipPriority: true,
+          vipTokenDurationThresholdsJson: "[]",
           showPlaylistPositions: false,
           showPickOrderBadges: false,
           autoGrantVipTokenToSubscribers: false,
@@ -688,6 +699,12 @@ async function getExtensionPanelLiveState(input: {
     currentItem && typeof currentItem.id === "string"
       ? currentItem.id
       : (playlist?.playlist.currentItemId ?? null);
+  const allowedRequestPaths = getAllowedRequestPathsSetting(
+    settings ?? {
+      allowRequestPathModifiers: false,
+      allowedRequestPathsJson: "[]",
+    }
+  );
 
   return {
     channel: {
@@ -697,6 +714,14 @@ async function getExtensionPanelLiveState(input: {
     settings: {
       defaultLocale: settings?.defaultLocale ?? defaultLocale,
       requestsEnabled: !!settings?.requestsEnabled,
+      allowRequestPathModifiers: allowedRequestPaths.length > 0,
+      allowedRequestPaths,
+      requestPathModifierVipTokenCost:
+        settings?.requestPathModifierVipTokenCost ?? 0,
+      requestPathModifierUsesVipPriority:
+        settings?.requestPathModifierUsesVipPriority ?? true,
+      vipTokenDurationThresholdsJson:
+        settings?.vipTokenDurationThresholdsJson ?? "[]",
       showPlaylistPositions: !!settings?.showPlaylistPositions,
       showPickOrderBadges: !!settings?.showPickOrderBadges,
       autoGrantVipTokenToSubscribers:

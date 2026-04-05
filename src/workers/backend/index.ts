@@ -5,6 +5,7 @@ import {
   clearVipRequestCooldownBySourceItem,
   clearVipRequestCooldownsBySourceItems,
   createPlayedSong,
+  getActiveBroadcasterAuthorizationForChannel,
   getBotAuthorization,
   getChannelBlacklistByChannelId,
   upsertVipRequestCooldown,
@@ -17,7 +18,6 @@ import {
   playlistItems,
   playlists,
   requestLogs,
-  twitchAuthorizations,
   users,
 } from "~/lib/db/schema";
 import { assertDatabaseSchemaCurrent } from "~/lib/db/schema-version";
@@ -58,6 +58,10 @@ import {
   sendChatReply,
 } from "~/lib/twitch/api";
 import { reconcileChannelBotState } from "~/lib/twitch/bot";
+import {
+  parseRequesterChatBadges,
+  serializeRequesterChatBadges,
+} from "~/lib/twitch/chat-badges";
 import { createId, json, normalizeSongSourceUrl } from "~/lib/utils";
 import { isVipRequestCooldownEnabled } from "~/lib/vip-request-cooldowns";
 
@@ -429,6 +433,10 @@ class D1PlaylistCoordinator implements PlaylistCoordinator {
     }
 
     try {
+      const requesterChatBadgesJson = serializeRequesterChatBadges(
+        input.requesterChatBadges
+      );
+
       await db.insert(playlistItems).values({
         id: itemId,
         playlistId: playlist.id,
@@ -452,6 +460,7 @@ class D1PlaylistCoordinator implements PlaylistCoordinator {
         requestedByTwitchUserId: input.requestedByTwitchUserId,
         requestedByLogin: input.requestedByLogin,
         requestedByDisplayName: input.requestedByDisplayName,
+        requesterChatBadgesJson,
         requestMessageId: input.messageId ?? null,
         requestKind: input.requestKind ?? "regular",
         vipTokenCost: input.vipTokenCost ?? 0,
@@ -998,6 +1007,7 @@ class D1PlaylistCoordinator implements PlaylistCoordinator {
       requestedByTwitchUserId: playedSong.requestedByTwitchUserId,
       requestedByLogin: playedSong.requestedByLogin,
       requestedByDisplayName: playedSong.requestedByDisplayName,
+      requesterChatBadgesJson: playedSong.requesterChatBadgesJson,
       requestKind: playedSong.requestKind,
       position: nextPosition,
       regularPosition: nextRegularPosition,
@@ -1068,6 +1078,7 @@ class D1PlaylistCoordinator implements PlaylistCoordinator {
       requestedByTwitchUserId: current.requestedByTwitchUserId,
       requestedByLogin: current.requestedByLogin,
       requestedByDisplayName: current.requestedByDisplayName,
+      requesterChatBadgesJson: current.requesterChatBadgesJson,
       requestKind: current.requestKind,
       vipTokenCost: current.vipTokenCost ?? 0,
       requestedAt: current.createdAt,
@@ -1322,17 +1333,26 @@ class D1PlaylistCoordinator implements PlaylistCoordinator {
     const current =
       items.find((item) => item.id === playlist.currentItemId) ?? null;
     const queued = items.filter((item) => item.id !== playlist.currentItemId);
+    const shuffleItems = <T>(itemsToShuffle: T[]) => {
+      const shuffled = [...itemsToShuffle];
 
-    const shuffled = [...queued];
-    for (let index = shuffled.length - 1; index > 0; index -= 1) {
-      const swapIndex = Math.floor(Math.random() * (index + 1));
-      [shuffled[index], shuffled[swapIndex]] = [
-        shuffled[swapIndex],
-        shuffled[index],
-      ];
-    }
+      for (let index = shuffled.length - 1; index > 0; index -= 1) {
+        const swapIndex = Math.floor(Math.random() * (index + 1));
+        [shuffled[index], shuffled[swapIndex]] = [
+          shuffled[swapIndex],
+          shuffled[index],
+        ];
+      }
 
-    const ordered = current ? [current, ...shuffled] : shuffled;
+      return shuffled;
+    };
+    const orderedQueued = input.keepVipAtTop
+      ? [
+          ...shuffleItems(queued.filter((item) => item.requestKind === "vip")),
+          ...shuffleItems(queued.filter((item) => item.requestKind !== "vip")),
+        ]
+      : shuffleItems(queued);
+    const ordered = current ? [current, ...orderedQueued] : orderedQueued;
 
     await this.reindexPlaylistItems(
       ordered.map((item, index) => ({
@@ -1347,7 +1367,9 @@ class D1PlaylistCoordinator implements PlaylistCoordinator {
       input.actorUserId,
       "shuffle_playlist",
       playlist.id,
-      {}
+      {
+        keepVipAtTop: !!input.keepVipAtTop,
+      }
     );
     await this.notify(input.channelId);
 
@@ -1648,6 +1670,23 @@ class D1PlaylistCoordinator implements PlaylistCoordinator {
       items.map((item) => item.id)
     );
     await db
+      .delete(schema.playedSongs)
+      .where(eq(schema.playedSongs.channelId, input.channelId));
+    await db
+      .insert(channelSettings)
+      .values({
+        channelId: input.channelId,
+        requestsEnabled: false,
+        updatedAt: Date.now(),
+      })
+      .onConflictDoUpdate({
+        target: channelSettings.channelId,
+        set: {
+          requestsEnabled: false,
+          updatedAt: Date.now(),
+        },
+      });
+    await db
       .update(playlists)
       .set({
         currentItemId: null,
@@ -1668,7 +1707,7 @@ class D1PlaylistCoordinator implements PlaylistCoordinator {
       ok: true,
       playlistId: playlist.id,
       currentItemId: null,
-      message: "Session reset; played history kept",
+      message: "Session ended",
     };
   }
 }
@@ -1713,7 +1752,14 @@ class ChannelPlaylistDurableObjectBase {
 
     return {
       playlist,
-      items: items.sort((a, b) => a.position - b.position),
+      items: items
+        .sort((a, b) => a.position - b.position)
+        .map((item) => ({
+          ...item,
+          requesterChatBadges: parseRequesterChatBadges(
+            item.requesterChatBadgesJson
+          ),
+        })),
       playedSongs: [...playedSongs].sort((a, b) => b.playedAt - a.playedAt),
     };
   }
@@ -1963,22 +2009,61 @@ async function sendReply(
   messageBody: { channelId: string; broadcasterUserId: string; message: string }
 ) {
   const db = getDb(env);
-  const channel = await db.query.channels.findFirst({
-    where: eq(channels.id, messageBody.channelId),
-  });
+  const [channel, settings, broadcasterAuth, botAuth] = await Promise.all([
+    db.query.channels.findFirst({
+      where: eq(channels.id, messageBody.channelId),
+    }),
+    db.query.channelSettings.findFirst({
+      where: eq(channelSettings.channelId, messageBody.channelId),
+    }),
+    getActiveBroadcasterAuthorizationForChannel(
+      env as unknown as never,
+      messageBody.channelId
+    ),
+    getBotAuthorization(env as unknown as never),
+  ]);
 
   if (!channel) {
+    console.warn("Skipping chat reply because channel was not found", {
+      channelId: messageBody.channelId,
+      broadcasterUserId: messageBody.broadcasterUserId,
+    });
     return;
   }
 
-  const auth = await db.query.twitchAuthorizations.findFirst({
-    where: eq(twitchAuthorizations.channelId, channel.id),
-  });
-
-  const botAuth = await getBotAuthorization(env as unknown as never);
-
-  if (!auth || !botAuth || !channel.botEnabled) {
+  if (!settings?.botChannelEnabled) {
+    console.info("Skipping chat reply because bot is disabled in settings", {
+      channelId: channel.id,
+      broadcasterUserId: messageBody.broadcasterUserId,
+    });
     return;
+  }
+
+  if (!broadcasterAuth) {
+    console.warn("Skipping chat reply because broadcaster auth is missing", {
+      channelId: channel.id,
+      broadcasterUserId: messageBody.broadcasterUserId,
+    });
+    return;
+  }
+
+  if (!botAuth) {
+    console.warn("Skipping chat reply because bot auth is missing", {
+      channelId: channel.id,
+      broadcasterUserId: messageBody.broadcasterUserId,
+    });
+    return;
+  }
+
+  if (!channel.botEnabled) {
+    console.warn(
+      "Attempting chat reply while channel botEnabled is false because bot settings are enabled and chat delivery is active",
+      {
+        channelId: channel.id,
+        broadcasterUserId: messageBody.broadcasterUserId,
+        botReadyState: channel.botReadyState,
+      }
+    );
   }
 
   const appToken = await getAppAccessToken(env as unknown as never);

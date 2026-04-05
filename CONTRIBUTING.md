@@ -57,7 +57,7 @@ If a hook fails:
 
 ## Releases
 
-- Keep [CHANGELOG.md](/C:/Users/james/Documents/Projects/request-bot/CHANGELOG.md) and [package.json](/C:/Users/james/Documents/Projects/request-bot/package.json) in sync when preparing a release PR.
+- Keep [CHANGELOG.md](CHANGELOG.md) and [package.json](package.json) in sync when preparing a release PR.
 - Use `0.x.x` for normal minor/patch releases while the project is still pre-`1.0`.
 - If the release is a major milestone or materially changes the product scope, bump the middle digit such as `0.2.0`.
 - Otherwise, use a patch release such as `0.1.1`.
@@ -67,13 +67,13 @@ If a hook fails:
 
 Start here:
 
-- [README.md](/C:/Users/james/Documents/Projects/request-bot/README.md)
-- [docs/local-development.md](/C:/Users/james/Documents/Projects/request-bot/docs/local-development.md)
+- [README.md](README.md)
+- [docs/local-development.md](docs/local-development.md)
 
 ## Database changes
 
-- Put schema changes in [src/lib/db/schema.ts](/C:/Users/james/Documents/Projects/request-bot/src/lib/db/schema.ts)
-- Generate or add the matching SQL migration in [drizzle](/C:/Users/james/Documents/Projects/request-bot/drizzle)
+- Put schema changes in [src/lib/db/schema.ts](src/lib/db/schema.ts)
+- Generate or add the matching SQL migration in [drizzle](drizzle)
 - Run `npm run db:migrate`
 - Do not leave the code expecting a schema change that is not represented by a migration
 

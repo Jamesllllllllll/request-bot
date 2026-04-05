@@ -10,6 +10,7 @@
   "states": {
     "offlineTestingFailed": "Le réglage du test hors ligne n’a pas pu être mis à jour.",
     "botUpdateFailed": "Le compte du bot n’a pas pu être mis à jour.",
+    "chatSubscriptionCleanupFailed": "Les abonnements de chat n’ont pas pu être nettoyés.",
     "updated": "Mis à jour."
   },
   "status": {
@@ -22,6 +23,8 @@
     "connectBot": "Connecter {username}",
     "reconnectBot": "Reconnecter le bot",
     "reconnecting": "Reconnexion...",
+    "cleanupCurrentCallback": "Nettoyer le callback actuel",
+    "cleaningUp": "Nettoyage...",
     "enable": "Activer",
     "enabling": "Activation...",
     "disable": "Désactiver",
@@ -35,6 +38,38 @@
     "auditRows": {
       "label": "Total des lignes d’audit",
       "description": "Actions admin et de gestion de chaîne enregistrées."
+    },
+    "botChatChannels": {
+      "label": "Chaînes du bot",
+      "description": "Chaînes qui ont actuellement un abonnement de chat actif pour le bot."
+    },
+    "chatSubscriptions": {
+      "label": "Abonnements de chat",
+      "description": "Abonnements de chat Twitch actifs reliés au bot."
+    },
+    "duplicateChatChannels": {
+      "label": "Chaînes en double",
+      "description": "Chaînes qui ont actuellement plus d’un abonnement de chat actif."
+    }
+  },
+  "eventSub": {
+    "title": "Abonnements actifs du bot",
+    "description": "Affiche les abonnements de chat Twitch actuels du compte bot pour repérer rapidement les doublons par chaîne.",
+    "currentCallback": "Callback actuel : {callback}",
+    "currentBotUserId": "ID utilisateur actuel du bot : {userId}",
+    "empty": "Aucun abonnement de chat actif du bot n’a été trouvé.",
+    "duplicateWarning": "Plus d’un abonnement de chat est actif pour cette chaîne.",
+    "cleanupHelpCurrent": "Ce nettoyage supprime uniquement les abonnements obsolètes pour l’URL de callback actuelle.",
+    "cleanupHelpOther": "Cette ligne utilise seulement d’autres URLs de callback. Le nettoyage du callback actuel ne les supprimera pas.",
+    "currentBotMatch": "Utilise l’ID utilisateur actuel du bot : {matchesCurrentBotUserId}",
+    "columns": {
+      "channel": "Chaîne",
+      "chatSubscriptions": "Subs chat",
+      "totalSubscriptions": "Subs totales",
+      "chatSubscriptionIds": "IDs d’abonnement chat",
+      "chatBotUserIds": "IDs du bot de chat",
+      "chatCallbacks": "Callbacks de chat",
+      "actions": "Actions"
     }
   },
   "offlineTesting": {

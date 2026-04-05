@@ -19,6 +19,7 @@ function createEvent(
     chatterDisplayName: "Viewer One",
     messageId: "msg-1",
     rawMessage: "!sr song:12345",
+    badges: [],
     isBroadcaster: false,
     isModerator: false,
     isVip: false,
@@ -86,6 +87,7 @@ function createState(overrides: Record<string, unknown> = {}) {
       subscribersMustFollowSetlist: false,
       autoGrantVipTokenToSubscribers: false,
       allowRequestPathModifiers: false,
+      requestPathModifierVipTokenCost: 0,
       commandPrefix: "!",
       moderatorCanManageVipTokens: false,
       duplicateWindowSeconds: 900,
@@ -114,6 +116,7 @@ function createDeps(
       twitchChannelId: "broadcaster-1",
       slug: "streamer",
     }),
+    claimEventSubDelivery: vi.fn().mockResolvedValue(true),
     getRequestLogByMessageId: vi.fn().mockResolvedValue(null),
     getDashboardState: vi.fn().mockResolvedValue(createState()),
     countActiveRequestsForUser: vi.fn().mockResolvedValue(0),
@@ -201,6 +204,44 @@ describe("processEventSubChatMessage", () => {
     );
   });
 
+  it("queues a confirmation reply when the broadcaster requests a song for themself", async () => {
+    const deps = createDeps();
+
+    const result = await processEventSubChatMessage({
+      env,
+      event: createEvent({
+        rawMessage: "!sr song:12345",
+        chatterTwitchUserId: "broadcaster-1",
+        chatterLogin: "streamer",
+        chatterDisplayName: "Streamer",
+        isBroadcaster: true,
+      }),
+      parsed: createParsed(),
+      deps,
+    });
+
+    expect(result).toEqual({
+      body: "Accepted",
+      status: 202,
+    });
+    expect(deps.addRequestToPlaylist).toHaveBeenCalledWith(
+      env,
+      expect.objectContaining({
+        requestedByTwitchUserId: "broadcaster-1",
+        requestedByLogin: "streamer",
+        requestedByDisplayName: "Streamer",
+      })
+    );
+    expect(deps.sendChatReply).toHaveBeenCalledWith(
+      env,
+      expect.objectContaining({
+        message: expect.stringContaining(
+          '@streamer your song "The Smashing Pumpkins - Cherub Rock" has been added to the playlist.'
+        ),
+      })
+    );
+  });
+
   it("ignores blocked users before attempting playlist mutation", async () => {
     const deps = createDeps({
       isBlockedUser: vi.fn().mockResolvedValue(true),
@@ -221,6 +262,27 @@ describe("processEventSubChatMessage", () => {
         outcomeReason: "user_blocked",
       })
     );
+    expect(deps.sendChatReply).not.toHaveBeenCalled();
+  });
+
+  it("ignores duplicate chat deliveries before processing the command", async () => {
+    const deps = createDeps({
+      claimEventSubDelivery: vi.fn().mockResolvedValue(false),
+    });
+
+    const result = await processEventSubChatMessage({
+      env,
+      event: createEvent(),
+      parsed: createParsed(),
+      deps,
+    });
+
+    expect(result).toEqual({
+      body: "Duplicate",
+      status: 202,
+    });
+    expect(deps.getRequestLogByMessageId).not.toHaveBeenCalled();
+    expect(deps.addRequestToPlaylist).not.toHaveBeenCalled();
     expect(deps.sendChatReply).not.toHaveBeenCalled();
   });
 
@@ -350,7 +412,7 @@ describe("processEventSubChatMessage", () => {
       env,
       expect.objectContaining({
         message:
-          "You do not have enough VIP tokens for a VIP request. You have 0.5 VIP tokens.",
+          "You do not have enough VIP tokens for this VIP request. You have 0.5 VIP tokens.",
       })
     );
   });
@@ -394,7 +456,51 @@ describe("processEventSubChatMessage", () => {
       env,
       expect.objectContaining({
         message:
-          "@viewer_one this song requires 2 VIP tokens. Use a VIP request instead.",
+          "@viewer_one this request requires 2 VIP tokens. Use a VIP request instead.",
+      })
+    );
+  });
+
+  it("rejects a regular request when choosing a part requires VIP tokens", async () => {
+    const deps = createDeps({
+      getDashboardState: vi.fn().mockResolvedValue(
+        createState({
+          allowRequestPathModifiers: true,
+          requestPathModifierVipTokenCost: 2,
+        })
+      ),
+      searchSongs: vi.fn().mockResolvedValue({
+        results: [
+          createSong({
+            id: "song-bass",
+            parts: ["bass"],
+            sourceId: 22222,
+          }),
+        ],
+      }),
+    });
+
+    const result = await processEventSubChatMessage({
+      env,
+      event: createEvent({
+        rawMessage: "!sr cherub rock *bass",
+      }),
+      parsed: createParsed({
+        query: "cherub rock *bass",
+      }),
+      deps,
+    });
+
+    expect(result).toEqual({
+      body: "Rejected",
+      status: 202,
+    });
+    expect(deps.addRequestToPlaylist).not.toHaveBeenCalled();
+    expect(deps.sendChatReply).toHaveBeenCalledWith(
+      env,
+      expect.objectContaining({
+        message:
+          "@viewer_one this request requires 2 VIP tokens. Use a VIP request instead.",
       })
     );
   });
@@ -922,6 +1028,79 @@ describe("processEventSubChatMessage", () => {
     );
   });
 
+  it("deduplicates a redelivered remove command after the first success log is written", async () => {
+    let hasLoggedMessage = false;
+    const deps = createDeps({
+      getDashboardState: vi.fn().mockResolvedValue(
+        createState({
+          items: [
+            {
+              id: "item-1",
+              songId: "song-1",
+              status: "queued",
+              requestKind: "regular",
+              requestedByTwitchUserId: "viewer-1",
+              requestedByLogin: "viewer_one",
+              requestedByDisplayName: "Viewer One",
+            },
+          ],
+        })
+      ),
+      getRequestLogByMessageId: vi
+        .fn()
+        .mockImplementation(async () =>
+          hasLoggedMessage ? { id: "log-1" } : null
+        ),
+      createRequestLog: vi.fn().mockImplementation(async () => {
+        hasLoggedMessage = true;
+      }),
+      removeRequestsFromPlaylist: vi.fn().mockResolvedValue({
+        ok: true,
+        playlistId: "playlist-1",
+        message: "Removed 1 request",
+      }),
+    });
+
+    const event = createEvent({
+      rawMessage: "!remove all",
+      messageId: "msg-remove-1",
+    });
+    const parsed = createParsed({
+      command: "remove",
+      query: "all",
+    });
+
+    const firstResult = await processEventSubChatMessage({
+      env,
+      event,
+      parsed,
+      deps,
+    });
+    const secondResult = await processEventSubChatMessage({
+      env,
+      event,
+      parsed,
+      deps,
+    });
+
+    expect(firstResult).toEqual({
+      body: "Accepted",
+      status: 202,
+    });
+    expect(secondResult).toEqual({
+      body: "Duplicate",
+      status: 202,
+    });
+    expect(deps.removeRequestsFromPlaylist).toHaveBeenCalledTimes(1);
+    expect(deps.sendChatReply).toHaveBeenCalledTimes(1);
+    expect(deps.sendChatReply).toHaveBeenCalledWith(
+      env,
+      expect.objectContaining({
+        message: "@viewer_one removed 1 request from this playlist.",
+      })
+    );
+  });
+
   it("edits another viewer's request when invoked by a moderator", async () => {
     const deps = createDeps({
       resolveTwitchUserByLogin: vi.fn().mockResolvedValue({
@@ -1217,6 +1396,12 @@ describe("processEventSubChatMessage", () => {
       env,
       expect.objectContaining({
         message: expect.stringContaining("*bass"),
+      })
+    );
+    expect(deps.sendChatReply).toHaveBeenCalledWith(
+      env,
+      expect.objectContaining({
+        message: expect.not.stringContaining("*guitar"),
       })
     );
     expect(deps.sendChatReply).toHaveBeenCalledWith(
@@ -1771,6 +1956,75 @@ describe("processEventSubChatMessage", () => {
         song: expect.objectContaining({
           id: "song-bass",
           cdlcId: 22222,
+          requestedQuery: "cherub rock *bass",
+        }),
+      })
+    );
+  });
+
+  it("updates an existing request when the requested part changes", async () => {
+    const deps = createDeps({
+      getDashboardState: vi.fn().mockResolvedValue(
+        createState({
+          allowRequestPathModifiers: true,
+          requestPathModifierVipTokenCost: 1,
+          items: [
+            {
+              id: "item-1",
+              songId: "song-bass",
+              songTitle: "Cherub Rock",
+              status: "queued",
+              requestKind: "regular",
+              requestedByTwitchUserId: "viewer-1",
+              requestedByLogin: "viewer_one",
+              requestedByDisplayName: "Viewer One",
+              requestedQuery: "cherub rock",
+            },
+          ],
+        })
+      ),
+      searchSongs: vi.fn().mockResolvedValue({
+        results: [
+          createSong({
+            id: "song-bass",
+            parts: ["lead", "bass"],
+            sourceId: 22222,
+          }),
+        ],
+      }),
+      getVipTokenBalance: vi.fn().mockResolvedValue({
+        availableCount: 1,
+        autoSubscriberGranted: false,
+      }),
+    });
+
+    const result = await processEventSubChatMessage({
+      env,
+      event: createEvent({
+        rawMessage: "!vip cherub rock *bass",
+      }),
+      parsed: createParsed({
+        command: "vip",
+        query: "cherub rock *bass",
+      }),
+      deps,
+    });
+
+    expect(result).toEqual({
+      body: "Accepted",
+      status: 202,
+    });
+    expect(deps.changeRequestKind).not.toHaveBeenCalled();
+    expect(deps.editRequest).toHaveBeenCalledWith(
+      env,
+      expect.objectContaining({
+        channelId: "channel-1",
+        itemId: "item-1",
+        requestKind: "vip",
+        vipTokenCost: 1,
+        song: expect.objectContaining({
+          id: "song-bass",
+          requestedQuery: "cherub rock *bass",
         }),
       })
     );

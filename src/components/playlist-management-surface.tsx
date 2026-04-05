@@ -26,6 +26,9 @@ import {
   type LucideIcon,
   MoreHorizontal,
   Plus,
+  RotateCcw,
+  Shuffle,
+  Trash2,
   Undo2,
 } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
@@ -33,6 +36,8 @@ import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import { BlacklistPanel } from "~/components/blacklist-panel";
 import { DashboardPageHeader } from "~/components/dashboard-page-header";
 import { PickOrderBadge } from "~/components/pick-order-badge";
+import { RequesterChatBadges } from "~/components/requester-chat-badges";
+import { StatusToggleBadge } from "~/components/status-toggle-badge";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -54,6 +59,12 @@ import {
   PopoverTitle,
   PopoverTrigger,
 } from "~/components/ui/popover";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "~/components/ui/tooltip";
 import { useAppLocale, useLocaleTranslation } from "~/lib/i18n/client";
 import {
   formatDate as formatLocaleDate,
@@ -71,7 +82,17 @@ import {
 } from "~/lib/playlist/order";
 import { areChannelRequestsOpen } from "~/lib/request-availability";
 import { formatPathLabel } from "~/lib/request-policy";
+import {
+  getPrimaryRequestedPath,
+  getRequestVipTokenPlan,
+  getStoredRequestedPaths,
+} from "~/lib/requested-paths";
+import type { RequesterChatBadge } from "~/lib/twitch/chat-badges";
 import { getErrorMessage } from "~/lib/utils";
+import {
+  parseVipTokenDurationThresholds,
+  type VipTokenDurationThreshold,
+} from "~/lib/vip-token-duration-thresholds";
 import {
   formatVipTokenCount,
   hasRedeemableVipToken,
@@ -99,10 +120,12 @@ export type PlaylistItem = {
   requestedByTwitchUserId?: string;
   requestedByLogin?: string;
   requestedByDisplayName?: string;
+  requesterChatBadges?: RequesterChatBadge[];
   requestedQuery?: string;
   warningCode?: string;
   warningMessage?: string;
   candidateMatchesJson?: string;
+  vipTokenCost?: number | null;
   pickNumber?: number | null;
   createdAt: number;
   position: number;
@@ -240,8 +263,12 @@ type PlaylistQueryData = {
     botReadyState?: string | null;
   };
   settings?: {
+    botChannelEnabled?: boolean;
     canManageBlacklist?: boolean;
+    requestPathModifierVipTokenCost?: number;
+    requestPathModifierUsesVipPriority?: boolean;
     showPickOrderBadges?: boolean;
+    vipTokenDurationThresholdsJson?: string | null;
   };
   items: PlaylistItem[];
   playedSongs: PlayedSong[];
@@ -313,6 +340,9 @@ export function PlaylistManagementSurface(
     songTitle: string;
     songArtist?: string;
   } | null>(null);
+  const [showClearPlaylistDialog, setShowClearPlaylistDialog] = useState(false);
+  const [showResetSessionDialog, setShowResetSessionDialog] = useState(false);
+  const [showDisableBotDialog, setShowDisableBotDialog] = useState(false);
   const [pendingRowAction, setPendingRowAction] = useState<{
     action: string;
     itemId?: string;
@@ -345,8 +375,13 @@ export function PlaylistManagementSurface(
           botReadyState?: string | null;
         };
         settings?: {
+          botChannelEnabled?: boolean;
+          requestsEnabled?: boolean;
           canManageBlacklist?: boolean;
+          requestPathModifierVipTokenCost?: number;
+          requestPathModifierUsesVipPriority?: boolean;
           showPickOrderBadges?: boolean;
+          vipTokenDurationThresholdsJson?: string | null;
         };
         items: PlaylistItem[];
         playedSongs: PlayedSong[];
@@ -376,6 +411,13 @@ export function PlaylistManagementSurface(
   const moderationEndpoint = playlistQuery.data?.channel?.slug
     ? `/api/channel/${playlistQuery.data.channel.slug}/moderation`
     : null;
+  const vipTokenDurationThresholds = useMemo(
+    () =>
+      parseVipTokenDurationThresholds(
+        playlistQuery.data?.settings?.vipTokenDurationThresholdsJson
+      ),
+    [playlistQuery.data?.settings?.vipTokenDurationThresholdsJson]
+  );
 
   useEffect(() => {
     const timeout = window.setTimeout(() => {
@@ -469,11 +511,47 @@ export function PlaylistManagementSurface(
         return undefined;
       }
 
+      if (action === "clearPlaylist") {
+        queryClient.setQueryData(playlistQueryKey, {
+          ...previous,
+          items: [],
+        });
+      }
+
       if (action === "resetSession") {
         queryClient.setQueryData(playlistQueryKey, {
           ...previous,
           items: [],
-          playedSongs: previous.playedSongs,
+          playedSongs: [],
+          settings: previous.settings
+            ? {
+                ...previous.settings,
+                requestsEnabled: false,
+              }
+            : {
+                requestsEnabled: false,
+              },
+        });
+      }
+
+      if (
+        action === "setBotChannelEnabled" &&
+        typeof body.enabled === "boolean"
+      ) {
+        queryClient.setQueryData(playlistQueryKey, {
+          ...previous,
+          channel: {
+            ...previous.channel,
+            botReadyState: body.enabled
+              ? previous.channel.botReadyState
+              : "disabled",
+          },
+          settings: previous.settings
+            ? {
+                ...previous.settings,
+                botChannelEnabled: body.enabled,
+              }
+            : previous.settings,
         });
       }
 
@@ -670,6 +748,19 @@ export function PlaylistManagementSurface(
   );
 
   const vipTokens = playlistQuery.data?.vipTokens ?? [];
+  const requestsEnabled = playlistQuery.data?.settings?.requestsEnabled ?? true;
+  const canEndSession =
+    items.length > 0 || playedSongs.length > 0 || requestsEnabled;
+  const resetSessionTooltip = t(
+    showPickOrderBadges
+      ? "management.actions.resetSessionTooltipWithPickOrder"
+      : "management.actions.resetSessionTooltip"
+  );
+  const resetSessionDescription = t(
+    showPickOrderBadges
+      ? "management.actions.resetDialog.descriptionWithPickOrder"
+      : "management.actions.resetDialog.description"
+  );
   const blacklistArtists = playlistQuery.data?.blacklistArtists ?? [];
   const blacklistCharters = playlistQuery.data?.blacklistCharters ?? [];
   const blacklistSongs = playlistQuery.data?.blacklistSongs ?? [];
@@ -692,6 +783,7 @@ export function PlaylistManagementSurface(
     ? areChannelRequestsOpen(managedChannel)
     : false;
   const accessRole = playlistQuery.data?.accessRole ?? "owner";
+  const botChannelEnabled = !!playlistQuery.data?.settings?.botChannelEnabled;
   const canManageBlacklist = !!playlistQuery.data?.settings?.canManageBlacklist;
   const isDeletingItem = (itemId: string) =>
     mutation.isPending &&
@@ -709,6 +801,12 @@ export function PlaylistManagementSurface(
     mutation.isPending &&
     pendingRowAction?.action === "restorePlayed" &&
     pendingRowAction.songId === playedSongId;
+  const isBotTogglePending =
+    mutation.isPending && pendingRowAction?.action === "setBotChannelEnabled";
+  const isClearPlaylistPending =
+    mutation.isPending && pendingRowAction?.action === "clearPlaylist";
+  const isResetSessionPending =
+    mutation.isPending && pendingRowAction?.action === "resetSession";
   const confirmDeleteItem = () => {
     if (!deleteDialogItem) {
       return;
@@ -719,6 +817,41 @@ export function PlaylistManagementSurface(
     mutation.mutate({
       action: "deleteItem",
       itemId,
+    });
+  };
+  const handleShufflePlaylist = () => {
+    mutation.mutate({ action: "shufflePlaylist" });
+  };
+  const handleClearPlaylist = () => {
+    setShowClearPlaylistDialog(true);
+  };
+  const handleResetSession = () => {
+    setShowResetSessionDialog(true);
+  };
+  const confirmClearPlaylist = () => {
+    setShowClearPlaylistDialog(false);
+    mutation.mutate({ action: "clearPlaylist" });
+  };
+  const confirmResetSession = () => {
+    setShowResetSessionDialog(false);
+    mutation.mutate({ action: "resetSession" });
+  };
+  const handleBotToggle = (enabled: boolean) => {
+    if (enabled) {
+      mutation.mutate({
+        action: "setBotChannelEnabled",
+        enabled: true,
+      });
+      return;
+    }
+
+    setShowDisableBotDialog(true);
+  };
+  const confirmDisableBot = () => {
+    setShowDisableBotDialog(false);
+    mutation.mutate({
+      action: "setBotChannelEnabled",
+      enabled: false,
     });
   };
   const reorderPlaylist = (
@@ -968,49 +1101,28 @@ export function PlaylistManagementSurface(
       ) : null}
 
       {props.embedCurrentPlaylist ? (
-        <section className="grid gap-3 max-[960px]:px-4">
-          <div className="flex flex-wrap items-start justify-between gap-4">
+        <section className="grid max-[960px]:px-4">
+          <div className="flex flex-wrap items-start justify-between gap-4 mb-3">
             {props.currentPlaylistTitle ? (
-              <h2 className="text-3xl font-semibold text-(--text)">
+              <h2 className="text-4xl font-semibold text-(--text)">
                 {props.currentPlaylistTitle}
               </h2>
             ) : null}
-            <div className="dashboard-playlist__actions dashboard-playlist__actions--public flex flex-wrap items-center gap-3">
-              <Button
-                variant="outline"
-                onClick={() => mutation.mutate({ action: "shufflePlaylist" })}
-                disabled={mutation.isPending || items.length < 2}
-              >
-                {t("management.actions.shuffle")}
-              </Button>
-              <Button
-                variant="outline"
-                onClick={() => {
-                  if (window.confirm(t("management.actions.confirmClear"))) {
-                    mutation.mutate({ action: "clearPlaylist" });
-                  }
-                }}
-                disabled={mutation.isPending || items.length === 0}
-              >
-                {t("management.actions.clearPlaylist")}
-              </Button>
-              <Button
-                variant="outline"
-                onClick={() => {
-                  if (window.confirm(t("management.actions.confirmReset"))) {
-                    mutation.mutate({ action: "resetSession" });
-                  }
-                }}
-                disabled={
-                  mutation.isPending &&
-                  pendingRowAction?.action === "resetSession"
-                    ? true
-                    : items.length === 0
-                }
-              >
-                {t("management.actions.resetSession")}
-              </Button>
-            </div>
+            <PlaylistManagementActions
+              className="dashboard-playlist__actions dashboard-playlist__actions--public flex flex-wrap items-center gap-3"
+              showBotToggle={false}
+              botEnabled={botChannelEnabled}
+              isBotTogglePending={isBotTogglePending}
+              onToggleBot={handleBotToggle}
+              itemCount={items.length}
+              canEndSession={canEndSession}
+              resetSessionTooltip={resetSessionTooltip}
+              isMutationPending={mutation.isPending}
+              isResetSessionPending={isResetSessionPending}
+              onShuffle={handleShufflePlaylist}
+              onClear={handleClearPlaylist}
+              onReset={handleResetSession}
+            />
           </div>
           <CurrentPlaylistRows
             items={items}
@@ -1025,6 +1137,14 @@ export function PlaylistManagementSurface(
             blacklistedSongGroupIds={blacklistedSongGroupIds}
             blacklistedCharterIds={blacklistedCharterIds}
             vipTokenBalancesByLogin={vipTokenBalancesByLogin}
+            requestPathModifierVipTokenCost={
+              playlistQuery.data?.settings?.requestPathModifierVipTokenCost ?? 0
+            }
+            requestPathModifierUsesVipPriority={
+              playlistQuery.data?.settings
+                ?.requestPathModifierUsesVipPriority ?? true
+            }
+            vipTokenDurationThresholds={vipTokenDurationThresholds}
             isDeletingItem={isDeletingItem}
             isRowPending={isRowPending}
             isReorderPending={
@@ -1169,42 +1289,21 @@ export function PlaylistManagementSurface(
               <CardTitle>
                 {props.currentPlaylistTitle ?? t("management.currentTitle")}
               </CardTitle>
-              <div className="dashboard-playlist__actions flex flex-wrap gap-3">
-                <Button
-                  variant="outline"
-                  onClick={() => mutation.mutate({ action: "shufflePlaylist" })}
-                  disabled={mutation.isPending || items.length < 2}
-                >
-                  {t("management.actions.shuffle")}
-                </Button>
-                <Button
-                  variant="outline"
-                  onClick={() => {
-                    if (window.confirm(t("management.actions.confirmClear"))) {
-                      mutation.mutate({ action: "clearPlaylist" });
-                    }
-                  }}
-                  disabled={mutation.isPending || items.length === 0}
-                >
-                  {t("management.actions.clearPlaylist")}
-                </Button>
-                <Button
-                  variant="outline"
-                  onClick={() => {
-                    if (window.confirm(t("management.actions.confirmReset"))) {
-                      mutation.mutate({ action: "resetSession" });
-                    }
-                  }}
-                  disabled={
-                    mutation.isPending &&
-                    pendingRowAction?.action === "resetSession"
-                      ? true
-                      : items.length === 0
-                  }
-                >
-                  {t("management.actions.resetSession")}
-                </Button>
-              </div>
+              <PlaylistManagementActions
+                className="dashboard-playlist__actions flex flex-wrap gap-3"
+                showBotToggle={accessRole === "owner"}
+                botEnabled={botChannelEnabled}
+                isBotTogglePending={isBotTogglePending}
+                onToggleBot={handleBotToggle}
+                itemCount={items.length}
+                canEndSession={canEndSession}
+                resetSessionTooltip={resetSessionTooltip}
+                isMutationPending={mutation.isPending}
+                isResetSessionPending={isResetSessionPending}
+                onShuffle={handleShufflePlaylist}
+                onClear={handleClearPlaylist}
+                onReset={handleResetSession}
+              />
             </div>
           </CardHeader>
           <CardContent className="grid gap-3">
@@ -1221,6 +1320,15 @@ export function PlaylistManagementSurface(
               blacklistedSongGroupIds={blacklistedSongGroupIds}
               blacklistedCharterIds={blacklistedCharterIds}
               vipTokenBalancesByLogin={vipTokenBalancesByLogin}
+              requestPathModifierVipTokenCost={
+                playlistQuery.data?.settings?.requestPathModifierVipTokenCost ??
+                0
+              }
+              requestPathModifierUsesVipPriority={
+                playlistQuery.data?.settings
+                  ?.requestPathModifierUsesVipPriority ?? true
+              }
+              vipTokenDurationThresholds={vipTokenDurationThresholds}
               isDeletingItem={isDeletingItem}
               isRowPending={isRowPending}
               isReorderPending={
@@ -1452,6 +1560,60 @@ export function PlaylistManagementSurface(
       ) : null}
 
       <AlertDialog
+        open={showClearPlaylistDialog}
+        onOpenChange={setShowClearPlaylistDialog}
+      >
+        <AlertDialogContent className="bg-(--panel)">
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              {t("management.actions.clearDialog.title")}
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              {t("management.actions.clearDialog.description")}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={isClearPlaylistPending}>
+              {t("management.actions.clearDialog.cancel")}
+            </AlertDialogCancel>
+            <AlertDialogAction
+              onClick={confirmClearPlaylist}
+              disabled={isClearPlaylistPending}
+              className="border-transparent bg-rose-600 text-white shadow-none hover:bg-rose-700"
+            >
+              {t("management.actions.clearDialog.confirm")}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+      <AlertDialog
+        open={showResetSessionDialog}
+        onOpenChange={setShowResetSessionDialog}
+      >
+        <AlertDialogContent className="bg-(--panel)">
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              {t("management.actions.resetDialog.title")}
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              {resetSessionDescription}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={isResetSessionPending}>
+              {t("management.actions.resetDialog.cancel")}
+            </AlertDialogCancel>
+            <AlertDialogAction
+              onClick={confirmResetSession}
+              disabled={isResetSessionPending}
+              className="border-transparent bg-rose-600 text-white shadow-none hover:bg-rose-700"
+            >
+              {t("management.actions.resetDialog.confirm")}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+      <AlertDialog
         open={deleteDialogItem != null}
         onOpenChange={(open) => {
           if (!open) {
@@ -1459,7 +1621,7 @@ export function PlaylistManagementSurface(
           }
         }}
       >
-        <AlertDialogContent>
+        <AlertDialogContent className="bg-(--panel)">
           <AlertDialogHeader>
             <AlertDialogTitle>
               {t("management.deleteDialog.title")}
@@ -1499,6 +1661,33 @@ export function PlaylistManagementSurface(
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+      <AlertDialog
+        open={showDisableBotDialog}
+        onOpenChange={setShowDisableBotDialog}
+      >
+        <AlertDialogContent className="bg-(--panel)">
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              {t("management.bot.disableDialog.title")}
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              {t("management.bot.disableDialog.description")}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={isBotTogglePending}>
+              {t("management.bot.disableDialog.cancel")}
+            </AlertDialogCancel>
+            <AlertDialogAction
+              onClick={confirmDisableBot}
+              disabled={isBotTogglePending}
+              className="border-transparent bg-rose-600 text-white shadow-none hover:bg-rose-700"
+            >
+              {t("management.bot.disableDialog.confirm")}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
@@ -1516,6 +1705,9 @@ function CurrentPlaylistRows(props: {
   blacklistedSongGroupIds: Set<number>;
   blacklistedCharterIds: Set<number>;
   vipTokenBalancesByLogin: Map<string, number>;
+  requestPathModifierVipTokenCost: number;
+  requestPathModifierUsesVipPriority: boolean;
+  vipTokenDurationThresholds: VipTokenDurationThreshold[];
   isDeletingItem: (itemId: string) => boolean;
   isRowPending: (action: string, itemId: string) => boolean;
   isReorderPending: boolean;
@@ -1605,6 +1797,13 @@ function CurrentPlaylistRows(props: {
                   ) ?? 0)
                 : 0
             }
+            requestPathModifierVipTokenCost={
+              props.requestPathModifierVipTokenCost
+            }
+            requestPathModifierUsesVipPriority={
+              props.requestPathModifierUsesVipPriority
+            }
+            vipTokenDurationThresholds={props.vipTokenDurationThresholds}
             blacklistedCharterIds={props.blacklistedCharterIds}
             blacklistedSongIds={props.blacklistedSongIds}
             onDragStart={props.onDragStart}
@@ -1641,6 +1840,137 @@ function CurrentPlaylistRows(props: {
 
 function getRequesterLabel(item: PlaylistItem) {
   return item.requestedByDisplayName ?? item.requestedByLogin ?? null;
+}
+
+function getRequestedPathLabel(item: Pick<PlaylistItem, "requestedQuery">) {
+  const requestedPath = getPrimaryRequestedPath(item);
+  return requestedPath ? formatPathLabel(requestedPath) : null;
+}
+
+function getStoredVipTokenCost(input: {
+  requestKind?: "regular" | "vip" | null;
+  vipTokenCost?: number | null;
+}) {
+  if (
+    typeof input.vipTokenCost === "number" &&
+    Number.isFinite(input.vipTokenCost) &&
+    input.vipTokenCost > 0
+  ) {
+    return Math.trunc(input.vipTokenCost);
+  }
+
+  return input.requestKind === "vip" ? 1 : 0;
+}
+
+function PlaylistManagementActions(props: {
+  className: string;
+  showBotToggle: boolean;
+  botEnabled: boolean;
+  isBotTogglePending: boolean;
+  onToggleBot: (enabled: boolean) => void;
+  itemCount: number;
+  canEndSession: boolean;
+  resetSessionTooltip: string;
+  isMutationPending: boolean;
+  isResetSessionPending: boolean;
+  onShuffle: () => void;
+  onClear: () => void;
+  onReset: () => void;
+}) {
+  const { t } = useLocaleTranslation("playlist");
+
+  return (
+    <TooltipProvider>
+      <div className={`${props.className} w-full justify-between`}>
+        <div className="flex flex-wrap items-center justify-start gap-3">
+          {props.showBotToggle ? (
+            <PlaylistBotToggle
+              enabled={props.botEnabled}
+              disabled={props.isBotTogglePending}
+              onToggle={props.onToggleBot}
+            />
+          ) : null}
+          <PlaylistManagementActionButton
+            label={t("management.actions.shuffle")}
+            tooltip={t("management.actions.shuffleTooltip")}
+            icon={Shuffle}
+            disabled={props.isMutationPending || props.itemCount < 2}
+            onClick={props.onShuffle}
+          />
+        </div>
+        <div className="ml-auto flex flex-wrap items-center justify-end gap-3">
+          <PlaylistManagementActionButton
+            label={t("management.actions.clearPlaylist")}
+            tooltip={t("management.actions.clearPlaylistTooltip")}
+            icon={Trash2}
+            disabled={props.isMutationPending || props.itemCount === 0}
+            onClick={props.onClear}
+          />
+          <PlaylistManagementActionButton
+            label={t("management.actions.resetSession")}
+            tooltip={props.resetSessionTooltip}
+            icon={RotateCcw}
+            disabled={props.isResetSessionPending || !props.canEndSession}
+            onClick={props.onReset}
+          />
+        </div>
+      </div>
+    </TooltipProvider>
+  );
+}
+
+function PlaylistBotToggle(props: {
+  enabled: boolean;
+  disabled: boolean;
+  onToggle: (enabled: boolean) => void;
+}) {
+  const { t } = useLocaleTranslation("playlist");
+
+  return (
+    <StatusToggleBadge
+      enabled={props.enabled}
+      disabled={props.disabled}
+      onToggle={() => props.onToggle(!props.enabled)}
+      toggleAriaLabel={t("management.bot.toggleAria")}
+      enabledLabel={t("management.bot.enabled")}
+      disabledLabel={t("management.bot.disabled")}
+      toneClassName={
+        props.enabled
+          ? "border-emerald-500/35 bg-emerald-500/10 text-emerald-100"
+          : "border-slate-400/30 bg-slate-500/10 text-slate-100"
+      }
+    />
+  );
+}
+
+function PlaylistManagementActionButton(props: {
+  label: string;
+  tooltip: string;
+  icon: LucideIcon;
+  disabled: boolean;
+  onClick: () => void;
+}) {
+  const Icon = props.icon;
+
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <span className="inline-flex">
+          <Button
+            variant="outline"
+            disabled={props.disabled}
+            onClick={props.onClick}
+          >
+            <Icon className="h-3.5 w-3.5" />
+            {props.label}
+          </Button>
+        </span>
+      </TooltipTrigger>
+      <TooltipContent className="max-w-72 text-center leading-5">
+        {props.tooltip}
+      </TooltipContent>
+    </Tooltip>
+  );
 }
 
 function getReorderedItemsAfterRequestKindChange(
@@ -1858,6 +2188,9 @@ function PlaylistQueueItem(props: {
   isBlacklistSongGroupPending: boolean;
   isBlacklistCharterPending: boolean;
   availableVipTokenCount: number;
+  requestPathModifierVipTokenCost: number;
+  requestPathModifierUsesVipPriority: boolean;
+  vipTokenDurationThresholds: VipTokenDurationThreshold[];
   blacklistedSongIds: Set<number>;
   blacklistedCharterIds: Set<number>;
   onDragStart: (itemId: string) => void;
@@ -1887,13 +2220,38 @@ function PlaylistQueueItem(props: {
   const requesterLogin = props.item.requestedByLogin?.trim() ?? "";
   const hasRequester = requesterLogin.length > 0;
   const hasCurrentItem = props.currentItemId != null;
-  const showVipTokenBalance =
-    hasRequester && (isVipRequest || props.availableVipTokenCount > 0);
+  const requesterLabel = getRequesterLabel(props.item) ?? requesterLogin;
+  const requestedPaths = getStoredRequestedPaths(props.item);
+  const storedVipTokenCost = getStoredVipTokenCost(props.item);
+  const requiredVipTokenCount = Math.max(
+    0,
+    getRequestVipTokenPlan({
+      requestKind: "vip",
+      song: {
+        durationText: props.item.songDurationText,
+      },
+      requestedPaths,
+      thresholds: props.vipTokenDurationThresholds,
+      settings: {
+        requestPathModifierVipTokenCost: props.requestPathModifierVipTokenCost,
+        requestPathModifierUsesVipPriority:
+          props.requestPathModifierUsesVipPriority,
+      },
+    }).totalVipTokenCost - storedVipTokenCost
+  );
+  const canShowMakeVipButton = !isCurrentItem && !isVipRequest && hasRequester;
   const canUpgradeToVip =
-    !isCurrentItem &&
-    !isVipRequest &&
-    hasRequester &&
-    hasRedeemableVipToken(props.availableVipTokenCount);
+    canShowMakeVipButton &&
+    hasRedeemableVipToken(props.availableVipTokenCount, requiredVipTokenCount);
+  const showDisabledMakeVipButton =
+    canShowMakeVipButton && requiredVipTokenCount > 0 && !canUpgradeToVip;
+  const makeVipDisabledTooltip = showDisabledMakeVipButton
+    ? t("management.item.makeVipDisabledTooltip", {
+        requiredCount: requiredVipTokenCount,
+        requester: requesterLabel,
+        availableCount: formatVipTokenCount(props.availableVipTokenCount),
+      })
+    : null;
   const canMoveUp = props.reorderableIndex > 0;
   const canMoveDown =
     props.reorderableIndex >= 0 &&
@@ -2010,8 +2368,8 @@ function PlaylistQueueItem(props: {
         isVipRequest
           ? "border-violet-400/45 bg-(--panel-soft) shadow-[0_0_0_1px_rgba(168,85,247,0.08),0_0_28px_rgba(168,85,247,0.12)]"
           : props.index % 2 === 0
-            ? "border-(--border) bg-(--panel-soft)"
-            : "border-(--border) bg-(--panel-muted)"
+            ? "border-(--border) bg-(--panel)"
+            : "border-(--border) bg-(--panel-soft)"
       }`}
     >
       {dropEdge === "top" ? (
@@ -2023,7 +2381,7 @@ function PlaylistQueueItem(props: {
 
       <div className="flex items-stretch">
         {props.useTouchReorderControls ? (
-          <div className="dashboard-playlist__drag-handle inline-flex w-14 shrink-0 self-stretch border-r border-(--border) px-1 py-2">
+          <div className="dashboard-playlist__drag-handle inline-flex shrink-0 self-stretch border-r border-(--border) px-1 py-2">
             <div className="grid w-full grid-cols-1 gap-1">
               <TouchReorderButton
                 label={t("management.item.moveTop")}
@@ -2101,6 +2459,19 @@ function PlaylistQueueItem(props: {
                       {t("management.item.vipBadge")}
                     </Badge>
                   ) : null}
+                  {getRequestedPathLabel(props.item) ? (
+                    <Badge variant="outline">
+                      {getRequestedPathLabel(props.item)}
+                    </Badge>
+                  ) : null}
+                  {(isVipRequest && getStoredVipTokenCost(props.item) > 1) ||
+                  (!isVipRequest && getStoredVipTokenCost(props.item) > 0) ? (
+                    <Badge variant="outline">
+                      {t("management.item.vipTokens", {
+                        count: getStoredVipTokenCost(props.item),
+                      })}
+                    </Badge>
+                  ) : null}
                   {props.showPickOrderBadges &&
                   props.item.pickNumber != null ? (
                     <PickOrderBadge pickNumber={props.item.pickNumber} />
@@ -2156,18 +2527,16 @@ function PlaylistQueueItem(props: {
               </p>
               <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
                 {getRequesterLabel(props.item) ? (
-                  <p className="text-base font-semibold text-(--text)">
-                    {t("management.item.requestedBy", {
-                      requester: getRequesterLabel(props.item),
-                    })}
-                  </p>
-                ) : null}
-                {showVipTokenBalance ? (
-                  <p className="text-sm font-medium text-(--muted)">
-                    {t("management.item.vipTokens", {
-                      count: formatVipTokenCount(props.availableVipTokenCount),
-                    })}
-                  </p>
+                  <div className="flex min-w-0 flex-wrap items-center gap-2">
+                    <RequesterChatBadges
+                      badges={props.item.requesterChatBadges}
+                    />
+                    <p className="truncate text-base font-semibold text-(--text)">
+                      {t("management.item.requestedBy", {
+                        requester: getRequesterLabel(props.item),
+                      })}
+                    </p>
+                  </div>
                 ) : null}
                 <p className="inline-flex items-center gap-1.5 text-sm text-(--muted)">
                   <Clock3 className="h-3.5 w-3.5" />
@@ -2178,7 +2547,8 @@ function PlaylistQueueItem(props: {
                   </span>
                 </p>
               </div>
-              {props.item.requestedQuery ? (
+              {props.item.requestedQuery &&
+              !getRequestedPathLabel(props.item) ? (
                 <p className="text-xs text-amber-200">
                   {t("management.item.requestedText", {
                     query: props.item.requestedQuery,
@@ -2193,13 +2563,13 @@ function PlaylistQueueItem(props: {
             </motion.div>
           </motion.div>
 
-          <div className="grid gap-3 sm:justify-items-end md:min-w-[12rem] md:content-between">
-            <div className="dashboard-playlist__item-actions flex max-w-full flex-wrap gap-2 sm:justify-end">
+          <div className="grid gap-3 justify-items-end md:min-w-[12rem] md:content-between">
+            <div className="dashboard-playlist__item-actions flex w-full max-w-full flex-nowrap items-center justify-end gap-2 md:w-auto">
               {isVipRequest && hasRequester && !isCurrentItem ? (
                 <Button
                   size="sm"
                   variant="outline"
-                  className="h-8 px-2.5 text-[11px]"
+                  className="h-8 max-w-[9rem] flex-none px-2.5 text-[11px]"
                   onClick={() => props.onChangeRequestKind("regular")}
                   disabled={props.isChangeRequestKindPending}
                 >
@@ -2208,11 +2578,32 @@ function PlaylistQueueItem(props: {
                     : t("management.item.makeRegular")}
                 </Button>
               ) : null}
-              {canUpgradeToVip && !isCurrentItem ? (
+              {showDisabledMakeVipButton ? (
+                <TooltipProvider>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <span className="inline-flex">
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="pointer-events-none h-8 max-w-[9rem] flex-none px-2.5 text-[11px]"
+                          disabled
+                        >
+                          {t("management.item.makeVip")}
+                        </Button>
+                      </span>
+                    </TooltipTrigger>
+                    <TooltipContent className="max-w-64 text-center leading-5">
+                      {makeVipDisabledTooltip}
+                    </TooltipContent>
+                  </Tooltip>
+                </TooltipProvider>
+              ) : null}
+              {canUpgradeToVip ? (
                 <Button
                   size="sm"
                   variant="outline"
-                  className="h-8 px-2.5 text-[11px]"
+                  className="h-8 max-w-[9rem] flex-none px-2.5 text-[11px]"
                   onClick={() => props.onChangeRequestKind("vip")}
                   disabled={props.isChangeRequestKindPending}
                 >
@@ -2238,7 +2629,7 @@ function PlaylistQueueItem(props: {
                 <Button
                   size="sm"
                   variant="outline"
-                  className="h-8 px-2.5 text-[11px]"
+                  className="h-8 max-w-[9rem] flex-none border-emerald-500/30 bg-emerald-500/10 px-2.5 text-[11px] text-emerald-200 hover:border-emerald-400/40 hover:bg-emerald-500/15 hover:text-emerald-100"
                   onClick={props.onSetCurrent}
                   disabled={hasCurrentItem || props.isSetCurrentPending}
                 >
@@ -2288,7 +2679,7 @@ function PlaylistQueueItem(props: {
                 type="button"
                 size="sm"
                 variant={showVersions ? "secondary" : "outline"}
-                className="h-8 w-fit px-2.5 text-[11px]"
+                className="h-8 w-fit justify-self-end px-2.5 text-[11px]"
                 aria-expanded={showVersions}
                 onClick={() => setShowVersions((current) => !current)}
               >
@@ -2302,7 +2693,7 @@ function PlaylistQueueItem(props: {
                 size="sm"
                 variant="outline"
                 asChild
-                className="h-8 w-fit px-2.5 text-[11px]"
+                className="h-8 w-fit justify-self-end px-2.5 text-[11px]"
               >
                 <a
                   href={singleVersionDownloadUrl}
@@ -2455,7 +2846,7 @@ function PlaylistItemActionsPopover(props: {
           aria-label={t("management.actionsMenu.openActionsAria", {
             title: props.item.songTitle,
           })}
-          className="h-8 w-8"
+          className="h-8 w-8 shrink-0"
         >
           <MoreHorizontal className="h-4 w-4" />
         </Button>
@@ -2540,7 +2931,7 @@ function PlaylistItemActionsPopover(props: {
                       ? t("management.actionsMenu.versionBlocked")
                       : t("management.actionsMenu.blacklistQueuedVersion")}
                   </span>
-                  <span className="text-xs text-(--muted)">
+                  <span className="text-xs font-normal normal-case tracking-normal [font-family:var(--font-body)] text-(--muted)">
                     {props.item.songCatalogSourceId != null
                       ? t("management.actionsMenu.blockVersionDescription", {
                           id: props.item.songCatalogSourceId,
@@ -2572,7 +2963,7 @@ function PlaylistItemActionsPopover(props: {
                       ? t("management.actionsMenu.songBlocked")
                       : t("management.actionsMenu.blacklistSongGroup")}
                   </span>
-                  <span className="text-xs text-(--muted)">
+                  <span className="text-xs font-normal normal-case tracking-normal [font-family:var(--font-body)] text-(--muted)">
                     {t("management.actionsMenu.blockSongDescription")}
                   </span>
                 </div>
@@ -2606,7 +2997,7 @@ function PlaylistItemActionsPopover(props: {
                             t("management.blacklistErrors.unknownArtist"),
                         })}
                   </span>
-                  <span className="text-xs text-(--muted)">
+                  <span className="text-xs font-normal normal-case tracking-normal [font-family:var(--font-body)] text-(--muted)">
                     {t("management.actionsMenu.blockArtistDescription")}
                   </span>
                 </div>
@@ -2645,7 +3036,7 @@ function PlaylistItemActionsPopover(props: {
                                 t("management.blacklistErrors.unknownCharter"),
                             })}
                       </span>
-                      <span className="text-xs text-(--muted)">
+                      <span className="text-xs font-normal normal-case tracking-normal [font-family:var(--font-body)] text-(--muted)">
                         {t("management.actionsMenu.blockCharterDescription")}
                       </span>
                     </div>
@@ -2926,6 +3317,9 @@ export function PlaylistQueueItemPreview() {
       isBlacklistSongGroupPending={false}
       isBlacklistCharterPending={false}
       availableVipTokenCount={3}
+      requestPathModifierVipTokenCost={1}
+      requestPathModifierUsesVipPriority
+      vipTokenDurationThresholds={[]}
       blacklistedSongIds={blacklistedSongIds}
       blacklistedCharterIds={blacklistedCharterIds}
       onDragStart={() => {}}

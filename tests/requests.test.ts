@@ -7,6 +7,7 @@ import {
   isRequesterAllowed,
   isSongAllowed,
   normalizeCommandPrefix,
+  songMatchesRequestedPaths,
 } from "~/lib/request-policy";
 import {
   normalizeChatEvent,
@@ -120,7 +121,7 @@ describe("parseRequestModifiers", () => {
 
   it("parses arrangement modifiers when enabled", () => {
     expect(
-      parseRequestModifiers("The Cure - Lovesong *bass *lyrics", {
+      parseRequestModifiers("The Cure - Lovesong *guitar *lead *bass *lyrics", {
         allowPathModifiers: true,
       })
     ).toEqual({
@@ -129,7 +130,7 @@ describe("parseRequestModifiers", () => {
       hasRandomModifier: false,
       hasChoiceModifier: false,
       ignoredOfficialModifier: false,
-      requestedPaths: ["bass"],
+      requestedPaths: ["guitar", "lead", "bass"],
     });
   });
 
@@ -157,11 +158,21 @@ describe("normalizeChatEvent", () => {
         chatter_user_name: "Viewer",
         message_id: "abc",
         message: { text: "!sr song" },
+        badges: [
+          { set_id: "moderator", id: "1" },
+          { set_id: "subscriber", id: "3", info: "3" },
+        ],
       })
     ).toMatchObject({
       broadcasterLogin: "streamer",
       chatterLogin: "viewer",
       rawMessage: "!sr song",
+      badges: [
+        { setId: "moderator", versionId: "1", info: null },
+        { setId: "subscriber", versionId: "3", info: "3" },
+      ],
+      isModerator: true,
+      isSubscriber: true,
     });
   });
 });
@@ -192,6 +203,7 @@ describe("request policy", () => {
     subscribersMustFollowSetlist: false,
     autoGrantVipTokenToSubscribers: false,
     allowRequestPathModifiers: false,
+    requestPathModifierVipTokenCost: 0,
     commandPrefix: "!sr",
   } as const;
 
@@ -227,8 +239,35 @@ describe("request policy", () => {
       allowRequestPathModifiers: true,
     });
 
+    expect(message).toContain("*lead");
+    expect(message).toContain("*rhythm");
     expect(message).toContain("*bass");
+    expect(message).not.toContain("*guitar");
     expect(message).not.toContain("*lyrics");
+  });
+
+  it("includes guitar modifier help when explicitly enabled", () => {
+    const message = buildHowMessage({
+      commandPrefix: "!sr",
+      appUrl: "https://example.com",
+      channelSlug: "streamer",
+      allowedRequestPaths: ["guitar", "bass"],
+    });
+
+    expect(message).toContain("*guitar");
+    expect(message).toContain("*bass");
+  });
+
+  it("includes vip cost in arrangement modifier help when configured", () => {
+    const message = buildHowMessage({
+      commandPrefix: "!sr",
+      appUrl: "https://example.com",
+      channelSlug: "streamer",
+      allowRequestPathModifiers: true,
+      requestPathModifierVipTokenCost: 2,
+    });
+
+    expect(message).toContain("2 VIP tokens");
   });
 
   it("rejects viewers when only subscribers or VIPs are allowed", () => {
@@ -283,6 +322,27 @@ describe("request policy", () => {
       limit: 2,
       periodSeconds: 120,
     });
+  });
+
+  it("treats guitar as matching either lead or rhythm", () => {
+    expect(
+      songMatchesRequestedPaths({
+        song: { parts: ["lead"] },
+        requestedPaths: ["guitar"],
+      })
+    ).toBe(true);
+    expect(
+      songMatchesRequestedPaths({
+        song: { parts: ["rhythm"] },
+        requestedPaths: ["guitar"],
+      })
+    ).toBe(true);
+    expect(
+      songMatchesRequestedPaths({
+        song: { parts: ["bass"] },
+        requestedPaths: ["guitar"],
+      })
+    ).toBe(false);
   });
 
   it("allows songs when every tuning in a multi-tuning summary is allowed", () => {

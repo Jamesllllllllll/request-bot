@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   getEffectiveVipTokenCost,
+  getNextVipTokenDurationThreshold,
   getRequiredVipTokenCostForDuration,
   getRequiredVipTokenCostForSong,
   normalizeVipTokenDurationThresholds,
@@ -60,6 +61,41 @@ describe("vip token duration thresholds", () => {
         tokenCost: 3,
       },
     ]);
+  });
+
+  it("builds a distinct next threshold default for the settings UI", () => {
+    expect(getNextVipTokenDurationThreshold([])).toEqual({
+      minimumDurationMinutes: 7,
+      tokenCost: 1,
+    });
+
+    expect(
+      getNextVipTokenDurationThreshold([
+        {
+          minimumDurationMinutes: 7,
+          tokenCost: 1,
+        },
+      ])
+    ).toEqual({
+      minimumDurationMinutes: 9,
+      tokenCost: 2,
+    });
+
+    expect(
+      getNextVipTokenDurationThreshold([
+        {
+          minimumDurationMinutes: 7,
+          tokenCost: 1,
+        },
+        {
+          minimumDurationMinutes: 9,
+          tokenCost: 2,
+        },
+      ])
+    ).toEqual({
+      minimumDurationMinutes: 11,
+      tokenCost: 3,
+    });
   });
 
   it("parses duration text into seconds", () => {

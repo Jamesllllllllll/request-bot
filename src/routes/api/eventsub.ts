@@ -48,9 +48,14 @@ export const Route = createFileRoute("/api/eventsub")({
         const bodyText = await request.text();
         const messageType = request.headers.get("Twitch-Eventsub-Message-Type");
         const messageId = request.headers.get("Twitch-Eventsub-Message-Id");
+        const messageRetry = request.headers.get(
+          "Twitch-Eventsub-Message-Retry"
+        );
 
         console.info("EventSub webhook received", {
           messageType,
+          messageId,
+          messageRetry,
           contentLength: bodyText.length,
         });
 
@@ -60,6 +65,13 @@ export const Route = createFileRoute("/api/eventsub")({
         }
 
         const payload = JSON.parse(bodyText) as Record<string, unknown>;
+        const subscriptionId =
+          typeof payload.subscription === "object" &&
+          payload.subscription !== null &&
+          "id" in payload.subscription &&
+          typeof payload.subscription.id === "string"
+            ? payload.subscription.id
+            : null;
 
         if (messageType === "webhook_callback_verification") {
           console.info("EventSub webhook verification challenge received");
@@ -197,6 +209,9 @@ export const Route = createFileRoute("/api/eventsub")({
 
         const event = normalizeChatEvent(payload.event);
         console.info("EventSub chat message received", {
+          messageId,
+          messageRetry,
+          subscriptionId,
           broadcasterLogin: event.broadcasterLogin,
           chatterLogin: event.chatterLogin,
           rawMessage: event.rawMessage,

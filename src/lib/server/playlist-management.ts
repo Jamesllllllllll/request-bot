@@ -14,6 +14,7 @@ import {
   getPlaylistByChannelId,
   getVipTokenBalance,
   grantVipToken,
+  updateChannelBotEnabled,
 } from "~/lib/db/repositories";
 import {
   blockedUsers,
@@ -32,11 +33,15 @@ import {
   areChannelRequestsOpen,
 } from "~/lib/request-availability";
 import { getArraySetting } from "~/lib/request-policy";
+import {
+  getRequestVipTokenPlan,
+  getStoredRequestedPaths,
+} from "~/lib/requested-paths";
+import { parseRequesterChatBadges } from "~/lib/twitch/chat-badges";
 import { json } from "~/lib/utils";
 import type { playlistMutationSchema } from "~/lib/validation";
 import {
   formatVipTokenCostLabel,
-  getRequiredVipTokenCostForSong,
   parseVipTokenDurationThresholds,
 } from "~/lib/vip-token-duration-thresholds";
 import { formatVipTokenCount, hasRedeemableVipToken } from "~/lib/vip-tokens";
@@ -65,6 +70,16 @@ function summarizePlaylistMutation(body: PlaylistMutation) {
         action: body.action,
         itemId: body.itemId,
         requestKind: body.requestKind,
+      };
+    case "shufflePlaylist":
+      return {
+        action: body.action,
+        keepVipAtTop: body.keepVipAtTop ?? false,
+      };
+    case "setBotChannelEnabled":
+      return {
+        action: body.action,
+        enabled: body.enabled,
       };
     default:
       return {
@@ -238,6 +253,10 @@ export async function enrichPlaylistItems(
 
     return {
       ...item,
+      requesterChatBadges:
+        "requesterChatBadgesJson" in item
+          ? parseRequesterChatBadges(item.requesterChatBadgesJson)
+          : [],
       songCatalogSourceId:
         item.songCatalogSourceId ?? catalogSong?.sourceId ?? null,
       songGroupedProjectId: catalogSong?.groupedProjectId ?? null,
@@ -328,11 +347,14 @@ export function canPerformPlaylistMutationAction(
     case "chooseVersion":
     case "clearPlaylist":
     case "resetSession":
+    case "setBotChannelEnabled":
     case "shuffleNext":
     case "shufflePlaylist":
     case "reorderItems":
     case "manualAdd":
-      return canManageChannelRequests(state);
+      return bodyActionRequiresOwner(action)
+        ? state.accessRole === "owner"
+        : canManageChannelRequests(state);
     case "changeRequestKind":
       return (
         canManageChannelRequests(state) && canManageChannelVipTokens(state)
@@ -349,7 +371,15 @@ export function getForbiddenPlaylistMutationMessage(
     return "You do not have permission to manage VIP request changes.";
   }
 
+  if (action === "setBotChannelEnabled") {
+    return "Only the channel owner can change the bot state.";
+  }
+
   return "You do not have permission to manage this channel playlist.";
+}
+
+function bodyActionRequiresOwner(action: PlaylistMutation["action"]) {
+  return action === "setBotChannelEnabled";
 }
 
 async function queuePlaylistReply(
@@ -439,7 +469,11 @@ function getRequestKindChangeReplyMessage(input: {
     input.previousRequestKind !== input.nextRequestKind &&
     input.nextRequestKind === "regular"
   ) {
-    return `@${input.login} your VIP request "${input.songTitle}" was changed back to a regular request. ${formatVipTokenCostLabel(Math.abs(input.vipTokenDelta))} ${Math.abs(input.vipTokenDelta) === 1 ? "was" : "were"} refunded.`;
+    if (input.vipTokenDelta < 0) {
+      return `@${input.login} your VIP request "${input.songTitle}" was changed back to a regular request. ${formatVipTokenCostLabel(Math.abs(input.vipTokenDelta))} ${Math.abs(input.vipTokenDelta) === 1 ? "was" : "were"} refunded.`;
+    }
+
+    return `@${input.login} your VIP request "${input.songTitle}" was changed back to a regular request.`;
   }
 
   return `@${input.login} the VIP token cost for your request "${input.songTitle}" is now ${formatVipTokenCostLabel(input.nextVipTokenCost)}.`;
@@ -545,18 +579,28 @@ export async function performPlaylistMutation(
     const actorType = state.accessRole === "moderator" ? "moderator" : "owner";
     const songTitle = formatPlaylistItemReplyTitle(item);
     const currentVipTokenCost = getStoredVipTokenCost(item);
-    const requiredVipTokenCost = getRequiredVipTokenCostForSong(
-      {
+    const vipTokenDurationThresholds = parseVipTokenDurationThresholds(
+      state.settings?.vipTokenDurationThresholdsJson
+    );
+    const requestedPaths = getStoredRequestedPaths({
+      requestedQuery: item.requestedQuery,
+    });
+    const requestVipTokenPlan = getRequestVipTokenPlan({
+      requestKind: body.requestKind,
+      explicitVipTokenCost: body.vipTokenCost,
+      song: {
         durationText: item.songDurationText,
       },
-      parseVipTokenDurationThresholds(
-        state.settings?.vipTokenDurationThresholdsJson
-      )
-    );
-    const nextVipTokenCost =
-      body.requestKind === "vip"
-        ? Math.max(body.vipTokenCost ?? requiredVipTokenCost, 1)
-        : 0;
+      requestedPaths,
+      thresholds: vipTokenDurationThresholds,
+      settings: {
+        requestPathModifierVipTokenCost:
+          state.settings?.requestPathModifierVipTokenCost,
+        requestPathModifierUsesVipPriority:
+          state.settings?.requestPathModifierUsesVipPriority,
+      },
+    });
+    const nextVipTokenCost = requestVipTokenPlan.totalVipTokenCost;
     const vipTokenDelta = nextVipTokenCost - currentVipTokenCost;
 
     if (item.requestKind === body.requestKind && vipTokenDelta === 0) {
@@ -735,6 +779,69 @@ export async function performPlaylistMutation(
     }
 
     logPlaylistMutationStep("Playlist mutation completed", {
+      traceId,
+      state,
+      body,
+    });
+    return json({ ok: true });
+  }
+
+  if (body.action === "setBotChannelEnabled") {
+    const previousEnabled = !!state.settings?.botChannelEnabled;
+
+    if (previousEnabled === body.enabled) {
+      logPlaylistMutationStep("Playlist bot toggle skipped; state unchanged", {
+        traceId,
+        state,
+        body,
+      });
+      return json({ ok: true });
+    }
+
+    await updateChannelBotEnabled(runtimeEnv, state.channel.id, body.enabled);
+
+    try {
+      await callBackend(runtimeEnv, "/internal/bot/reconcile", {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({
+          channelId: state.channel.id,
+          refreshLiveState: true,
+        }),
+      });
+    } catch (error) {
+      await updateChannelBotEnabled(
+        runtimeEnv,
+        state.channel.id,
+        previousEnabled
+      );
+      throw error;
+    }
+
+    try {
+      await createAuditLog(runtimeEnv, {
+        channelId: state.channel.id,
+        actorUserId: state.actorUserId,
+        actorType: "owner",
+        action: body.enabled ? "enable_channel_bot" : "disable_channel_bot",
+        entityType: "channel_settings",
+        entityId: state.channel.id,
+        payloadJson: JSON.stringify({
+          enabled: body.enabled,
+        }),
+      });
+    } catch (error) {
+      console.error("Failed to write bot toggle audit log", {
+        channelId: state.channel.id,
+        actorUserId: state.actorUserId,
+        enabled: body.enabled,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+
+    logPlaylistMutationStep("Playlist bot toggle completed", {
       traceId,
       state,
       body,

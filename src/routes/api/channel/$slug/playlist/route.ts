@@ -12,6 +12,7 @@ import {
 } from "~/lib/db/repositories";
 import { playedSongs, setlistArtists } from "~/lib/db/schema";
 import type { AppEnv } from "~/lib/env";
+import { getAllowedRequestPathsSetting } from "~/lib/request-policy";
 import {
   canManageChannelBlacklist,
   canManageChannelBlockedChatters,
@@ -55,11 +56,19 @@ export const Route = createFileRoute("/api/channel/$slug/playlist")({
             const canManageBlockedChatters =
               canManageChannelBlockedChatters(managementState);
             const canViewVipTokens = canViewChannelVipTokens(managementState);
+            const allowedRequestPaths = getAllowedRequestPathsSetting(
+              managementState.settings ?? {
+                allowRequestPathModifiers: false,
+                allowedRequestPathsJson: "[]",
+              }
+            );
 
             return json({
               ...getPlaylistManagementResponseBody(managementState),
               blocks: canManageBlockedChatters ? managementState.blocks : [],
               settings: {
+                botChannelEnabled:
+                  managementState.settings?.botChannelEnabled ?? false,
                 requestsEnabled:
                   managementState.settings?.requestsEnabled ?? true,
                 blacklistEnabled:
@@ -71,6 +80,14 @@ export const Route = createFileRoute("/api/channel/$slug/playlist")({
                 subscribersMustFollowSetlist:
                   managementState.settings?.subscribersMustFollowSetlist ??
                   false,
+                allowRequestPathModifiers: allowedRequestPaths.length > 0,
+                allowedRequestPaths,
+                requestPathModifierVipTokenCost:
+                  managementState.settings?.requestPathModifierVipTokenCost ??
+                  0,
+                requestPathModifierUsesVipPriority:
+                  managementState.settings
+                    ?.requestPathModifierUsesVipPriority ?? true,
                 requiredPathsJson:
                   managementState.settings?.requiredPathsJson ?? "[]",
                 vipTokenDurationThresholdsJson:
@@ -142,11 +159,18 @@ export const Route = createFileRoute("/api/channel/$slug/playlist")({
                 orderBy: [asc(setlistArtists.artistName)],
               }),
             ]);
+          const allowedRequestPaths = getAllowedRequestPathsSetting(
+            settings ?? {
+              allowRequestPathModifiers: false,
+              allowedRequestPathsJson: "[]",
+            }
+          );
 
           return json({
             channel,
             accessRole: sessionUserId ? "viewer" : "anonymous",
             settings: {
+              botChannelEnabled: settings?.botChannelEnabled ?? false,
               requestsEnabled: settings?.requestsEnabled ?? true,
               blacklistEnabled: settings?.blacklistEnabled ?? false,
               setlistEnabled: settings?.setlistEnabled ?? false,
@@ -154,6 +178,12 @@ export const Route = createFileRoute("/api/channel/$slug/playlist")({
                 settings?.letSetlistBypassBlacklist ?? false,
               subscribersMustFollowSetlist:
                 settings?.subscribersMustFollowSetlist ?? false,
+              allowRequestPathModifiers: allowedRequestPaths.length > 0,
+              allowedRequestPaths,
+              requestPathModifierVipTokenCost:
+                settings?.requestPathModifierVipTokenCost ?? 0,
+              requestPathModifierUsesVipPriority:
+                settings?.requestPathModifierUsesVipPriority ?? true,
               requiredPathsJson: settings?.requiredPathsJson ?? "[]",
               vipTokenDurationThresholdsJson:
                 settings?.vipTokenDurationThresholdsJson ?? "[]",

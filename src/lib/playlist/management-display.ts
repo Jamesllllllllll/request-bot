@@ -23,6 +23,7 @@ export type PlaylistManagementDisplayItem = {
   candidateMatchesJson?: string;
   songGroupedProjectId?: number | null;
   songCatalogSourceId?: number | null;
+  songCharterId?: number | null;
   songTitle: string;
   songArtist?: string;
   songAlbum?: string;
@@ -91,6 +92,7 @@ export function getResolvedPlaylistCandidates(
     {
       id: item.id,
       groupedProjectId: item.songGroupedProjectId ?? undefined,
+      authorId: item.songCharterId ?? undefined,
       title: item.songTitle,
       artist: item.songArtist,
       album: item.songAlbum,

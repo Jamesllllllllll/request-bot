@@ -46,7 +46,12 @@
     "editBannerLabel": "Modification de la demande",
     "editBannerDescription": "Recherchez une chanson ou utilisez les boutons de demande ci-dessous.",
     "removeConfirm": "Supprimer la demande ?",
-    "removeFromPlaylistConfirm": "Retirer de la playlist ?"
+    "removeFromPlaylistConfirm": "Retirer de la playlist ?",
+    "choosePath": "Partie",
+    "noPathPreference": "Aucune preference de partie",
+    "requestRequiresVip": "Necessite {count}.",
+    "pathRequiresVip": "{path} necessite {count}.",
+    "pathCostsVipTokens": "{path} coute {count}."
   },
   "queue": {
     "tab": "Playlist",
@@ -86,11 +91,15 @@
   },
   "buttons": {
     "add": "Ajouter",
+    "addWithCost": "Ajouter ({count})",
     "adding": "Ajout...",
     "edit": "Modifier",
+    "editWithCost": "Modifier ({count})",
     "editing": "Modification...",
     "vip": "VIP",
     "editVip": "Modifier VIP",
+    "vipWithCost": "VIP ({count})",
+    "editVipWithCost": "Modifier VIP ({count})",
     "cancel": "Annuler"
   },
   "playlistItem": {

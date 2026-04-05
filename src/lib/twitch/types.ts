@@ -87,6 +87,32 @@ export interface TwitchBroadcasterSubscriptionsResponse {
   total?: number;
 }
 
+export interface TwitchChatBadgeReference {
+  set_id: string;
+  id: string;
+  info?: string;
+}
+
+export interface TwitchChatBadgeVersion {
+  id: string;
+  image_url_1x: string;
+  image_url_2x: string;
+  image_url_4x: string;
+  title: string;
+  description: string;
+  click_action?: string | null;
+  click_url?: string | null;
+}
+
+export interface TwitchChatBadgeSet {
+  set_id: string;
+  versions: TwitchChatBadgeVersion[];
+}
+
+export interface TwitchChatBadgesResponse {
+  data: TwitchChatBadgeSet[];
+}
+
 export interface EventSubChatMessageEvent {
   broadcaster_user_id: string;
   broadcaster_user_login: string;
@@ -98,11 +124,7 @@ export interface EventSubChatMessageEvent {
   message: {
     text: string;
   };
-  badges?: Array<{
-    set_id: string;
-    id: string;
-    info?: string;
-  }>;
+  badges?: TwitchChatBadgeReference[];
 }
 
 export interface EventSubStreamOnlineEvent {

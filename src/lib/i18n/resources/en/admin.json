@@ -10,6 +10,7 @@
   "states": {
     "offlineTestingFailed": "Offline testing setting could not be updated.",
     "botUpdateFailed": "Bot account could not be updated.",
+    "chatSubscriptionCleanupFailed": "Chat subscriptions could not be cleaned up.",
     "updated": "Updated."
   },
   "status": {
@@ -22,6 +23,8 @@
     "connectBot": "Connect {username}",
     "reconnectBot": "Reconnect bot",
     "reconnecting": "Reconnecting...",
+    "cleanupCurrentCallback": "Clean up current callback",
+    "cleaningUp": "Cleaning up...",
     "enable": "Enable",
     "enabling": "Enabling...",
     "disable": "Disable",
@@ -35,6 +38,38 @@
     "auditRows": {
       "label": "Audit rows total",
       "description": "Recorded admin and channel-management actions."
+    },
+    "botChatChannels": {
+      "label": "Bot chat channels",
+      "description": "Channels that currently have a live bot chat subscription."
+    },
+    "chatSubscriptions": {
+      "label": "Chat subscriptions",
+      "description": "Live Twitch chat subscriptions connected to the bot."
+    },
+    "duplicateChatChannels": {
+      "label": "Duplicate chat channels",
+      "description": "Channels that currently have more than one live chat subscription."
+    }
+  },
+  "eventSub": {
+    "title": "Live bot subscriptions",
+    "description": "Shows the current Twitch chat subscriptions for the bot account so duplicate subscriptions are easy to spot.",
+    "currentCallback": "Current callback: {callback}",
+    "currentBotUserId": "Current bot user ID: {userId}",
+    "empty": "No live bot chat subscriptions were found.",
+    "duplicateWarning": "More than one chat subscription is active for this channel.",
+    "cleanupHelpCurrent": "This cleanup removes stale subscriptions for the current callback URL only.",
+    "cleanupHelpOther": "This row only has other callback URLs. Current-callback cleanup will not remove them.",
+    "currentBotMatch": "Uses current bot user ID: {matchesCurrentBotUserId}",
+    "columns": {
+      "channel": "Channel",
+      "chatSubscriptions": "Chat subs",
+      "totalSubscriptions": "Total subs",
+      "chatSubscriptionIds": "Chat subscription IDs",
+      "chatBotUserIds": "Chat bot user IDs",
+      "chatCallbacks": "Chat callbacks",
+      "actions": "Actions"
     }
   },
   "offlineTesting": {

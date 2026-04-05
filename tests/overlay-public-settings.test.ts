@@ -5,6 +5,7 @@ describe("toPublicOverlaySettings", () => {
   it("returns only overlay-safe public settings", () => {
     const result = toPublicOverlaySettings({
       showPickOrderBadges: true,
+      overlayShowTitle: true,
       overlayShowCreator: true,
       overlayShowAlbum: false,
       overlayAnimateNowPlaying: true,
@@ -27,6 +28,7 @@ describe("toPublicOverlaySettings", () => {
 
     expect(result).toEqual({
       showPickOrderBadges: true,
+      overlayShowTitle: true,
       overlayShowCreator: true,
       overlayShowAlbum: false,
       overlayAnimateNowPlaying: true,

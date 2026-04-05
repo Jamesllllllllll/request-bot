@@ -12,6 +12,7 @@ import type {
   EventSubSubscriptionMessageEvent,
   TwitchBroadcasterSubscriptionsResponse,
   TwitchChannelSearchResponse,
+  TwitchChatBadgesResponse,
   TwitchChattersResponse,
   TwitchCustomRewardsResponse,
   TwitchEventSubCreateResponse,
@@ -335,6 +336,56 @@ export async function getChatters(input: {
   }
 
   return (await response.json()) as TwitchChattersResponse;
+}
+
+export async function getChannelChatBadges(input: {
+  env: AppEnv;
+  accessToken: string;
+  broadcasterUserId: string;
+}) {
+  const url = new URL(`${twitchBaseUrl}/chat/badges`);
+  url.searchParams.set("broadcaster_id", input.broadcasterUserId);
+
+  const response = await fetchWithRetry({
+    url,
+    init: {
+      headers: authHeaders(input.env, input.accessToken),
+    },
+  });
+
+  if (!response.ok) {
+    const errorBody = await response.text().catch(() => "");
+    throw new TwitchApiError(
+      `Failed to fetch channel chat badges: ${response.status}`,
+      response.status,
+      errorBody
+    );
+  }
+
+  return (await response.json()) as TwitchChatBadgesResponse;
+}
+
+export async function getGlobalChatBadges(input: {
+  env: AppEnv;
+  accessToken: string;
+}) {
+  const response = await fetchWithRetry({
+    url: `${twitchBaseUrl}/chat/badges/global`,
+    init: {
+      headers: authHeaders(input.env, input.accessToken),
+    },
+  });
+
+  if (!response.ok) {
+    const errorBody = await response.text().catch(() => "");
+    throw new TwitchApiError(
+      `Failed to fetch global chat badges: ${response.status}`,
+      response.status,
+      errorBody
+    );
+  }
+
+  return (await response.json()) as TwitchChatBadgesResponse;
 }
 
 export async function getBroadcasterSubscriptions(input: {

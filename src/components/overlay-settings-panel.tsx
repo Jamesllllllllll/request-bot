@@ -5,6 +5,16 @@ import {
   StreamOverlay,
   type StreamOverlayTheme,
 } from "~/components/stream-overlay";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "~/components/ui/alert-dialog";
 import { Button } from "~/components/ui/button";
 import {
   Card,
@@ -65,6 +75,7 @@ type ChannelPlaylistPreviewResponse = {
 };
 
 const defaultOverlayForm: OverlaySettingsInputData = {
+  overlayShowTitle: true,
   overlayShowCreator: false,
   overlayShowAlbum: false,
   overlayAnimateNowPlaying: true,
@@ -366,6 +377,11 @@ export function OverlaySettingsPanel() {
               </CardHeader>
               <CardContent className="overflow-hidden border border-(--border) p-0">
                 <ToggleRow
+                  label={t("overlay.layout.showPlaylistTitle")}
+                  checked={form.overlayShowTitle}
+                  onChange={(value) => setBoolean("overlayShowTitle", value)}
+                />
+                <ToggleRow
                   label={t("overlay.layout.showCreator")}
                   checked={form.overlayShowCreator}
                   onChange={(value) => setBoolean("overlayShowCreator", value)}
@@ -423,6 +439,15 @@ export function OverlaySettingsPanel() {
                     setColor("overlayBackgroundColor", value)
                   }
                 />
+                <RangeField
+                  label={t("overlay.sizing.backgroundOpacity")}
+                  min={0}
+                  max={100}
+                  value={form.overlayBackgroundOpacity}
+                  onChange={(value) =>
+                    setNumber("overlayBackgroundOpacity", value)
+                  }
+                />
                 <ColorField
                   label={t("overlay.theme.border")}
                   value={form.overlayBorderColor}
@@ -436,16 +461,6 @@ export function OverlaySettingsPanel() {
                 <CardTitle>{t("overlay.sizing.title")}</CardTitle>
               </CardHeader>
               <CardContent className="overflow-hidden border border-(--border) p-0">
-                <RangeField
-                  label={t("overlay.sizing.backgroundOpacity")}
-                  description={t("overlay.sizing.backgroundOpacityHelp")}
-                  min={0}
-                  max={100}
-                  value={form.overlayBackgroundOpacity}
-                  onChange={(value) =>
-                    setNumber("overlayBackgroundOpacity", value)
-                  }
-                />
                 <RangeField
                   label={t("overlay.sizing.cornerRadius")}
                   min={0}
@@ -570,29 +585,24 @@ export function OverlaySettingsPanel() {
         </div>
       </CardContent>
 
-      {showRestoreDialog ? (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4">
-          <div className="w-full max-w-md border border-(--border-strong) bg-(--panel-strong) p-6 shadow-(--shadow)">
-            <h2 className="text-2xl font-semibold text-(--text)">
+      <AlertDialog open={showRestoreDialog} onOpenChange={setShowRestoreDialog}>
+        <AlertDialogContent className="bg-(--panel)">
+          <AlertDialogHeader>
+            <AlertDialogTitle>
               {t("overlay.restoreDialog.title")}
-            </h2>
-            <p className="mt-3 text-sm leading-7 text-(--muted)">
+            </AlertDialogTitle>
+            <AlertDialogDescription>
               {t("overlay.restoreDialog.description")}
-            </p>
-            <div className="mt-6 flex justify-end gap-3">
-              <Button
-                variant="outline"
-                onClick={() => setShowRestoreDialog(false)}
-              >
-                {t("overlay.actions.cancel")}
-              </Button>
-              <Button variant="default" onClick={restoreDefaults}>
-                {t("overlay.restoreDialog.confirm")}
-              </Button>
-            </div>
-          </div>
-        </div>
-      ) : null}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>{t("overlay.actions.cancel")}</AlertDialogCancel>
+            <AlertDialogAction onClick={restoreDefaults}>
+              {t("overlay.restoreDialog.confirm")}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </Card>
   );
 }

@@ -30,9 +30,13 @@ export function BlacklistPanel(props: {
   charters?: BlacklistedCharterItem[];
   songs: BlacklistedSongItem[];
   songGroups?: BlacklistedSongGroupItem[];
+  showCharters?: boolean;
+  showVersions?: boolean;
   collapsible?: boolean;
   defaultOpen?: boolean;
 }) {
+  const showCharters = props.showCharters !== false;
+  const showVersions = props.showVersions !== false;
   const content = (
     <CardContent className="grid items-start gap-6 lg:grid-cols-2">
       <div className="grid content-start gap-3 self-start">
@@ -86,56 +90,60 @@ export function BlacklistPanel(props: {
         )}
       </div>
 
-      <div className="grid content-start gap-3 self-start">
-        <p className="text-xs font-semibold uppercase tracking-[0.18em] text-(--muted)">
-          Versions
-        </p>
-        {props.songs.length > 0 ? (
-          <div className="overflow-hidden border border-(--border)">
-            {props.songs.map((song, index) => (
-              <div
-                key={song.songId}
-                className={`px-4 py-2.5 text-sm ${
-                  index % 2 === 0 ? "bg-(--panel-soft)" : "bg-(--panel-muted)"
-                }`}
-              >
-                <p className="truncate text-(--text)">
-                  {song.artistName
-                    ? `${song.songTitle} - ${song.artistName}`
-                    : song.songTitle}{" "}
-                  ({song.songId})
-                </p>
-              </div>
-            ))}
-          </div>
-        ) : (
-          <p className="text-sm text-(--muted)">No blacklisted versions.</p>
-        )}
-      </div>
+      {showVersions ? (
+        <div className="grid content-start gap-3 self-start">
+          <p className="text-xs font-semibold uppercase tracking-[0.18em] text-(--muted)">
+            Versions
+          </p>
+          {props.songs.length > 0 ? (
+            <div className="overflow-hidden border border-(--border)">
+              {props.songs.map((song, index) => (
+                <div
+                  key={song.songId}
+                  className={`px-4 py-2.5 text-sm ${
+                    index % 2 === 0 ? "bg-(--panel-soft)" : "bg-(--panel-muted)"
+                  }`}
+                >
+                  <p className="truncate text-(--text)">
+                    {song.artistName
+                      ? `${song.songTitle} - ${song.artistName}`
+                      : song.songTitle}{" "}
+                    ({song.songId})
+                  </p>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p className="text-sm text-(--muted)">No blacklisted versions.</p>
+          )}
+        </div>
+      ) : null}
 
-      <div className="grid content-start gap-3 self-start">
-        <p className="text-xs font-semibold uppercase tracking-[0.18em] text-(--muted)">
-          Charters
-        </p>
-        {props.charters?.length ? (
-          <div className="overflow-hidden border border-(--border)">
-            {props.charters.map((charter, index) => (
-              <div
-                key={charter.charterId}
-                className={`px-4 py-2.5 text-sm ${
-                  index % 2 === 0 ? "bg-(--panel-soft)" : "bg-(--panel-muted)"
-                }`}
-              >
-                <p className="truncate text-(--text)">
-                  {charter.charterName} ({charter.charterId})
-                </p>
-              </div>
-            ))}
-          </div>
-        ) : (
-          <p className="text-sm text-(--muted)">No blacklisted charters.</p>
-        )}
-      </div>
+      {showCharters ? (
+        <div className="grid content-start gap-3 self-start">
+          <p className="text-xs font-semibold uppercase tracking-[0.18em] text-(--muted)">
+            Charters
+          </p>
+          {props.charters?.length ? (
+            <div className="overflow-hidden border border-(--border)">
+              {props.charters.map((charter, index) => (
+                <div
+                  key={charter.charterId}
+                  className={`px-4 py-2.5 text-sm ${
+                    index % 2 === 0 ? "bg-(--panel-soft)" : "bg-(--panel-muted)"
+                  }`}
+                >
+                  <p className="truncate text-(--text)">
+                    {charter.charterName} ({charter.charterId})
+                  </p>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p className="text-sm text-(--muted)">No blacklisted charters.</p>
+          )}
+        </div>
+      ) : null}
     </CardContent>
   );
 

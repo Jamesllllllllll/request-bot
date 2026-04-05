@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { pathOptions, tuningOptions } from "./channel-options";
 import { supportedLocales } from "./i18n/locales";
+import { requestPathModifierOptions } from "./request-policy";
 import { defaultChannelPointRewardCost } from "./twitch/channel-point-rewards";
 
 const searchSortSchema = z.enum([
@@ -201,6 +202,11 @@ export const settingsInputSchema = z
     autoGrantVipTokensForRaiders: z.boolean(),
     autoGrantVipTokensForStreamElementsTips: z.boolean(),
     allowRequestPathModifiers: z.boolean(),
+    allowedRequestPaths: z
+      .array(z.enum(requestPathModifierOptions))
+      .max(requestPathModifierOptions.length),
+    requestPathModifierVipTokenCost: z.number().int().min(0).max(100),
+    requestPathModifierUsesVipPriority: z.boolean(),
     cheerBitsPerVipToken: z.number().int().min(1).max(100_000),
     channelPointRewardCost: z
       .number()
@@ -273,6 +279,7 @@ export const settingsInputSchema = z
 export type SettingsInputData = z.infer<typeof settingsInputSchema>;
 
 export const overlaySettingsInputSchema = z.object({
+  overlayShowTitle: z.boolean(),
   overlayShowCreator: z.boolean(),
   overlayShowAlbum: z.boolean(),
   overlayAnimateNowPlaying: z.boolean(),
@@ -347,8 +354,15 @@ export const playlistMutationSchema = z.discriminatedUnion("action", [
   }),
   z.object({ action: z.literal("clearPlaylist") }),
   z.object({ action: z.literal("resetSession") }),
+  z.object({
+    action: z.literal("setBotChannelEnabled"),
+    enabled: z.boolean(),
+  }),
   z.object({ action: z.literal("shuffleNext") }),
-  z.object({ action: z.literal("shufflePlaylist") }),
+  z.object({
+    action: z.literal("shufflePlaylist"),
+    keepVipAtTop: z.boolean().optional(),
+  }),
   z.object({
     action: z.literal("reorderItems"),
     orderedItemIds: z.array(z.string()).min(1),
@@ -381,6 +395,7 @@ const viewerSubmitCatalogSchema = z.object({
   requestMode: z.literal("catalog").optional(),
   requestKind: z.enum(["regular", "vip"]),
   vipTokenCost: vipTokenCostSchema.optional(),
+  requestedPath: z.enum(requestPathModifierOptions).optional(),
   replaceExisting: z.boolean().optional().default(false),
   itemId: z.string().trim().min(1).max(80).optional(),
 });
@@ -419,6 +434,7 @@ export const extensionSubmitRequestSchema = z.union([
     requestMode: z.literal("catalog").optional(),
     requestKind: z.enum(["regular", "vip"]),
     vipTokenCost: vipTokenCostSchema.optional(),
+    requestedPath: z.enum(requestPathModifierOptions).optional(),
     itemId: z.string().trim().min(1).max(80).optional(),
   }),
   z.object({
@@ -480,6 +496,7 @@ export const extensionPlaylistMutationSchema = z.discriminatedUnion("action", [
   }),
   z.object({
     action: z.literal("shufflePlaylist"),
+    keepVipAtTop: z.boolean().optional(),
   }),
   z.object({
     action: z.literal("reorderItems"),

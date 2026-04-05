@@ -815,7 +815,9 @@ export function SongSearchPanel(props: {
                 variant="secondary"
                 onClick={() => setShowAdvanced((current) => !current)}
               >
-                <SlidersHorizontal className="h-4 w-4" />
+                <span className="inline-flex h-4 w-4 shrink-0 items-center justify-center">
+                  <SlidersHorizontal className="h-3.5 w-3.5" />
+                </span>
                 {showAdvanced
                   ? t("controls.hideFilters")
                   : t("controls.showFilters")}

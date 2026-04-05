@@ -6,11 +6,11 @@ type PickOrderBadgeVariant = "public" | "overlay" | "panel";
 
 const variantClassNames: Record<PickOrderBadgeVariant, string> = {
   public:
-    "inline-flex items-center border border-transparent px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.16em] text-white",
+    "inline-flex items-center rounded-[3px] px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.16em]",
   overlay:
-    "inline-flex items-center rounded-full px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.18em] text-white",
+    "inline-flex items-center rounded-[3px] px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.18em]",
   panel:
-    "inline-flex items-center rounded-full px-1.5 py-0.5 text-[8px] leading-none font-semibold uppercase tracking-[0.12em] text-white",
+    "inline-flex items-center rounded-[3px] px-1.5 py-0.5 text-[8px] leading-none font-semibold uppercase tracking-[0.12em]",
 };
 
 export function PickOrderBadge(props: {
@@ -31,7 +31,10 @@ export function PickOrderBadge(props: {
   return (
     <span
       className={cn(variantClassNames[variant], props.className)}
-      style={{ background: appearance.background }}
+      style={{
+        background: appearance.background,
+        color: appearance.color,
+      }}
     >
       {label}
     </span>

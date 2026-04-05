@@ -1,5 +1,6 @@
 export type PublicOverlaySettings = {
   showPickOrderBadges: boolean;
+  overlayShowTitle: boolean;
   overlayShowCreator: boolean;
   overlayShowAlbum: boolean;
   overlayAnimateNowPlaying: boolean;
@@ -23,6 +24,7 @@ export function toPublicOverlaySettings(
 ) {
   return {
     showPickOrderBadges: settings.showPickOrderBadges,
+    overlayShowTitle: settings.overlayShowTitle,
     overlayShowCreator: settings.overlayShowCreator,
     overlayShowAlbum: settings.overlayShowAlbum,
     overlayAnimateNowPlaying: settings.overlayAnimateNowPlaying,

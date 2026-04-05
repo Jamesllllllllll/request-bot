@@ -5,6 +5,8 @@ import { ChevronDown, Copy } from "lucide-react";
 import { type ReactNode, useEffect, useId, useState } from "react";
 import { DashboardPageHeader } from "~/components/dashboard-page-header";
 import { OverlaySettingsPanel } from "~/components/overlay-settings-panel";
+import { PickOrderBadge } from "~/components/pick-order-badge";
+import { StatusToggleBadge } from "~/components/status-toggle-badge";
 import { TranslationHelpButton } from "~/components/translation-help-button";
 import { Badge } from "~/components/ui/badge";
 import { Button } from "~/components/ui/button";
@@ -40,11 +42,17 @@ import {
   SelectValue,
 } from "~/components/ui/select";
 import { getBotStatusKey } from "~/lib/bot-status";
+import { buildChannelInstructions } from "~/lib/channel-instructions";
 import { pathOptions, tuningOptions } from "~/lib/channel-options";
 import { useAppLocale, useLocaleTranslation } from "~/lib/i18n/client";
 import { formatNumber } from "~/lib/i18n/format";
 import { defaultLocale, localeOptions } from "~/lib/i18n/locales";
 import { getLocalizedPageTitle } from "~/lib/i18n/metadata";
+import {
+  legacyRequestPathModifierOptions,
+  normalizeAllowedRequestPaths,
+} from "~/lib/request-policy";
+import { requestPathOptions } from "~/lib/requested-paths";
 import { DEFAULT_MAX_QUEUE_SIZE } from "~/lib/settings-defaults";
 import { buildStreamElementsTipRelayCode } from "~/lib/streamelements/instructions";
 import type { ChannelPointRewardEligibility } from "~/lib/twitch/channel-point-reward-eligibility";
@@ -58,6 +66,7 @@ import type { SettingsInputData } from "~/lib/validation";
 import { viewerSessionQueryOptions } from "~/lib/viewer-session-query";
 import {
   formatVipDurationThresholdMinutes,
+  getNextVipTokenDurationThreshold,
   normalizeVipTokenDurationThresholds,
 } from "~/lib/vip-token-duration-thresholds";
 
@@ -131,6 +140,7 @@ const defaultForm: DashboardSettingsFormData = {
   allowVipsToRequest: true,
   onlyOfficialDlc: false,
   allowedTunings: allTuningOptions,
+  allowedRequestPaths: [],
   requiredPaths: [],
   requiredPathsMatchMode: "any",
   maxQueueSize: DEFAULT_MAX_QUEUE_SIZE,
@@ -159,6 +169,8 @@ const defaultForm: DashboardSettingsFormData = {
   autoGrantVipTokensForRaiders: false,
   autoGrantVipTokensForStreamElementsTips: false,
   allowRequestPathModifiers: false,
+  requestPathModifierVipTokenCost: 0,
+  requestPathModifierUsesVipPriority: true,
   cheerBitsPerVipToken: 200,
   channelPointRewardCost: defaultChannelPointRewardCost,
   vipTokenDurationThresholds: [],
@@ -181,6 +193,9 @@ const twitchExtensionBetaUserIds = new Set([
   "26914244",
   "44932690",
   "49572641",
+  "25316876",
+  "47941327",
+  "78546479",
 ]);
 
 export const Route = createFileRoute("/dashboard/settings")({
@@ -200,6 +215,7 @@ export const Route = createFileRoute("/dashboard/settings")({
 function DashboardSettingsPage() {
   const { t } = useLocaleTranslation("dashboard");
   const { t: tBot } = useLocaleTranslation("bot");
+  const { t: tPlaylist } = useLocaleTranslation("playlist");
   const { locale } = useAppLocale();
   const queryClient = useQueryClient();
   const cachedSettingsData = queryClient.getQueryData<DashboardSettingsData>([
@@ -210,6 +226,8 @@ function DashboardSettingsPage() {
   const [savedIndicatorPhase, setSavedIndicatorPhase] = useState<
     "hidden" | "visible" | "fading"
   >("hidden");
+  const [channelInstructionsCopied, setChannelInstructionsCopied] =
+    useState(false);
   const [relayUrlCopied, setRelayUrlCopied] = useState(false);
   const sessionQuery = useQuery<ViewerSessionData>({
     queryKey: ["viewer-session"],
@@ -425,7 +443,7 @@ function DashboardSettingsPage() {
       ? cheerMinimumBits / form.cheerBitsPerVipToken
       : 0;
 
-  function toggleArrayValue(list: string[], value: string) {
+  function toggleArrayValue<T extends string>(list: T[], value: T) {
     return list.includes(value)
       ? list.filter((entry) => entry !== value)
       : [...list, value];
@@ -436,6 +454,20 @@ function DashboardSettingsPage() {
       ...current,
       allowedTunings: toggleArrayValue(current.allowedTunings, tuning),
     }));
+  }
+
+  function toggleAllowedRequestPath(path: (typeof requestPathOptions)[number]) {
+    setForm((current) => {
+      const nextAllowedRequestPaths = toggleArrayValue(
+        current.allowedRequestPaths,
+        path
+      );
+
+      return {
+        ...current,
+        allowedRequestPaths: nextAllowedRequestPaths,
+      };
+    });
   }
 
   function setBoolean<K extends keyof DashboardSettingsFormData>(
@@ -466,8 +498,7 @@ function DashboardSettingsPage() {
   ) {
     setForm((current) => ({
       ...current,
-      vipTokenDurationThresholds:
-        normalizeVipTokenDurationThresholds(nextThresholds),
+      vipTokenDurationThresholds: nextThresholds,
     }));
   }
 
@@ -494,10 +525,7 @@ function DashboardSettingsPage() {
   function addVipTokenDurationThreshold() {
     setVipTokenDurationThresholds([
       ...form.vipTokenDurationThresholds,
-      {
-        minimumDurationMinutes: 7,
-        tokenCost: form.vipTokenDurationThresholds.length + 1,
-      },
+      getNextVipTokenDurationThreshold(form.vipTokenDurationThresholds),
     ]);
   }
 
@@ -509,6 +537,13 @@ function DashboardSettingsPage() {
     );
   }
 
+  const channelInstructions = buildChannelInstructions({
+    channelSlug: viewer?.channel?.slug,
+    settings: form,
+    locale,
+    translate: t,
+  });
+
   async function copyRelayUrl() {
     if (!streamElementsTipRelayUrl) {
       return;
@@ -518,6 +553,14 @@ function DashboardSettingsPage() {
     setRelayUrlCopied(true);
     window.setTimeout(() => {
       setRelayUrlCopied(false);
+    }, 1500);
+  }
+
+  async function copyChannelInstructions() {
+    await navigator.clipboard.writeText(channelInstructions);
+    setChannelInstructionsCopied(true);
+    window.setTimeout(() => {
+      setChannelInstructionsCopied(false);
     }, 1500);
   }
 
@@ -726,7 +769,7 @@ function DashboardSettingsPage() {
                   {t("settings.sections.channelSetup.description")}
                 </CardDescription>
               </CardHeader>
-              <CardContent className="grid gap-4 lg:grid-cols-[minmax(0,1.1fr)_minmax(0,0.9fr)]">
+              <CardContent className="grid items-start gap-4 lg:grid-cols-[minmax(0,1.1fr)_minmax(0,0.9fr)]">
                 <div className="grid gap-4">
                   {status === "broadcaster_auth_required" ? (
                     <div className="border border-amber-500/30 bg-amber-500/10 p-4 text-sm text-amber-200">
@@ -741,31 +784,58 @@ function DashboardSettingsPage() {
                     </div>
                   ) : null}
                   <div className="grid gap-3 border border-(--border) bg-(--panel-soft) p-4">
-                    <h3 className="text-sm font-semibold text-(--text)">
+                    <h3 className="text-base font-semibold text-(--text)">
                       {t("settings.sections.channelSetup.mainToggles")}
                     </h3>
-                    <PermissionRow
-                      label={t("settings.sections.channelSetup.enableBot")}
-                      checked={form.botChannelEnabled}
-                      onChange={(value) =>
-                        setBoolean("botChannelEnabled", value)
-                      }
-                    />
-                    <div className="border border-dashed border-(--border) bg-(--panel-muted) p-3 text-sm leading-6 text-(--muted)">
-                      {t("settings.sections.channelSetup.enableBotHelp")}
+                    <div className="grid gap-3">
+                      <StatusToggleBadge
+                        enabled={form.botChannelEnabled}
+                        toneClassName={
+                          form.botChannelEnabled
+                            ? "border-emerald-500/35 bg-emerald-500/10 text-emerald-100"
+                            : "border-slate-400/30 bg-slate-500/10 text-slate-100"
+                        }
+                        enabledLabel={tPlaylist("management.bot.enabled")}
+                        disabledLabel={tPlaylist("management.bot.disabled")}
+                        toggleAriaLabel={tPlaylist("management.bot.toggleAria")}
+                        onToggle={() =>
+                          setBoolean(
+                            "botChannelEnabled",
+                            !form.botChannelEnabled
+                          )
+                        }
+                      />
+                      <div className="border border-dashed border-(--border) bg-(--panel-muted) p-3 text-sm leading-6 text-(--muted)">
+                        {t("settings.sections.channelSetup.enableBotHelp")}
+                      </div>
                     </div>
-                    <PermissionRow
-                      label={t("settings.sections.channelSetup.enableRequests")}
-                      checked={form.requestsEnabled}
-                      onChange={(value) => setBoolean("requestsEnabled", value)}
-                    />
-                    <div className="border border-dashed border-(--border) bg-(--panel-muted) p-3 text-sm leading-6 text-(--muted)">
-                      {t("settings.sections.channelSetup.enableRequestsHelp")}
+                    <div className="grid gap-3">
+                      <StatusToggleBadge
+                        enabled={form.requestsEnabled}
+                        toneClassName={
+                          form.requestsEnabled
+                            ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-100"
+                            : "border-rose-500/30 bg-rose-500/10 text-rose-100"
+                        }
+                        enabledLabel={tPlaylist("badges.requestsOn")}
+                        disabledLabel={tPlaylist("badges.requestsOff")}
+                        toggleAriaLabel={
+                          form.requestsEnabled
+                            ? tPlaylist("badges.turnRequestsOff")
+                            : tPlaylist("badges.turnRequestsOn")
+                        }
+                        onToggle={() =>
+                          setBoolean("requestsEnabled", !form.requestsEnabled)
+                        }
+                      />
+                      <div className="border border-dashed border-(--border) bg-(--panel-muted) p-3 text-sm leading-6 text-(--muted)">
+                        {t("settings.sections.channelSetup.enableRequestsHelp")}
+                      </div>
                     </div>
                   </div>
 
                   <div className="grid gap-3 border border-(--border) bg-(--panel-soft) p-4">
-                    <h3 className="text-sm font-semibold text-(--text)">
+                    <h3 className="text-base font-semibold text-(--text)">
                       {t("settings.sections.channelSetup.playlistDisplay")}
                     </h3>
                     <PermissionRow
@@ -784,10 +854,24 @@ function DashboardSettingsPage() {
                         setBoolean("showPickOrderBadges", value)
                       }
                     />
-                    <div className="border border-dashed border-(--border) bg-(--panel-muted) p-3 text-sm leading-6 text-(--muted)">
-                      {t(
-                        "settings.sections.channelSetup.showPickOrderBadgesHelp"
-                      )}
+                    <div className="flex flex-wrap items-center gap-2 border border-dashed border-(--border) bg-(--panel-muted) p-3 text-sm leading-6 text-(--muted)">
+                      <span>
+                        {t(
+                          "settings.sections.channelSetup.showPickOrderBadgesHelpBefore"
+                        )}
+                      </span>
+                      <PickOrderBadge pickNumber={1} className="shrink-0" />
+                      <span>
+                        {t(
+                          "settings.sections.channelSetup.showPickOrderBadgesHelpBetween"
+                        )}
+                      </span>
+                      <PickOrderBadge pickNumber={2} className="shrink-0" />
+                      <span>
+                        {t(
+                          "settings.sections.channelSetup.showPickOrderBadgesHelpAfter"
+                        )}
+                      </span>
                     </div>
                   </div>
                 </div>
@@ -842,22 +926,6 @@ function DashboardSettingsPage() {
                         }
                       />
                     </div>
-                  </FieldBlock>
-                  <FieldBlock
-                    label={t("settings.sections.channelSetup.requestModifiers")}
-                    description={t(
-                      "settings.sections.channelSetup.requestModifiersHelp"
-                    )}
-                  >
-                    <PermissionRow
-                      label={t(
-                        "settings.sections.channelSetup.allowBassModifier"
-                      )}
-                      checked={form.allowRequestPathModifiers}
-                      onChange={(value) =>
-                        setBoolean("allowRequestPathModifiers", value)
-                      }
-                    />
                   </FieldBlock>
                   <FieldBlock
                     label={t(
@@ -933,6 +1001,114 @@ function DashboardSettingsPage() {
                   as="h2"
                   className="text-xl leading-tight md:text-2xl"
                 >
+                  {t("settings.sections.vipAutomation.songLength")}
+                </CardTitle>
+                <CardDescription>
+                  {t("settings.sections.vipAutomation.songLengthHelp")}
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="grid gap-4">
+                {form.vipTokenDurationThresholds.length > 0 ? (
+                  <div className="grid gap-3">
+                    {form.vipTokenDurationThresholds.map((threshold, index) => (
+                      <div
+                        key={index}
+                        className="grid gap-3 border border-(--border) bg-(--panel-soft) p-4"
+                      >
+                        <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto] md:items-end">
+                          <FieldBlock
+                            label={t(
+                              "settings.sections.vipAutomation.songLengthMinutes"
+                            )}
+                          >
+                            <Input
+                              type="number"
+                              min={0.01}
+                              max={600}
+                              step={0.25}
+                              value={threshold.minimumDurationMinutes}
+                              onChange={(event) =>
+                                updateVipTokenDurationThreshold(
+                                  index,
+                                  "minimumDurationMinutes",
+                                  Number(event.target.value)
+                                )
+                              }
+                            />
+                          </FieldBlock>
+                          <FieldBlock
+                            label={t(
+                              "settings.sections.vipAutomation.songLengthTokens"
+                            )}
+                          >
+                            <Input
+                              type="number"
+                              min={1}
+                              max={100}
+                              step={1}
+                              value={threshold.tokenCost}
+                              onChange={(event) =>
+                                updateVipTokenDurationThreshold(
+                                  index,
+                                  "tokenCost",
+                                  Number(event.target.value)
+                                )
+                              }
+                            />
+                          </FieldBlock>
+                          <Button
+                            type="button"
+                            variant="outline"
+                            onClick={() =>
+                              removeVipTokenDurationThreshold(index)
+                            }
+                          >
+                            {t(
+                              "settings.sections.vipAutomation.songLengthRemove"
+                            )}
+                          </Button>
+                        </div>
+                        <p className="text-sm leading-6 text-(--muted)">
+                          {t(
+                            "settings.sections.vipAutomation.songLengthExample",
+                            {
+                              minutes: formatVipDurationThresholdMinutes(
+                                threshold.minimumDurationMinutes
+                              ),
+                              count: threshold.tokenCost,
+                            }
+                          )}
+                        </p>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="border border-dashed border-(--border) bg-(--panel-muted) p-3 text-sm leading-6 text-(--muted)">
+                    {t("settings.sections.vipAutomation.songLengthEmpty")}
+                  </div>
+                )}
+                <div className="flex flex-wrap items-center justify-between gap-3 border border-dashed border-(--border) bg-(--panel-muted) p-3">
+                  <p className="text-sm leading-6 text-(--muted)">
+                    {t("settings.sections.vipAutomation.songLengthNote")}
+                  </p>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={addVipTokenDurationThreshold}
+                    disabled={form.vipTokenDurationThresholds.length >= 12}
+                  >
+                    {t("settings.sections.vipAutomation.songLengthAdd")}
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card className="dashboard-settings__section">
+              <CardHeader>
+                <CardTitle
+                  as="h2"
+                  className="text-xl leading-tight md:text-2xl"
+                >
                   {t("settings.sections.filters.title")}
                 </CardTitle>
                 <CardDescription>
@@ -940,6 +1116,154 @@ function DashboardSettingsPage() {
                 </CardDescription>
               </CardHeader>
               <CardContent className="grid gap-4">
+                <FilterSection
+                  title={t("settings.sections.filters.requiredPaths.title")}
+                  description={t(
+                    "settings.sections.filters.requiredPaths.description"
+                  )}
+                  open={requiredPathsOpen}
+                  onOpenChange={setRequiredPathsOpen}
+                  triggerSummary={pathSummary.triggerSummary}
+                >
+                  <div className="grid gap-4">
+                    <div className="flex flex-wrap gap-2">
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setForm((current) => ({
+                            ...current,
+                            requiredPathsMatchMode: "any",
+                          }))
+                        }
+                        className={`border px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.18em] transition-colors ${
+                          form.requiredPathsMatchMode === "any"
+                            ? "border-(--brand) bg-(--brand) text-white"
+                            : "border-(--border) bg-(--panel-muted) text-(--muted)"
+                        }`}
+                      >
+                        {t("settings.sections.filters.requiredPaths.matchAny")}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setForm((current) => ({
+                            ...current,
+                            requiredPathsMatchMode: "all",
+                          }))
+                        }
+                        className={`border px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.18em] transition-colors ${
+                          form.requiredPathsMatchMode === "all"
+                            ? "border-(--brand) bg-(--brand) text-white"
+                            : "border-(--border) bg-(--panel-muted) text-(--muted)"
+                        }`}
+                      >
+                        {t("settings.sections.filters.requiredPaths.matchAll")}
+                      </button>
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      {pathOptions.map((option) => {
+                        const isSelected = form.requiredPaths.includes(option);
+
+                        return (
+                          <button
+                            key={option}
+                            type="button"
+                            onClick={() =>
+                              setForm((current) => ({
+                                ...current,
+                                requiredPaths: toggleArrayValue(
+                                  current.requiredPaths,
+                                  option
+                                ),
+                              }))
+                            }
+                            aria-pressed={isSelected}
+                            className={`border px-2.5 py-1 text-xs font-semibold uppercase tracking-[0.16em] transition-colors ${
+                              isSelected
+                                ? getPathBadgeTone(option)
+                                : "border-(--border) bg-(--panel-muted) text-(--muted)"
+                            }`}
+                          >
+                            {formatPathOptionLabel(t, option)}
+                          </button>
+                        );
+                      })}
+                    </div>
+                    <div className="grid gap-2 border border-(--border) bg-(--panel-muted) p-3">
+                      <p className="text-sm font-medium text-(--text)">
+                        {pathSummary.summary}
+                      </p>
+                      {pathSummary.matchExample ||
+                      pathSummary.nonMatchExample ? (
+                        <div className="grid gap-1 text-sm leading-6 text-(--muted)">
+                          {pathSummary.matchExample ? (
+                            <p>{pathSummary.matchExample}</p>
+                          ) : null}
+                          {pathSummary.nonMatchExample ? (
+                            <p>{pathSummary.nonMatchExample}</p>
+                          ) : null}
+                        </div>
+                      ) : null}
+                    </div>
+                  </div>
+                </FilterSection>
+
+                <FilterSection
+                  title={t("settings.sections.filters.allowedTunings.title")}
+                  description={t(
+                    "settings.sections.filters.allowedTunings.description"
+                  )}
+                  open={allowedTuningsOpen}
+                  onOpenChange={setAllowedTuningsOpen}
+                >
+                  <div className="flex flex-wrap items-start justify-between gap-4">
+                    <div className="min-w-0 flex-1 grid gap-4">
+                      {groupTuningOptions(t, tuningOptions).map((group) => (
+                        <div key={group.label} className="grid gap-2">
+                          <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-(--muted)">
+                            {group.label}
+                          </p>
+                          <div className="flex flex-wrap gap-2">
+                            {group.options.map((option) => {
+                              const isSelected =
+                                form.allowedTunings.includes(option);
+
+                              return (
+                                <button
+                                  key={option}
+                                  type="button"
+                                  onClick={() => toggleAllowedTuning(option)}
+                                  aria-pressed={isSelected}
+                                  className={`border px-2.5 py-1.5 text-xs font-medium transition-colors ${
+                                    isSelected
+                                      ? "border-(--brand) bg-(--brand) text-white"
+                                      : "border-(--border) bg-(--panel-muted) text-(--muted)"
+                                  }`}
+                                >
+                                  {option}
+                                </button>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      className="shrink-0"
+                      onClick={() =>
+                        setForm((current) => ({
+                          ...current,
+                          allowedTunings: allTuningOptions,
+                        }))
+                      }
+                    >
+                      {t("settings.sections.filters.allowedTunings.allowAll")}
+                    </Button>
+                  </div>
+                </FilterSection>
+
                 <FilterSection
                   title={t("settings.sections.filters.officialDlc.title")}
                   description={t(
@@ -1021,147 +1345,131 @@ function DashboardSettingsPage() {
                     </div>
                   </div>
                 </FilterSection>
+              </CardContent>
+            </Card>
 
-                <FilterSection
-                  title={t("settings.sections.filters.allowedTunings.title")}
-                  description={t(
-                    "settings.sections.filters.allowedTunings.description"
-                  )}
-                  open={allowedTuningsOpen}
-                  onOpenChange={setAllowedTuningsOpen}
+            <Card className="dashboard-settings__section">
+              <CardHeader>
+                <CardTitle
+                  as="h2"
+                  className="text-xl leading-tight md:text-2xl"
                 >
-                  <div className="flex flex-wrap items-start justify-between gap-4">
-                    <div className="min-w-0 flex-1 grid gap-4">
-                      {groupTuningOptions(t, tuningOptions).map((group) => (
-                        <div key={group.label} className="grid gap-2">
-                          <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-(--muted)">
-                            {group.label}
-                          </p>
-                          <div className="flex flex-wrap gap-2">
-                            {group.options.map((option) => {
-                              const isSelected =
-                                form.allowedTunings.includes(option);
-
-                              return (
-                                <button
-                                  key={option}
-                                  type="button"
-                                  onClick={() => toggleAllowedTuning(option)}
-                                  aria-pressed={isSelected}
-                                  className={`border px-2.5 py-1.5 text-xs font-medium transition-colors ${
-                                    isSelected
-                                      ? "border-(--brand) bg-(--brand) text-white"
-                                      : "border-(--border) bg-(--panel-muted) text-(--muted)"
-                                  }`}
-                                >
-                                  {option}
-                                </button>
-                              );
-                            })}
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                    <Button
-                      type="button"
-                      variant="outline"
-                      className="shrink-0"
-                      onClick={() =>
-                        setForm((current) => ({
-                          ...current,
-                          allowedTunings: allTuningOptions,
-                        }))
-                      }
-                    >
-                      {t("settings.sections.filters.allowedTunings.allowAll")}
-                    </Button>
-                  </div>
-                </FilterSection>
-
-                <FilterSection
-                  title={t("settings.sections.filters.requiredPaths.title")}
-                  description={t(
-                    "settings.sections.filters.requiredPaths.description"
+                  {t("settings.sections.channelSetup.requestModifiers")}
+                </CardTitle>
+                <CardDescription>
+                  {t("settings.sections.channelSetup.requestModifiersHelp")}
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="grid gap-4">
+                <div className="grid gap-3 border border-(--border) bg-(--panel-muted) p-3 text-sm leading-6 text-(--muted)">
+                  <p>
+                    {t(
+                      "settings.sections.channelSetup.requestModifiersPreamble"
+                    )}
+                  </p>
+                </div>
+                <PermissionRow
+                  label={t(
+                    "settings.sections.channelSetup.requestModifiersToggle"
                   )}
-                  open={requiredPathsOpen}
-                  onOpenChange={setRequiredPathsOpen}
-                >
-                  <div className="grid gap-4">
-                    <div className="flex flex-wrap gap-2">
-                      <button
-                        type="button"
-                        onClick={() =>
-                          setForm((current) => ({
-                            ...current,
-                            requiredPathsMatchMode: "any",
-                          }))
-                        }
-                        className={`border px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.18em] transition-colors ${
-                          form.requiredPathsMatchMode === "any"
-                            ? "border-(--brand) bg-(--brand) text-white"
-                            : "border-(--border) bg-(--panel-muted) text-(--muted)"
-                        }`}
-                      >
-                        {t("settings.sections.filters.requiredPaths.matchAny")}
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() =>
-                          setForm((current) => ({
-                            ...current,
-                            requiredPathsMatchMode: "all",
-                          }))
-                        }
-                        className={`border px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.18em] transition-colors ${
-                          form.requiredPathsMatchMode === "all"
-                            ? "border-(--brand) bg-(--brand) text-white"
-                            : "border-(--border) bg-(--panel-muted) text-(--muted)"
-                        }`}
-                      >
-                        {t("settings.sections.filters.requiredPaths.matchAll")}
-                      </button>
-                    </div>
-                    <div className="flex flex-wrap gap-2">
-                      {pathOptions.map((option) => {
-                        const isSelected = form.requiredPaths.includes(option);
-
-                        return (
-                          <button
-                            key={option}
-                            type="button"
-                            onClick={() =>
-                              setForm((current) => ({
-                                ...current,
-                                requiredPaths: toggleArrayValue(
-                                  current.requiredPaths,
-                                  option
-                                ),
-                              }))
-                            }
-                            aria-pressed={isSelected}
-                            className={`border px-2.5 py-1 text-xs font-semibold uppercase tracking-[0.16em] transition-colors ${
-                              isSelected
-                                ? getPathBadgeTone(option)
-                                : "border-(--border) bg-(--panel-muted) text-(--muted)"
-                            }`}
-                          >
-                            {formatPathOptionLabel(t, option)}
-                          </button>
-                        );
-                      })}
-                    </div>
-                    <div className="grid gap-2 border border-(--border) bg-(--panel-muted) p-3">
-                      <p className="text-sm font-medium text-(--text)">
-                        {pathSummary.summary}
-                      </p>
-                      {pathSummary.example ? (
-                        <p className="text-sm leading-6 text-(--muted)">
-                          {pathSummary.example}
+                  checked={form.allowRequestPathModifiers}
+                  onChange={(value) =>
+                    setBoolean("allowRequestPathModifiers", value)
+                  }
+                />
+                {form.allowRequestPathModifiers ? (
+                  <>
+                    <div className="grid gap-3 border border-(--border) bg-(--panel-muted) p-3">
+                      <div className="grid gap-1">
+                        <p className="font-medium text-(--text)">
+                          {t(
+                            "settings.sections.channelSetup.allowedPathModifiers"
+                          )}
                         </p>
-                      ) : null}
+                        <p className="text-sm leading-6 text-(--muted)">
+                          {t(
+                            "settings.sections.channelSetup.allowedPathModifiersHelp"
+                          )}
+                        </p>
+                      </div>
+                      <div className="grid gap-2">
+                        {requestPathOptions.map((path) => (
+                          <PermissionRow
+                            key={path}
+                            label={t(
+                              `settings.sections.channelSetup.requestPathModifierOptions.${path}`
+                            )}
+                            description={
+                              path === "guitar"
+                                ? t(
+                                    "settings.sections.channelSetup.requestPathModifierGuitarTip"
+                                  )
+                                : undefined
+                            }
+                            checked={form.allowedRequestPaths.includes(path)}
+                            onChange={() => toggleAllowedRequestPath(path)}
+                          />
+                        ))}
+                      </div>
                     </div>
-                  </div>
-                </FilterSection>
+                    <div
+                      className={`grid gap-2 ${
+                        form.allowedRequestPaths.length === 0
+                          ? "opacity-60"
+                          : ""
+                      }`}
+                    >
+                      <div className="grid gap-1">
+                        <p className="font-medium text-(--text)">
+                          {t(
+                            "settings.sections.channelSetup.pathModifierVipTokenCost"
+                          )}
+                        </p>
+                        <p className="text-sm leading-6 text-(--muted)">
+                          {t(
+                            "settings.sections.channelSetup.pathModifierVipTokenCostHelp"
+                          )}
+                        </p>
+                      </div>
+                      <div className="max-w-32">
+                        <Input
+                          type="number"
+                          min={0}
+                          max={100}
+                          value={form.requestPathModifierVipTokenCost}
+                          disabled={form.allowedRequestPaths.length === 0}
+                          onChange={(event) =>
+                            setNumber(
+                              "requestPathModifierVipTokenCost",
+                              Math.max(
+                                0,
+                                Math.trunc(Number(event.target.value) || 0)
+                              )
+                            )
+                          }
+                        />
+                      </div>
+                      <PermissionRow
+                        label={t(
+                          "settings.sections.channelSetup.pathModifierUsesVipPriority"
+                        )}
+                        checked={form.requestPathModifierUsesVipPriority}
+                        disabled={form.allowedRequestPaths.length === 0}
+                        onChange={(value) =>
+                          setBoolean(
+                            "requestPathModifierUsesVipPriority",
+                            value
+                          )
+                        }
+                      />
+                      <p className="pl-8 text-sm leading-6 text-(--muted)">
+                        {t(
+                          "settings.sections.channelSetup.pathModifierUsesVipPriorityHelp"
+                        )}
+                      </p>
+                    </div>
+                  </>
+                ) : null}
               </CardContent>
             </Card>
 
@@ -1179,7 +1487,7 @@ function DashboardSettingsPage() {
               </CardHeader>
               <CardContent className="grid gap-4 lg:grid-cols-2">
                 <div className="grid min-w-0 content-start gap-3 border border-(--border) bg-(--panel-soft) p-4">
-                  <h3 className="text-sm font-semibold text-(--text)">
+                  <h3 className="text-base font-semibold text-(--text)">
                     {t("settings.sections.queueLimits.queueLimits")}
                   </h3>
                   <div className="divide-y divide-(--border)">
@@ -1224,7 +1532,7 @@ function DashboardSettingsPage() {
                 </div>
 
                 <div className="grid min-w-0 content-start gap-3 border border-(--border) bg-(--panel-soft) p-4">
-                  <h3 className="text-sm font-semibold text-(--text)">
+                  <h3 className="text-base font-semibold text-(--text)">
                     {t("settings.sections.queueLimits.rateLimits")}
                   </h3>
 
@@ -1307,10 +1615,7 @@ function DashboardSettingsPage() {
 
             <Card className="dashboard-settings__section">
               <CardHeader>
-                <CardTitle
-                  as="h2"
-                  className="text-xl leading-tight md:text-2xl"
-                >
+                <CardTitle as="h2">
                   {t("settings.sections.vipAutomation.title")}
                 </CardTitle>
                 <CardDescription>
@@ -1318,119 +1623,11 @@ function DashboardSettingsPage() {
                 </CardDescription>
               </CardHeader>
               <CardContent className="grid gap-6">
-                <div className="grid items-start gap-4 xl:grid-cols-[minmax(0,0.78fr)_minmax(0,1.22fr)]">
+                <div className="grid items-start gap-4 xl:grid-cols-2">
                   <div className="grid min-w-0 gap-4">
                     <div className="grid min-w-0 gap-3 border border-(--border) bg-(--panel-soft) p-4">
                       <div className="grid gap-1">
-                        <h3 className="text-sm font-semibold text-(--text)">
-                          {t("settings.sections.vipAutomation.songLength")}
-                        </h3>
-                        <p className="text-sm leading-6 text-(--muted)">
-                          {t("settings.sections.vipAutomation.songLengthHelp")}
-                        </p>
-                      </div>
-                      {form.vipTokenDurationThresholds.length > 0 ? (
-                        <div className="grid gap-3">
-                          {form.vipTokenDurationThresholds.map(
-                            (threshold, index) => (
-                              <div
-                                key={`${threshold.minimumDurationMinutes}-${threshold.tokenCost}-${index}`}
-                                className="grid gap-3 border border-(--border) bg-(--panel-muted) p-3"
-                              >
-                                <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto] md:items-end">
-                                  <FieldBlock
-                                    label={t(
-                                      "settings.sections.vipAutomation.songLengthMinutes"
-                                    )}
-                                  >
-                                    <Input
-                                      type="number"
-                                      min={0.01}
-                                      max={600}
-                                      step={0.25}
-                                      value={threshold.minimumDurationMinutes}
-                                      onChange={(event) =>
-                                        updateVipTokenDurationThreshold(
-                                          index,
-                                          "minimumDurationMinutes",
-                                          Number(event.target.value)
-                                        )
-                                      }
-                                    />
-                                  </FieldBlock>
-                                  <FieldBlock
-                                    label={t(
-                                      "settings.sections.vipAutomation.songLengthTokens"
-                                    )}
-                                  >
-                                    <Input
-                                      type="number"
-                                      min={1}
-                                      max={100}
-                                      step={1}
-                                      value={threshold.tokenCost}
-                                      onChange={(event) =>
-                                        updateVipTokenDurationThreshold(
-                                          index,
-                                          "tokenCost",
-                                          Number(event.target.value)
-                                        )
-                                      }
-                                    />
-                                  </FieldBlock>
-                                  <Button
-                                    type="button"
-                                    variant="outline"
-                                    onClick={() =>
-                                      removeVipTokenDurationThreshold(index)
-                                    }
-                                  >
-                                    {t(
-                                      "settings.sections.vipAutomation.songLengthRemove"
-                                    )}
-                                  </Button>
-                                </div>
-                                <p className="text-sm leading-6 text-(--muted)">
-                                  {t(
-                                    "settings.sections.vipAutomation.songLengthExample",
-                                    {
-                                      minutes:
-                                        formatVipDurationThresholdMinutes(
-                                          threshold.minimumDurationMinutes
-                                        ),
-                                      count: threshold.tokenCost,
-                                    }
-                                  )}
-                                </p>
-                              </div>
-                            )
-                          )}
-                        </div>
-                      ) : (
-                        <div className="border border-dashed border-(--border) bg-(--panel-muted) p-3 text-sm leading-6 text-(--muted)">
-                          {t("settings.sections.vipAutomation.songLengthEmpty")}
-                        </div>
-                      )}
-                      <div className="flex flex-wrap items-center justify-between gap-3 border border-dashed border-(--border) bg-(--panel-muted) p-3">
-                        <p className="text-sm leading-6 text-(--muted)">
-                          {t("settings.sections.vipAutomation.songLengthNote")}
-                        </p>
-                        <Button
-                          type="button"
-                          variant="outline"
-                          onClick={addVipTokenDurationThreshold}
-                          disabled={
-                            form.vipTokenDurationThresholds.length >= 12
-                          }
-                        >
-                          {t("settings.sections.vipAutomation.songLengthAdd")}
-                        </Button>
-                      </div>
-                    </div>
-
-                    <div className="grid min-w-0 gap-3 border border-(--border) bg-(--panel-soft) p-4">
-                      <div className="grid gap-1">
-                        <h3 className="text-sm font-semibold text-(--text)">
+                        <h3 className="text-base font-semibold text-(--text)">
                           {t("settings.sections.vipAutomation.vipCooldown")}
                         </h3>
                         <p className="text-sm leading-6 text-(--muted)">
@@ -1491,7 +1688,7 @@ function DashboardSettingsPage() {
                     </div>
 
                     <div className="grid min-w-0 gap-3 border border-(--border) bg-(--panel-soft) p-4">
-                      <h3 className="text-sm font-semibold text-(--text)">
+                      <h3 className="text-base font-semibold text-(--text)">
                         {t("settings.sections.vipAutomation.subscribes")}
                       </h3>
                       <PermissionRow
@@ -1525,7 +1722,7 @@ function DashboardSettingsPage() {
                     </div>
 
                     <div className="grid min-w-0 gap-3 border border-(--border) bg-(--panel-soft) p-4">
-                      <h3 className="text-sm font-semibold text-(--text)">
+                      <h3 className="text-base font-semibold text-(--text)">
                         {t("settings.sections.vipAutomation.giftedSubs")}
                       </h3>
                       <PermissionRow
@@ -1556,7 +1753,7 @@ function DashboardSettingsPage() {
                           : "border-(--border) opacity-70"
                       }`}
                     >
-                      <h3 className="text-sm font-semibold text-(--text)">
+                      <h3 className="text-base font-semibold text-(--text)">
                         {t("settings.sections.vipAutomation.raids")}
                       </h3>
                       <PermissionRow
@@ -1608,7 +1805,7 @@ function DashboardSettingsPage() {
                             : "border-(--border) opacity-70"
                       }`}
                     >
-                      <h3 className="text-sm font-semibold text-(--text)">
+                      <h3 className="text-base font-semibold text-(--text)">
                         {t("settings.sections.vipAutomation.channelPoints")}
                       </h3>
                       <PermissionRow
@@ -1722,7 +1919,7 @@ function DashboardSettingsPage() {
                           : "border-(--border) opacity-70"
                       }`}
                     >
-                      <h3 className="text-sm font-semibold text-(--text)">
+                      <h3 className="text-base font-semibold text-(--text)">
                         {t("settings.sections.vipAutomation.cheers")}
                       </h3>
                       <PermissionRow
@@ -1854,7 +2051,7 @@ function DashboardSettingsPage() {
                           : "border-(--border) opacity-70"
                       }`}
                     >
-                      <h3 className="text-sm font-semibold text-(--text)">
+                      <h3 className="text-base font-semibold text-(--text)">
                         {t("settings.sections.vipAutomation.tips")}
                       </h3>
                       <PermissionRow
@@ -1949,6 +2146,42 @@ function DashboardSettingsPage() {
                     </div>
                   </div>
                 </div>
+              </CardContent>
+            </Card>
+
+            <Card className="dashboard-settings__section">
+              <CardHeader className="flex-row items-start justify-between gap-4">
+                <div className="grid gap-1">
+                  <CardTitle
+                    as="h2"
+                    className="text-xl leading-tight md:text-2xl"
+                  >
+                    {t("settings.sections.channelInstructions.title")}
+                  </CardTitle>
+                  <CardDescription>
+                    {t("settings.sections.channelInstructions.description")}
+                  </CardDescription>
+                </div>
+                <Button
+                  type="button"
+                  variant={channelInstructionsCopied ? "default" : "outline"}
+                  size="icon"
+                  onClick={copyChannelInstructions}
+                  aria-label={t("settings.sections.channelInstructions.copy")}
+                  title={
+                    channelInstructionsCopied
+                      ? t("settings.actions.copied")
+                      : t("settings.sections.channelInstructions.copy")
+                  }
+                  className="shrink-0"
+                >
+                  <Copy className="h-4 w-4" />
+                </Button>
+              </CardHeader>
+              <CardContent>
+                <pre className="overflow-x-auto whitespace-pre-wrap border border-(--border) bg-(--panel-soft) p-4 text-sm leading-6 text-(--text)">
+                  {channelInstructions}
+                </pre>
               </CardContent>
             </Card>
 
@@ -2222,7 +2455,7 @@ function StreamElementsTipInstructionsDialog(props: {
         <div className="grid gap-4">
           <section className="grid gap-3 border border-(--border) bg-(--panel-soft) p-4">
             <div className="grid gap-1">
-              <h3 className="text-base font-semibold text-(--text)">
+              <h3 className="text-lg font-semibold text-(--text)">
                 {currentStep.title}
               </h3>
               <p className="text-sm leading-6 text-(--muted)">
@@ -2369,7 +2602,7 @@ function FieldBlock(props: {
   children: ReactNode;
 }) {
   return (
-    <div className="grid min-w-0 gap-2 border border-(--border) bg-(--panel-soft) p-4">
+    <div className="grid min-w-0 gap-2">
       <p className="font-medium text-(--text)">{props.label}</p>
       {props.description ? (
         <p className="text-sm leading-6 text-(--muted)">{props.description}</p>
@@ -2384,6 +2617,7 @@ function FilterSection(props: {
   description: string;
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  triggerSummary?: ReactNode;
   children: ReactNode;
 }) {
   const { t } = useLocaleTranslation("dashboard");
@@ -2400,12 +2634,17 @@ function FilterSection(props: {
           className="flex w-full items-start justify-between gap-4 px-4 py-4 text-left transition-colors hover:bg-(--panel)"
         >
           <div className="grid gap-1">
-            <h3 className="text-lg font-semibold leading-tight text-(--text)">
+            <h3 className="text-xl font-semibold leading-tight text-(--text)">
               {props.title}
             </h3>
             <p className="text-sm leading-6 text-(--muted)">
               {props.description}
             </p>
+            {props.triggerSummary ? (
+              <div className="mt-2 flex flex-wrap items-center gap-2 text-xs leading-5 text-(--muted)">
+                {props.triggerSummary}
+              </div>
+            ) : null}
           </div>
           <span className="flex shrink-0 items-center gap-2 pt-0.5 text-xs font-semibold uppercase tracking-[0.16em] text-(--muted)">
             {props.open
@@ -2428,6 +2667,7 @@ function FilterSection(props: {
 
 function PermissionRow(props: {
   label: string;
+  description?: string;
   checked: boolean;
   onChange: (value: boolean) => void;
   disabled?: boolean;
@@ -2447,9 +2687,14 @@ function PermissionRow(props: {
       />
       <label
         htmlFor={inputId}
-        className="pt-0.5 text-sm font-medium text-(--text)"
+        className="grid gap-1 pt-0.5 text-sm font-medium text-(--text)"
       >
-        {props.label}
+        <span>{props.label}</span>
+        {props.description ? (
+          <span className="text-xs leading-5 font-normal text-(--muted)">
+            {props.description}
+          </span>
+        ) : null}
       </label>
     </div>
   );
@@ -2602,7 +2847,7 @@ function ChannelPointRewardInstructionsDialog(props: { rewardTitle: string }) {
         <div className="grid gap-4">
           <section className="grid gap-3 border border-(--border) bg-(--panel-soft) p-4">
             <div className="grid gap-1">
-              <h3 className="text-base font-semibold text-(--text)">
+              <h3 className="text-lg font-semibold text-(--text)">
                 {currentStep.title}
               </h3>
               <p className="text-sm leading-6 text-(--muted)">
@@ -2674,18 +2919,50 @@ function ChannelPointRewardInstructionsDialog(props: { rewardTitle: string }) {
 }
 
 function normalizeSettingsFormData(
-  settings: DashboardSettingsFormData
+  settings: Partial<DashboardSettingsFormData>
 ): DashboardSettingsFormData {
+  const hasAllowedRequestPathsSetting = Array.isArray(
+    settings.allowedRequestPaths
+  );
+  const allowedTunings = Array.isArray(settings.allowedTunings)
+    ? settings.allowedTunings
+    : [];
+  const requiredPaths = Array.isArray(settings.requiredPaths)
+    ? settings.requiredPaths
+    : [];
+  const allowedRequestPaths = normalizeAllowedRequestPaths(
+    Array.isArray(settings.allowedRequestPaths)
+      ? settings.allowedRequestPaths
+      : []
+  );
+  const vipTokenDurationThresholds = Array.isArray(
+    settings.vipTokenDurationThresholds
+  )
+    ? settings.vipTokenDurationThresholds
+    : [];
+
   return {
+    ...defaultForm,
     ...settings,
-    allowedTunings: settings.allowedTunings.length
-      ? settings.allowedTunings
-      : allTuningOptions,
+    allowedTunings: allowedTunings.length ? allowedTunings : allTuningOptions,
+    requiredPaths,
+    allowedRequestPaths:
+      allowedRequestPaths.length > 0
+        ? allowedRequestPaths
+        : !hasAllowedRequestPathsSetting && settings.allowRequestPathModifiers
+          ? [...legacyRequestPathModifierOptions]
+          : [],
     vipRequestCooldownEnabled: settings.vipRequestCooldownEnabled ?? false,
     vipRequestCooldownMinutes: settings.vipRequestCooldownMinutes ?? 0,
     showPickOrderBadges: settings.showPickOrderBadges ?? false,
+    allowRequestPathModifiers:
+      settings.allowRequestPathModifiers ?? allowedRequestPaths.length > 0,
+    requestPathModifierVipTokenCost:
+      settings.requestPathModifierVipTokenCost ?? 0,
+    requestPathModifierUsesVipPriority:
+      settings.requestPathModifierUsesVipPriority ?? true,
     vipTokenDurationThresholds: normalizeVipTokenDurationThresholds(
-      settings.vipTokenDurationThresholds ?? []
+      vipTokenDurationThresholds
     ),
     moderatorCanViewVipTokens: true,
   };
@@ -2700,6 +2977,7 @@ function getSettingsComparisonSnapshot(settings: DashboardSettingsFormData) {
   return JSON.stringify({
     ...comparable,
     allowedTunings: [...comparable.allowedTunings].sort(),
+    allowedRequestPaths: [...comparable.allowedRequestPaths].sort(),
     requiredPaths: [...comparable.requiredPaths].sort(),
   });
 }
@@ -2752,9 +3030,22 @@ function buildRequiredPathsSummary(
   if (requiredPaths.length === 0) {
     return {
       summary: t("settings.sections.filters.requiredPaths.none"),
-      example: null,
+      matchExample: null,
+      nonMatchExample: null,
+      triggerSummary: null,
     };
   }
+
+  const triggerSummary = (
+    <>
+      <span className="font-semibold uppercase tracking-[0.16em] text-(--muted)">
+        {matchMode === "all"
+          ? t("settings.sections.filters.requiredPaths.triggerAll")
+          : t("settings.sections.filters.requiredPaths.triggerAny")}
+      </span>
+      {renderPathTriggerBadges(t, requiredPaths)}
+    </>
+  );
 
   if (requiredPaths.length === 1) {
     return {
@@ -2765,7 +3056,7 @@ function buildRequiredPathsSummary(
           {t("settings.sections.filters.requiredPaths.singleSuffix")}
         </>
       ),
-      example: (
+      matchExample: (
         <>
           {t("settings.sections.filters.requiredPaths.exampleLabel")}{" "}
           {renderPathExampleSequence(
@@ -2775,20 +3066,33 @@ function buildRequiredPathsSummary(
           {t("settings.sections.filters.requiredPaths.singleExample")}
         </>
       ),
+      nonMatchExample: extraPath ? (
+        <>
+          {t("settings.sections.filters.requiredPaths.nonMatchExampleLabel")}{" "}
+          {renderPathExampleSequence(t, [extraPath])}{" "}
+          {t("settings.sections.filters.requiredPaths.singleNonMatchExample")}
+        </>
+      ) : null,
+      triggerSummary,
     };
   }
 
   if (matchMode === "any") {
     const selectedPath = requiredPaths[1] ?? requiredPaths[0];
+    const allPathsSelected = requiredPaths.length === pathOptions.length;
     return {
       summary: (
         <>
           {t("settings.sections.filters.requiredPaths.matchAnyPrefix")}{" "}
           {renderPathSummaryList(t, requiredPaths)}.{" "}
-          {t("settings.sections.filters.requiredPaths.matchAnySuffix")}
+          {t(
+            allPathsSelected
+              ? "settings.sections.filters.requiredPaths.matchAnyAllSelectedSuffix"
+              : "settings.sections.filters.requiredPaths.matchAnySuffix"
+          )}
         </>
       ),
-      example: (
+      matchExample: (
         <>
           {t("settings.sections.filters.requiredPaths.exampleLabel")}{" "}
           {renderPathExampleSequence(
@@ -2798,8 +3102,22 @@ function buildRequiredPathsSummary(
           {t("settings.sections.filters.requiredPaths.matchAnyExample")}
         </>
       ),
+      nonMatchExample: extraPath ? (
+        <>
+          {t("settings.sections.filters.requiredPaths.nonMatchExampleLabel")}{" "}
+          {renderPathExampleSequence(t, [extraPath])}{" "}
+          {t("settings.sections.filters.requiredPaths.matchAnyNonMatchExample")}
+        </>
+      ) : null,
+      triggerSummary,
     };
   }
+
+  const missingPathExample = requiredPaths.slice(0, -1);
+  const nonMatchSequence =
+    extraPath && missingPathExample.length > 0
+      ? [...missingPathExample, extraPath]
+      : missingPathExample;
 
   return {
     summary: (
@@ -2809,7 +3127,7 @@ function buildRequiredPathsSummary(
         {t("settings.sections.filters.requiredPaths.matchAllSuffix")}
       </>
     ),
-    example: (
+    matchExample: (
       <>
         {t("settings.sections.filters.requiredPaths.exampleLabel")}{" "}
         {renderPathExampleSequence(
@@ -2819,6 +3137,15 @@ function buildRequiredPathsSummary(
         {t("settings.sections.filters.requiredPaths.matchAllExample")}
       </>
     ),
+    nonMatchExample:
+      nonMatchSequence.length > 0 ? (
+        <>
+          {t("settings.sections.filters.requiredPaths.nonMatchExampleLabel")}{" "}
+          {renderPathExampleSequence(t, nonMatchSequence)}{" "}
+          {t("settings.sections.filters.requiredPaths.matchAllNonMatchExample")}
+        </>
+      ) : null,
+    triggerSummary,
   };
 }
 
@@ -2841,6 +3168,19 @@ function renderPathExampleSequence(
   });
 
   return content;
+}
+
+function renderPathTriggerBadges(t: (key: string) => string, values: string[]) {
+  return values.map((value, index) => (
+    <span
+      key={`trigger-${value}-${index}`}
+      className={`inline-flex items-center border px-2 py-1 text-[11px] font-semibold uppercase tracking-[0.16em] ${getPathBadgeTone(
+        value
+      )}`}
+    >
+      {formatPathOptionLabel(t, value)}
+    </span>
+  ));
 }
 
 function renderPathSummaryList(t: (key: string) => string, values: string[]) {

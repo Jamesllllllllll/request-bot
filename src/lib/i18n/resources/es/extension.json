@@ -46,7 +46,12 @@
     "editBannerLabel": "Editando solicitud",
     "editBannerDescription": "Busca una canción o usa los botones de solicitud de abajo.",
     "removeConfirm": "¿Eliminar solicitud?",
-    "removeFromPlaylistConfirm": "¿Quitar de la lista?"
+    "removeFromPlaylistConfirm": "¿Quitar de la lista?",
+    "choosePath": "Parte",
+    "noPathPreference": "Sin preferencia de parte",
+    "requestRequiresVip": "Requiere {count}.",
+    "pathRequiresVip": "{path} requiere {count}.",
+    "pathCostsVipTokens": "{path} cuesta {count}."
   },
   "queue": {
     "tab": "Lista",
@@ -86,11 +91,15 @@
   },
   "buttons": {
     "add": "Agregar",
+    "addWithCost": "Agregar ({count})",
     "adding": "Agregando...",
     "edit": "Editar",
+    "editWithCost": "Editar ({count})",
     "editing": "Editando...",
     "vip": "VIP",
     "editVip": "Editar VIP",
+    "vipWithCost": "VIP ({count})",
+    "editVipWithCost": "Editar VIP ({count})",
     "cancel": "Cancelar"
   },
   "playlistItem": {

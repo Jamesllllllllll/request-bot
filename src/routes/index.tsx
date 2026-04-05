@@ -154,7 +154,7 @@ function HomePage() {
         <p className="text-xs font-semibold uppercase tracking-[0.34em] text-(--brand-deep)">
           {t("hero.eyebrow", { ns: "home" })}
         </p>
-        <h1 className="mt-4 max-w-3xl text-5xl font-semibold tracking-[-0.04em] text-(--text) md:text-6xl max-[960px]:text-[clamp(2.5rem,6.8vw,4.4rem)] max-[720px]:text-[clamp(2.2rem,9vw,3.1rem)]">
+        <h1 className="mt-4 max-w-3xl text-6xl font-semibold tracking-[-0.04em] text-(--text) md:text-7xl max-[960px]:text-[clamp(2.85rem,7.8vw,5rem)] max-[720px]:text-[clamp(2.5rem,10vw,3.6rem)]">
           {t("hero.title", { ns: "home" })}
         </h1>
 
@@ -241,7 +241,7 @@ function HomePage() {
               <p className="text-xs font-semibold uppercase tracking-[0.24em] text-(--brand-deep)">
                 {t("live.eyebrow", { ns: "home" })}
               </p>
-              <h2 className="mt-3 text-4xl font-semibold text-(--text)">
+              <h2 className="mt-3 text-5xl font-semibold text-(--text)">
                 {t("live.title", { ns: "home" })}
               </h2>
             </div>

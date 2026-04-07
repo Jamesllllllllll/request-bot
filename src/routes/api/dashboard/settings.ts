@@ -2,7 +2,7 @@
 import { env } from "cloudflare:workers";
 import { createFileRoute } from "@tanstack/react-router";
 import { getSessionUserId } from "~/lib/auth/session.server";
-import { callBackend } from "~/lib/backend";
+import { callBackend, notifyPlaylistStream } from "~/lib/backend";
 import {
   createAuditLog,
   ensureStreamElementsTipWebhookToken,
@@ -193,6 +193,11 @@ export const Route = createFileRoute("/api/dashboard/settings")({
           entityType: "channel_settings",
           entityId: state.channel.id,
           payloadJson: JSON.stringify(parsed.data),
+        });
+
+        await notifyPlaylistStream(runtimeEnv, {
+          channelId: state.channel.id,
+          reason: "settings",
         });
 
         return json({

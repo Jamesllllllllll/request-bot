@@ -1,4 +1,5 @@
 import { describe, expect, test } from "vitest";
+import type { AppEnv } from "~/lib/env";
 import {
   canManageChannelBlacklist,
   canManageChannelBlockedChatters,
@@ -6,6 +7,7 @@ import {
   canManageChannelSetlist,
   canManageChannelVipTokens,
   canViewChannelVipTokens,
+  getPlaylistManagementPageData,
   type PlaylistManagementState,
 } from "~/lib/server/playlist-management";
 import { settingsInputSchema } from "~/lib/validation";
@@ -76,6 +78,115 @@ describe("playlist management capabilities", () => {
     expect(canManageChannelBlockedChatters(state)).toBe(true);
     expect(canViewChannelVipTokens(state)).toBe(true);
     expect(canManageChannelVipTokens(state)).toBe(false);
+  });
+
+  test("protected management page data keeps rich item fields for owners", async () => {
+    const state = createState({
+      accessRole: "owner",
+      settings: {
+        botChannelEnabled: true,
+        requestsEnabled: true,
+        blacklistEnabled: true,
+        setlistEnabled: true,
+        letSetlistBypassBlacklist: false,
+        subscribersMustFollowSetlist: false,
+        allowRequestPathModifiers: true,
+        allowedRequestPathsJson: '["lead"]',
+        requestPathModifierVipTokenCost: 2,
+        requestPathModifierUsesVipPriority: true,
+        requiredPathsJson: '["lead"]',
+        vipTokenDurationThresholdsJson: "[]",
+        requiredPathsMatchMode: "any",
+        showPlaylistPositions: true,
+        showPickOrderBadges: true,
+      } as PlaylistManagementState["settings"],
+      items: [
+        {
+          id: "pli_123",
+          songTitle: "Neon Noir",
+          songArtist: "VV",
+          songDurationText: "3:49",
+          songUrl: "https://example.com/song",
+          songDownloads: 4284,
+          warningMessage: "Needs lead path",
+          candidateMatchesJson: JSON.stringify([
+            { id: "alt_1", title: "Neon Noir" },
+          ]),
+          createdAt: 123,
+          position: 1,
+          status: "queued",
+        },
+      ],
+      blocks: [
+        {
+          twitchUserId: "viewer-1",
+          login: "viewer_one",
+        },
+      ],
+      vipTokens: [
+        {
+          login: "viewer_one",
+          availableCount: 3,
+        },
+      ],
+    });
+
+    const result = await getPlaylistManagementPageData({} as AppEnv, state);
+
+    expect(result.accessRole).toBe("owner");
+    expect(result.settings).toMatchObject({
+      canManageRequests: true,
+      canManageBlacklist: true,
+      canManageSetlist: true,
+      canManageBlockedChatters: true,
+      canViewVipTokens: true,
+      canManageVipTokens: true,
+      allowedRequestPaths: ["lead"],
+    });
+    expect(result.items[0]).toMatchObject({
+      id: "pli_123",
+      songDurationText: "3:49",
+      songUrl: "https://example.com/song",
+      warningMessage: "Needs lead path",
+      candidateMatchesJson: expect.stringContaining("alt_1"),
+    });
+    expect(result.blocks).toEqual(state.blocks);
+    expect(result.vipTokens).toEqual(state.vipTokens);
+  });
+
+  test("protected management page data hides gated lists for moderators without permission", async () => {
+    const state = createState({
+      settings: {
+        moderatorCanManageRequests: true,
+        moderatorCanManageBlacklist: false,
+        moderatorCanManageSetlist: false,
+        moderatorCanManageBlockedChatters: false,
+        moderatorCanViewVipTokens: false,
+        moderatorCanManageVipTokens: false,
+      } as PlaylistManagementState["settings"],
+      blocks: [
+        {
+          twitchUserId: "viewer-1",
+        },
+      ],
+      vipTokens: [
+        {
+          login: "viewer_one",
+          availableCount: 2,
+        },
+      ],
+    });
+
+    const result = await getPlaylistManagementPageData({} as AppEnv, state);
+
+    expect(result.settings).toMatchObject({
+      canManageRequests: true,
+      canManageBlockedChatters: false,
+      canViewVipTokens: false,
+      canManageVipTokens: false,
+    });
+    expect(result.blocks).toEqual([]);
+    expect(result.vipTokens).toEqual([]);
   });
 });
 

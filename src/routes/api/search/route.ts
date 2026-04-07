@@ -25,6 +25,7 @@ function normalizeSearchCacheInput(
   return {
     query: input.query ?? "",
     channelSlug: input.channelSlug ?? "",
+    favoritesOnly: input.favoritesOnly ?? false,
     showBlacklisted: input.showBlacklisted ?? false,
     field: input.field,
     title: input.title ?? "",
@@ -70,6 +71,7 @@ export const Route = createFileRoute("/api/search")({
         const payload = {
           query: url.searchParams.get("query") ?? undefined,
           channelSlug: url.searchParams.get("channelSlug") ?? undefined,
+          favoritesOnly: url.searchParams.get("favoritesOnly") ?? undefined,
           showBlacklisted: url.searchParams.get("showBlacklisted") ?? undefined,
           field: url.searchParams.get("field") ?? undefined,
           title: url.searchParams.get("title") ?? undefined,
@@ -152,6 +154,7 @@ export const Route = createFileRoute("/api/search")({
         try {
           let blacklistFilterInput = {};
           let channelPolicyFilterInput = {};
+          let favoritesFilterInput = {};
           let hasBlacklistFilters = false;
           if (normalizedInput.channelSlug) {
             const channel = await getChannelBySlug(
@@ -171,6 +174,11 @@ export const Route = createFileRoute("/api/search")({
                   settings?.allowedTuningsJson
                 ),
               };
+              favoritesFilterInput = normalizedInput.favoritesOnly
+                ? {
+                    favoriteChannelId: channel.id,
+                  }
+                : {};
 
               if (settings?.blacklistEnabled) {
                 blacklistFilterInput = {
@@ -202,6 +210,7 @@ export const Route = createFileRoute("/api/search")({
 
           const results = await searchCatalogSongsInDb(runtimeEnv, {
             ...normalizedInput,
+            ...favoritesFilterInput,
             ...channelPolicyFilterInput,
             ...(normalizedInput.showBlacklisted ? {} : blacklistFilterInput),
           });
@@ -212,6 +221,7 @@ export const Route = createFileRoute("/api/search")({
                   hiddenBlacklistedCount: (
                     await searchCatalogSongsInDb(runtimeEnv, {
                       ...normalizedInput,
+                      ...favoritesFilterInput,
                       ...channelPolicyFilterInput,
                       ...blacklistFilterInput,
                     })

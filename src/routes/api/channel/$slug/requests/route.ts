@@ -1,5 +1,6 @@
 import { env } from "cloudflare:workers";
 import { createFileRoute } from "@tanstack/react-router";
+import { notifyPlaylistStream } from "~/lib/backend";
 import {
   createAuditLog,
   updateChannelRequestsEnabled,
@@ -64,6 +65,11 @@ export const Route = createFileRoute("/api/channel/$slug/requests")({
           payloadJson: JSON.stringify({
             requestsEnabled: payload.requestsEnabled,
           }),
+        });
+
+        await notifyPlaylistStream(runtimeEnv, {
+          channelId: state.channel.id,
+          reason: "requests",
         });
 
         return json({

@@ -12,18 +12,22 @@ import {
 } from "~/lib/db/repositories";
 import { playedSongs, setlistArtists } from "~/lib/db/schema";
 import type { AppEnv } from "~/lib/env";
+import {
+  toPlaylistClientChannel,
+  toPublicBlacklistArtist,
+  toPublicBlacklistCharter,
+  toPublicBlacklistSong,
+  toPublicBlacklistSongGroup,
+  toPublicPlayedSong,
+  toPublicPlaylistItem,
+  toPublicPlaylistSettings,
+  toPublicSetlistArtist,
+} from "~/lib/playlist/public-response";
 import { getAllowedRequestPathsSetting } from "~/lib/request-policy";
 import {
-  canManageChannelBlacklist,
-  canManageChannelBlockedChatters,
-  canManageChannelRequests,
-  canManageChannelSetlist,
-  canManageChannelVipTokens,
   canPerformPlaylistMutationAction,
-  canViewChannelVipTokens,
   enrichPlaylistItems,
   getForbiddenPlaylistMutationMessage,
-  getPlaylistManagementResponseBody,
   performPlaylistMutation,
   requirePlaylistManagementState,
   toPlaylistMutationErrorResponse,
@@ -44,106 +48,6 @@ export const Route = createFileRoute("/api/channel/$slug/playlist")({
 
         try {
           const sessionUserId = await getSessionUserId(request, runtimeEnv);
-          const managementState = sessionUserId
-            ? await requirePlaylistManagementState(
-                request,
-                runtimeEnv,
-                params.slug
-              )
-            : null;
-
-          if (managementState) {
-            const canManageBlockedChatters =
-              canManageChannelBlockedChatters(managementState);
-            const canViewVipTokens = canViewChannelVipTokens(managementState);
-            const allowedRequestPaths = getAllowedRequestPathsSetting(
-              managementState.settings ?? {
-                allowRequestPathModifiers: false,
-                allowedRequestPathsJson: "[]",
-              }
-            );
-
-            return json({
-              ...getPlaylistManagementResponseBody(managementState),
-              blocks: canManageBlockedChatters ? managementState.blocks : [],
-              settings: {
-                botChannelEnabled:
-                  managementState.settings?.botChannelEnabled ?? false,
-                requestsEnabled:
-                  managementState.settings?.requestsEnabled ?? true,
-                blacklistEnabled:
-                  managementState.settings?.blacklistEnabled ?? false,
-                setlistEnabled:
-                  managementState.settings?.setlistEnabled ?? false,
-                letSetlistBypassBlacklist:
-                  managementState.settings?.letSetlistBypassBlacklist ?? false,
-                subscribersMustFollowSetlist:
-                  managementState.settings?.subscribersMustFollowSetlist ??
-                  false,
-                allowRequestPathModifiers: allowedRequestPaths.length > 0,
-                allowedRequestPaths,
-                requestPathModifierVipTokenCost:
-                  managementState.settings?.requestPathModifierVipTokenCost ??
-                  0,
-                requestPathModifierUsesVipPriority:
-                  managementState.settings
-                    ?.requestPathModifierUsesVipPriority ?? true,
-                requiredPathsJson:
-                  managementState.settings?.requiredPathsJson ?? "[]",
-                vipTokenDurationThresholdsJson:
-                  managementState.settings?.vipTokenDurationThresholdsJson ??
-                  "[]",
-                requiredPathsMatchMode:
-                  managementState.settings?.requiredPathsMatchMode ?? "any",
-                canManageRequests: canManageChannelRequests(managementState),
-                canManageBlacklist: canManageChannelBlacklist(managementState),
-                canManageSetlist: canManageChannelSetlist(managementState),
-                canManageBlockedChatters,
-                canViewVipTokens,
-                canManageVipTokens: canManageChannelVipTokens(managementState),
-                autoGrantVipTokenToSubscribers:
-                  managementState.settings?.autoGrantVipTokenToSubscribers ??
-                  false,
-                autoGrantVipTokensForSharedSubRenewalMessage:
-                  managementState.settings
-                    ?.autoGrantVipTokensForSharedSubRenewalMessage ?? false,
-                autoGrantVipTokensToSubGifters:
-                  managementState.settings?.autoGrantVipTokensToSubGifters ??
-                  false,
-                autoGrantVipTokensToGiftRecipients:
-                  managementState.settings
-                    ?.autoGrantVipTokensToGiftRecipients ?? false,
-                autoGrantVipTokensForCheers:
-                  managementState.settings?.autoGrantVipTokensForCheers ??
-                  false,
-                autoGrantVipTokensForRaiders:
-                  managementState.settings?.autoGrantVipTokensForRaiders ??
-                  false,
-                cheerBitsPerVipToken:
-                  managementState.settings?.cheerBitsPerVipToken ?? 200,
-                cheerMinimumTokenPercent:
-                  managementState.settings?.cheerMinimumTokenPercent ?? 25,
-                raidMinimumViewerCount:
-                  managementState.settings?.raidMinimumViewerCount ?? 1,
-                autoGrantVipTokensForStreamElementsTips:
-                  managementState.settings
-                    ?.autoGrantVipTokensForStreamElementsTips ?? false,
-                streamElementsTipAmountPerVipToken:
-                  managementState.settings
-                    ?.streamElementsTipAmountPerVipToken ?? 5,
-                showPlaylistPositions:
-                  managementState.settings?.showPlaylistPositions ?? false,
-                showPickOrderBadges:
-                  managementState.settings?.showPickOrderBadges ?? false,
-              },
-              items: await enrichPlaylistItems(
-                runtimeEnv,
-                managementState.items
-              ),
-              vipTokens: canViewVipTokens ? managementState.vipTokens : [],
-            });
-          }
-
           const [playlist, playedRows, blacklist, settings, setlistRows] =
             await Promise.all([
               getPlaylistByChannelId(runtimeEnv, channel.id),
@@ -165,11 +69,18 @@ export const Route = createFileRoute("/api/channel/$slug/playlist")({
               allowedRequestPathsJson: "[]",
             }
           );
+          const publicItems = (
+            await enrichPlaylistItems(runtimeEnv, playlist?.items ?? [])
+          ).map((item) =>
+            toPublicPlaylistItem(
+              item as unknown as Parameters<typeof toPublicPlaylistItem>[0]
+            )
+          );
 
           return json({
-            channel,
+            channel: toPlaylistClientChannel(channel),
             accessRole: sessionUserId ? "viewer" : "anonymous",
-            settings: {
+            settings: toPublicPlaylistSettings({
               botChannelEnabled: settings?.botChannelEnabled ?? false,
               requestsEnabled: settings?.requestsEnabled ?? true,
               blacklistEnabled: settings?.blacklistEnabled ?? false,
@@ -188,12 +99,6 @@ export const Route = createFileRoute("/api/channel/$slug/playlist")({
               vipTokenDurationThresholdsJson:
                 settings?.vipTokenDurationThresholdsJson ?? "[]",
               requiredPathsMatchMode: settings?.requiredPathsMatchMode ?? "any",
-              canManageRequests: false,
-              canManageBlacklist: false,
-              canManageSetlist: false,
-              canManageBlockedChatters: false,
-              canViewVipTokens: false,
-              canManageVipTokens: false,
               autoGrantVipTokenToSubscribers:
                 settings?.autoGrantVipTokenToSubscribers ?? false,
               autoGrantVipTokensForSharedSubRenewalMessage:
@@ -216,15 +121,21 @@ export const Route = createFileRoute("/api/channel/$slug/playlist")({
                 settings?.streamElementsTipAmountPerVipToken ?? 5,
               showPlaylistPositions: settings?.showPlaylistPositions ?? false,
               showPickOrderBadges: settings?.showPickOrderBadges ?? false,
-            },
-            items: await enrichPlaylistItems(runtimeEnv, playlist?.items ?? []),
-            playedSongs: playedRows,
+            }),
+            items: publicItems,
+            playedSongs: playedRows.map(toPublicPlayedSong),
             blocks: [],
-            blacklistArtists: blacklist.blacklistArtists,
-            blacklistCharters: blacklist.blacklistCharters,
-            blacklistSongs: blacklist.blacklistSongs,
-            blacklistSongGroups: blacklist.blacklistSongGroups,
-            setlistArtists: setlistRows,
+            blacklistArtists: blacklist.blacklistArtists.map(
+              toPublicBlacklistArtist
+            ),
+            blacklistCharters: blacklist.blacklistCharters.map(
+              toPublicBlacklistCharter
+            ),
+            blacklistSongs: blacklist.blacklistSongs.map(toPublicBlacklistSong),
+            blacklistSongGroups: blacklist.blacklistSongGroups.map(
+              toPublicBlacklistSongGroup
+            ),
+            setlistArtists: setlistRows.map(toPublicSetlistArtist),
             vipTokens: [],
             requiredPaths: [],
           });

@@ -51,6 +51,10 @@ import {
 } from "~/components/ui/tooltip";
 import { pathOptions } from "~/lib/channel-options";
 import { useAppLocale, useLocaleTranslation } from "~/lib/i18n/client";
+import {
+  formatCompactTuningSummary,
+  getUniqueTunings,
+} from "~/lib/tuning-summary";
 import { cn, getErrorMessage } from "~/lib/utils";
 
 type SearchField = "any" | "title" | "artist" | "album" | "creator";
@@ -156,6 +160,8 @@ export function SongSearchPanel(props: {
   infoNote?: string;
   placeholder?: string;
   className?: string;
+  searchEnabled?: boolean;
+  headerActionsContent?: ReactNode;
   defaultPathFilters?: string[];
   defaultPathFilterMatchMode?: "any" | "all";
   defaultPathFilterOwnerName?: string;
@@ -236,6 +242,10 @@ export function SongSearchPanel(props: {
   }));
   const [debouncedAdvancedFilters, setDebouncedAdvancedFilters] =
     useState(advancedFilters);
+  const extraSearchParamsKey = useMemo(
+    () => JSON.stringify(props.extraSearchParams ?? {}),
+    [props.extraSearchParams]
+  );
   const activePathFilters = debouncedAdvancedFilters.parts;
   const activeNonPathFilterCount = useMemo(
     () =>
@@ -265,7 +275,7 @@ export function SongSearchPanel(props: {
 
   useEffect(() => {
     setPage(1);
-  }, [debouncedAdvancedFilters, debouncedQuery, field]);
+  }, [debouncedAdvancedFilters, debouncedQuery, extraSearchParamsKey, field]);
 
   const searchParams = useMemo(() => {
     const params = new URLSearchParams({
@@ -346,6 +356,7 @@ export function SongSearchPanel(props: {
     const trimmed = debouncedQuery.trim();
     return trimmed.length > 0 && trimmed.length < 3;
   }, [debouncedQuery]);
+  const searchEnabled = props.searchEnabled ?? true;
 
   const filterOptionsQuery = useQuery<SearchFilterOptionsResponse>({
     queryKey: ["search-filter-options"],
@@ -397,7 +408,7 @@ export function SongSearchPanel(props: {
 
   const searchQuery = useQuery<SearchResponse>({
     queryKey: ["song-search", searchParams.toString()],
-    enabled: !queryTooShort,
+    enabled: searchEnabled && !queryTooShort,
     queryFn: async (): Promise<SearchResponse> => {
       const response = await fetch(`/api/search?${searchParams.toString()}`);
       const body = (await response.json().catch(() => null)) as
@@ -541,8 +552,10 @@ export function SongSearchPanel(props: {
   function renderPagination(position: "top" | "bottom") {
     const showTopFilterSummary =
       position === "top" && showAppliedFiltersSummary;
+    const showTopCount =
+      position === "top" && !queryTooShort && !error && data != null;
 
-    if (totalPages <= 1 && !showTopFilterSummary) {
+    if (totalPages <= 1 && !showTopFilterSummary && !showTopCount) {
       return null;
     }
 
@@ -555,37 +568,45 @@ export function SongSearchPanel(props: {
             : "border-t border-(--border) bg-(--panel-muted)"
         )}
       >
-        {showTopFilterSummary ? (
-          <div className="min-w-0 flex flex-1 flex-wrap items-center gap-1.5 text-xs text-(--muted)">
-            <span className="uppercase tracking-[0.16em]">
-              {t("summary.filters")}
-            </span>
-            {activePathFilters.map((path) => (
-              <PathBadge
-                key={`summary-${path}`}
-                label={getPathLabel(path).toUpperCase()}
-                shortLabel={getPathShortLabel(path)}
-                className={getPathToneByValue(path)}
-              />
-            ))}
-            {activeNonPathFilterCount > 0 ? (
-              <span className="inline-flex items-center border border-(--border-strong) bg-(--panel) px-2 py-1 text-[11px] font-medium text-(--text)">
-                {t("summary.moreCount", { count: activeNonPathFilterCount })}
+        <div className="min-w-0 flex flex-1 items-center gap-3 py-1.5">
+          {showTopCount ? (
+            <p className="shrink-0 text-sm font-semibold text-(--text)">
+              {t("summary.foundCount", { count: summaryCount })}
+            </p>
+          ) : null}
+          {showTopCount && showTopFilterSummary ? (
+            <div className="h-5 w-px shrink-0 bg-(--border)" />
+          ) : null}
+          {showTopFilterSummary ? (
+            <div className="min-w-0 flex flex-wrap items-center gap-1.5 text-xs text-(--muted)">
+              <span className="uppercase tracking-[0.16em]">
+                {t("summary.filters")}
               </span>
-            ) : null}
-            {!showAdvanced ? (
-              <button
-                type="button"
-                className="text-(--brand) transition hover:opacity-80"
-                onClick={() => setShowAdvanced(true)}
-              >
-                {t("summary.changeFilters")}
-              </button>
-            ) : null}
-          </div>
-        ) : (
-          <div className="flex-1" />
-        )}
+              {activePathFilters.map((path) => (
+                <PathBadge
+                  key={`summary-${path}`}
+                  label={getPathLabel(path).toUpperCase()}
+                  shortLabel={getPathShortLabel(path)}
+                  className={getPathToneByValue(path)}
+                />
+              ))}
+              {activeNonPathFilterCount > 0 ? (
+                <span className="inline-flex items-center border border-(--border-strong) bg-(--panel) px-2 py-1 text-[11px] font-medium text-(--text)">
+                  {t("summary.moreCount", { count: activeNonPathFilterCount })}
+                </span>
+              ) : null}
+              {!showAdvanced ? (
+                <button
+                  type="button"
+                  className="text-(--brand) transition hover:opacity-80"
+                  onClick={() => setShowAdvanced(true)}
+                >
+                  {t("summary.changeFilters")}
+                </button>
+              ) : null}
+            </div>
+          ) : null}
+        </div>
         {totalPages > 1 ? (
           <Pagination className="mx-0 w-auto justify-end">
             <PaginationContent>
@@ -613,6 +634,7 @@ export function SongSearchPanel(props: {
                         isActive={pageNumber === page}
                         onClick={() => setPage(pageNumber)}
                         disabled={isResultsTransitioning}
+                        className="p-0"
                       >
                         {pageNumber}
                       </PaginationLink>
@@ -755,19 +777,13 @@ export function SongSearchPanel(props: {
               </div>
               <div className="flex max-w-full flex-wrap items-center justify-end gap-3 max-[960px]:w-full max-[960px]:justify-start">
                 {props.summaryContent}
+                {props.headerActionsContent}
                 {resolvedInfoNote ? (
                   <div className="flex flex-wrap items-center gap-2 border border-sky-400/30 bg-sky-500/10 px-4 py-3 text-sm text-sky-100 max-[960px]:w-full">
                     <span className="font-semibold uppercase tracking-[0.18em] text-sky-200">
                       {t("summary.note")}
                     </span>
                     <span>{resolvedInfoNote}</span>
-                  </div>
-                ) : null}
-                {!queryTooShort && !error ? (
-                  <div className="border border-(--border) bg-(--panel-soft) px-4 py-3 text-right max-[960px]:w-full max-[960px]:text-left">
-                    <p className="text-lg font-semibold text-(--text)">
-                      {t("summary.foundCount", { count: summaryCount })}
-                    </p>
                   </div>
                 ) : null}
               </div>
@@ -1063,6 +1079,20 @@ export function SongSearchPanel(props: {
                           reasons: resultState.reasons.join(" · "),
                         })
                       : t("states.blacklisted");
+                  const compactTuning = formatCompactTuningSummary([
+                    song.tuning,
+                  ]);
+                  const tuningTitle =
+                    compactTuning && song.tuning
+                      ? (() => {
+                          const fullTuningSummary = getUniqueTunings([
+                            song.tuning,
+                          ]).join(" | ");
+                          return fullTuningSummary !== compactTuning
+                            ? fullTuningSummary
+                            : undefined;
+                        })()
+                      : undefined;
 
                   return (
                     <div
@@ -1211,15 +1241,25 @@ export function SongSearchPanel(props: {
                       )}
 
                       <div className="search-panel__stats min-w-0 text-sm">
-                        {song.durationText ? (
-                          <p className="search-panel__desktop-stat inline-flex items-center gap-1 text-(--text)">
-                            <Clock3 className="h-3.5 w-3.5 text-(--muted)" />
-                            <span>{song.durationText}</span>
-                          </p>
-                        ) : null}
-                        {song.tuning ? (
-                          <p className="search-panel__desktop-stat mt-1 truncate text-sm text-(--muted)">
-                            {song.tuning}
+                        {song.durationText || compactTuning ? (
+                          <p className="search-panel__desktop-stat inline-flex flex-wrap items-center gap-x-1.5 gap-y-1 text-(--text)">
+                            {song.durationText ? (
+                              <>
+                                <Clock3 className="h-3.5 w-3.5 text-(--muted)" />
+                                <span>{song.durationText}</span>
+                              </>
+                            ) : null}
+                            {song.durationText && compactTuning ? (
+                              <span className="text-(--muted)">·</span>
+                            ) : null}
+                            {compactTuning ? (
+                              <span
+                                className="truncate text-(--muted)"
+                                title={tuningTitle}
+                              >
+                                {compactTuning}
+                              </span>
+                            ) : null}
                           </p>
                         ) : null}
                         {song.creator ? (

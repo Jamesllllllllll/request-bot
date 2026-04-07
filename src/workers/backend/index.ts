@@ -1,5 +1,5 @@
 import { withMonitor, withSentry } from "@sentry/cloudflare";
-import { and, eq } from "drizzle-orm";
+import { and, asc, eq, inArray } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/d1";
 import {
   clearVipRequestCooldownBySourceItem,
@@ -18,6 +18,7 @@ import {
   playlistItems,
   playlists,
   requestLogs,
+  setlistArtists,
   users,
 } from "~/lib/db/schema";
 import { assertDatabaseSchemaCurrent } from "~/lib/db/schema-version";
@@ -30,6 +31,17 @@ import {
   getUpdatedPositionsAfterSetCurrent,
   getUpdatedQueuedPositionsAfterKindChange,
 } from "~/lib/playlist/order";
+import {
+  toPlaylistClientChannel,
+  toPublicBlacklistArtist,
+  toPublicBlacklistCharter,
+  toPublicBlacklistSong,
+  toPublicBlacklistSongGroup,
+  toPublicPlayedSong,
+  toPublicPlaylistItem,
+  toPublicPlaylistSettings,
+  toPublicSetlistArtist,
+} from "~/lib/playlist/public-response";
 import type {
   AddRequestInput,
   ChangeRequestKindInput,
@@ -50,7 +62,11 @@ import type {
   ShuffleNextInput,
   ShufflePlaylistInput,
 } from "~/lib/playlist/types";
-import { getRequiredPathsWarning, isSongAllowed } from "~/lib/request-policy";
+import {
+  getAllowedRequestPathsSetting,
+  getRequiredPathsWarning,
+  isSongAllowed,
+} from "~/lib/request-policy";
 import { getSentryD1Database, getSentryOptions } from "~/lib/sentry";
 import {
   getAppAccessToken,
@@ -160,7 +176,10 @@ class D1PlaylistCoordinator implements PlaylistCoordinator {
   constructor(
     private state: DurableObjectState,
     private env: BackendEnv,
-    private onPlaylistChanged?: (channelId: string) => Promise<void>
+    private onPlaylistChanged?: (
+      channelId: string,
+      reason?: string
+    ) => Promise<void>
   ) {}
 
   private async getPlaylist(channelId: string) {
@@ -180,21 +199,24 @@ class D1PlaylistCoordinator implements PlaylistCoordinator {
     return { playlist, items };
   }
 
-  private async notify(channelId: string) {
+  async notify(channelId: string, reason = "playlist") {
     console.info("Playlist notify start", {
       channelId,
+      reason,
       hasOnPlaylistChanged: Boolean(this.onPlaylistChanged),
     });
     if (this.onPlaylistChanged) {
       const notifyTask = (async () => {
         try {
-          await this.onPlaylistChanged?.(channelId);
+          await this.onPlaylistChanged?.(channelId, reason);
           console.info("Playlist notify background delivery complete", {
             channelId,
+            reason,
           });
         } catch (error) {
           console.error("Playlist notify background delivery failed", {
             channelId,
+            reason,
             error: error instanceof Error ? error.message : String(error),
           });
         }
@@ -203,6 +225,7 @@ class D1PlaylistCoordinator implements PlaylistCoordinator {
     }
     console.info("Playlist notify queued", {
       channelId,
+      reason,
     });
   }
 
@@ -1715,6 +1738,7 @@ class D1PlaylistCoordinator implements PlaylistCoordinator {
 class ChannelPlaylistDurableObjectBase {
   private coordinator: D1PlaylistCoordinator;
   private streamClients = new Set<PlaylistStreamClient>();
+  private heartbeatInterval: ReturnType<typeof setInterval> | null = null;
 
   constructor(
     private state: DurableObjectState,
@@ -1723,13 +1747,89 @@ class ChannelPlaylistDurableObjectBase {
     this.coordinator = new D1PlaylistCoordinator(
       state,
       env,
-      async (channelId) => {
-        await this.broadcastSnapshot(channelId);
+      async (channelId, reason) => {
+        await this.broadcastSnapshot(channelId, reason);
       }
     );
   }
 
-  private async getSnapshot(channelId: string) {
+  private startHeartbeat() {
+    if (this.heartbeatInterval || !this.streamClients.size) {
+      return;
+    }
+
+    this.heartbeatInterval = setInterval(() => {
+      void this.sendHeartbeat();
+    }, 15_000);
+  }
+
+  private stopHeartbeat() {
+    if (!this.heartbeatInterval) {
+      return;
+    }
+
+    clearInterval(this.heartbeatInterval);
+    this.heartbeatInterval = null;
+  }
+
+  private async removeStreamClient(client: PlaylistStreamClient) {
+    this.streamClients.delete(client);
+    await client.writer.close().catch(() => {});
+
+    if (!this.streamClients.size) {
+      this.stopHeartbeat();
+    }
+  }
+
+  private async writeToStreamClients(encoded: Uint8Array) {
+    await Promise.all(
+      [...this.streamClients].map(async (client) => {
+        try {
+          await client.writer.write(encoded);
+        } catch {
+          await this.removeStreamClient(client);
+        }
+      })
+    );
+
+    if (!this.streamClients.size) {
+      this.stopHeartbeat();
+    }
+  }
+
+  private async sendHeartbeat() {
+    if (!this.streamClients.size) {
+      this.stopHeartbeat();
+      return;
+    }
+
+    await this.writeToStreamClients(
+      new TextEncoder().encode(": keepalive\n\n")
+    );
+  }
+
+  private async sendInitialSnapshot(
+    client: PlaylistStreamClient,
+    channelId: string
+  ) {
+    try {
+      await client.writer.write(
+        new TextEncoder().encode(
+          await this.formatSnapshotEvent(channelId, "initial")
+        )
+      );
+    } catch {
+      await this.removeStreamClient(client);
+    }
+  }
+
+  private async formatSnapshotEvent(channelId: string, reason: string) {
+    return `retry: 3000\nevent: playlist\ndata: ${JSON.stringify(
+      await this.getSnapshot(channelId, reason)
+    )}\n\n`;
+  }
+
+  private async getSnapshot(channelId: string, reason?: string) {
     const db = getDb(this.env);
     const playlist = await db.query.playlists.findFirst({
       where: eq(playlists.channelId, channelId),
@@ -1739,59 +1839,182 @@ class ChannelPlaylistDurableObjectBase {
       throw new Error("Playlist not found");
     }
 
-    const [items, playedSongs] = await Promise.all([
+    const [
+      channel,
+      settings,
+      items,
+      playedSongs,
+      blacklistArtists,
+      blacklistCharters,
+      blacklistSongs,
+      blacklistSongGroups,
+      setlistRows,
+    ] = await Promise.all([
+      db.query.channels.findFirst({
+        where: eq(channels.id, channelId),
+      }),
+      db.query.channelSettings.findFirst({
+        where: eq(channelSettings.channelId, channelId),
+      }),
       db.query.playlistItems.findMany({
         where: eq(playlistItems.playlistId, playlist.id),
       }),
       db.query.playedSongs.findMany({
         where: eq(schema.playedSongs.channelId, channelId),
         orderBy: [schema.playedSongs.playedAt],
-        limit: 100,
+        limit: 500,
+      }),
+      db.query.blacklistedArtists.findMany({
+        where: eq(schema.blacklistedArtists.channelId, channelId),
+      }),
+      db.query.blacklistedCharters.findMany({
+        where: eq(schema.blacklistedCharters.channelId, channelId),
+      }),
+      db.query.blacklistedSongs.findMany({
+        where: eq(schema.blacklistedSongs.channelId, channelId),
+      }),
+      db.query.blacklistedSongGroups.findMany({
+        where: eq(schema.blacklistedSongGroups.channelId, channelId),
+      }),
+      db.query.setlistArtists.findMany({
+        where: eq(setlistArtists.channelId, channelId),
+        orderBy: [asc(setlistArtists.artistName)],
       }),
     ]);
+    const allowedRequestPaths = getAllowedRequestPathsSetting(
+      settings ?? {
+        allowRequestPathModifiers: false,
+        allowedRequestPathsJson: "[]",
+      }
+    );
+    const songIds = [
+      ...new Set(items.map((item) => item.songId).filter(Boolean)),
+    ];
+    const catalogSongs =
+      songIds.length > 0
+        ? await db.query.catalogSongs.findMany({
+            where: inArray(schema.catalogSongs.id, songIds),
+          })
+        : [];
+    const catalogSongsById = new Map(
+      catalogSongs.map(
+        (song) =>
+          [
+            song.id,
+            {
+              sourceId: song.sourceSongId,
+              groupedProjectId: song.groupedProjectId ?? undefined,
+              artistId: song.artistId ?? undefined,
+              authorId: song.authorId ?? undefined,
+              sourceUrl: normalizeSongSourceUrl({
+                source: song.source,
+                sourceId: song.sourceSongId,
+              }),
+              sourceUpdatedAt: song.sourceUpdatedAt ?? undefined,
+              downloads: song.downloads,
+            },
+          ] as const
+      )
+    );
 
     return {
-      playlist,
-      items: items
+      channel: channel ? toPlaylistClientChannel(channel) : undefined,
+      settings: toPublicPlaylistSettings({
+        botChannelEnabled: settings?.botChannelEnabled ?? false,
+        requestsEnabled: settings?.requestsEnabled ?? true,
+        blacklistEnabled: settings?.blacklistEnabled ?? false,
+        setlistEnabled: settings?.setlistEnabled ?? false,
+        letSetlistBypassBlacklist: settings?.letSetlistBypassBlacklist ?? false,
+        subscribersMustFollowSetlist:
+          settings?.subscribersMustFollowSetlist ?? false,
+        allowRequestPathModifiers: allowedRequestPaths.length > 0,
+        allowedRequestPaths,
+        requestPathModifierVipTokenCost:
+          settings?.requestPathModifierVipTokenCost ?? 0,
+        requestPathModifierUsesVipPriority:
+          settings?.requestPathModifierUsesVipPriority ?? true,
+        requiredPathsJson: settings?.requiredPathsJson ?? "[]",
+        vipTokenDurationThresholdsJson:
+          settings?.vipTokenDurationThresholdsJson ?? "[]",
+        requiredPathsMatchMode: settings?.requiredPathsMatchMode ?? "any",
+        autoGrantVipTokenToSubscribers:
+          settings?.autoGrantVipTokenToSubscribers ?? false,
+        autoGrantVipTokensForSharedSubRenewalMessage:
+          settings?.autoGrantVipTokensForSharedSubRenewalMessage ?? false,
+        autoGrantVipTokensToSubGifters:
+          settings?.autoGrantVipTokensToSubGifters ?? false,
+        autoGrantVipTokensToGiftRecipients:
+          settings?.autoGrantVipTokensToGiftRecipients ?? false,
+        autoGrantVipTokensForCheers:
+          settings?.autoGrantVipTokensForCheers ?? false,
+        cheerBitsPerVipToken: settings?.cheerBitsPerVipToken ?? 200,
+        cheerMinimumTokenPercent: settings?.cheerMinimumTokenPercent ?? 25,
+        autoGrantVipTokensForRaiders:
+          settings?.autoGrantVipTokensForRaiders ?? false,
+        raidMinimumViewerCount: settings?.raidMinimumViewerCount ?? 1,
+        autoGrantVipTokensForStreamElementsTips:
+          settings?.autoGrantVipTokensForStreamElementsTips ?? false,
+        streamElementsTipAmountPerVipToken:
+          settings?.streamElementsTipAmountPerVipToken ?? 5,
+        showPlaylistPositions: settings?.showPlaylistPositions ?? false,
+        showPickOrderBadges: settings?.showPickOrderBadges ?? false,
+      }),
+      blacklistArtists: blacklistArtists.map(toPublicBlacklistArtist),
+      blacklistCharters: blacklistCharters.map(toPublicBlacklistCharter),
+      blacklistSongs: blacklistSongs.map(toPublicBlacklistSong),
+      blacklistSongGroups: blacklistSongGroups.map(toPublicBlacklistSongGroup),
+      setlistArtists: setlistRows.map(toPublicSetlistArtist),
+      items: [...items]
         .sort((a, b) => a.position - b.position)
-        .map((item) => ({
-          ...item,
-          requesterChatBadges: parseRequesterChatBadges(
-            item.requesterChatBadgesJson
-          ),
-        })),
-      playedSongs: [...playedSongs].sort((a, b) => b.playedAt - a.playedAt),
+        .map((item) => {
+          const catalogSong = catalogSongsById.get(item.songId);
+
+          return toPublicPlaylistItem({
+            ...item,
+            songCatalogSourceId:
+              item.songCatalogSourceId ?? catalogSong?.sourceId ?? null,
+            songGroupedProjectId: catalogSong?.groupedProjectId ?? null,
+            songArtistId: catalogSong?.artistId ?? null,
+            songCharterId: catalogSong?.authorId ?? null,
+            songUrl: item.songUrl ?? catalogSong?.sourceUrl ?? null,
+            songSourceUpdatedAt: catalogSong?.sourceUpdatedAt ?? null,
+            songDownloads: catalogSong?.downloads ?? null,
+            requesterChatBadges: parseRequesterChatBadges(
+              item.requesterChatBadgesJson
+            ),
+          } as Parameters<typeof toPublicPlaylistItem>[0]);
+        }),
+      playedSongs: [...playedSongs]
+        .sort((a, b) => b.playedAt - a.playedAt)
+        .map(toPublicPlayedSong),
+      streamMeta: {
+        reason: reason ?? "playlist",
+        emittedAt: Date.now(),
+      },
     };
   }
 
-  private async broadcastSnapshot(channelId: string) {
+  private async broadcastSnapshot(channelId: string, reason = "playlist") {
     console.info("Playlist broadcast start", {
       channelId,
+      reason,
       clientCount: this.streamClients.size,
     });
     if (!this.streamClients.size) {
       console.info("Playlist broadcast skipped; no stream clients", {
         channelId,
+        reason,
       });
       return;
     }
 
-    const payload = `event: playlist\ndata: ${JSON.stringify(await this.getSnapshot(channelId))}\n\n`;
+    const payload = await this.formatSnapshotEvent(channelId, reason);
     const encoded = new TextEncoder().encode(payload);
-
-    await Promise.all(
-      [...this.streamClients].map(async (client) => {
-        try {
-          await client.writer.write(encoded);
-        } catch {
-          this.streamClients.delete(client);
-          await client.writer.close().catch(() => {});
-        }
-      })
-    );
+    await this.writeToStreamClients(encoded);
 
     console.info("Playlist broadcast complete", {
       channelId,
+      reason,
       remainingClientCount: this.streamClients.size,
     });
   }
@@ -1811,25 +2034,8 @@ class ChannelPlaylistDurableObjectBase {
     };
 
     this.streamClients.add(client);
-
-    const removeClient = async () => {
-      this.streamClients.delete(client);
-      await writer.close().catch(() => {});
-    };
-
-    request.signal.addEventListener(
-      "abort",
-      () => {
-        this.state.waitUntil(removeClient());
-      },
-      { once: true }
-    );
-
-    await writer.write(
-      new TextEncoder().encode(
-        `event: playlist\ndata: ${JSON.stringify(await this.getSnapshot(channelId))}\n\n`
-      )
-    );
+    this.startHeartbeat();
+    this.state.waitUntil(this.sendInitialSnapshot(client, channelId));
 
     return new Response(stream.readable, {
       headers: {
@@ -1870,6 +2076,19 @@ class ChannelPlaylistDurableObjectBase {
         return json(await handleMutation(this.coordinator, payload, traceId));
       case "/stream":
         return this.handleStream(request);
+      case "/notify": {
+        const channelId =
+          typeof payload.channelId === "string" ? payload.channelId : null;
+        if (!channelId) {
+          return new Response("Missing channelId", { status: 400 });
+        }
+
+        await this.coordinator.notify(
+          channelId,
+          typeof payload.reason === "string" ? payload.reason : undefined
+        );
+        return json({ ok: true });
+      }
       default:
         return new Response("Not found", { status: 404 });
     }
@@ -2077,6 +2296,24 @@ async function sendReply(
   return result;
 }
 
+async function notifyPlaylistListenersFromBackend(
+  env: BackendEnv,
+  input: {
+    channelId: string;
+    reason: string;
+  }
+) {
+  const id = env.CHANNEL_PLAYLIST_DO.idFromName(String(input.channelId));
+  const stub = env.CHANNEL_PLAYLIST_DO.get(id);
+  await stub.fetch("https://do/notify", {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+    },
+    body: JSON.stringify(input),
+  });
+}
+
 const backendHandler = {
   async fetch(request: Request, env: BackendEnv, ctx: ExecutionContext) {
     void ctx;
@@ -2158,6 +2395,25 @@ const backendHandler = {
     }
 
     if (
+      url.pathname === "/internal/playlist/notify" &&
+      request.method === "POST"
+    ) {
+      const payload = (await request.json()) as {
+        channelId?: string;
+        reason?: string;
+      };
+      if (!payload.channelId) {
+        return new Response("Missing channelId", { status: 400 });
+      }
+
+      await notifyPlaylistListenersFromBackend(env, {
+        channelId: payload.channelId,
+        reason: payload.reason ?? "playlist",
+      });
+      return json({ ok: true });
+    }
+
+    if (
       url.pathname === "/internal/twitch/user-by-login" &&
       request.method === "GET"
     ) {
@@ -2190,6 +2446,10 @@ const backendHandler = {
       };
       const result = await reconcileChannelBotState(env, payload.channelId, {
         refreshLiveState: payload.refreshLiveState ?? true,
+      });
+      await notifyPlaylistListenersFromBackend(env, {
+        channelId: payload.channelId,
+        reason: "stream-status",
       });
       return json(result);
     }

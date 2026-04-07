@@ -1,6 +1,10 @@
 import { env } from "cloudflare:workers";
 import { createFileRoute } from "@tanstack/react-router";
 import {
+  notifyPlaylistStream,
+  type PlaylistStreamNotifyReason,
+} from "~/lib/backend";
+import {
   addBlacklistedArtist,
   addBlacklistedCharter,
   addBlacklistedSong,
@@ -33,6 +37,34 @@ import { formatVipTokenCount } from "~/lib/vip-tokens";
 
 function getActorType(accessRole: "owner" | "moderator") {
   return accessRole === "owner" ? "owner" : "moderator";
+}
+
+function getModerationNotifyReason(
+  action: ReturnType<typeof moderationActionSchema.parse>["action"]
+): PlaylistStreamNotifyReason {
+  switch (action) {
+    case "addBlacklistedArtist":
+    case "removeBlacklistedArtist":
+    case "addBlacklistedCharter":
+    case "removeBlacklistedCharter":
+    case "addBlacklistedSong":
+    case "removeBlacklistedSong":
+    case "addBlacklistedSongGroup":
+    case "removeBlacklistedSongGroup":
+      return "blacklist";
+    case "addSetlistArtist":
+    case "removeSetlistArtist":
+      return "setlist";
+    case "blockUser":
+    case "removeBlockedUser":
+      return "blocks";
+    case "addVipToken":
+    case "removeVipToken":
+    case "setVipTokenCount":
+      return "vip-tokens";
+    default:
+      return "settings";
+  }
 }
 
 export const Route = createFileRoute("/api/channel/$slug/moderation")({
@@ -366,6 +398,11 @@ export const Route = createFileRoute("/api/channel/$slug/moderation")({
               { status: 400 }
             );
         }
+
+        await notifyPlaylistStream(runtimeEnv, {
+          channelId: state.channel.id,
+          reason: getModerationNotifyReason(body.action),
+        });
 
         return json({ ok: true });
       },

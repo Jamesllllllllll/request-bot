@@ -28,11 +28,15 @@ import {
   DatabaseSchemaOutOfDateError,
 } from "~/lib/db/schema-version";
 import type { AppEnv } from "~/lib/env";
+import { toPlaylistClientChannel } from "~/lib/playlist/public-response";
 import {
   ADD_REQUESTS_WHEN_LIVE_MESSAGE,
   areChannelRequestsOpen,
 } from "~/lib/request-availability";
-import { getArraySetting } from "~/lib/request-policy";
+import {
+  getAllowedRequestPathsSetting,
+  getArraySetting,
+} from "~/lib/request-policy";
 import {
   getRequestVipTokenPlan,
   getStoredRequestedPaths,
@@ -273,7 +277,7 @@ export function getPlaylistManagementResponseBody(
   state: PlaylistManagementState
 ) {
   return {
-    channel: state.channel,
+    channel: toPlaylistClientChannel(state.channel),
     playlist: state.playlist,
     items: state.items,
     playedSongs: state.playedSongs,
@@ -288,6 +292,74 @@ export function getPlaylistManagementResponseBody(
     requiredPaths: state.settings
       ? getArraySetting(state.settings.requiredPathsJson)
       : [],
+  };
+}
+
+export async function getPlaylistManagementPageData(
+  runtimeEnv: AppEnv,
+  state: PlaylistManagementState
+) {
+  const canManageBlockedChatters = canManageChannelBlockedChatters(state);
+  const canViewVipTokens = canViewChannelVipTokens(state);
+  const allowedRequestPaths = getAllowedRequestPathsSetting(
+    state.settings ?? {
+      allowRequestPathModifiers: false,
+      allowedRequestPathsJson: "[]",
+    }
+  );
+
+  return {
+    ...getPlaylistManagementResponseBody(state),
+    blocks: canManageBlockedChatters ? state.blocks : [],
+    settings: {
+      botChannelEnabled: state.settings?.botChannelEnabled ?? false,
+      requestsEnabled: state.settings?.requestsEnabled ?? true,
+      blacklistEnabled: state.settings?.blacklistEnabled ?? false,
+      setlistEnabled: state.settings?.setlistEnabled ?? false,
+      letSetlistBypassBlacklist:
+        state.settings?.letSetlistBypassBlacklist ?? false,
+      subscribersMustFollowSetlist:
+        state.settings?.subscribersMustFollowSetlist ?? false,
+      allowRequestPathModifiers: allowedRequestPaths.length > 0,
+      allowedRequestPaths,
+      requestPathModifierVipTokenCost:
+        state.settings?.requestPathModifierVipTokenCost ?? 0,
+      requestPathModifierUsesVipPriority:
+        state.settings?.requestPathModifierUsesVipPriority ?? true,
+      requiredPathsJson: state.settings?.requiredPathsJson ?? "[]",
+      vipTokenDurationThresholdsJson:
+        state.settings?.vipTokenDurationThresholdsJson ?? "[]",
+      requiredPathsMatchMode: state.settings?.requiredPathsMatchMode ?? "any",
+      canManageRequests: canManageChannelRequests(state),
+      canManageBlacklist: canManageChannelBlacklist(state),
+      canManageSetlist: canManageChannelSetlist(state),
+      canManageBlockedChatters,
+      canViewVipTokens,
+      canManageVipTokens: canManageChannelVipTokens(state),
+      autoGrantVipTokenToSubscribers:
+        state.settings?.autoGrantVipTokenToSubscribers ?? false,
+      autoGrantVipTokensForSharedSubRenewalMessage:
+        state.settings?.autoGrantVipTokensForSharedSubRenewalMessage ?? false,
+      autoGrantVipTokensToSubGifters:
+        state.settings?.autoGrantVipTokensToSubGifters ?? false,
+      autoGrantVipTokensToGiftRecipients:
+        state.settings?.autoGrantVipTokensToGiftRecipients ?? false,
+      autoGrantVipTokensForCheers:
+        state.settings?.autoGrantVipTokensForCheers ?? false,
+      autoGrantVipTokensForRaiders:
+        state.settings?.autoGrantVipTokensForRaiders ?? false,
+      cheerBitsPerVipToken: state.settings?.cheerBitsPerVipToken ?? 200,
+      cheerMinimumTokenPercent: state.settings?.cheerMinimumTokenPercent ?? 25,
+      raidMinimumViewerCount: state.settings?.raidMinimumViewerCount ?? 1,
+      autoGrantVipTokensForStreamElementsTips:
+        state.settings?.autoGrantVipTokensForStreamElementsTips ?? false,
+      streamElementsTipAmountPerVipToken:
+        state.settings?.streamElementsTipAmountPerVipToken ?? 5,
+      showPlaylistPositions: state.settings?.showPlaylistPositions ?? false,
+      showPickOrderBadges: state.settings?.showPickOrderBadges ?? false,
+    },
+    items: await enrichPlaylistItems(runtimeEnv, state.items),
+    vipTokens: canViewVipTokens ? state.vipTokens : [],
   };
 }
 

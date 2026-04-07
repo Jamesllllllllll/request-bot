@@ -32,6 +32,19 @@ export const searchInputSchema = z
   .object({
     query: z.string().trim().max(200).optional(),
     channelSlug: z.string().trim().max(100).optional(),
+    favoritesOnly: z
+      .preprocess(
+        (value) =>
+          value === undefined
+            ? undefined
+            : value === true || value === "true"
+              ? true
+              : value === false || value === "false"
+                ? false
+                : value,
+        z.boolean().optional()
+      )
+      .default(false),
     showBlacklisted: z
       .preprocess(
         (value) =>
@@ -68,6 +81,14 @@ export const searchInputSchema = z
         code: z.ZodIssueCode.custom,
         message: "Search terms must be at least 3 characters.",
         path: ["query"],
+      });
+    }
+
+    if (input.favoritesOnly && !input.channelSlug) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "Favorites-only search requires a channel.",
+        path: ["favoritesOnly"],
       });
     }
   });
@@ -421,6 +442,16 @@ export const viewerRequestMutationSchema = z.union([
   viewerSubmitSpecialSchema,
   viewerRemoveRequestSchema,
 ]);
+
+export const favoriteSongsPageSchema = z.object({
+  page: z.coerce.number().int().min(1).default(1),
+  pageSize: z.coerce.number().int().min(1).max(50).default(10),
+});
+
+export const channelFavoriteMutationSchema = z.object({
+  catalogSongId: z.string().trim().min(1).max(80),
+  favorited: z.boolean(),
+});
 
 export const extensionSearchInputSchema = z.object({
   query: z.string().trim().min(3).max(200),

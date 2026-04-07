@@ -76,6 +76,10 @@ import {
   getResolvedPlaylistCandidates,
 } from "~/lib/playlist/management-display";
 import {
+  getPlaylistEndpoint,
+  getPlaylistMutationEndpoint,
+} from "~/lib/playlist/management-endpoints";
+import {
   getQueuedPositionsFromRegularOrder,
   getUpdatedPositionsAfterSetCurrent,
   getUpdatedQueuedPositionsAfterKindChange,
@@ -87,6 +91,10 @@ import {
   getRequestVipTokenPlan,
   getStoredRequestedPaths,
 } from "~/lib/requested-paths";
+import {
+  formatCompactTuningSummary,
+  getUniqueTunings,
+} from "~/lib/tuning-summary";
 import type { RequesterChatBadge } from "~/lib/twitch/chat-badges";
 import { getErrorMessage } from "~/lib/utils";
 import {
@@ -254,9 +262,8 @@ const playlistItemTransition = {
   ease: [0.2, 0, 0, 1] as const,
 };
 
-type PlaylistQueryData = {
+export type PlaylistManagementSurfaceData = {
   channel: {
-    id: string;
     slug: string;
     displayName: string;
     isLive: boolean;
@@ -264,6 +271,7 @@ type PlaylistQueryData = {
   };
   settings?: {
     botChannelEnabled?: boolean;
+    requestsEnabled?: boolean;
     canManageBlacklist?: boolean;
     requestPathModifierVipTokenCost?: number;
     requestPathModifierUsesVipPriority?: boolean;
@@ -292,8 +300,12 @@ type PlaylistQueryData = {
 export type PlaylistManagementSurfaceProps = {
   selectedChannelSlug?: string;
   apiPath: string;
+  mutationPath?: string;
   queryKeyBase: string;
   queryKey?: (string | null)[];
+  playlistData?: PlaylistManagementSurfaceData | null;
+  refetchIntervalMs?: number | false;
+  staleTimeMs?: number;
   headerTitle?: string;
   headerDescription?: string;
   showAncillaryPanels?: boolean;
@@ -362,61 +374,34 @@ export function PlaylistManagementSurface(
     props.apiPath,
     props.selectedChannelSlug
   );
-  const playlistQuery = useQuery({
+  const playlistMutationEndpoint = getPlaylistMutationEndpoint(
+    props.apiPath,
+    props.mutationPath,
+    props.selectedChannelSlug
+  );
+  const usesPrefetchedPlaylistData = props.playlistData !== undefined;
+  const playlistQuery = useQuery<PlaylistManagementSurfaceData>({
     queryKey: playlistQueryKey,
     queryFn: async () => {
       const response = await fetch(playlistEndpoint);
-      return response.json() as Promise<{
-        channel: {
-          id: string;
-          slug: string;
-          displayName: string;
-          isLive: boolean;
-          botReadyState?: string | null;
-        };
-        settings?: {
-          botChannelEnabled?: boolean;
-          requestsEnabled?: boolean;
-          canManageBlacklist?: boolean;
-          requestPathModifierVipTokenCost?: number;
-          requestPathModifierUsesVipPriority?: boolean;
-          showPickOrderBadges?: boolean;
-          vipTokenDurationThresholdsJson?: string | null;
-        };
-        items: PlaylistItem[];
-        playedSongs: PlayedSong[];
-        vipTokens: VipTokenBalance[];
-        blacklistArtists: Array<{ artistId: number; artistName: string }>;
-        blacklistCharters: Array<{
-          charterId: number;
-          charterName: string;
-        }>;
-        blacklistSongs: Array<{
-          songId: number;
-          songTitle: string;
-          artistName?: string | null;
-        }>;
-        blacklistSongGroups: Array<{
-          groupedProjectId: number;
-          songTitle: string;
-          artistId?: number | null;
-          artistName?: string | null;
-        }>;
-        accessRole?: "owner" | "moderator";
-      }>;
+      return response.json() as Promise<PlaylistManagementSurfaceData>;
     },
-    refetchInterval: 2_000,
+    enabled: !usesPrefetchedPlaylistData,
+    staleTime: props.staleTimeMs ?? 0,
+    refetchInterval:
+      props.refetchIntervalMs === undefined ? 2_000 : props.refetchIntervalMs,
     refetchIntervalInBackground: false,
   });
-  const moderationEndpoint = playlistQuery.data?.channel?.slug
-    ? `/api/channel/${playlistQuery.data.channel.slug}/moderation`
+  const playlistData = props.playlistData ?? playlistQuery.data;
+  const moderationEndpoint = playlistData?.channel?.slug
+    ? `/api/channel/${playlistData.channel.slug}/moderation`
     : null;
   const vipTokenDurationThresholds = useMemo(
     () =>
       parseVipTokenDurationThresholds(
-        playlistQuery.data?.settings?.vipTokenDurationThresholdsJson
+        playlistData?.settings?.vipTokenDurationThresholdsJson
       ),
-    [playlistQuery.data?.settings?.vipTokenDurationThresholdsJson]
+    [playlistData?.settings?.vipTokenDurationThresholdsJson]
   );
 
   useEffect(() => {
@@ -462,7 +447,7 @@ export function PlaylistManagementSurface(
 
   const mutation = useMutation({
     mutationFn: async (body: Record<string, unknown>) => {
-      const response = await fetch(playlistEndpoint, {
+      const response = await fetch(playlistMutationEndpoint, {
         method: "POST",
         headers: {
           "content-type": "application/json",
@@ -505,7 +490,9 @@ export function PlaylistManagementSurface(
 
       await queryClient.cancelQueries({ queryKey: playlistQueryKey });
       const previous =
-        queryClient.getQueryData<PlaylistQueryData>(playlistQueryKey);
+        queryClient.getQueryData<PlaylistManagementSurfaceData>(
+          playlistQueryKey
+        );
 
       if (!previous) {
         return undefined;
@@ -730,25 +717,24 @@ export function PlaylistManagementSurface(
     },
   });
 
-  const playedSongs = playlistQuery.data?.playedSongs ?? [];
-  const showPickOrderBadges =
-    !!playlistQuery.data?.settings?.showPickOrderBadges;
+  const playedSongs = playlistData?.playedSongs ?? [];
+  const showPickOrderBadges = !!playlistData?.settings?.showPickOrderBadges;
   const items = useMemo(() => {
-    const baseItems = playlistQuery.data?.items ?? [];
+    const baseItems = playlistData?.items ?? [];
     const pickNumbers = getPickNumbersForQueuedItems(baseItems, playedSongs);
 
     return baseItems.map((item, index) => ({
       ...item,
       pickNumber: pickNumbers[index] ?? null,
     }));
-  }, [playedSongs, playlistQuery.data?.items]);
+  }, [playedSongs, playlistData?.items]);
   const currentItemId = useMemo(
     () => items.find((item) => item.status === "current")?.id ?? null,
     [items]
   );
 
-  const vipTokens = playlistQuery.data?.vipTokens ?? [];
-  const requestsEnabled = playlistQuery.data?.settings?.requestsEnabled ?? true;
+  const vipTokens = playlistData?.vipTokens ?? [];
+  const requestsEnabled = playlistData?.settings?.requestsEnabled ?? true;
   const canEndSession =
     items.length > 0 || playedSongs.length > 0 || requestsEnabled;
   const resetSessionTooltip = t(
@@ -761,10 +747,10 @@ export function PlaylistManagementSurface(
       ? "management.actions.resetDialog.descriptionWithPickOrder"
       : "management.actions.resetDialog.description"
   );
-  const blacklistArtists = playlistQuery.data?.blacklistArtists ?? [];
-  const blacklistCharters = playlistQuery.data?.blacklistCharters ?? [];
-  const blacklistSongs = playlistQuery.data?.blacklistSongs ?? [];
-  const blacklistSongGroups = playlistQuery.data?.blacklistSongGroups ?? [];
+  const blacklistArtists = playlistData?.blacklistArtists ?? [];
+  const blacklistCharters = playlistData?.blacklistCharters ?? [];
+  const blacklistSongs = playlistData?.blacklistSongs ?? [];
+  const blacklistSongGroups = playlistData?.blacklistSongGroups ?? [];
   const blacklistedArtistIds = new Set(
     blacklistArtists.map((item) => item.artistId)
   );
@@ -778,13 +764,13 @@ export function PlaylistManagementSurface(
   const vipTokenBalancesByLogin = new Map(
     vipTokens.map((token) => [token.login.toLowerCase(), token.availableCount])
   );
-  const managedChannel = playlistQuery.data?.channel ?? null;
+  const managedChannel = playlistData?.channel ?? null;
   const requestsOpen = managedChannel
     ? areChannelRequestsOpen(managedChannel)
     : false;
-  const accessRole = playlistQuery.data?.accessRole ?? "owner";
-  const botChannelEnabled = !!playlistQuery.data?.settings?.botChannelEnabled;
-  const canManageBlacklist = !!playlistQuery.data?.settings?.canManageBlacklist;
+  const accessRole = playlistData?.accessRole ?? "owner";
+  const botChannelEnabled = !!playlistData?.settings?.botChannelEnabled;
+  const canManageBlacklist = !!playlistData?.settings?.canManageBlacklist;
   const isDeletingItem = (itemId: string) =>
     mutation.isPending &&
     pendingRowAction?.action === "deleteItem" &&
@@ -2262,6 +2248,21 @@ function PlaylistQueueItem(props: {
       : null;
   const resolvedCandidates = getResolvedPlaylistCandidates(props.item);
   const hasMultipleVersions = resolvedCandidates.length > 1;
+  const tuningValues = resolvedCandidates.some((candidate) => candidate.tuning)
+    ? resolvedCandidates.map((candidate) => candidate.tuning)
+    : [props.item.songTuning];
+  const compactTuning = formatCompactTuningSummary(tuningValues);
+  const itemDurationText =
+    resolvedCandidates[0]?.durationText ?? props.item.songDurationText;
+  const compactTuningTitle =
+    compactTuning && tuningValues.length > 0
+      ? (() => {
+          const fullTuningSummary = getUniqueTunings(tuningValues).join(" | ");
+          return fullTuningSummary !== compactTuning
+            ? fullTuningSummary
+            : undefined;
+        })()
+      : undefined;
   const singleVersionDownloadUrl =
     !hasMultipleVersions && resolvedCandidates[0]?.sourceUrl
       ? resolvedCandidates[0].sourceUrl
@@ -2525,6 +2526,22 @@ function PlaylistQueueItem(props: {
                   unknownArtistLabel: t("management.manual.unknownArtist"),
                 })}
               </p>
+              {itemDurationText || compactTuning ? (
+                <p className="flex flex-wrap items-center gap-x-1.5 gap-y-1 text-sm text-(--muted)">
+                  {itemDurationText ? (
+                    <>
+                      <Clock3 className="h-3.5 w-3.5" />
+                      <span>{itemDurationText}</span>
+                    </>
+                  ) : null}
+                  {itemDurationText && compactTuning ? (
+                    <span aria-hidden="true">·</span>
+                  ) : null}
+                  {compactTuning ? (
+                    <span title={compactTuningTitle}>{compactTuning}</span>
+                  ) : null}
+                </p>
+              ) : null}
               <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
                 {getRequesterLabel(props.item) ? (
                   <div className="flex min-w-0 flex-wrap items-center gap-2">
@@ -3376,16 +3393,4 @@ export function PlaylistQueueItemPreview() {
       }}
     />
   );
-}
-
-function getPlaylistEndpoint(apiPath: string, selectedChannelSlug?: string) {
-  if (!selectedChannelSlug) {
-    return apiPath;
-  }
-
-  const params = new URLSearchParams({
-    channel: selectedChannelSlug,
-  });
-
-  return `${apiPath}?${params.toString()}`;
 }

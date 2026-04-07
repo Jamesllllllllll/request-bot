@@ -527,6 +527,27 @@ export const blacklistedCharters = sqliteTable(
   (table) => [primaryKey({ columns: [table.channelId, table.charterId] })]
 );
 
+export const channelFavoriteCharts = sqliteTable(
+  "channel_favorite_charts",
+  {
+    channelId: text("channel_id")
+      .notNull()
+      .references(() => channels.id),
+    catalogSongId: text("catalog_song_id").notNull(),
+    createdAt: integer("created_at")
+      .notNull()
+      .default(sql`(unixepoch() * 1000)`),
+  },
+  (table) => [
+    primaryKey({ columns: [table.channelId, table.catalogSongId] }),
+    index("channel_favorite_charts_channel_created_idx").on(
+      table.channelId,
+      table.createdAt
+    ),
+    index("channel_favorite_charts_song_idx").on(table.catalogSongId),
+  ]
+);
+
 export const setlistArtists = sqliteTable(
   "setlist_artists",
   {
@@ -927,6 +948,8 @@ export type BlacklistedSongInsert = typeof blacklistedSongs.$inferInsert;
 export type BlacklistedSongGroupInsert =
   typeof blacklistedSongGroups.$inferInsert;
 export type BlacklistedCharterInsert = typeof blacklistedCharters.$inferInsert;
+export type ChannelFavoriteChartInsert =
+  typeof channelFavoriteCharts.$inferInsert;
 export type SetlistArtistInsert = typeof setlistArtists.$inferInsert;
 export type VipTokenInsert = typeof vipTokens.$inferInsert;
 export type VipRequestCooldownInsert = typeof vipRequestCooldowns.$inferInsert;

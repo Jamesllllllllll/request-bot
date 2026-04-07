@@ -5,7 +5,9 @@ import { callBackend } from "~/lib/backend";
 import { getChannelBySlug } from "~/lib/db/repositories";
 import type { AppEnv } from "~/lib/env";
 
-export const Route = createFileRoute("/api/channel/$slug/playlist/stream")({
+export const Route = createFileRoute(
+  "/api/channel/$slug/playlist/public-stream"
+)({
   server: {
     handlers: {
       GET: async ({ params }) => {

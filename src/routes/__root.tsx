@@ -1,5 +1,6 @@
 // Route: Defines the shared document shell, navigation, and app-wide providers.
 import { QueryClientProvider, useQuery } from "@tanstack/react-query";
+import { ReactQueryDevtools } from "@tanstack/react-query-devtools";
 import {
   createRootRouteWithContext,
   HeadContent,
@@ -58,6 +59,7 @@ function RootComponent() {
     select: (state) => state.location.pathname,
   });
   const isExtensionRoute = pathname.startsWith("/extension/");
+  const showDevtools = import.meta.env.DEV && !isExtensionRoute;
 
   return (
     <html lang={locale}>
@@ -77,7 +79,10 @@ function RootComponent() {
           <AppI18nProvider initialLocale={locale}>
             <AppShell />
           </AppI18nProvider>
-          {isExtensionRoute ? null : <TanStackRouterDevtools />}
+          {showDevtools ? <TanStackRouterDevtools /> : null}
+          {showDevtools ? (
+            <ReactQueryDevtools buttonPosition="bottom-right" />
+          ) : null}
         </QueryClientProvider>
         <Scripts />
       </body>

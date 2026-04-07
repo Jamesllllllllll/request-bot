@@ -7,6 +7,7 @@ import {
   createSession,
   verifyOauthState,
 } from "~/lib/auth/session.server";
+import { notifyPlaylistStream } from "~/lib/backend";
 import {
   saveTwitchAuthorization,
   upsertUserAndChannel,
@@ -83,6 +84,11 @@ export const Route = createFileRoute("/auth/twitch/callback")({
             }
           );
         }
+
+        await notifyPlaylistStream(runtimeEnv, {
+          channelId: channel.id,
+          reason: "stream-status",
+        });
 
         const sessionId = await createSession(runtimeEnv, user.id);
         const requestedRedirect = redirectToRaw

@@ -1,5 +1,6 @@
 import "@tanstack/react-start/server-only";
 import { and, asc, desc, eq, gt, inArray, sql } from "drizzle-orm";
+import { rollupFavoriteCharts } from "~/lib/channel-favorites";
 import { tuningOptions } from "~/lib/channel-options";
 import type { AppEnv } from "~/lib/env";
 import { toPublicOverlaySettings } from "~/lib/overlay/public-settings";
@@ -51,6 +52,7 @@ import {
   type CatalogSongInsert,
   type ChannelOwnedOfficialDlcInsert,
   catalogSongs,
+  channelFavoriteCharts,
   channelOwnedOfficialDlcs,
   channelSettings,
   channels,
@@ -898,6 +900,163 @@ export async function getChannelBlacklistByChannelId(
   };
 }
 
+export async function getChannelFavoritedChartSongIds(
+  env: AppEnv,
+  channelId: string
+) {
+  const rows = await getDb(env).query.channelFavoriteCharts.findMany({
+    where: eq(channelFavoriteCharts.channelId, channelId),
+    orderBy: [desc(channelFavoriteCharts.createdAt)],
+    columns: {
+      catalogSongId: true,
+    },
+  });
+
+  return rows.map((row) => row.catalogSongId);
+}
+
+export async function setChannelFavoriteChart(
+  env: AppEnv,
+  input: {
+    channelId: string;
+    catalogSongId: string;
+    favorited: boolean;
+  }
+) {
+  if (input.favorited) {
+    await getDb(env)
+      .insert(channelFavoriteCharts)
+      .values({
+        channelId: input.channelId,
+        catalogSongId: input.catalogSongId,
+        createdAt: Date.now(),
+      })
+      .onConflictDoNothing();
+
+    return;
+  }
+
+  await getDb(env)
+    .delete(channelFavoriteCharts)
+    .where(
+      and(
+        eq(channelFavoriteCharts.channelId, input.channelId),
+        eq(channelFavoriteCharts.catalogSongId, input.catalogSongId)
+      )
+    );
+}
+
+export async function getChannelFavoriteSongsPage(
+  env: AppEnv,
+  input: {
+    channelId: string;
+    page: number;
+    limit: number;
+  }
+) {
+  const rows = await getDb(env).all<{
+    id: string;
+    favoritedAt: number;
+    sourceSongId: number;
+    groupedProjectId: number | null;
+    artistId: number | null;
+    authorId: number | null;
+    title: string;
+    artistName: string;
+    albumName: string | null;
+    creatorName: string | null;
+    tuningSummary: string | null;
+    partsJson: string;
+    durationText: string | null;
+    durationSeconds: number | null;
+    year: number | null;
+    sourceUpdatedAt: number | null;
+    downloads: number;
+    source: string;
+  }>(sql`
+    SELECT
+      catalog_songs.id AS id,
+      channel_favorite_charts.created_at AS favoritedAt,
+      catalog_songs.source_song_id AS sourceSongId,
+      catalog_songs.grouped_project_id AS groupedProjectId,
+      catalog_songs.artist_id AS artistId,
+      catalog_songs.author_id AS authorId,
+      catalog_songs.title AS title,
+      catalog_songs.artist_name AS artistName,
+      catalog_songs.album_name AS albumName,
+      catalog_songs.creator_name AS creatorName,
+      catalog_songs.tuning_summary AS tuningSummary,
+      catalog_songs.parts_json AS partsJson,
+      catalog_songs.duration_text AS durationText,
+      catalog_songs.duration_seconds AS durationSeconds,
+      catalog_songs.year AS year,
+      catalog_songs.source_updated_at AS sourceUpdatedAt,
+      catalog_songs.downloads AS downloads,
+      catalog_songs.source AS source
+    FROM channel_favorite_charts
+    INNER JOIN catalog_songs
+      ON catalog_songs.id = channel_favorite_charts.catalog_song_id
+    WHERE channel_favorite_charts.channel_id = ${input.channelId}
+    ORDER BY
+      channel_favorite_charts.created_at DESC,
+      coalesce(catalog_songs.source_updated_at, 0) DESC,
+      catalog_songs.source_song_id DESC
+  `);
+
+  const blacklist = await getChannelBlacklistByChannelId(env, input.channelId);
+  const favoritedChartSongIds = unwrapD1Rows(rows).map((row) => row.id);
+  const rolledUpFavorites = rollupFavoriteCharts(
+    unwrapD1Rows(rows).map((row) => ({
+      id: row.id,
+      favoritedAt: row.favoritedAt,
+      sourceId: row.sourceSongId,
+      groupedProjectId: row.groupedProjectId ?? undefined,
+      artistId: row.artistId ?? undefined,
+      authorId: row.authorId ?? undefined,
+      title: decodeHtmlEntities(row.title),
+      artist: decodeHtmlEntities(row.artistName),
+      album: row.albumName ? decodeHtmlEntities(row.albumName) : undefined,
+      creator: row.creatorName
+        ? decodeHtmlEntities(row.creatorName)
+        : undefined,
+      tuning: row.tuningSummary
+        ? decodeHtmlEntities(row.tuningSummary)
+        : undefined,
+      parts: parseJsonStringArray(row.partsJson),
+      durationText: row.durationText ?? undefined,
+      durationSeconds: row.durationSeconds ?? undefined,
+      year: row.year ?? undefined,
+      sourceUpdatedAt: row.sourceUpdatedAt ?? undefined,
+      downloads: row.downloads,
+      source: row.source,
+      sourceUrl: normalizeSongSourceUrl({
+        source: row.source,
+        sourceId: row.sourceSongId,
+      }),
+    })),
+    {
+      artists: blacklist.blacklistArtists,
+      charters: blacklist.blacklistCharters,
+      songs: blacklist.blacklistSongs,
+      songGroups: blacklist.blacklistSongGroups,
+    }
+  );
+
+  const offset = Math.max(0, (input.page - 1) * input.limit);
+  const items = rolledUpFavorites.slice(offset, offset + input.limit);
+  const total = rolledUpFavorites.length;
+
+  return {
+    items,
+    favoritedChartSongIds,
+    total,
+    page: input.page,
+    limit: input.limit,
+    hasPrevious: offset > 0,
+    hasNext: offset + items.length < total,
+  };
+}
+
 function nextOverlayToken() {
   return createId("ovl");
 }
@@ -1146,6 +1305,8 @@ export async function getPlayedHistoryPage(
 
 export interface CatalogSearchInput {
   query?: string;
+  favoritesOnly?: boolean;
+  favoriteChannelId?: string;
   field?: "any" | "title" | "artist" | "album" | "creator" | "tuning" | "parts";
   title?: string;
   artist?: string;
@@ -1617,6 +1778,14 @@ export async function searchCatalogSongs(
         )})`
     : null;
   const policyConditions = [
+    input.favoriteChannelId
+      ? sql`EXISTS (
+          SELECT 1
+          FROM channel_favorite_charts
+          WHERE channel_favorite_charts.channel_id = ${input.favoriteChannelId}
+            AND channel_favorite_charts.catalog_song_id = ${catalogSongs.id}
+        )`
+      : null,
     input.restrictToOfficial
       ? sql`${catalogSongs.source} = ${"official"}`
       : null,

@@ -1,13 +1,16 @@
 // Route: Shows the public playlist page for a single channel by slug.
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
-import { CircleQuestionMark } from "lucide-react";
+import { CircleQuestionMark, Heart } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
 import { useEffect, useMemo, useState } from "react";
 import { ChannelCommunityPanel } from "~/components/channel-community-panel";
 import { ChannelRulesPanel } from "~/components/channel-rules-panel";
 import { PickOrderBadge } from "~/components/pick-order-badge";
-import { PlaylistManagementSurface } from "~/components/playlist-management-surface";
+import {
+  PlaylistManagementSurface,
+  type PlaylistManagementSurfaceData,
+} from "~/components/playlist-management-surface";
 import { PublicPlayedHistoryCard } from "~/components/public-played-history-card";
 import { RequesterChatBadges } from "~/components/requester-chat-badges";
 import type {
@@ -245,6 +248,59 @@ type PublicChannelPageData = {
   accessRole?: "anonymous" | "viewer" | "moderator" | "owner";
 };
 
+type ManagementPlaylistItem = PublicPlaylistItem & {
+  songTuning?: string | null;
+  songPartsJson?: string | null;
+  songDurationText?: string | null;
+  songUrl?: string | null;
+  songSourceUpdatedAt?: number | null;
+  songDownloads?: number | null;
+  warningMessage?: string | null;
+  candidateMatchesJson?: string | null;
+  regularPosition?: number | null;
+};
+
+type ManagementChannelPageData = Omit<
+  PublicChannelPageData,
+  "items" | "accessRole"
+> & {
+  items?: ManagementPlaylistItem[];
+  accessRole?: "moderator" | "owner";
+};
+
+type FavoriteSongsData = {
+  items: SearchSong[];
+  favoritedChartSongIds: string[];
+  total: number;
+  page: number;
+  limit: number;
+  hasPrevious: boolean;
+  hasNext: boolean;
+};
+
+type PendingFavoriteState = {
+  songId: string;
+  favorited: boolean;
+} | null;
+
+type PlaylistStreamMeta = {
+  reason?: string | null;
+  emittedAt?: number | null;
+};
+
+type PlaylistStreamPayload = {
+  channel?: PublicChannelPageData["channel"];
+  settings?: PublicChannelPageData["settings"];
+  items?: PublicPlaylistItem[];
+  playedSongs?: PlayedSongRow[];
+  blacklistArtists?: PublicChannelPageData["blacklistArtists"];
+  blacklistCharters?: PublicChannelPageData["blacklistCharters"];
+  blacklistSongs?: PublicChannelPageData["blacklistSongs"];
+  blacklistSongGroups?: PublicChannelPageData["blacklistSongGroups"];
+  setlistArtists?: PublicChannelPageData["setlistArtists"];
+  streamMeta?: PlaylistStreamMeta;
+};
+
 const publicPlaylistItemTransition = {
   duration: 0.28,
   ease: [0.2, 0, 0, 1] as const,
@@ -283,6 +339,58 @@ function toPlaylistItems(
       pickNumber: pickNumbers[index] ?? null,
     };
   });
+}
+
+function mergeStreamPlaylistData(
+  current: PublicChannelPageData | undefined,
+  payload: PlaylistStreamPayload
+): PublicChannelPageData {
+  const nextPlayedSongs = payload.playedSongs ?? current?.playedSongs ?? [];
+  const nextItems = payload.items ?? current?.items ?? [];
+
+  return {
+    ...(current ?? {}),
+    channel: {
+      ...(current?.channel ?? {}),
+      ...(payload.channel ?? {}),
+    },
+    settings: {
+      ...(current?.settings ?? {}),
+      ...(payload.settings ?? {}),
+    },
+    items: toPlaylistItems(nextItems, nextPlayedSongs),
+    playedSongs: nextPlayedSongs,
+    blacklistArtists:
+      payload.blacklistArtists ?? current?.blacklistArtists ?? [],
+    blacklistCharters:
+      payload.blacklistCharters ?? current?.blacklistCharters ?? [],
+    blacklistSongs: payload.blacklistSongs ?? current?.blacklistSongs ?? [],
+    blacklistSongGroups:
+      payload.blacklistSongGroups ?? current?.blacklistSongGroups ?? [],
+    setlistArtists: payload.setlistArtists ?? current?.setlistArtists ?? [],
+  };
+}
+
+function getStreamReason(payload: PlaylistStreamPayload) {
+  return payload.streamMeta?.reason ?? "playlist";
+}
+
+function shouldInvalidateViewerState(reason: string) {
+  return (
+    reason === "playlist" ||
+    reason === "requests" ||
+    reason === "settings" ||
+    reason === "stream-status" ||
+    reason === "vip-tokens"
+  );
+}
+
+function shouldInvalidatePlayedHistory(reason: string) {
+  return reason === "playlist";
+}
+
+function shouldInvalidateFavorites(reason: string) {
+  return reason === "favorites";
 }
 
 function isStreamerChoicePlaylistItem(item: {
@@ -351,11 +459,25 @@ function PublicChannelPage() {
   const [showDisableBotDialog, setShowDisableBotDialog] = useState(false);
   const [pendingViewerRequest, setPendingViewerRequest] =
     useState<PendingViewerRequestState>(null);
+  const [showFavoritesOnly, setShowFavoritesOnly] = useState(false);
+  const [pendingFavoriteState, setPendingFavoriteState] =
+    useState<PendingFavoriteState>(null);
   const [editingViewerRequestItemId, setEditingViewerRequestItemId] = useState<
     string | null
   >(null);
-  const { data, isLoading } = useQuery({
-    queryKey: ["channel-playlist", slug],
+  const [playlistPollingFallbackEnabled, setPlaylistPollingFallbackEnabled] =
+    useState(false);
+  const [
+    managementPollingFallbackEnabled,
+    setManagementPollingFallbackEnabled,
+  ] = useState(false);
+  const publicPlaylistQueryKey = ["channel-playlist-public", slug] as const;
+  const managementPlaylistQueryKey = [
+    "channel-playlist-management",
+    slug,
+  ] as const;
+  const { data: publicData, isLoading } = useQuery({
+    queryKey: publicPlaylistQueryKey,
     queryFn: async (): Promise<PublicChannelPageData> => {
       const playlistResponse = await fetch(`/api/channel/${slug}/playlist`);
       const playlist = (await playlistResponse.json()) as {
@@ -381,7 +503,8 @@ function PublicChannelPage() {
         ),
       };
     },
-    refetchInterval: 2_000,
+    staleTime: Number.POSITIVE_INFINITY,
+    refetchInterval: playlistPollingFallbackEnabled ? 2_000 : false,
     refetchIntervalInBackground: false,
   });
   const { data: sessionData } = useQuery<ViewerSessionData>({
@@ -395,6 +518,38 @@ function PublicChannelPage() {
     ...viewerSessionQueryOptions,
   });
   const signedInViewer = sessionData?.viewer ?? null;
+  const managementQuery = useQuery<ManagementChannelPageData | null>({
+    queryKey: managementPlaylistQueryKey,
+    queryFn: async () => {
+      const response = await fetch(`/api/channel/${slug}/playlist/management`, {
+        credentials: "include",
+      });
+      const body = (await response.json().catch(() => null)) as
+        | ManagementChannelPageData
+        | { error?: string }
+        | null;
+
+      if (response.status === 401 || response.status === 403) {
+        return null;
+      }
+
+      if (!response.ok) {
+        throw new Error(
+          body && "error" in body
+            ? (body.error ??
+                t("management.states.playlistLoadFailed", { ns: "playlist" }))
+            : t("management.states.playlistLoadFailed", { ns: "playlist" })
+        );
+      }
+
+      return body as ManagementChannelPageData;
+    },
+    staleTime: Number.POSITIVE_INFINITY,
+    refetchInterval: managementPollingFallbackEnabled ? 2_000 : false,
+    refetchIntervalInBackground: false,
+    enabled: !!signedInViewer,
+    retry: false,
+  });
   const viewerRequestStateQuery = useQuery<ViewerRequestStateData>({
     queryKey: ["channel-viewer-request-state", slug],
     queryFn: async () => {
@@ -417,9 +572,235 @@ function PublicChannelPage() {
       return body as ViewerRequestStateData;
     },
     enabled: !!signedInViewer,
-    refetchInterval: 2_000,
-    refetchIntervalInBackground: false,
+    staleTime: Number.POSITIVE_INFINITY,
   });
+  const favoritesQuery = useQuery<FavoriteSongsData>({
+    queryKey: ["channel-favorites", slug],
+    queryFn: async () => {
+      const params = new URLSearchParams({
+        page: "1",
+        pageSize: "1",
+      });
+      const response = await fetch(`/api/channel/${slug}/favorites?${params}`);
+      const body = (await response.json().catch(() => null)) as
+        | FavoriteSongsData
+        | { error?: string }
+        | null;
+
+      if (!response.ok) {
+        throw new Error(
+          body && "error" in body
+            ? (body.error ?? t("favorites.loadFailed", { ns: "playlist" }))
+            : t("favorites.loadFailed", { ns: "playlist" })
+        );
+      }
+
+      return body as FavoriteSongsData;
+    },
+    enabled: managementQuery.data?.accessRole === "owner",
+    staleTime: Number.POSITIVE_INFINITY,
+  });
+  const data = managementQuery.data ?? publicData;
+
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+
+    if (typeof EventSource === "undefined") {
+      setPlaylistPollingFallbackEnabled(true);
+      return;
+    }
+
+    let fallbackTimer: number | null = null;
+    const clearFallbackTimer = () => {
+      if (fallbackTimer != null) {
+        window.clearTimeout(fallbackTimer);
+        fallbackTimer = null;
+      }
+    };
+    const scheduleFallbackPolling = () => {
+      if (fallbackTimer != null) {
+        return;
+      }
+
+      fallbackTimer = window.setTimeout(() => {
+        fallbackTimer = null;
+        setPlaylistPollingFallbackEnabled(true);
+      }, 15_000);
+    };
+    const markStreamHealthy = () => {
+      clearFallbackTimer();
+      setPlaylistPollingFallbackEnabled(false);
+    };
+    const source = new EventSource(
+      `/api/channel/${slug}/playlist/public-stream`
+    );
+    const handlePlaylistEvent = (event: Event) => {
+      const payload = JSON.parse(
+        (event as MessageEvent<string>).data
+      ) as PlaylistStreamPayload;
+      const reason = getStreamReason(payload);
+
+      markStreamHealthy();
+      queryClient.setQueryData(
+        publicPlaylistQueryKey,
+        (current: PublicChannelPageData | undefined) =>
+          mergeStreamPlaylistData(current, payload)
+      );
+
+      if (shouldInvalidateViewerState(reason)) {
+        void queryClient.invalidateQueries({
+          queryKey: ["channel-viewer-request-state", slug],
+          exact: false,
+        });
+      }
+
+      if (shouldInvalidatePlayedHistory(reason)) {
+        void queryClient.invalidateQueries({
+          queryKey: ["public-played-history", slug],
+          exact: false,
+        });
+        void queryClient.invalidateQueries({
+          queryKey: ["played-history-requesters", slug],
+          exact: false,
+        });
+      }
+
+      if (shouldInvalidateFavorites(reason)) {
+        void queryClient.invalidateQueries({
+          queryKey: ["channel-favorites", slug],
+          exact: false,
+        });
+        if (showFavoritesOnly) {
+          void queryClient.invalidateQueries({
+            queryKey: ["song-search"],
+            exact: false,
+          });
+        }
+      }
+    };
+
+    source.onopen = () => {
+      markStreamHealthy();
+    };
+    source.onerror = () => {
+      if (source.readyState !== EventSource.OPEN) {
+        scheduleFallbackPolling();
+      }
+    };
+    source.addEventListener("playlist", handlePlaylistEvent);
+
+    return () => {
+      clearFallbackTimer();
+      source.removeEventListener("playlist", handlePlaylistEvent);
+      source.close();
+    };
+  }, [queryClient, showFavoritesOnly, slug]);
+
+  useEffect(() => {
+    if (
+      typeof window === "undefined" ||
+      (managementQuery.data?.accessRole !== "owner" &&
+        managementQuery.data?.accessRole !== "moderator")
+    ) {
+      return;
+    }
+
+    if (typeof EventSource === "undefined") {
+      setManagementPollingFallbackEnabled(true);
+      return;
+    }
+
+    let fallbackTimer: number | null = null;
+    const clearFallbackTimer = () => {
+      if (fallbackTimer != null) {
+        window.clearTimeout(fallbackTimer);
+        fallbackTimer = null;
+      }
+    };
+    const scheduleFallbackPolling = () => {
+      if (fallbackTimer != null) {
+        return;
+      }
+
+      fallbackTimer = window.setTimeout(() => {
+        fallbackTimer = null;
+        setManagementPollingFallbackEnabled(true);
+      }, 15_000);
+    };
+    const markStreamHealthy = () => {
+      clearFallbackTimer();
+      setManagementPollingFallbackEnabled(false);
+    };
+    const source = new EventSource(
+      `/api/channel/${slug}/playlist/management-stream`
+    );
+    const handlePlaylistEvent = (_event: Event) => {
+      markStreamHealthy();
+      void queryClient.invalidateQueries({
+        queryKey: managementPlaylistQueryKey,
+        refetchType: "active",
+      });
+    };
+
+    source.onopen = () => {
+      markStreamHealthy();
+    };
+    source.onerror = () => {
+      if (source.readyState !== EventSource.OPEN) {
+        scheduleFallbackPolling();
+      }
+    };
+    source.addEventListener("playlist", handlePlaylistEvent);
+
+    return () => {
+      clearFallbackTimer();
+      source.removeEventListener("playlist", handlePlaylistEvent);
+      source.close();
+    };
+  }, [managementQuery.data?.accessRole, queryClient, slug]);
+
+  const invalidatePlaylistQueries = async () => {
+    await Promise.all([
+      queryClient.invalidateQueries({
+        queryKey: publicPlaylistQueryKey,
+      }),
+      queryClient.invalidateQueries({
+        queryKey: managementPlaylistQueryKey,
+      }),
+    ]);
+  };
+  const patchPlaylistSettings = (
+    patch: Partial<NonNullable<PublicChannelPageData["settings"]>>
+  ) => {
+    queryClient.setQueryData<PublicChannelPageData>(
+      publicPlaylistQueryKey,
+      (current) =>
+        current
+          ? {
+              ...current,
+              settings: {
+                ...current.settings,
+                ...patch,
+              },
+            }
+          : current
+    );
+    queryClient.setQueryData<ManagementChannelPageData | null>(
+      managementPlaylistQueryKey,
+      (current) =>
+        current
+          ? {
+              ...current,
+              settings: {
+                ...current.settings,
+                ...patch,
+              },
+            }
+          : current
+    );
+  };
 
   const channelDisplayName = data?.channel?.displayName ?? slug;
   const channelIsLive = !!data?.channel?.isLive;
@@ -463,6 +844,14 @@ function PublicChannelPage() {
   const defaultSearchPathMatchMode =
     data?.settings?.requiredPathsMatchMode === "all" ? "all" : "any";
   const blacklistEnabled = !!data?.settings?.blacklistEnabled;
+  const searchExtraParams = useMemo(
+    () => ({
+      channelSlug: slug,
+      favoritesOnly: showFavoritesOnly ? true : undefined,
+      showBlacklisted: blacklistEnabled ? showBlacklisted : undefined,
+    }),
+    [blacklistEnabled, showBlacklisted, showFavoritesOnly, slug]
+  );
   const showPlaylistPositions = !!data?.settings?.showPlaylistPositions;
   const showPickOrderBadges = !!data?.settings?.showPickOrderBadges;
   const publicSearchResultState = useMemo(
@@ -548,12 +937,23 @@ function PublicChannelPage() {
       vipTokenDurationThresholds,
     ]
   );
-  const playlistItems = data?.items ?? [];
+  const playlistItems = publicData?.items ?? [];
   const filteredItems = playlistItems;
-  const accessRole = data?.accessRole ?? "anonymous";
-  const canManagePlaylist = !!data?.settings?.canManageRequests;
-  const canManageBlacklist = !!data?.settings?.canManageBlacklist;
-  const canManageSetlist = !!data?.settings?.canManageSetlist;
+  const accessRole =
+    managementQuery.data?.accessRole ?? publicData?.accessRole ?? "anonymous";
+  const canManagePlaylist = !!managementQuery.data?.settings?.canManageRequests;
+  const canManageFavorites = accessRole === "owner";
+  const canManageBlacklist =
+    !!managementQuery.data?.settings?.canManageBlacklist;
+  const canManageSetlist = !!managementQuery.data?.settings?.canManageSetlist;
+  const favoritedChartSongIds = useMemo(
+    () => new Set(favoritesQuery.data?.favoritedChartSongIds ?? []),
+    [favoritesQuery.data?.favoritedChartSongIds]
+  );
+  const isChartFavorited = (songId: string) =>
+    pendingFavoriteState?.songId === songId
+      ? pendingFavoriteState.favorited
+      : favoritedChartSongIds.has(songId);
 
   const requestsEnabledMutation = useMutation({
     mutationFn: async (nextRequestsEnabled: boolean) => {
@@ -584,34 +984,34 @@ function PublicChannelPage() {
     },
     onMutate: async (nextRequestsEnabled) => {
       setViewerRequestError(null);
-      await queryClient.cancelQueries({
-        queryKey: ["channel-playlist", slug],
-      });
-      const previous = queryClient.getQueryData<PublicChannelPageData>([
-        "channel-playlist",
-        slug,
+      await Promise.all([
+        queryClient.cancelQueries({
+          queryKey: publicPlaylistQueryKey,
+        }),
+        queryClient.cancelQueries({
+          queryKey: managementPlaylistQueryKey,
+        }),
       ]);
-
-      queryClient.setQueryData<PublicChannelPageData>(
-        ["channel-playlist", slug],
-        (current) =>
-          current
-            ? {
-                ...current,
-                settings: {
-                  ...current.settings,
-                  requestsEnabled: nextRequestsEnabled,
-                },
-              }
-            : current
+      const previousPublic = queryClient.getQueryData<PublicChannelPageData>(
+        publicPlaylistQueryKey
       );
+      const previousManagement =
+        queryClient.getQueryData<ManagementChannelPageData | null>(
+          managementPlaylistQueryKey
+        );
 
-      return { previous };
+      patchPlaylistSettings({
+        requestsEnabled: nextRequestsEnabled,
+      });
+
+      return { previousPublic, previousManagement };
     },
     onError: (error, _nextRequestsEnabled, context) => {
-      if (context?.previous) {
-        queryClient.setQueryData(["channel-playlist", slug], context.previous);
-      }
+      queryClient.setQueryData(publicPlaylistQueryKey, context?.previousPublic);
+      queryClient.setQueryData(
+        managementPlaylistQueryKey,
+        context?.previousManagement
+      );
       setViewerRequestError(
         getErrorMessage(error) ||
           t("states.updateRequestToggleFailed", { ns: "playlist" })
@@ -619,9 +1019,7 @@ function PublicChannelPage() {
     },
     onSuccess: async () => {
       await Promise.all([
-        queryClient.invalidateQueries({
-          queryKey: ["channel-playlist", slug],
-        }),
+        invalidatePlaylistQueries(),
         queryClient.invalidateQueries({
           queryKey: ["channel-viewer-request-state", slug],
         }),
@@ -658,43 +1056,41 @@ function PublicChannelPage() {
     },
     onMutate: async (nextBotEnabled) => {
       setViewerRequestError(null);
-      await queryClient.cancelQueries({
-        queryKey: ["channel-playlist", slug],
-      });
-      const previous = queryClient.getQueryData<PublicChannelPageData>([
-        "channel-playlist",
-        slug,
+      await Promise.all([
+        queryClient.cancelQueries({
+          queryKey: publicPlaylistQueryKey,
+        }),
+        queryClient.cancelQueries({
+          queryKey: managementPlaylistQueryKey,
+        }),
       ]);
-
-      queryClient.setQueryData<PublicChannelPageData>(
-        ["channel-playlist", slug],
-        (current) =>
-          current
-            ? {
-                ...current,
-                settings: {
-                  ...current.settings,
-                  botChannelEnabled: nextBotEnabled,
-                },
-              }
-            : current
+      const previousPublic = queryClient.getQueryData<PublicChannelPageData>(
+        publicPlaylistQueryKey
       );
+      const previousManagement =
+        queryClient.getQueryData<ManagementChannelPageData | null>(
+          managementPlaylistQueryKey
+        );
 
-      return { previous };
+      patchPlaylistSettings({
+        botChannelEnabled: nextBotEnabled,
+      });
+
+      return { previousPublic, previousManagement };
     },
     onError: (error, _nextBotEnabled, context) => {
-      if (context?.previous) {
-        queryClient.setQueryData(["channel-playlist", slug], context.previous);
-      }
+      queryClient.setQueryData(publicPlaylistQueryKey, context?.previousPublic);
+      queryClient.setQueryData(
+        managementPlaylistQueryKey,
+        context?.previousManagement
+      );
       setViewerRequestError(
         getErrorMessage(error) ||
           t("management.states.playlistUpdateFailed", { ns: "playlist" })
       );
     },
     onSuccess: async () => {
-      await queryClient.invalidateQueries({
-        queryKey: ["channel-playlist", slug],
-      });
+      await invalidatePlaylistQueries();
     },
   });
 
@@ -768,9 +1164,7 @@ function PublicChannelPage() {
     },
     onSuccess: () => {
       setPendingAddSongId(null);
-      void queryClient.invalidateQueries({
-        queryKey: ["channel-playlist", slug],
-      });
+      void invalidatePlaylistQueries();
     },
     onSettled: () => {
       setPendingAddSongId(null);
@@ -855,9 +1249,7 @@ function PublicChannelPage() {
       );
       setEditingViewerRequestItemId(null);
       await Promise.all([
-        queryClient.invalidateQueries({
-          queryKey: ["channel-playlist", slug],
-        }),
+        invalidatePlaylistQueries(),
         queryClient.invalidateQueries({
           queryKey: ["channel-viewer-request-state", slug],
         }),
@@ -871,6 +1263,55 @@ function PublicChannelPage() {
     },
     onSettled: () => {
       setPendingViewerRequest(null);
+    },
+  });
+  const favoriteSongMutation = useMutation({
+    mutationFn: async (input: { songId: string; favorited: boolean }) => {
+      const response = await fetch(`/api/channel/${slug}/favorites`, {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({
+          catalogSongId: input.songId,
+          favorited: input.favorited,
+        }),
+      });
+      const body = (await response.json().catch(() => null)) as {
+        error?: string;
+      } | null;
+
+      if (!response.ok) {
+        throw new Error(
+          body?.error ?? t("favorites.saveFailed", { ns: "playlist" })
+        );
+      }
+
+      return body;
+    },
+    onMutate: (input) => {
+      setPendingFavoriteState({
+        songId: input.songId,
+        favorited: input.favorited,
+      });
+    },
+    onSuccess: async () => {
+      await Promise.all([
+        queryClient.invalidateQueries({
+          queryKey: ["channel-favorites", slug],
+        }),
+        ...(showFavoritesOnly
+          ? [
+              queryClient.invalidateQueries({
+                queryKey: ["song-search"],
+                exact: false,
+              }),
+            ]
+          : []),
+      ]);
+    },
+    onSettled: () => {
+      setPendingFavoriteState(null);
     },
   });
   const removeViewerRequestsMutation = useMutation({
@@ -919,9 +1360,7 @@ function PublicChannelPage() {
         );
       }
       await Promise.all([
-        queryClient.invalidateQueries({
-          queryKey: ["channel-playlist", slug],
-        }),
+        invalidatePlaylistQueries(),
         queryClient.invalidateQueries({
           queryKey: ["channel-viewer-request-state", slug],
         }),
@@ -1103,9 +1542,19 @@ function PublicChannelPage() {
         {canManagePlaylist ? (
           <div className="mt-6 px-8 max-[960px]:px-0 max-[960px]:[&_.dashboard-playlist__drag-handle]:rounded-none max-[960px]:[&_.dashboard-playlist__item]:rounded-none max-[960px]:[&_.dashboard-playlist__item]:border-x-0 max-[960px]:[&_.dashboard-playlist__item]:shadow-none">
             <PlaylistManagementSurface
-              apiPath={`/api/channel/${slug}/playlist`}
+              apiPath={`/api/channel/${slug}/playlist/management`}
+              mutationPath={`/api/channel/${slug}/playlist`}
               queryKeyBase={`channel-playlist-management-${slug}`}
-              queryKey={["channel-playlist", slug]}
+              queryKey={[...managementPlaylistQueryKey]}
+              playlistData={
+                managementQuery.data as
+                  | PlaylistManagementSurfaceData
+                  | undefined
+              }
+              refetchIntervalMs={
+                managementPollingFallbackEnabled ? 2_000 : false
+              }
+              staleTimeMs={Number.POSITIVE_INFINITY}
               showAncillaryPanels={false}
               showManualAdd={false}
               embedCurrentPlaylist
@@ -1201,11 +1650,44 @@ function PublicChannelPage() {
           )}
         </InlineStatusBanner>
       ) : null}
+      {favoritesQuery.error && canManageFavorites ? (
+        <InlineStatusBanner tone="danger">
+          {getErrorMessage(
+            favoritesQuery.error,
+            t("favorites.loadFailed", { ns: "playlist" })
+          )}
+        </InlineStatusBanner>
+      ) : null}
 
       <div id="playlist-search-panel">
+        {/*
+          Keep these params stable so SongSearchPanel only resets pagination
+          when the effective external filters actually change.
+        */}
         <SongSearchPanel
           key={`playlist-search-${slug}-${defaultSearchPathFilters.join(",")}-${defaultSearchPathMatchMode}`}
           title={t("search.title", { ns: "playlist" })}
+          searchEnabled={!isLoading}
+          headerActionsContent={
+            <Button
+              type="button"
+              variant={showFavoritesOnly ? "secondary" : "outline"}
+              className="h-10 px-3.5 text-[12px] font-semibold shadow-none"
+              aria-pressed={showFavoritesOnly}
+              onClick={() => setShowFavoritesOnly((current) => !current)}
+            >
+              <Heart
+                className={cn(
+                  "h-4 w-4",
+                  showFavoritesOnly ? "fill-current" : ""
+                )}
+              />
+              {t("favorites.showOnly", {
+                ns: "playlist",
+                channel: channelDisplayName,
+              })}
+            </Button>
+          }
           defaultPathFilters={defaultSearchPathFilters}
           defaultPathFilterMatchMode={defaultSearchPathMatchMode}
           defaultPathFilterOwnerName={channelDisplayName}
@@ -1213,10 +1695,7 @@ function PublicChannelPage() {
             ns: "playlist",
             channel: channelDisplayName,
           })}
-          extraSearchParams={{
-            channelSlug: slug,
-            showBlacklisted: blacklistEnabled ? showBlacklisted : undefined,
-          }}
+          extraSearchParams={searchExtraParams}
           resultState={publicSearchResultState}
           useTotalForSummary
           controlsContent={
@@ -1302,6 +1781,15 @@ function PublicChannelPage() {
                         requesterDisplayName: requester.displayName,
                       })
                     }
+                    canManageFavorites={canManageFavorites}
+                    isFavorited={isChartFavorited(song.id)}
+                    favoritePending={pendingFavoriteState?.songId === song.id}
+                    onToggleFavorite={() =>
+                      favoriteSongMutation.mutate({
+                        songId: song.id,
+                        favorited: !isChartFavorited(song.id),
+                      })
+                    }
                   />
                 )
               : signedInViewer
@@ -1350,30 +1838,30 @@ function PublicChannelPage() {
                   )
                 : undefined
           }
-          advancedFiltersContent={
-            blacklistEnabled
-              ? ({ data: searchData }) => (
-                  <div className="inline-flex w-fit self-start flex-wrap items-center gap-3 border border-(--border) bg-(--panel) px-4 py-2.5">
-                    <Checkbox
-                      id="show-blacklisted-public-playlist"
-                      checked={showBlacklisted}
-                      onCheckedChange={(checked) =>
-                        setShowBlacklisted(checked === true)
-                      }
-                    />
-                    <Label
-                      htmlFor="show-blacklisted-public-playlist"
-                      className="cursor-pointer text-sm font-medium text-(--text)"
-                    >
-                      {t("search.showBlacklisted", { ns: "playlist" })}{" "}
-                      <span className="text-(--muted)">
-                        ({searchData?.hiddenBlacklistedCount ?? 0})
-                      </span>
-                    </Label>
-                  </div>
-                )
-              : undefined
-          }
+          advancedFiltersContent={({ data: searchData }) => (
+            <div className="inline-flex w-fit self-start flex-wrap items-center gap-4 border border-(--border) bg-(--panel) px-4 py-2.5">
+              {blacklistEnabled ? (
+                <div className="inline-flex items-center gap-3">
+                  <Checkbox
+                    id="show-blacklisted-public-playlist"
+                    checked={showBlacklisted}
+                    onCheckedChange={(checked) =>
+                      setShowBlacklisted(checked === true)
+                    }
+                  />
+                  <Label
+                    htmlFor="show-blacklisted-public-playlist"
+                    className="cursor-pointer text-sm font-medium text-(--text)"
+                  >
+                    {t("search.showBlacklisted", { ns: "playlist" })}{" "}
+                    <span className="text-(--muted)">
+                      ({searchData?.hiddenBlacklistedCount ?? 0})
+                    </span>
+                  </Label>
+                </div>
+              ) : null}
+            </div>
+          )}
         />
       </div>
 
@@ -1916,6 +2404,7 @@ function ViewerSearchSongActions(props: {
   replaceExisting: boolean;
   mutationIsPending: boolean;
   pendingViewerRequest: PendingViewerRequestState;
+  compact?: boolean;
   onSubmit: (
     requestKind: "regular" | "vip",
     vipTokenCost?: number,
@@ -1923,6 +2412,7 @@ function ViewerSearchSongActions(props: {
   ) => void;
 }) {
   const { t } = useLocaleTranslation("playlist");
+  const [compactOpen, setCompactOpen] = useState(false);
   const availableRequestedPaths = useMemo(
     () =>
       props.allowRequestPathModifiers
@@ -2099,6 +2589,48 @@ function ViewerSearchSongActions(props: {
       : props.editingRequest
         ? t("viewerActions.editVip")
         : t("viewerActions.addVip");
+  const existingRequestText = matchingRequest
+    ? matchingRequestHasSameRequestedPaths &&
+      matchingRequest.requestKind === "vip" &&
+      getStoredVipTokenCost(matchingRequest) >= vipRequestPlan.totalVipTokenCost
+      ? t("viewerActions.alreadyVip")
+      : matchingRequestHasSameRequestedPaths
+        ? t("viewerActions.alreadyRegular")
+        : t("viewerActions.updateExisting")
+    : "";
+  const compactButtonTitle = helperText || existingRequestText || undefined;
+
+  if (props.compact) {
+    return (
+      <Popover open={compactOpen} onOpenChange={setCompactOpen}>
+        <PopoverTrigger asChild>
+          <Button
+            type="button"
+            size="sm"
+            className="h-7 px-2.5 text-[10px] shadow-none"
+            disabled={
+              props.mutationIsPending ||
+              (!!regularDisabledReason && !!vipDisabledReason)
+            }
+            title={compactButtonTitle}
+            variant={props.editingRequest ? "outline" : "default"}
+          >
+            {regularPending || vipPending
+              ? t("viewerActions.adding")
+              : props.editingRequest
+                ? t("viewerActions.edit")
+                : t("viewerActions.add")}
+          </Button>
+        </PopoverTrigger>
+        <PopoverContent
+          align="end"
+          className="w-72 border-(--border) bg-(--panel-strong) p-3 text-(--text)"
+        >
+          <ViewerSearchSongActions {...props} compact={false} />
+        </PopoverContent>
+      </Popover>
+    );
+  }
 
   return (
     <div className="grid gap-2">
@@ -2166,14 +2698,7 @@ function ViewerSearchSongActions(props: {
         <p className="text-right text-xs text-(--muted)">{helperText}</p>
       ) : matchingRequest ? (
         <p className="text-right text-xs text-(--muted)">
-          {matchingRequestHasSameRequestedPaths &&
-          matchingRequest.requestKind === "vip" &&
-          getStoredVipTokenCost(matchingRequest) >=
-            vipRequestPlan.totalVipTokenCost
-            ? t("viewerActions.alreadyVip")
-            : matchingRequestHasSameRequestedPaths
-              ? t("viewerActions.alreadyRegular")
-              : t("viewerActions.updateExisting")}
+          {existingRequestText}
         </p>
       ) : null}
     </div>
@@ -2531,6 +3056,11 @@ function ManageSearchSongActions(props: {
   pendingAddSongId: string | null;
   mutationIsPending: boolean;
   onAdd: (requester: ViewerMatch) => void;
+  canManageFavorites?: boolean;
+  isFavorited?: boolean;
+  favoritePending?: boolean;
+  compact?: boolean;
+  onToggleFavorite?: () => void;
 }) {
   const { t } = useLocaleTranslation("playlist");
   const [open, setOpen] = useState(false);
@@ -2569,126 +3099,189 @@ function ManageSearchSongActions(props: {
     props.resultState.disabled ||
     (props.mutationIsPending && props.pendingAddSongId === props.song.id) ||
     !props.currentViewer?.login;
+  const favoriteButtonClass = props.compact
+    ? "h-7 w-7 shrink-0 px-0 shadow-none hover:bg-transparent"
+    : "h-8 w-8 shrink-0 px-0 shadow-none hover:bg-transparent";
+  const favoriteIconClass = props.compact ? "h-3.5 w-3.5" : "h-4 w-4";
+  const actionButtonClass = props.compact
+    ? "h-7 px-2.5 text-[10px] shadow-none"
+    : "h-9 w-full px-2.5 py-2 text-center text-[clamp(0.65rem,0.2vw+0.62rem,0.76rem)] leading-[1.1] whitespace-normal tracking-[0.08em] shadow-none";
+  const actionGroupClass = props.compact
+    ? "flex min-w-0 items-center justify-end gap-1.5"
+    : "grid min-w-0 flex-1 grid-cols-2 gap-2 max-[860px]:w-36 max-[860px]:grid-cols-1 max-[720px]:w-[clamp(5.75rem,27vw,7.75rem)]";
 
   return (
-    <div className="grid gap-2">
-      <div className="grid w-full min-w-0 grid-cols-2 gap-2 max-[860px]:w-36 max-[860px]:grid-cols-1 max-[720px]:w-[clamp(5.75rem,27vw,7.75rem)]">
-        <Button
-          type="button"
-          className="h-9 w-full px-2.5 py-2 text-center text-[clamp(0.65rem,0.2vw+0.62rem,0.76rem)] leading-[1.1] whitespace-normal tracking-[0.08em] shadow-none"
-          onClick={() => {
-            if (
-              !props.requestsOpen ||
-              !props.currentViewer ||
-              props.resultState.disabled
-            ) {
-              return;
-            }
-            props.onAdd(props.currentViewer);
-          }}
-          disabled={addDisabled}
-          title={props.requestsOpen ? undefined : t("page.requestsLiveOnly")}
-        >
-          {props.mutationIsPending && props.pendingAddSongId === props.song.id
-            ? t("manageActions.adding")
-            : t("manageActions.add")}
-        </Button>
-        <Popover open={open} onOpenChange={setOpen}>
-          <PopoverTrigger asChild>
-            <Button
-              type="button"
-              variant="outline"
-              className="h-9 w-full px-2.5 py-2 text-center text-[clamp(0.65rem,0.2vw+0.62rem,0.76rem)] leading-[1.1] whitespace-normal tracking-[0.08em]"
-              disabled={
-                !props.requestsOpen ||
-                props.resultState.disabled ||
-                props.mutationIsPending
-              }
-              title={
-                props.requestsOpen ? undefined : t("page.requestsLiveOnly")
-              }
-            >
-              {t("manageActions.addForUser")}
-            </Button>
-          </PopoverTrigger>
-          <PopoverContent
-            align="start"
-            className="w-62.5 border-(--border) bg-(--panel-strong) p-3 text-(--text)"
+    <div
+      className={cn(
+        "min-w-0",
+        props.compact ? "flex items-center justify-end gap-1.5" : "grid gap-2"
+      )}
+    >
+      <div
+        className={cn(
+          "flex w-full min-w-0 items-start justify-end gap-2",
+          props.compact ? "w-auto gap-1.5" : ""
+        )}
+      >
+        {props.canManageFavorites ? (
+          <Button
+            type="button"
+            size="icon"
+            variant="ghost"
+            className={cn(
+              favoriteButtonClass,
+              props.isFavorited
+                ? "text-rose-300 hover:text-rose-200"
+                : "text-(--muted) hover:text-(--text)"
+            )}
+            aria-label={t(
+              props.isFavorited
+                ? "favorites.unfavoriteAria"
+                : "favorites.favoriteAria"
+            )}
+            aria-pressed={props.isFavorited}
+            title={t(
+              props.isFavorited
+                ? "favorites.unfavoriteAria"
+                : "favorites.favoriteAria"
+            )}
+            onClick={(event) => {
+              event.preventDefault();
+              event.stopPropagation();
+              props.onToggleFavorite?.();
+            }}
+            disabled={props.favoritePending || !props.onToggleFavorite}
           >
-            <div className="grid gap-2">
-              <Input
-                value={query}
-                onChange={(event) => setQuery(event.target.value)}
-                placeholder={t("manageActions.searchViewers")}
-              />
-              {normalizedQuery.length > 0 && normalizedQuery.length < 2 ? (
-                <p className="text-sm text-(--muted)">
-                  {t("manageActions.searchMin")}
-                </p>
-              ) : null}
-              {lookupQuery.data?.needsChatterScopeReconnect ? (
-                <div className="flex flex-wrap items-center justify-between gap-3 border border-amber-500/30 bg-amber-500/10 px-3 py-2">
-                  <p className="text-sm text-amber-100">
-                    {t("manageActions.reconnectMessage")}
-                  </p>
-                  <Button asChild size="sm" variant="outline">
-                    <a
-                      href={`/auth/twitch/start?redirectTo=${encodeURIComponent(`/${props.slug}`)}`}
-                    >
-                      {t("manageActions.reconnect")}
-                    </a>
-                  </Button>
-                </div>
-              ) : null}
-              {normalizedQuery.length >= 2 ? (
-                lookupQuery.isFetching ? (
+            <Heart
+              className={cn(
+                favoriteIconClass,
+                props.isFavorited
+                  ? "fill-current text-rose-300"
+                  : "text-(--muted)"
+              )}
+            />
+          </Button>
+        ) : null}
+        <div className={actionGroupClass}>
+          <Button
+            type="button"
+            size={props.compact ? "sm" : undefined}
+            className={actionButtonClass}
+            onClick={() => {
+              if (
+                !props.requestsOpen ||
+                !props.currentViewer ||
+                props.resultState.disabled
+              ) {
+                return;
+              }
+              props.onAdd(props.currentViewer);
+            }}
+            disabled={addDisabled}
+            title={props.requestsOpen ? undefined : t("page.requestsLiveOnly")}
+          >
+            {props.mutationIsPending && props.pendingAddSongId === props.song.id
+              ? t("manageActions.adding")
+              : t("manageActions.add")}
+          </Button>
+          <Popover open={open} onOpenChange={setOpen}>
+            <PopoverTrigger asChild>
+              <Button
+                type="button"
+                size={props.compact ? "sm" : undefined}
+                variant="outline"
+                className={actionButtonClass}
+                disabled={
+                  !props.requestsOpen ||
+                  props.resultState.disabled ||
+                  props.mutationIsPending
+                }
+                title={
+                  props.requestsOpen ? undefined : t("page.requestsLiveOnly")
+                }
+              >
+                {t("manageActions.addForUser")}
+              </Button>
+            </PopoverTrigger>
+            <PopoverContent
+              align={props.compact ? "end" : "start"}
+              className="w-62.5 border-(--border) bg-(--panel-strong) p-3 text-(--text)"
+            >
+              <div className="grid gap-2">
+                <Input
+                  value={query}
+                  onChange={(event) => setQuery(event.target.value)}
+                  placeholder={t("manageActions.searchViewers")}
+                />
+                {normalizedQuery.length > 0 && normalizedQuery.length < 2 ? (
                   <p className="text-sm text-(--muted)">
-                    {t("manageActions.searching")}
+                    {t("manageActions.searchMin")}
                   </p>
-                ) : (lookupQuery.data?.users?.length ?? 0) > 0 ? (
-                  <div className="overflow-hidden border border-(--border)">
-                    {lookupQuery.data?.users.map((user, index) => (
-                      <button
-                        key={user.id}
-                        type="button"
-                        onClick={() => {
-                          if (!props.requestsOpen) {
-                            return;
-                          }
-                          props.onAdd(user);
-                          setOpen(false);
-                          setQuery("");
-                          setDebouncedQuery("");
-                        }}
-                        className={`flex items-center justify-between gap-3 px-3 py-3 text-left transition-colors hover:bg-(--panel-soft) ${
-                          index % 2 === 0
-                            ? "bg-(--panel-soft)"
-                            : "bg-(--panel-muted)"
-                        } ${index > 0 ? "border-t border-(--border)" : ""}`}
+                ) : null}
+                {lookupQuery.data?.needsChatterScopeReconnect ? (
+                  <div className="flex flex-wrap items-center justify-between gap-3 border border-amber-500/30 bg-amber-500/10 px-3 py-2">
+                    <p className="text-sm text-amber-100">
+                      {t("manageActions.reconnectMessage")}
+                    </p>
+                    <Button asChild size="sm" variant="outline">
+                      <a
+                        href={`/auth/twitch/start?redirectTo=${encodeURIComponent(`/${props.slug}`)}`}
                       >
-                        <div>
-                          <p className="font-medium text-(--text)">
-                            {user.displayName}
-                          </p>
-                          <p className="text-sm text-(--muted)">
-                            @{user.login}
-                          </p>
-                        </div>
-                        <span className="text-xs font-semibold uppercase tracking-[0.16em] text-(--brand-deep)">
-                          {t("manageActions.add")}
-                        </span>
-                      </button>
-                    ))}
+                        {t("manageActions.reconnect")}
+                      </a>
+                    </Button>
                   </div>
-                ) : (
-                  <p className="text-sm text-(--muted)">
-                    {t("manageActions.noMatches")}
-                  </p>
-                )
-              ) : null}
-            </div>
-          </PopoverContent>
-        </Popover>
+                ) : null}
+                {normalizedQuery.length >= 2 ? (
+                  lookupQuery.isFetching ? (
+                    <p className="text-sm text-(--muted)">
+                      {t("manageActions.searching")}
+                    </p>
+                  ) : (lookupQuery.data?.users?.length ?? 0) > 0 ? (
+                    <div className="overflow-hidden border border-(--border)">
+                      {lookupQuery.data?.users.map((user, index) => (
+                        <button
+                          key={user.id}
+                          type="button"
+                          onClick={() => {
+                            if (!props.requestsOpen) {
+                              return;
+                            }
+                            props.onAdd(user);
+                            setOpen(false);
+                            setQuery("");
+                            setDebouncedQuery("");
+                          }}
+                          className={`flex items-center justify-between gap-3 px-3 py-3 text-left transition-colors hover:bg-(--panel-soft) ${
+                            index % 2 === 0
+                              ? "bg-(--panel-soft)"
+                              : "bg-(--panel-muted)"
+                          } ${index > 0 ? "border-t border-(--border)" : ""}`}
+                        >
+                          <div>
+                            <p className="font-medium text-(--text)">
+                              {user.displayName}
+                            </p>
+                            <p className="text-sm text-(--muted)">
+                              @{user.login}
+                            </p>
+                          </div>
+                          <span className="text-xs font-semibold uppercase tracking-[0.16em] text-(--brand-deep)">
+                            {t("manageActions.add")}
+                          </span>
+                        </button>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="text-sm text-(--muted)">
+                      {t("manageActions.noMatches")}
+                    </p>
+                  )
+                ) : null}
+              </div>
+            </PopoverContent>
+          </Popover>
+        </div>
       </div>
     </div>
   );

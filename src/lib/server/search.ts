@@ -48,6 +48,8 @@ function normalizeSearchCacheInput(
 ) {
   return {
     query: input.query ?? "",
+    channelSlug: input.channelSlug ?? "",
+    favoritesOnly: input.favoritesOnly ?? false,
     field: input.field,
     title: input.title ?? "",
     artist: input.artist ?? "",

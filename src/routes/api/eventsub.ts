@@ -1,7 +1,11 @@
 // Route: Receives Twitch EventSub webhooks and dispatches channel events.
 import { env } from "cloudflare:workers";
 import { createFileRoute } from "@tanstack/react-router";
-import { getChannelSettingsByChannelId } from "~/lib/db/repositories";
+import { notifyPlaylistStream } from "~/lib/backend";
+import {
+  getChannelByTwitchChannelId,
+  getChannelSettingsByChannelId,
+} from "~/lib/db/repositories";
 import type { AppEnv } from "~/lib/env";
 import {
   createEventSubChatDependencies,
@@ -39,6 +43,27 @@ import { verifyEventSubSignature } from "~/lib/twitch/eventsub";
 const chatDeps = createEventSubChatDependencies();
 const streamLifecycleDeps = createEventSubStreamLifecycleDependencies();
 const supportDeps = createEventSubSupportDependencies();
+
+async function notifyAcceptedEventSubUpdate(
+  runtimeEnv: AppEnv,
+  input: {
+    broadcasterUserId: string;
+    reason: Parameters<typeof notifyPlaylistStream>[1]["reason"];
+  }
+) {
+  const channel = await getChannelByTwitchChannelId(
+    runtimeEnv,
+    input.broadcasterUserId
+  );
+  if (!channel) {
+    return;
+  }
+
+  await notifyPlaylistStream(runtimeEnv, {
+    channelId: channel.id,
+    reason: input.reason,
+  });
+}
 
 export const Route = createFileRoute("/api/eventsub")({
   server: {
@@ -90,6 +115,12 @@ export const Route = createFileRoute("/api/eventsub")({
             messageId,
             event: payload.event,
           });
+          if (result.body === "Accepted") {
+            await notifyAcceptedEventSubUpdate(runtimeEnv, {
+              broadcasterUserId: payload.event.broadcaster_user_id,
+              reason: "stream-status",
+            });
+          }
           return new Response(result.body, { status: result.status });
         }
 
@@ -103,6 +134,12 @@ export const Route = createFileRoute("/api/eventsub")({
             messageId,
             event: payload.event,
           });
+          if (result.body === "Accepted") {
+            await notifyAcceptedEventSubUpdate(runtimeEnv, {
+              broadcasterUserId: payload.event.broadcaster_user_id,
+              reason: "stream-status",
+            });
+          }
           return new Response(result.body, { status: result.status });
         }
 
@@ -119,6 +156,12 @@ export const Route = createFileRoute("/api/eventsub")({
             messageId,
             event: payload.event,
           });
+          if (result.body === "Accepted") {
+            await notifyAcceptedEventSubUpdate(runtimeEnv, {
+              broadcasterUserId: payload.event.broadcaster_user_id,
+              reason: "vip-tokens",
+            });
+          }
           return new Response(result.body, { status: result.status });
         }
 
@@ -134,6 +177,12 @@ export const Route = createFileRoute("/api/eventsub")({
             messageId,
             event: payload.event,
           });
+          if (result.body === "Accepted") {
+            await notifyAcceptedEventSubUpdate(runtimeEnv, {
+              broadcasterUserId: payload.event.broadcaster_user_id,
+              reason: "vip-tokens",
+            });
+          }
           return new Response(result.body, { status: result.status });
         }
 
@@ -149,6 +198,12 @@ export const Route = createFileRoute("/api/eventsub")({
             messageId,
             event: payload.event,
           });
+          if (result.body === "Accepted") {
+            await notifyAcceptedEventSubUpdate(runtimeEnv, {
+              broadcasterUserId: payload.event.broadcaster_user_id,
+              reason: "vip-tokens",
+            });
+          }
           return new Response(result.body, { status: result.status });
         }
 
@@ -165,6 +220,12 @@ export const Route = createFileRoute("/api/eventsub")({
             messageId,
             event: payload.event,
           });
+          if (result.body === "Accepted") {
+            await notifyAcceptedEventSubUpdate(runtimeEnv, {
+              broadcasterUserId: payload.event.broadcaster_user_id,
+              reason: "vip-tokens",
+            });
+          }
           return new Response(result.body, { status: result.status });
         }
 
@@ -182,6 +243,12 @@ export const Route = createFileRoute("/api/eventsub")({
             messageId,
             event: payload.event,
           });
+          if (result.body === "Accepted") {
+            await notifyAcceptedEventSubUpdate(runtimeEnv, {
+              broadcasterUserId: payload.event.broadcaster_user_id,
+              reason: "vip-tokens",
+            });
+          }
           return new Response(result.body, { status: result.status });
         }
 
@@ -197,6 +264,12 @@ export const Route = createFileRoute("/api/eventsub")({
             messageId,
             event: payload.event,
           });
+          if (result.body === "Accepted") {
+            await notifyAcceptedEventSubUpdate(runtimeEnv, {
+              broadcasterUserId: payload.event.to_broadcaster_user_id,
+              reason: "vip-tokens",
+            });
+          }
           return new Response(result.body, { status: result.status });
         }
 

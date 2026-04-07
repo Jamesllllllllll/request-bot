@@ -2,6 +2,17 @@ import type { AppEnv } from "./env";
 import { withInternalApiSecret } from "./internal-api";
 import { getErrorMessage } from "./utils";
 
+export type PlaylistStreamNotifyReason =
+  | "playlist"
+  | "requests"
+  | "settings"
+  | "stream-status"
+  | "blacklist"
+  | "setlist"
+  | "blocks"
+  | "vip-tokens"
+  | "favorites";
+
 export async function callBackend(
   env: AppEnv,
   pathname: string,
@@ -32,4 +43,28 @@ export async function callBackend(
   }
 
   return response;
+}
+
+export async function notifyPlaylistStream(
+  env: AppEnv,
+  input: {
+    channelId: string;
+    reason: PlaylistStreamNotifyReason;
+  }
+) {
+  try {
+    await callBackend(env, "/internal/playlist/notify", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+      },
+      body: JSON.stringify(input),
+    });
+  } catch (error) {
+    console.error("Failed to notify playlist stream listeners", {
+      channelId: input.channelId,
+      reason: input.reason,
+      error: error instanceof Error ? error.message : String(error),
+    });
+  }
 }

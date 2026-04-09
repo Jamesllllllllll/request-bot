@@ -69,6 +69,7 @@ import {
   useLocaleTranslation,
 } from "~/lib/i18n/client";
 import { type AppLocale, localeOptions } from "~/lib/i18n/locales";
+import { playlistDisplayItemHasLyrics } from "~/lib/playlist/management-display";
 import {
   getQueuedPositionsFromRegularOrder,
   getUpdatedPositionsAfterSetCurrent,
@@ -2654,6 +2655,15 @@ function PanelPlaylistRow(props: {
     props.dropTargetState?.itemId === props.itemId
       ? props.dropTargetState.edge
       : null;
+  const itemHasLyrics =
+    props.canManagePlaylist &&
+    playlistDisplayItemHasLyrics({
+      songHasLyrics:
+        typeof props.item.songHasLyrics === "boolean"
+          ? props.item.songHasLyrics
+          : null,
+      songPartsJson: getString(props.item, "songPartsJson") ?? undefined,
+    });
 
   useEffect(() => {
     const element = itemRef.current;
@@ -2893,6 +2903,7 @@ function PanelPlaylistRow(props: {
                 </p>
                 {pickNumber != null ||
                 getPanelRequestedPathLabel(props.item) ||
+                itemHasLyrics ||
                 (isVipRequest && getPanelStoredVipTokenCost(props.item) > 1) ||
                 (!isVipRequest &&
                   getPanelStoredVipTokenCost(props.item) > 0) ? (
@@ -2903,6 +2914,11 @@ function PanelPlaylistRow(props: {
                     {getPanelRequestedPathLabel(props.item) ? (
                       <span className="inline-flex h-5 items-center border border-(--border-strong) bg-(--panel-soft) px-1.5 text-[9px] leading-none font-semibold tracking-[0.12em] text-(--text) uppercase">
                         {getPanelRequestedPathLabel(props.item)}
+                      </span>
+                    ) : null}
+                    {itemHasLyrics ? (
+                      <span className="inline-flex h-5 items-center border border-(--border-strong) bg-(--panel-soft) px-1.5 text-[9px] leading-none font-medium uppercase tracking-[0.12em] text-(--muted)">
+                        {t("queue.lyrics")}
                       </span>
                     ) : null}
                     {(isVipRequest &&

@@ -540,7 +540,7 @@ describe("extension panel service", () => {
     );
   });
 
-  it("passes channel request filters through extension search", async () => {
+  it("drops legacy lyrics paths from extension search filters", async () => {
     vi.mocked(getChannelSettingsByChannelId).mockResolvedValue({
       onlyOfficialDlc: true,
       allowedTuningsJson: '["E Standard","Drop D"]',
@@ -563,7 +563,7 @@ describe("extension panel service", () => {
       expect.objectContaining({
         restrictToOfficial: true,
         allowedTuningsFilter: ["E Standard", "Drop D"],
-        requiredPartsFilter: ["lead", "voice"],
+        requiredPartsFilter: ["lead"],
         requiredPartsFilterMatchMode: "all",
       })
     );

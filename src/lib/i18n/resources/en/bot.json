@@ -17,7 +17,7 @@
   },
   "commands": {
     "how": {
-      "commands": "Commands: {commandPrefix}sr artist - song; {commandPrefix}sr artist *random; {commandPrefix}sr artist *choice; {commandPrefix}vip; {commandPrefix}vip artist - song; {commandPrefix}vip artist - song *2; {commandPrefix}edit #2 artist - song; {commandPrefix}remove reg|vip|all; {commandPrefix}position.",
+      "commands": "Commands: {commandPrefix}sr artist - song; {commandPrefix}sr artist *random; {commandPrefix}sr favorite; {commandPrefix}sr artist *choice; {commandPrefix}vip; {commandPrefix}vip artist - song; {commandPrefix}vip artist - song *2; {commandPrefix}edit #2 artist - song; {commandPrefix}remove reg|vip|all; {commandPrefix}position.",
       "partRequests": "Part requests: add {modifiers} to {commandPrefix}sr, {commandPrefix}vip, or {commandPrefix}edit.",
       "partRequestsVip": "Part requests: add {modifiers} to {commandPrefix}sr, {commandPrefix}vip, or {commandPrefix}edit. They require {countText}.",
       "browse": "Browse the track list and request songs here: {url}"
@@ -84,6 +84,7 @@
     "requestQueryMissing": "{mention} include an artist or song before using request modifiers.",
     "songLookupFailed": "{mention} I ran into a problem searching for that song. Please try again.",
     "randomNotFound": "{mention} I couldn't find an allowed random match for \"{query}\".",
+    "favoriteNotFound": "{mention} I couldn't find an allowed favorite from this channel right now.",
     "rejectedSongBlocked": "{mention} I cannot add that song to the playlist.",
     "rejectedSongReason": "{mention} {reason}",
     "choiceAlreadyActive": "{mention} that streamer choice request is already in your active requests.",

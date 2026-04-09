@@ -713,6 +713,41 @@ describe("extension panel service", () => {
     });
   });
 
+  it("passes favorite quick requests into extension viewer mutations", async () => {
+    await expect(
+      performExtensionViewerRequestMutation({
+        env,
+        auth,
+        mutation: {
+          action: "submit",
+          requestMode: "favorite",
+          requestKind: "regular",
+          replaceExisting: false,
+        },
+      })
+    ).resolves.toEqual({
+      ok: true,
+      message: "Added request.",
+    });
+
+    expect(performViewerRequestMutationForChannelViewer).toHaveBeenCalledWith({
+      env,
+      channel: baseChannel,
+      viewer: expect.objectContaining({
+        twitchUserId: "viewer-1",
+      }),
+      mutation: {
+        action: "submit",
+        requestMode: "favorite",
+        requestKind: "regular",
+        replaceExisting: false,
+      },
+      source: "extension",
+      requesterOverride: undefined,
+      ignoreRequestsDisabled: false,
+    });
+  });
+
   it("rejects write actions for unlinked viewers", async () => {
     await expect(
       performExtensionViewerRequestMutation({

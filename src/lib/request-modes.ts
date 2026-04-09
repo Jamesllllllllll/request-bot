@@ -1,4 +1,4 @@
-export type RequestMode = "catalog" | "random" | "choice";
+export type RequestMode = "catalog" | "random" | "favorite" | "choice";
 
 export const STREAMER_CHOICE_WARNING_CODE = "streamer_choice";
 export const STREAMER_CHOICE_TITLE = "Streamer choice";
@@ -11,6 +11,12 @@ const requestPathModifierMap: Record<string, string> = {
 };
 
 const ignoredPathModifiers = new Set(["*voice", "*vocals", "*lyrics"]);
+const favoriteRequestKeywords = new Set([
+  "favorite",
+  "favorites",
+  "favourite",
+  "favourites",
+]);
 
 export function parseRequestModifiers(
   query: string,
@@ -73,13 +79,20 @@ export function parseRequestModifiers(
     keptTokens.push(token);
   }
 
+  const normalizedQuery = keptTokens.join(" ").trim();
+  const favoriteKeywordRequest = favoriteRequestKeywords.has(
+    normalizedQuery.toLowerCase()
+  );
+
   return {
-    query: keptTokens.join(" ").trim(),
+    query: favoriteKeywordRequest ? "" : normalizedQuery,
     mode: hasChoiceModifier
       ? ("choice" as const)
       : hasRandomModifier
         ? ("random" as const)
-        : ("catalog" as const),
+        : favoriteKeywordRequest
+          ? ("favorite" as const)
+          : ("catalog" as const),
     hasRandomModifier,
     hasChoiceModifier,
     ignoredOfficialModifier,

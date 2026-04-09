@@ -35,6 +35,7 @@
     "offRightNow": "Les demandes sont desactivees pour le moment.",
     "quick": "Demande rapide",
     "randomSong": "Chanson aleatoire",
+    "randomFavorite": "Favori aleatoire",
     "streamerChoice": "Choix du streamer",
     "limitReached": "Vous avez deja {count} {count, plural, one {demande active} other {demandes actives}} dans cette playlist.",
     "noPermission": "Vous ne pouvez pas demander de chansons pour le moment.",

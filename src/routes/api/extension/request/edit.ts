@@ -41,15 +41,24 @@ export const Route = createFileRoute("/api/extension/request/edit")({
                   replaceExisting: true,
                   itemId: body.itemId,
                 }
-              : {
-                  action: "submit",
-                  query: body.query,
-                  requestMode: body.requestMode,
-                  requestKind: body.requestKind,
-                  vipTokenCost: body.vipTokenCost,
-                  replaceExisting: true,
-                  itemId: body.itemId,
-                };
+              : "query" in body
+                ? {
+                    action: "submit",
+                    query: body.query,
+                    requestMode: body.requestMode,
+                    requestKind: body.requestKind,
+                    vipTokenCost: body.vipTokenCost,
+                    replaceExisting: true,
+                    itemId: body.itemId,
+                  }
+                : {
+                    action: "submit",
+                    requestMode: body.requestMode,
+                    requestKind: body.requestKind,
+                    vipTokenCost: body.vipTokenCost,
+                    replaceExisting: true,
+                    itemId: body.itemId,
+                  };
 
           return withExtensionCors(
             json(

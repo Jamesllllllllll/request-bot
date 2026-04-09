@@ -35,6 +35,7 @@
     "offRightNow": "Requests are off right now.",
     "quick": "Quick request",
     "randomSong": "Random song",
+    "randomFavorite": "Random favorite",
     "streamerChoice": "Streamer choice",
     "limitReached": "You already have {count} active {count, plural, one {request} other {requests}} in this playlist.",
     "noPermission": "You cannot request songs right now.",

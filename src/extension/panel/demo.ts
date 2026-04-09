@@ -107,7 +107,7 @@ export function applyDemoViewerRequestMutation(input: {
   viewerProfile: PanelDemoViewerProfile;
   song?: Record<string, unknown>;
   query?: string;
-  requestMode?: "catalog" | "random" | "choice";
+  requestMode?: "catalog" | "random" | "favorite" | "choice";
   requestKind: "regular" | "vip";
   requestedPath?: string;
   vipTokenCost?: number;
@@ -122,7 +122,9 @@ export function applyDemoViewerRequestMutation(input: {
   const songId =
     requestMode === "choice"
       ? `preview-choice-${now}`
-      : (getString(songRecord, "id") ?? `preview-song-${now}`);
+      : requestMode === "favorite" && !getString(songRecord, "id")
+        ? `preview-favorite-${now}`
+        : (getString(songRecord, "id") ?? `preview-song-${now}`);
   const nextId = input.nextId ?? `preview-request-${songId}-${now}`;
   const replaceTarget =
     input.replaceItemId != null
@@ -154,7 +156,10 @@ export function applyDemoViewerRequestMutation(input: {
               songTitle:
                 requestMode === "choice"
                   ? "Streamer choice"
-                  : (getString(songRecord, "title") ?? "Unknown song"),
+                  : requestMode === "favorite" &&
+                      !getString(songRecord, "title")
+                    ? "Random favorite"
+                    : (getString(songRecord, "title") ?? "Unknown song"),
               songArtist:
                 requestMode === "choice"
                   ? null
@@ -230,7 +235,9 @@ export function applyDemoViewerRequestMutation(input: {
     songTitle:
       requestMode === "choice"
         ? "Streamer choice"
-        : (getString(songRecord, "title") ?? "Unknown song"),
+        : requestMode === "favorite" && !getString(songRecord, "title")
+          ? "Random favorite"
+          : (getString(songRecord, "title") ?? "Unknown song"),
     songArtist:
       requestMode === "choice" ? null : getString(songRecord, "artist"),
     songAlbum: requestMode === "choice" ? null : getString(songRecord, "album"),

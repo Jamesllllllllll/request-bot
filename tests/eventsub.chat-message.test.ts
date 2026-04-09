@@ -1362,7 +1362,7 @@ describe("processEventSubChatMessage", () => {
       env,
       expect.objectContaining({
         message:
-          "Commands: !sr artist - song; !sr artist *random; !sr artist *choice; !vip; !vip artist - song; !vip artist - song *2; !edit #2 artist - song; !remove reg|vip|all; !position. Browse the track list and request songs here: https://example.com/streamer",
+          "Commands: !sr artist - song; !sr artist *random; !sr favorite; !sr artist *choice; !vip; !vip artist - song; !vip artist - song *2; !edit #2 artist - song; !remove reg|vip|all; !position. Browse the track list and request songs here: https://example.com/streamer",
       })
     );
   });
@@ -1530,6 +1530,84 @@ describe("processEventSubChatMessage", () => {
           title: "Holiday",
           artist: "Green Day",
         }),
+      })
+    );
+  });
+
+  it("adds a random favorite from the channel favorites pool", async () => {
+    const deps = createDeps({
+      searchSongs: vi.fn().mockResolvedValue({
+        results: [createSong({ title: "Holiday", artist: "Green Day" })],
+        total: 1,
+      }),
+    });
+
+    const result = await processEventSubChatMessage({
+      env,
+      event: createEvent({
+        rawMessage: "!sr favourite",
+      }),
+      parsed: createParsed({
+        command: "sr",
+        query: "favourite",
+      }),
+      deps,
+    });
+
+    expect(result).toEqual({
+      body: "Accepted",
+      status: 202,
+    });
+    expect(deps.searchSongs).toHaveBeenCalledWith(
+      env,
+      expect.objectContaining({
+        query: "",
+        favoriteChannelId: "channel-1",
+      })
+    );
+    expect(deps.addRequestToPlaylist).toHaveBeenCalledWith(
+      env,
+      expect.objectContaining({
+        requestKind: "regular",
+        song: expect.objectContaining({
+          title: "Holiday",
+          artist: "Green Day",
+        }),
+      })
+    );
+  });
+
+  it("replies when the channel favorites pool has no allowed matches", async () => {
+    const deps = createDeps({
+      searchSongs: vi.fn().mockResolvedValue({
+        results: [],
+        total: 0,
+      }),
+    });
+
+    const result = await processEventSubChatMessage({
+      env,
+      event: createEvent({
+        rawMessage: "!sr favorite",
+      }),
+      parsed: createParsed({
+        command: "sr",
+        query: "favorite",
+      }),
+      deps,
+    });
+
+    expect(result).toEqual({
+      body: "Rejected",
+      status: 202,
+    });
+    expect(deps.addRequestToPlaylist).not.toHaveBeenCalled();
+    expect(deps.sendChatReply).toHaveBeenCalledWith(
+      env,
+      expect.objectContaining({
+        message: expect.stringContaining(
+          "I couldn't find an allowed favorite from this channel right now."
+        ),
       })
     );
   });

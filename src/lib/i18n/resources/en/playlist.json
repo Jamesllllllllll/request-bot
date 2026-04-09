@@ -231,6 +231,7 @@
     "chooseMode": "Choose mode",
     "chooseType": "Choose type",
     "random": "Random",
+    "favorite": "Favorite",
     "choice": "Choice",
     "regular": "Regular",
     "add": "Add",
@@ -238,7 +239,9 @@
     "edit": "Edit",
     "editVip": "Edit VIP",
     "adding": "Adding...",
+    "favoritePlaceholder": "Not used for favorites",
     "randomHelp": "Adds a random song from the matching songs for this artist.",
+    "favoriteHelp": "Adds a random song from this channel's saved favorites.",
     "choiceHelp": "Adds a streamer choice request for this artist."
   },
   "manageActions": {

@@ -1140,6 +1140,7 @@ function PublicChannelPage() {
               creator: input.song.creator,
               tuning: input.song.tuning,
               parts: input.song.parts ?? [],
+              hasLyrics: input.song.hasLyrics,
               durationText: input.song.durationText,
               sourceId: input.song.sourceId,
             },

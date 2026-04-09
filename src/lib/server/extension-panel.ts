@@ -16,6 +16,7 @@ import {
   getAllowedRequestPathsSetting,
   getArraySetting,
   getRequiredPathsMatchMode,
+  getRequiredPathsSetting,
 } from "~/lib/request-policy";
 import { getAppAccessToken, getTwitchUserById } from "~/lib/twitch/api";
 import type { ExtensionAuthContext } from "./extension-auth";
@@ -552,7 +553,7 @@ export async function searchExtensionCatalog(input: {
     sortDirection: "desc",
     restrictToOfficial: !!settings?.onlyOfficialDlc,
     allowedTuningsFilter: getArraySetting(settings?.allowedTuningsJson),
-    requiredPartsFilter: getArraySetting(settings?.requiredPathsJson),
+    requiredPartsFilter: settings ? getRequiredPathsSetting(settings) : [],
     requiredPartsFilterMatchMode: getRequiredPathsMatchMode(
       settings?.requiredPathsMatchMode
     ),

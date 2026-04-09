@@ -40,6 +40,7 @@ import {
   getArraySetting,
   getRateLimitWindow,
   getRequiredPathsMatchMode,
+  getRequiredPathsSetting,
   getRequiredPathsWarning,
   isRequesterAllowed,
   isSongAllowed,
@@ -557,9 +558,7 @@ function buildViewerCatalogSearchInput(input: {
     allowedTuningsFilter: getArraySetting(
       input.context.state.settings.allowedTuningsJson
     ),
-    requiredPartsFilter: getArraySetting(
-      input.context.state.settings.requiredPathsJson
-    ),
+    requiredPartsFilter: getRequiredPathsSetting(input.context.state.settings),
     requiredPartsFilterMatchMode: getRequiredPathsMatchMode(
       input.context.state.settings.requiredPathsMatchMode
     ),

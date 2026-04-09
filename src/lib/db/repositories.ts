@@ -827,8 +827,10 @@ export async function getExtensionPanelPlaylistByChannelId(
     orderBy: [asc(playlistItems.position)],
     columns: {
       id: true,
+      songId: true,
       songTitle: true,
       songArtist: true,
+      songPartsJson: true,
       requestedByTwitchUserId: true,
       requestedByLogin: true,
       requestedByDisplayName: true,
@@ -842,6 +844,16 @@ export async function getExtensionPanelPlaylistByChannelId(
       status: true,
     },
   });
+  const songIds = items
+    .map((item) => item.songId)
+    .filter((songId): songId is string => Boolean(songId));
+  const catalogSongs = await getCatalogSongsByIds(env, songIds);
+  const hasLyricsBySongId = new Map(
+    catalogSongs.map((song) => [
+      song.id,
+      song.hasLyrics ?? song.hasVocals ?? false,
+    ])
+  );
 
   const playedRows = await db.query.playedSongs.findMany({
     where: eq(playedSongs.channelId, channelId),
@@ -858,7 +870,12 @@ export async function getExtensionPanelPlaylistByChannelId(
 
   return {
     playlist,
-    items,
+    items: items.map((item) => ({
+      ...item,
+      songHasLyrics: item.songId
+        ? (hasLyricsBySongId.get(item.songId) ?? null)
+        : null,
+    })),
     playedSongs: playedRows,
   };
 }
@@ -1341,7 +1358,7 @@ export interface CatalogSearchInput {
   sortDirection?: "asc" | "desc";
 }
 
-type CatalogPartFilter = "lead" | "rhythm" | "bass" | "vocals";
+type CatalogPartFilter = "lead" | "rhythm" | "bass";
 
 function normalizeCatalogFilterValue(value: string) {
   return value.trim().toLowerCase();
@@ -1355,10 +1372,6 @@ function normalizeCatalogPartFilter(value: string) {
       return "rhythm" as const;
     case "bass":
       return "bass" as const;
-    case "voice":
-    case "vocals":
-    case "lyrics":
-      return "vocals" as const;
     default:
       return null;
   }
@@ -1372,8 +1385,6 @@ function buildCatalogPartFilterCondition(part: CatalogPartFilter) {
       return sql`${catalogSongs.hasRhythm} = 1`;
     case "bass":
       return sql`${catalogSongs.hasBass} = 1`;
-    case "vocals":
-      return sql`${catalogSongs.hasVocals} = 1`;
   }
 }
 
@@ -2521,6 +2532,8 @@ export async function getCatalogSongsByIds(env: AppEnv, songIds: string[]) {
     groupedProjectId: row.groupedProjectId ?? undefined,
     artistId: row.artistId ?? undefined,
     authorId: row.authorId ?? undefined,
+    hasLyrics: row.hasLyrics,
+    hasVocals: row.hasVocals,
     source: row.source,
     sourceUrl: normalizeSongSourceUrl({
       source: row.source,

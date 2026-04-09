@@ -2982,10 +2982,8 @@ function getSettingsComparisonSnapshot(settings: DashboardSettingsFormData) {
   });
 }
 
-function formatPathOptionLabel(t: (key: string) => string, value: string) {
-  return value === "voice"
-    ? t("settings.sections.filters.requiredPaths.paths.lyrics")
-    : value;
+function formatPathOptionLabel(_t: (key: string) => string, value: string) {
+  return value;
 }
 
 function getPathBadgeTone(value: string) {
@@ -2996,9 +2994,6 @@ function getPathBadgeTone(value: string) {
       return "border-sky-700/50 bg-sky-950 text-sky-100";
     case "bass":
       return "border-orange-700/50 bg-orange-950 text-orange-100";
-    case "voice":
-    case "vocals":
-      return "border-violet-700/50 bg-violet-950 text-violet-100";
     default:
       return "border-(--border-strong) bg-(--panel) text-(--text)";
   }
@@ -3012,9 +3007,6 @@ function getPathExampleTone(value: string) {
       return "text-sky-300";
     case "bass":
       return "text-orange-300";
-    case "voice":
-    case "vocals":
-      return "text-violet-300";
     default:
       return "text-(--text)";
   }

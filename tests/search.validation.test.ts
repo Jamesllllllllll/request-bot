@@ -2,6 +2,17 @@ import { describe, expect, it } from "vitest";
 import { searchInputSchema } from "~/lib/validation";
 
 describe("searchInputSchema", () => {
+  it("rejects legacy lyrics paths", () => {
+    const parsed = searchInputSchema.safeParse({
+      field: "any",
+      parts: ["voice"],
+      page: 1,
+      pageSize: 20,
+    });
+
+    expect(parsed.success).toBe(false);
+  });
+
   it("allows path-only filtered browsing without a text query", () => {
     const parsed = searchInputSchema.safeParse({
       field: "any",

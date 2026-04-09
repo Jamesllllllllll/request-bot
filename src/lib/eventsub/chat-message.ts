@@ -38,6 +38,7 @@ import {
   getMissingRequiredPaths,
   getRateLimitWindow,
   getRequiredPathsMatchMode,
+  getRequiredPathsSetting,
   getRequiredPathsWarning,
   isRequesterAllowed,
   isSongAllowed,
@@ -315,6 +316,7 @@ function buildCandidateMatchesJson(results: SongSearchResult[]) {
       creator: result.creator,
       tuning: result.tuning,
       parts: result.parts ?? [],
+      hasLyrics: result.hasLyrics,
       durationText: result.durationText,
       year: result.year,
       sourceUpdatedAt: result.sourceUpdatedAt,
@@ -531,9 +533,7 @@ function buildCatalogSearchInput(input: {
     allowedTuningsFilter: getArraySetting(
       input.state.settings.allowedTuningsJson
     ),
-    requiredPartsFilter: getArraySetting(
-      input.state.settings.requiredPathsJson
-    ),
+    requiredPartsFilter: getRequiredPathsSetting(input.state.settings),
     requiredPartsFilterMatchMode: getRequiredPathsMatchMode(
       input.state.settings.requiredPathsMatchMode
     ),

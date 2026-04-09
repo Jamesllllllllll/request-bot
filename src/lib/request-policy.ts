@@ -5,6 +5,7 @@ import {
   type BlacklistedSongVersion,
   getBlacklistReasonCodes,
 } from "./channel-blacklist";
+import { normalizePathOptions } from "./channel-options";
 import type { SongSearchResult } from "./song-search/types";
 import { formatVipTokenCostLabel } from "./vip-token-duration-thresholds";
 
@@ -93,6 +94,12 @@ export function getRequiredPathsMatchMode(
   value: string | null | undefined
 ): "any" | "all" {
   return value === "all" ? "all" : "any";
+}
+
+export function getRequiredPathsSetting(
+  settings: Pick<ChannelRequestSettings, "requiredPathsJson">
+) {
+  return normalizePathOptions(getArraySetting(settings.requiredPathsJson));
 }
 
 export function normalizeRequestPathModifier(
@@ -402,7 +409,7 @@ export function getMissingRequiredPaths(input: {
     "requiredPathsJson" | "requiredPathsMatchMode"
   >;
 }) {
-  const requiredPaths = getArraySetting(input.settings.requiredPathsJson);
+  const requiredPaths = getRequiredPathsSetting(input.settings);
   if (requiredPaths.length === 0) {
     return [];
   }
@@ -432,7 +439,7 @@ export function getRequiredPathsWarning(input: {
     "requiredPathsJson" | "requiredPathsMatchMode"
   >;
 }) {
-  const requiredPaths = getArraySetting(input.settings.requiredPathsJson);
+  const requiredPaths = getRequiredPathsSetting(input.settings);
   if (requiredPaths.length === 0) {
     return null;
   }
@@ -498,9 +505,6 @@ export function formatLocalizedPathLabel(path: string, translate?: Translate) {
       return translate?.("paths.rhythm") ?? "Rhythm";
     case "bass":
       return translate?.("paths.bass") ?? "Bass";
-    case "voice":
-    case "vocals":
-      return translate?.("paths.lyrics") ?? "Lyrics";
     default:
       return path.trim();
   }

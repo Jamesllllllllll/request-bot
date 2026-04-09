@@ -73,7 +73,10 @@ import {
 import { getPickNumbersForQueuedItems } from "~/lib/pick-order";
 import {
   formatPlaylistItemSummaryLine,
+  getPlaylistDisplayParts,
   getResolvedPlaylistCandidates,
+  playlistDisplayCandidateHasLyrics,
+  playlistDisplayItemHasLyrics,
 } from "~/lib/playlist/management-display";
 import {
   getPlaylistEndpoint,
@@ -121,6 +124,7 @@ export type PlaylistItem = {
   songCreator?: string;
   songTuning?: string;
   songPartsJson?: string;
+  songHasLyrics?: boolean | null;
   songDurationText?: string;
   songUrl?: string;
   songSourceUpdatedAt?: number | null;
@@ -152,6 +156,7 @@ export type PlaylistCandidate = {
   creator?: string;
   tuning?: string;
   parts?: string[];
+  hasLyrics?: boolean;
   durationText?: string;
   year?: number;
   sourceUpdatedAt?: number;
@@ -180,7 +185,8 @@ const PLAYLIST_PREVIEW_CANDIDATES: PlaylistCandidate[] = [
     album: "Neon Noir",
     creator: "JohnCryx",
     tuning: "E Standard | A Standard",
-    parts: ["lead", "rhythm", "bass", "voice"],
+    parts: ["lead", "rhythm", "bass"],
+    hasLyrics: true,
     durationText: "3:49",
     sourceUpdatedAt: Date.parse("2025-12-08T00:00:00Z"),
     downloads: 4284,
@@ -217,7 +223,8 @@ const PLAYLIST_PREVIEW_ITEM: PlaylistItem = {
   songAlbum: "Neon Noir",
   songCreator: "JohnCryx",
   songTuning: "E Standard | A Standard",
-  songPartsJson: JSON.stringify(["lead", "rhythm", "bass", "voice"]),
+  songPartsJson: JSON.stringify(["lead", "rhythm", "bass"]),
+  songHasLyrics: true,
   songDurationText: "3:49",
   songUrl: "https://customsforge.com/index.php?/customs/99081",
   songSourceUpdatedAt: Date.parse("2025-12-08T00:00:00Z"),
@@ -250,6 +257,7 @@ type SearchResponse = {
     creator?: string;
     tuning?: string;
     parts?: string[];
+    hasLyrics?: boolean;
     durationText?: string;
     source: string;
     sourceUrl?: string;
@@ -974,6 +982,7 @@ export function PlaylistManagementSurface(
                   const isBlacklistedCharter =
                     song.authorId != null &&
                     blacklistedCharterIds.has(song.authorId);
+                  const displaySongParts = getPlaylistDisplayParts(song.parts);
 
                   return (
                     <div
@@ -1019,8 +1028,10 @@ export function PlaylistManagementSurface(
                           {song.tuning ?? t("management.manual.noTuningInfo")}
                         </p>
                         <p className="mt-1 truncate text-sm text-(--muted)">
-                          {song.parts?.length
-                            ? song.parts.join(", ")
+                          {displaySongParts.length > 0
+                            ? displaySongParts
+                                .map((part) => formatPathLabel(part))
+                                .join(", ")
                             : t("management.manual.noPathInfo")}
                         </p>
                       </div>
@@ -1057,6 +1068,7 @@ export function PlaylistManagementSurface(
                                   creator: song.creator,
                                   tuning: song.tuning,
                                   parts: song.parts ?? [],
+                                  hasLyrics: song.hasLyrics,
                                   durationText: song.durationText,
                                   sourceUrl: song.sourceUrl,
                                   sourceId: song.sourceId,
@@ -2267,6 +2279,7 @@ function PlaylistQueueItem(props: {
     !hasMultipleVersions && resolvedCandidates[0]?.sourceUrl
       ? resolvedCandidates[0].sourceUrl
       : null;
+  const itemHasLyrics = playlistDisplayItemHasLyrics(props.item);
 
   useEffect(() => {
     const element = itemRef.current;
@@ -2526,7 +2539,7 @@ function PlaylistQueueItem(props: {
                   unknownArtistLabel: t("management.manual.unknownArtist"),
                 })}
               </p>
-              {itemDurationText || compactTuning ? (
+              {itemDurationText || compactTuning || itemHasLyrics ? (
                 <p className="flex flex-wrap items-center gap-x-1.5 gap-y-1 text-sm text-(--muted)">
                   {itemDurationText ? (
                     <>
@@ -2539,6 +2552,12 @@ function PlaylistQueueItem(props: {
                   ) : null}
                   {compactTuning ? (
                     <span title={compactTuningTitle}>{compactTuning}</span>
+                  ) : null}
+                  {(itemDurationText || compactTuning) && itemHasLyrics ? (
+                    <span aria-hidden="true">·</span>
+                  ) : null}
+                  {itemHasLyrics ? (
+                    <span>{t("management.item.lyrics")}</span>
                   ) : null}
                 </p>
               ) : null}
@@ -3118,6 +3137,8 @@ function PlaylistVersionsTable(props: {
             const isBlacklistedCharter =
               candidate.authorId != null &&
               props.blacklistedCharterIds.has(candidate.authorId);
+            const displayParts = getPlaylistDisplayParts(candidate.parts);
+            const hasLyrics = playlistDisplayCandidateHasLyrics(candidate);
 
             return (
               <tr
@@ -3154,7 +3175,7 @@ function PlaylistVersionsTable(props: {
                 </td>
                 <td className="px-4 py-3">
                   <div className="flex flex-wrap gap-1">
-                    {(candidate.parts ?? []).map((part) => (
+                    {displayParts.map((part) => (
                       <span
                         key={`${candidate.id}-${part}`}
                         className={getPlaylistPathBadgeClass(part)}
@@ -3163,7 +3184,12 @@ function PlaylistVersionsTable(props: {
                         {getPathAbbreviation(part)}
                       </span>
                     ))}
-                    {(candidate.parts ?? []).length === 0 ? (
+                    {hasLyrics ? (
+                      <span className="inline-flex h-6 items-center justify-center border border-(--border-strong) bg-(--panel) px-1.5 text-[10px] font-semibold uppercase tracking-[0.08em] text-(--muted)">
+                        {t("management.versionsTable.lyrics")}
+                      </span>
+                    ) : null}
+                    {displayParts.length === 0 && !hasLyrics ? (
                       <span className="text-xs text-(--muted)">
                         {t("management.versionsTable.unknown")}
                       </span>
@@ -3243,10 +3269,6 @@ function getPathAbbreviation(path: string) {
       return "R";
     case "bass":
       return "B";
-    case "lyrics":
-    case "voice":
-    case "vocals":
-      return "V";
     default:
       return path.slice(0, 1).toUpperCase();
   }
@@ -3260,10 +3282,6 @@ function getPlaylistPathBadgeClass(path: string) {
       return "inline-flex h-6 min-w-6 items-center justify-center border border-sky-700/50 bg-sky-950 px-1.5 text-[10px] font-semibold uppercase tracking-[0.08em] text-sky-100";
     case "bass":
       return "inline-flex h-6 min-w-6 items-center justify-center border border-orange-700/50 bg-orange-950 px-1.5 text-[10px] font-semibold uppercase tracking-[0.08em] text-orange-100";
-    case "lyrics":
-    case "voice":
-    case "vocals":
-      return "inline-flex h-6 min-w-6 items-center justify-center border border-violet-700/50 bg-violet-950 px-1.5 text-[10px] font-semibold uppercase tracking-[0.08em] text-violet-100";
     default:
       return "inline-flex h-6 min-w-6 items-center justify-center border border-(--border) bg-(--panel-strong) px-1.5 text-[10px] font-semibold uppercase tracking-[0.08em] text-(--text)";
   }

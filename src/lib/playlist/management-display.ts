@@ -1,3 +1,4 @@
+import { hasLyricsMetadata, normalizePathOptions } from "~/lib/channel-options";
 import { normalizeSongSourceUrl } from "~/lib/utils";
 
 export type PlaylistManagementDisplayCandidate = {
@@ -10,6 +11,7 @@ export type PlaylistManagementDisplayCandidate = {
   creator?: string;
   tuning?: string;
   parts?: string[];
+  hasLyrics?: boolean;
   durationText?: string;
   year?: number;
   sourceUpdatedAt?: number;
@@ -30,6 +32,7 @@ export type PlaylistManagementDisplayItem = {
   songCreator?: string;
   songTuning?: string;
   songPartsJson?: string;
+  songHasLyrics?: boolean | null;
   songDurationText?: string;
   songUrl?: string;
   songSourceUpdatedAt?: number | null;
@@ -64,6 +67,30 @@ function parsePlaylistCandidates(candidateMatchesJson?: string) {
   }
 }
 
+export function getPlaylistDisplayParts(
+  parts: Array<string | null | undefined> | null | undefined
+) {
+  return normalizePathOptions(parts);
+}
+
+export function playlistDisplayCandidateHasLyrics(
+  candidate: Pick<PlaylistManagementDisplayCandidate, "hasLyrics" | "parts">
+) {
+  return hasLyricsMetadata({
+    hasLyrics: candidate.hasLyrics,
+    parts: candidate.parts,
+  });
+}
+
+export function playlistDisplayItemHasLyrics(
+  item: Pick<PlaylistManagementDisplayItem, "songHasLyrics" | "songPartsJson">
+) {
+  return hasLyricsMetadata({
+    hasLyrics: item.songHasLyrics,
+    parts: parseSongParts(item.songPartsJson),
+  });
+}
+
 export function getResolvedPlaylistCandidates(
   item: PlaylistManagementDisplayItem
 ) {
@@ -75,6 +102,12 @@ export function getResolvedPlaylistCandidates(
         groupedProjectId:
           candidate.groupedProjectId ?? item.songGroupedProjectId ?? undefined,
         album: candidate.album ?? item.songAlbum,
+        hasLyrics:
+          candidate.hasLyrics ??
+          hasLyricsMetadata({
+            hasLyrics: item.songHasLyrics,
+            parts: candidate.parts,
+          }),
         sourceUrl: normalizeSongSourceUrl({
           source: "library",
           sourceUrl: candidate.sourceUrl,
@@ -99,6 +132,7 @@ export function getResolvedPlaylistCandidates(
       creator: item.songCreator,
       tuning: item.songTuning,
       parts: parseSongParts(item.songPartsJson),
+      hasLyrics: playlistDisplayItemHasLyrics(item),
       durationText: item.songDurationText,
       sourceUpdatedAt: item.songSourceUpdatedAt ?? undefined,
       downloads: item.songDownloads ?? undefined,

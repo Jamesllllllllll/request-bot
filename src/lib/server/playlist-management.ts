@@ -35,7 +35,7 @@ import {
 } from "~/lib/request-availability";
 import {
   getAllowedRequestPathsSetting,
-  getArraySetting,
+  getRequiredPathsSetting,
 } from "~/lib/request-policy";
 import {
   getRequestVipTokenPlan,
@@ -266,6 +266,7 @@ export async function enrichPlaylistItems(
       songGroupedProjectId: catalogSong?.groupedProjectId ?? null,
       songArtistId: catalogSong?.artistId ?? null,
       songCharterId: catalogSong?.authorId ?? null,
+      songHasLyrics: catalogSong?.hasLyrics ?? catalogSong?.hasVocals ?? null,
       songUrl: item.songUrl ?? catalogSong?.sourceUrl ?? null,
       songSourceUpdatedAt: catalogSong?.sourceUpdatedAt ?? null,
       songDownloads: catalogSong?.downloads ?? null,
@@ -290,7 +291,7 @@ export function getPlaylistManagementResponseBody(
     setlistArtists: state.setlistArtists,
     accessRole: state.accessRole,
     requiredPaths: state.settings
-      ? getArraySetting(state.settings.requiredPathsJson)
+      ? getRequiredPathsSetting(state.settings)
       : [],
   };
 }

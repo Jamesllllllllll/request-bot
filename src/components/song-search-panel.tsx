@@ -49,7 +49,7 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "~/components/ui/tooltip";
-import { pathOptions } from "~/lib/channel-options";
+import { normalizePathOptions, pathOptions } from "~/lib/channel-options";
 import { useAppLocale, useLocaleTranslation } from "~/lib/i18n/client";
 import {
   formatCompactTuningSummary,
@@ -76,6 +76,7 @@ export interface SearchSong {
   downloads?: number;
   sourceUpdatedAt?: number;
   sourceId?: number;
+  hasLyrics?: boolean;
   source: string;
 }
 
@@ -204,9 +205,6 @@ export function SongSearchPanel(props: {
         return t("paths.rhythm");
       case "bass":
         return t("paths.bass");
-      case "voice":
-      case "vocals":
-        return t("paths.lyrics");
       default:
         return path;
     }
@@ -1082,6 +1080,7 @@ export function SongSearchPanel(props: {
                   const compactTuning = formatCompactTuningSummary([
                     song.tuning,
                   ]);
+                  const displaySongPaths = normalizePathOptions(song.parts);
                   const tuningTitle =
                     compactTuning && song.tuning
                       ? (() => {
@@ -1134,33 +1133,25 @@ export function SongSearchPanel(props: {
 
                           <div className="search-panel__paths min-w-0">
                             <div className="flex flex-wrap gap-2">
-                              {song.parts?.includes("lead") ? (
+                              {displaySongPaths.includes("lead") ? (
                                 <PathBadge
                                   label={t("paths.lead")}
                                   shortLabel={getPathShortLabel("lead")}
                                   className="border-emerald-700/50 bg-emerald-950 text-emerald-100 hover:bg-emerald-950"
                                 />
                               ) : null}
-                              {song.parts?.includes("rhythm") ? (
+                              {displaySongPaths.includes("rhythm") ? (
                                 <PathBadge
                                   label={t("paths.rhythm")}
                                   shortLabel={getPathShortLabel("rhythm")}
                                   className="border-sky-700/50 bg-sky-950 text-sky-100 hover:bg-sky-950"
                                 />
                               ) : null}
-                              {song.parts?.includes("bass") ? (
+                              {displaySongPaths.includes("bass") ? (
                                 <PathBadge
                                   label={t("paths.bass")}
                                   shortLabel={getPathShortLabel("bass")}
                                   className="border-orange-700/50 bg-orange-950 text-orange-100 hover:bg-orange-950"
-                                />
-                              ) : null}
-                              {song.parts?.includes("voice") ||
-                              song.parts?.includes("vocals") ? (
-                                <PathBadge
-                                  label={t("paths.lyrics")}
-                                  shortLabel={getPathShortLabel("voice")}
-                                  className="border-violet-700/50 bg-violet-950 text-violet-100 hover:bg-violet-950"
                                 />
                               ) : null}
                             </div>
@@ -1206,33 +1197,25 @@ export function SongSearchPanel(props: {
 
                           <div className="search-panel__paths min-w-0">
                             <div className="flex flex-wrap gap-2">
-                              {song.parts?.includes("lead") ? (
+                              {displaySongPaths.includes("lead") ? (
                                 <PathBadge
                                   label={t("paths.lead")}
                                   shortLabel={getPathShortLabel("lead")}
                                   className="border-emerald-700/50 bg-emerald-950 text-emerald-100 hover:bg-emerald-950"
                                 />
                               ) : null}
-                              {song.parts?.includes("rhythm") ? (
+                              {displaySongPaths.includes("rhythm") ? (
                                 <PathBadge
                                   label={t("paths.rhythm")}
                                   shortLabel={getPathShortLabel("rhythm")}
                                   className="border-sky-700/50 bg-sky-950 text-sky-100 hover:bg-sky-950"
                                 />
                               ) : null}
-                              {song.parts?.includes("bass") ? (
+                              {displaySongPaths.includes("bass") ? (
                                 <PathBadge
                                   label={t("paths.bass")}
                                   shortLabel={getPathShortLabel("bass")}
                                   className="border-orange-700/50 bg-orange-950 text-orange-100 hover:bg-orange-950"
-                                />
-                              ) : null}
-                              {song.parts?.includes("voice") ||
-                              song.parts?.includes("vocals") ? (
-                                <PathBadge
-                                  label={t("paths.lyrics")}
-                                  shortLabel={getPathShortLabel("voice")}
-                                  className="border-violet-700/50 bg-violet-950 text-violet-100 hover:bg-violet-950"
                                 />
                               ) : null}
                             </div>
@@ -1333,9 +1316,6 @@ function getPathToneByValue(value: string) {
       return "border-sky-700/50 bg-sky-950 text-sky-100";
     case "bass":
       return "border-orange-700/50 bg-orange-950 text-orange-100";
-    case "voice":
-    case "vocals":
-      return "border-violet-700/50 bg-violet-950 text-violet-100";
     default:
       return "border-(--border-strong) bg-(--panel) text-(--text)";
   }

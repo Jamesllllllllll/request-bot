@@ -15,6 +15,7 @@ import type { AppEnv } from "~/lib/env";
 import {
   getArraySetting,
   getRequiredPathsMatchMode,
+  getRequiredPathsSetting,
   normalizeAllowedRequestPaths,
 } from "~/lib/request-policy";
 import { getTwitchUser } from "~/lib/twitch/api";
@@ -95,9 +96,7 @@ export const Route = createFileRoute("/api/dashboard/settings")({
                 allowedTunings: getArraySetting(
                   state.settings.allowedTuningsJson
                 ),
-                requiredPaths: getArraySetting(
-                  state.settings.requiredPathsJson
-                ),
+                requiredPaths: getRequiredPathsSetting(state.settings),
                 allowedRequestPaths: normalizeAllowedRequestPaths(
                   getArraySetting(state.settings.allowedRequestPathsJson)
                 ),

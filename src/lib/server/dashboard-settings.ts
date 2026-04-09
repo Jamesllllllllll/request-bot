@@ -16,6 +16,7 @@ import {
   getAllowedRequestPathsSetting,
   getArraySetting,
   getRequiredPathsMatchMode,
+  getRequiredPathsSetting,
 } from "~/lib/request-policy";
 import { getTwitchUser } from "~/lib/twitch/api";
 import {
@@ -114,7 +115,7 @@ export const getDashboardSettings = createServerFn({ method: "GET" }).handler(
         ? {
             ...state.settings,
             allowedTunings: getArraySetting(state.settings.allowedTuningsJson),
-            requiredPaths: getArraySetting(state.settings.requiredPathsJson),
+            requiredPaths: getRequiredPathsSetting(state.settings),
             requiredPathsMatchMode: getRequiredPathsMatchMode(
               state.settings.requiredPathsMatchMode
             ),

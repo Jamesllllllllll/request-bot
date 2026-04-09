@@ -166,7 +166,7 @@ type PendingViewerRequestState = {
   action: "submit" | "remove";
   songId?: string;
   query?: string;
-  requestMode?: "catalog" | "random" | "choice";
+  requestMode?: "catalog" | "random" | "favorite" | "choice";
   requestKind?: "regular" | "vip";
   requestedPath?: RequestPathOption | null;
   itemId?: string;
@@ -1192,6 +1192,14 @@ function PublicChannelPage() {
             replaceExisting: boolean;
             itemId?: string;
           }
+        | {
+            action: "submit";
+            requestMode: "favorite";
+            requestKind: "regular" | "vip";
+            vipTokenCost?: number;
+            replaceExisting: boolean;
+            itemId?: string;
+          }
     ) => {
       const response = await fetch(`/api/channel/${slug}/viewer-request`, {
         method: "POST",
@@ -1206,10 +1214,14 @@ function PublicChannelPage() {
                 requestMode: "catalog",
                 requestedPath: input.requestedPath,
               }
-            : {
-                query: input.query,
-                requestMode: input.requestMode,
-              }),
+            : "query" in input
+              ? {
+                  query: input.query,
+                  requestMode: input.requestMode,
+                }
+              : {
+                  requestMode: input.requestMode,
+                }),
           requestKind: input.requestKind,
           vipTokenCost: input.vipTokenCost,
           replaceExisting: input.replaceExisting,
@@ -1715,15 +1727,25 @@ function PublicChannelPage() {
                     replaceExisting={effectiveViewerReplaceExisting}
                     mutationIsPending={viewerRequestMutation.isPending}
                     pendingViewerRequest={pendingViewerRequest}
-                    onSubmit={(query, requestMode, requestKind) =>
-                      viewerRequestMutation.mutate({
-                        action: "submit",
-                        query,
-                        requestMode,
-                        requestKind,
-                        replaceExisting: effectiveViewerReplaceExisting,
-                        itemId: editingViewerRequest?.id,
-                      })
+                    onSubmit={(requestMode, requestKind, query) =>
+                      viewerRequestMutation.mutate(
+                        requestMode === "favorite"
+                          ? {
+                              action: "submit",
+                              requestMode,
+                              requestKind,
+                              replaceExisting: effectiveViewerReplaceExisting,
+                              itemId: editingViewerRequest?.id,
+                            }
+                          : {
+                              action: "submit",
+                              query: query ?? "",
+                              requestMode,
+                              requestKind,
+                              replaceExisting: effectiveViewerReplaceExisting,
+                              itemId: editingViewerRequest?.id,
+                            }
+                      )
                     }
                     onCancelEdit={handleCancelViewerRequestEdit}
                   />
@@ -2717,17 +2739,20 @@ function ViewerSpecialRequestControls(props: {
   mutationIsPending: boolean;
   pendingViewerRequest: PendingViewerRequestState;
   onSubmit: (
-    query: string,
-    requestMode: "random" | "choice",
-    requestKind: "regular" | "vip"
+    requestMode: "random" | "favorite" | "choice",
+    requestKind: "regular" | "vip",
+    query?: string
   ) => void;
   onCancelEdit: () => void;
 }) {
   const { t } = useLocaleTranslation("playlist");
   const [artistQuery, setArtistQuery] = useState("");
-  const [requestMode, setRequestMode] = useState<"random" | "choice">("random");
+  const [requestMode, setRequestMode] = useState<
+    "random" | "favorite" | "choice"
+  >("random");
   const [requestKind, setRequestKind] = useState<"regular" | "vip">("regular");
   const normalizedQuery = artistQuery.trim();
+  const favoriteModeSelected = requestMode === "favorite";
   const isViewerReady =
     props.viewerStateLoading ||
     props.viewerState != null ||
@@ -2767,17 +2792,22 @@ function ViewerSpecialRequestControls(props: {
   });
   const helperText =
     selectedDisabledReason ||
-    (normalizedQuery.length >= 2
-      ? requestMode === "random"
-        ? t("specialRequest.randomHelp")
-        : t("specialRequest.choiceHelp")
-      : null);
+    (favoriteModeSelected
+      ? t("specialRequest.favoriteHelp")
+      : normalizedQuery.length >= 2
+        ? requestMode === "random"
+          ? t("specialRequest.randomHelp")
+          : t("specialRequest.choiceHelp")
+        : null);
+  const pendingQuery = props.pendingViewerRequest?.query?.trim() ?? "";
   const submitPending =
     props.mutationIsPending &&
     props.pendingViewerRequest?.action === "submit" &&
     props.pendingViewerRequest.requestMode === requestMode &&
     props.pendingViewerRequest.requestKind === requestKind &&
-    props.pendingViewerRequest.query?.trim() === normalizedQuery;
+    (favoriteModeSelected
+      ? pendingQuery.length === 0
+      : pendingQuery === normalizedQuery);
   const compactToggleClass =
     "h-8 min-w-[4.5rem] px-2.5 text-[11px] tracking-[0.05em] shadow-none";
 
@@ -2813,10 +2843,15 @@ function ViewerSpecialRequestControls(props: {
           </Label>
           <Input
             id="viewer-special-request-artist"
-            value={artistQuery}
+            value={favoriteModeSelected ? "" : artistQuery}
             onChange={(event) => setArtistQuery(event.target.value)}
-            placeholder={t("specialRequest.artistPlaceholder")}
+            placeholder={
+              favoriteModeSelected
+                ? t("specialRequest.favoritePlaceholder")
+                : t("specialRequest.artistPlaceholder")
+            }
             className="h-9 px-3"
+            disabled={favoriteModeSelected}
           />
         </div>
 
@@ -2844,6 +2879,16 @@ function ViewerSpecialRequestControls(props: {
               onClick={() => setRequestMode("choice")}
             >
               {t("specialRequest.choice")}
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              variant={requestMode === "favorite" ? "secondary" : "ghost"}
+              className={cn(compactToggleClass, "w-auto")}
+              aria-pressed={requestMode === "favorite"}
+              onClick={() => setRequestMode("favorite")}
+            >
+              {t("specialRequest.favorite")}
             </Button>
           </div>
         </div>
@@ -2882,7 +2927,11 @@ function ViewerSpecialRequestControls(props: {
           variant="secondary"
           className="h-9 min-w-[6.5rem] px-3 shadow-none"
           onClick={() =>
-            props.onSubmit(normalizedQuery, requestMode, requestKind)
+            props.onSubmit(
+              requestMode,
+              requestKind,
+              favoriteModeSelected ? undefined : normalizedQuery
+            )
           }
           disabled={!!selectedDisabledReason || props.mutationIsPending}
         >
@@ -3290,7 +3339,7 @@ function ManageSearchSongActions(props: {
 
 function getViewerSpecialActionDisabledReason(input: {
   query: string;
-  requestMode: "random" | "choice";
+  requestMode: "random" | "favorite" | "choice";
   requestKind: "regular" | "vip";
   requestsOpen?: boolean;
   viewerState: ViewerRequestStateData["viewer"];
@@ -3299,7 +3348,7 @@ function getViewerSpecialActionDisabledReason(input: {
   editingRequest: EnrichedPublicPlaylistItem | null;
   t: (key: string, options?: Record<string, unknown>) => string;
 }) {
-  if (input.query.length < 2) {
+  if (input.requestMode !== "favorite" && input.query.length < 2) {
     return input.t("specialRequest.artistMin");
   }
 

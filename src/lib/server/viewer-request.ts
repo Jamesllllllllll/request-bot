@@ -97,6 +97,16 @@ export type ViewerRequestMutationInput =
       itemId?: string;
     }
   | {
+      action: "submit";
+      requestMode: "favorite";
+      query?: never;
+      songId?: never;
+      requestKind: ViewerRequestKind;
+      vipTokenCost?: number;
+      replaceExisting: boolean;
+      itemId?: string;
+    }
+  | {
       action: "remove";
       kind: ViewerRemoveKind;
       itemId?: string;
@@ -521,6 +531,8 @@ function buildViewerCatalogSearchInput(input: {
   query: string;
   page: number;
   pageSize: number;
+  field?: CatalogSearchInput["field"];
+  favoriteChannelId?: string;
 }): CatalogSearchInput {
   const blacklistFilters = input.context.state.settings.blacklistEnabled
     ? {
@@ -549,11 +561,12 @@ function buildViewerCatalogSearchInput(input: {
 
   return {
     query: input.query,
-    field: "artist",
+    field: input.field ?? (input.query.trim().length > 0 ? "artist" : "any"),
     page: input.page,
     pageSize: input.pageSize,
     sortBy: "relevance" as const,
     sortDirection: "desc" as const,
+    favoriteChannelId: input.favoriteChannelId,
     restrictToOfficial: !!input.context.state.settings.onlyOfficialDlc,
     allowedTuningsFilter: getArraySetting(
       input.context.state.settings.allowedTuningsJson
@@ -630,15 +643,21 @@ function formatViewerChoiceRequest(input: {
 async function resolveViewerRandomSong(
   env: AppEnv,
   context: ViewerRequestContext,
-  query: string
+  input: {
+    query: string;
+    field?: CatalogSearchInput["field"];
+    favoriteChannelId?: string;
+  }
 ) {
   const filteredSearch = await searchCatalogSongs(
     env,
     buildViewerCatalogSearchInput({
       context,
-      query,
+      query: input.query,
       page: 1,
       pageSize: 1,
+      field: input.field,
+      favoriteChannelId: input.favoriteChannelId,
     })
   );
   const filteredTotal = Math.max(
@@ -659,9 +678,11 @@ async function resolveViewerRandomSong(
       env,
       buildViewerCatalogSearchInput({
         context,
-        query,
+        query: input.query,
         page: nextPage,
         pageSize: 1,
+        field: input.field,
+        favoriteChannelId: input.favoriteChannelId,
       })
     );
     const candidate = randomPage.results[0] ?? null;
@@ -689,9 +710,11 @@ async function resolveViewerRandomSong(
       env,
       buildViewerCatalogSearchInput({
         context,
-        query,
+        query: input.query,
         page: 1,
         pageSize: Math.min(filteredTotal, 25),
+        field: input.field,
+        favoriteChannelId: input.favoriteChannelId,
       })
     );
     const allowedResults = fallbackSearch.results.filter(
@@ -955,7 +978,10 @@ async function submitViewerRequest(
 
     normalizedQuery = buildViewerQuery(song);
   } else if (requestMode === "random") {
-    song = await resolveViewerRandomSong(env, context, specialRequestText);
+    song = await resolveViewerRandomSong(env, context, {
+      query: specialRequestText,
+      field: "artist",
+    });
     if (!song) {
       throw new ViewerRequestError(
         409,
@@ -964,6 +990,19 @@ async function submitViewerRequest(
     }
 
     normalizedQuery = specialRequestText;
+  } else if (requestMode === "favorite") {
+    song = await resolveViewerRandomSong(env, context, {
+      query: "",
+      favoriteChannelId: context.state.channel.id,
+    });
+    if (!song) {
+      throw new ViewerRequestError(
+        409,
+        "I couldn't find an allowed favorite from this channel."
+      );
+    }
+
+    normalizedQuery = "favorite";
   } else {
     const choiceAvailability = await resolveViewerChoiceAvailability(
       env,
@@ -1934,7 +1973,7 @@ function buildViewerRawMessage(input: {
   vipTokenCost?: number;
   query: string;
   requestedPath?: RequestPathOption | null;
-  requestMode?: "catalog" | "random" | "choice";
+  requestMode?: "catalog" | "random" | "favorite" | "choice";
 }) {
   const requestedPathSuffix = input.requestedPath
     ? ` *${input.requestedPath}`

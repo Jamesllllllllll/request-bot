@@ -45,4 +45,6 @@ jobs:
         run: npm run build
 
       - name: Build panel artifact
+        env:
+          APP_URL: https://requestbot.radg.tv
         run: npm run build:extension:panel

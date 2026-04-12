@@ -1,110 +1,102 @@
 # Bot Operations
 
-## What exists
+## Bot Model
 
-### Bot model
+RockList.Live uses a shared Twitch bot account that is separate from the broadcaster account.
 
-The app treats the Twitch bot as a separate shared account from the broadcaster:
+- the streamer signs into the app with their own Twitch account
+- an admin connects the shared bot account once
+- each streamer opts their own channel into bot presence from channel settings
+- when the opted-in channel goes live, the app ensures the `channel.chat.message` EventSub subscription exists for that broadcaster + bot user pair
+- when the channel goes offline, the app removes that chat subscription
 
-- The streamer signs into the app with their own Twitch account.
-- An admin signs the shared bot account into the app once.
-- Each streamer can opt their own channel into bot presence from the owner Settings area.
-- When an opted-in streamer goes live, the app activates the bot in that channel by ensuring the `channel.chat.message` EventSub subscription exists for that broadcaster + bot user pair.
-- When the streamer goes offline, the app removes that chat subscription so the bot is inactive in the channel.
+## Bot Status
 
-This is the EventSub/API equivalent of "join when live, leave when offline."
+The owner settings page can show:
 
-### Bot status
+- `Disabled`
+- `Bot auth required`
+- `Broadcaster auth required`
+- `Waiting to go live`
+- `Active`
+- `Subscription error`
 
-On a streamer's Settings page, the bot can report:
-
-- `Disabled`: the streamer has not opted their channel into the bot
-- `Bot auth required`: the shared bot account has not been connected yet
-- `Broadcaster auth required`: the streamer needs to reconnect their Twitch account
-- `Waiting to go live`: the channel is opted in and ready, but not live
-- `Active`: the channel is live and the bot's chat subscription is active
-- `Subscription error`: Twitch rejected one of the EventSub subscriptions
+`channel_settings.bot_channel_enabled` is the owner preference.
 
 `channels.botEnabled` is the current active-in-chat state.
-`channel_settings.bot_channel_enabled` is the streamer's desired opt-in state.
 
-### Required setup
+## Required Setup
 
-1. Ensure `.env` contains:
-
-```env
-APP_URL=https://your-public-dev-url.example
-TWITCH_CLIENT_ID=...
-TWITCH_CLIENT_SECRET=...
-TWITCH_EVENTSUB_SECRET=...
-SESSION_SECRET=...
-ADMIN_TWITCH_USER_IDS=your_main_twitch_user_id
-TWITCH_BOT_USERNAME=Pants_Bot_
-TWITCH_SCOPES=openid user:read:moderated_channels moderator:read:chatters channel:bot channel:read:subscriptions bits:read channel:manage:redemptions
-```
-
-For local development, `TWITCH_BOT_USERNAME` should usually be your dedicated test bot account. Production should keep its own bot username in deployed env or secrets. The app enforces that the connected bot login matches `TWITCH_BOT_USERNAME`, so changing bot accounts locally requires changing local `.env` first.
-
-`TWITCH_SCOPES` belongs to the broadcaster login flow, not the bot login flow. It should include `channel:bot` so chat replies can use Twitch's bot badge path, plus `channel:read:subscriptions`, `bits:read`, and `channel:manage:redemptions` for VIP token automation and app-owned channel point rewards. If the connected broadcaster account is missing those permissions, reconnect Twitch.
-
-App-owned channel point rewards only work on Twitch Affiliate or Partner channels. If you test this flow on a channel without channel points, Twitch rejects the reward API calls and RockList.Live leaves the rest of the bot active.
-
-2. Make sure your Twitch developer application has both redirect URIs registered:
+1. Fill in the Twitch-related values in [`.env.example`](../.env.example) or [`.env.deploy.example`](../.env.deploy.example).
+2. Register both Twitch redirect URIs:
 
 - `${APP_URL}/auth/twitch/callback`
 - `${APP_URL}/auth/twitch/bot/callback`
 
-3. Apply the latest local or remote D1 migration:
+3. Apply migrations:
 
 ```bash
 npm run db:migrate
 ```
 
-4. Start the app and log in with your broadcaster account.
-5. Go to `/dashboard/admin` as your admin user and click `Connect bot account`.
-6. Complete that OAuth flow while logged into the Twitch bot account named in `TWITCH_BOT_USERNAME`.
-7. Go to `/dashboard/settings` for your streamer account and enable `Enable playlist on your channel`, then save.
-8. Go live on Twitch.
-9. Confirm the Settings page changes to `Active`.
-10. Send a chat request like:
+4. Sign in with the broadcaster account.
+5. Open `/dashboard/admin` as an admin user.
+6. Connect the shared bot account while logged into the Twitch account named in `TWITCH_BOT_USERNAME`.
+7. Open `/dashboard/settings` for the channel owner and enable the bot for that channel.
+8. Go live on Twitch and confirm the bot status changes to `Active`.
+
+## Broadcaster Scopes
+
+`TWITCH_SCOPES` belongs to the broadcaster app login, not the shared bot login.
+
+The current default scope set is:
 
 ```text
-!sr cherub rock
+openid user:read:moderated_channels moderator:read:chatters channel:bot channel:read:subscriptions bits:read channel:manage:redemptions
 ```
 
-### Reply behavior
+Those scopes support:
 
-- Replies are sent with the bot account's user token, not the broadcaster token.
-- If Twitch returns `401` while sending chat, the backend refreshes the bot token once and retries automatically.
-- Testing against the same broadcaster in both production and local/tunnel environments can cause both environments to receive and process the same chat command.
+- bot-badged chat replies
+- chatter-aware viewer lookup
+- subscription and cheer VIP token automation
+- app-owned channel point rewards
 
-### Local vs production warning
+If the connected broadcaster account is missing those permissions, reconnect Twitch from the app.
 
-If a streamer or moderator tests bot commands on a channel that is connected in the live app while a local tunnel/dev environment is also connected for that same broadcaster, cross-environment behavior can become confusing.
+## Channel Point Rewards
 
-There are two different cases:
+The app-owned channel point reward flow only works on Twitch Affiliate or Partner channels. Twitch rejects reward create or update calls on channels without channel points.
 
-- same broadcaster + same bot account:
-  local and production compete for the same `channel.chat.message` subscription, so one environment can effectively take over chat handling from the other
-- same broadcaster + different bot accounts:
-  Twitch can allow both subscriptions, so both environments can receive commands from that same channel and both may reply
+## Reply Behavior
 
-For safe bot testing:
+- replies are sent with the bot account token, not the broadcaster token
+- Twitch `401` send failures trigger one token refresh and one retry
+- EventSub subscriptions are reconciled from the app instead of being treated as one-time manual setup
 
-- use a dedicated test broadcaster/channel whenever possible
-- use a dedicated test bot account for local development
-- set local `.env` `TWITCH_BOT_USERNAME` to that test bot account before reconnecting the bot
-- do not sign a production broadcaster into the local environment
-- avoid keeping both production and local EventSub subscriptions active for the same broadcaster
+## Safe Local Testing
 
-### Current limits
+Do not test the same broadcaster in both local and production unless that overlap is intentional.
 
-- The bot account is shared globally across channels.
-- Bot disconnect/reconnect is managed from the admin dashboard rather than a dedicated bot management page.
-- Existing EventSub subscriptions are tracked locally in D1. If a remote subscription is deleted manually in Twitch, the next reconcile pass may need another save/login/live cycle to recreate it.
+Two cases matter:
 
-## What can be added later
+- same broadcaster + same bot account: one environment can take over the shared `channel.chat.message` subscription
+- same broadcaster + different bot accounts: both environments can receive and act on the same chat command
 
-- A dedicated bot management page instead of admin-only controls.
-- Stronger operator diagnostics for subscription drift and reply failures.
-- Automatic recovery sweeps for enabled channels.
+Safe default:
+
+- use a dedicated test broadcaster
+- use a dedicated test bot account
+- keep local `TWITCH_BOT_USERNAME` aligned with that test bot account
+- avoid leaving both local and production subscriptions active for the same broadcaster
+
+## Current Limits
+
+- one shared bot account is used across channels
+- bot connection management stays on the admin page
+- EventSub subscription drift still relies on save, login, and live-state reconciliation instead of a dedicated health dashboard
+
+## Related Docs
+
+- [docs/local-development.md](local-development.md)
+- [docs/deployment-workflow.md](deployment-workflow.md)

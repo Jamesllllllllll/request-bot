@@ -1,29 +1,24 @@
 # Documentation
 
-This directory keeps longer-form project documentation, rollout notes, and feature-specific planning docs.
+This directory keeps the current project docs: setup, deployment, operations, testing, and the small number of active roadmap notes that still guide unfinished work.
 
-## Start Here
+## Core Docs
 
-- [local-development.md](/docs/local-development.md)
-- [deployment-workflow.md](/docs/deployment-workflow.md)
-- [bot-operations.md](/docs/bot-operations.md)
+- [local-development.md](local-development.md)
+- [deployment-workflow.md](deployment-workflow.md)
+- [bot-operations.md](bot-operations.md)
+- [testing-guide.md](testing-guide.md)
 
-## Feature Testing And Rollout
+## Product Notes
 
-- [twitch-panel-extension-local-test.md](/docs/twitch-panel-extension-local-test.md)
-- [twitch-panel-extension-beta-rollout-checklist.md](/docs/twitch-panel-extension-beta-rollout-checklist.md)
+- [request-modifier-vip-token-rules.md](request-modifier-vip-token-rules.md)
+- [stream-overlay.md](stream-overlay.md)
 
-## Feature Notes And Planning
+## Twitch Panel
 
-- [web-viewer-requests-feature-request.md](/docs/web-viewer-requests-feature-request.md)
-- [web-viewer-requests-implementation-plan.md](/docs/web-viewer-requests-implementation-plan.md)
-- [twitch-panel-extension-feature-request.md](/docs/twitch-panel-extension-feature-request.md)
-- [twitch-panel-extension-implementation-plan.md](/docs/twitch-panel-extension-implementation-plan.md)
-- [stream-overlay-mvp.md](/docs/stream-overlay-mvp.md)
-- [subscriber-vip-token-todo.md](/docs/subscriber-vip-token-todo.md)
+- [twitch-panel-extension-local-test.md](twitch-panel-extension-local-test.md)
+- [twitch-panel-extension-beta-rollout-checklist.md](twitch-panel-extension-beta-rollout-checklist.md)
 
-## Broader Project Notes
+## Active Roadmap Notes
 
-- [channel-first-architecture-plan.md](/docs/channel-first-architecture-plan.md)
-- [production-hardening-plan.md](/docs/production-hardening-plan.md)
-- [testing-plan.md](/docs/testing-plan.md)
+- [production-hardening-plan.md](production-hardening-plan.md)

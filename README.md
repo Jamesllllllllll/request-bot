@@ -43,10 +43,12 @@ Use the bundled sample catalog for normal local development. For Twitch auth, Ev
 The default contributor path is:
 
 ```bash
-git add <files>
+git add -A
 git commit
 git push
 ```
+
+Stage the full worktree before every commit unless you intentionally need to exclude something.
 
 The repo hooks run staged Biome checks on commit and generated-file checks, typecheck, and tests on push.
 

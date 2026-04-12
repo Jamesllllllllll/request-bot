@@ -150,10 +150,12 @@ Safe default:
 The default workflow is:
 
 ```bash
-git add <files>
+git add -A
 git commit
 git push
 ```
+
+Stage the full worktree before every commit unless you intentionally need to exclude something.
 
 Run the push-time gate yourself with:
 

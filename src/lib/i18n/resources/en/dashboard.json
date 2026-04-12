@@ -71,7 +71,6 @@
       "title": "Settings",
       "description": "Owner-only channel configuration for requests, moderators, and the stream overlay.",
       "betaNote": "Beta testers can install the Twitch extension panel on Twitch.",
-      "previewPanel": "Preview mod panel",
       "installExtension": "Install Twitch extension beta"
     },
     "states": {

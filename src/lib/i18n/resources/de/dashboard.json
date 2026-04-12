@@ -71,7 +71,6 @@
       "title": "Einstellungen",
       "description": "Nur-Eigentümer-Kanalkonfiguration für Anfragen, Moderatoren und das Stream-Overlay.",
       "betaNote": "Betatester können das Twitch-Erweiterungspanel auf Twitch installieren.",
-      "previewPanel": "Vorschau des Mod-Panels",
       "installExtension": "Installieren Sie die Betaversion der Twitch-Erweiterung"
     },
     "states": {

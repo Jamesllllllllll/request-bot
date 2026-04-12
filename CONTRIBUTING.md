@@ -14,10 +14,12 @@ npm run db:bootstrap:local
 4. Commit and push normally:
 
 ```bash
-git add <files>
+git add -A
 git commit
 git push
 ```
+
+Stage the full worktree before every commit unless you intentionally need to exclude something. If a file should stay out of the commit, make that explicit instead of relying on a partially staged worktree.
 
 The repo hooks handle the default checks:
 
@@ -36,7 +38,7 @@ Run extra checks only when the change needs them:
 - `npm run test:e2e` for browser flows
 - `npm run lint` or `npm run lint:full` for a full-repo Biome pass
 - `npm run check:ship` for the full pre-PR ship flow
-- `npm run build:extension:package` when the change affects the standalone Twitch panel artifact
+- `npm run build:extension:package` when the change affects the Twitch-uploaded panel UI or panel static assets
 
 ## Codex Ship Flow
 
@@ -46,7 +48,7 @@ Use this trigger when you want Codex to run the full branch shipping workflow:
 Use $request-bot-ship to ship this branch.
 ```
 
-That flow runs the repo ship checks, packages the Twitch panel artifact when the changed files affect it, stages and commits the branch, pushes it, opens the PR, waits for checks, and merges only after checks pass.
+That flow runs the repo ship checks, packages the Twitch panel artifact locally when the change affects the Twitch-uploaded panel UI or panel static assets, stages the full worktree with `git add -A`, commits it, pushes it, opens the PR, waits for checks, and merges only after checks pass.
 
 ## Commit Messages
 

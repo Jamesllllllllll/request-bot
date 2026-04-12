@@ -71,7 +71,6 @@
       "title": "Reglages",
       "description": "Configuration de la chaine reservee au proprietaire pour les demandes, les moderateurs et l'overlay du stream.",
       "betaNote": "Les beta testeurs peuvent installer le panneau d'extension Twitch.",
-      "previewPanel": "Apercu du panneau modo",
       "installExtension": "Installer la beta de l'extension Twitch"
     },
     "states": {

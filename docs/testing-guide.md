@@ -19,6 +19,7 @@ npm run check:prepush
 That covers:
 
 - generated-file checks
+- i18n coverage
 - typecheck
 - Vitest
 

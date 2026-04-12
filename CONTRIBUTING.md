@@ -3,6 +3,8 @@
 ## Workflow
 
 1. Branch from `main`.
+
+Never commit directly to `main` and never push directly to `main`. If you start work while checked out on `main`, create a feature branch before staging, committing, or pushing. Do not bypass the repo hook that blocks commits on `main`.
 2. Install dependencies and bootstrap local data:
 
 ```bash
@@ -11,7 +13,7 @@ npm run db:bootstrap:local
 ```
 
 3. Make the change.
-4. Commit and push normally:
+4. Commit and push from your feature branch:
 
 ```bash
 git add -A
@@ -23,8 +25,8 @@ Stage the full worktree before every commit unless you intentionally need to exc
 
 The repo hooks handle the default checks:
 
-- `pre-commit`: blocks commits on `main` and runs staged-file Biome fixes/checks
-- `pre-push`: runs generated-file checks, typecheck, and tests
+- `pre-commit`: blocks commits on `main` and runs staged-file Biome fixes/checks, including staged JSON files in `src`, `tests`, and `scripts`
+- `pre-push`: runs generated-file checks, i18n coverage, lint, typecheck, and tests
 
 If you want the push-time gate before pushing, run:
 
@@ -49,6 +51,10 @@ Use $request-bot-ship to ship this branch.
 ```
 
 That flow runs the repo ship checks, packages the Twitch panel artifact locally when the change affects the Twitch-uploaded panel UI or panel static assets, stages the full worktree with `git add -A`, commits it, pushes it, opens the PR, waits for checks, and merges only after checks pass.
+
+It also updates the release version and changelog before the PR is opened. Anything merged into `main` is treated as shipped work, so use a versioned changelog entry instead of an `Unreleased` section.
+
+If Codex starts on `main`, it should create a feature branch before it stages, commits, or pushes anything. It should never use `ALLOW_MAIN_COMMIT=1` or any similar bypass to commit on `main`.
 
 ## Commit Messages
 
@@ -85,10 +91,13 @@ Do not leave code that expects a schema change without a checked-in migration.
 
 ## Releases
 
-- Keep [CHANGELOG.md](CHANGELOG.md) and [package.json](package.json) aligned when preparing a release.
+- Keep [CHANGELOG.md](CHANGELOG.md), [package.json](package.json), and [package-lock.json](package-lock.json) aligned when preparing a release.
+- Update the version and changelog for every branch that merges into `main`.
+- Use a versioned changelog entry for shipped work. Do not keep an `Unreleased` section for merged changes.
 - Use `0.x.x` while the app is still pre-`1.0`.
-- Use a patch release for routine shipped work.
+- Use a patch release for routine shipped work, fixes, docs, workflow updates, and cleanup.
 - Use a minor release when the shipped product scope expands materially.
+- Use a major release only for intentional breaking release boundaries.
 
 ## Start Here
 

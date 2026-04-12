@@ -150,12 +150,13 @@ Safe default:
 The default workflow is:
 
 ```bash
+git switch -c codex/my-change
 git add -A
 git commit
 git push
 ```
 
-Stage the full worktree before every commit unless you intentionally need to exclude something.
+Do not commit or push on `main`. If you start on `main`, create a feature branch first. Stage the full worktree before every commit unless you intentionally need to exclude something.
 
 Run the push-time gate yourself with:
 
@@ -170,6 +171,8 @@ Run extra checks only when they fit the change:
 - `npm run check:ship`
 - `npm run build`
 - `npm run test:e2e`
+
+The repo hooks already run staged Biome fixes/checks on commit, including staged JSON under `src`, `tests`, and `scripts`, and they run generated-file checks, i18n coverage, lint, typecheck, and tests on push.
 
 ## Related Docs
 

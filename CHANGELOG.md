@@ -2,7 +2,22 @@
 
 All notable changes to this project will be documented in this file.
 
-## [Unreleased]
+## [0.4.4] - 2026-04-12
+
+### Changed
+- The local push gate now runs lint before typecheck and tests, and the staged-file formatter now includes JSON files under `src`, `tests`, and `scripts`.
+
+### Fixed
+- Locale JSON files and other staged JSON edits now get caught by the pre-commit formatter instead of slipping through to CI.
+- Branch pushes now fail locally when Biome formatting is out of date, which prevents another CI-only formatting failure.
+
+## [0.4.3] - 2026-04-12
+
+### Changed
+- The contributor and agent instructions now require versioned changelog entries for shipped work and make the release bump rules explicit.
+
+### Fixed
+- Historical local filesystem path examples are scrubbed from the test fixture and rewritten Git history.
 
 ## [0.4.2] - 2026-04-12
 

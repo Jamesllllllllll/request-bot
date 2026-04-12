@@ -530,13 +530,19 @@ export async function searchExtensionCatalog(input: {
       rateLimit.message ?? "Please wait before performing another search."
     );
   }
+  const settings = await getChannelSettingsByChannelId(input.env, channel.id);
+  const requestedParts = normalizePathOptions(input.search.parts);
+  const defaultSearchParts = settings ? getRequiredPathsSetting(settings) : [];
   const searchResult = await performCachedCatalogSearch({
     env: input.env,
     search: {
       query: input.search.query,
       favoritesOnly: input.search.favoritesOnly,
-      parts: normalizePathOptions(input.search.parts),
-      partsMatchMode: input.search.partsMatchMode ?? "any",
+      parts: requestedParts.length > 0 ? requestedParts : defaultSearchParts,
+      partsMatchMode:
+        requestedParts.length > 0
+          ? (input.search.partsMatchMode ?? "any")
+          : getRequiredPathsMatchMode(settings?.requiredPathsMatchMode),
       page: input.search.page,
       pageSize: input.search.pageSize,
     },

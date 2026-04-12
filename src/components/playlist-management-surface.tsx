@@ -72,6 +72,7 @@ import {
 } from "~/lib/i18n/format";
 import { getPickNumbersForQueuedItems } from "~/lib/pick-order";
 import {
+  formatPlaylistItemSummaryLine,
   getPlaylistDisplayParts,
   getResolvedPlaylistCandidates,
   playlistDisplayCandidateHasLyrics,
@@ -184,7 +185,8 @@ const PLAYLIST_PREVIEW_CANDIDATES: PlaylistCandidate[] = [
     album: "Neon Noir",
     creator: "JohnCryx",
     tuning: "E Standard | A Standard",
-    parts: ["lead", "rhythm", "bass", "voice"],
+    parts: ["lead", "rhythm", "bass"],
+    hasLyrics: true,
     durationText: "3:49",
     sourceUpdatedAt: Date.parse("2025-12-08T00:00:00Z"),
     downloads: 4284,
@@ -221,7 +223,8 @@ const PLAYLIST_PREVIEW_ITEM: PlaylistItem = {
   songAlbum: "Neon Noir",
   songCreator: "JohnCryx",
   songTuning: "E Standard | A Standard",
-  songPartsJson: JSON.stringify(["lead", "rhythm", "bass", "voice"]),
+  songPartsJson: JSON.stringify(["lead", "rhythm", "bass"]),
+  songHasLyrics: true,
   songDurationText: "3:49",
   songUrl: "https://customsforge.com/index.php?/customs/99081",
   songSourceUpdatedAt: Date.parse("2025-12-08T00:00:00Z"),
@@ -1037,6 +1040,7 @@ export function PlaylistManagementSurface(
                   const isBlacklistedCharter =
                     song.authorId != null &&
                     blacklistedCharterIds.has(song.authorId);
+                  const displaySongParts = getPlaylistDisplayParts(song.parts);
                   const manualAddVipTokenCost =
                     getManagedPlaylistRequestVipTokenCost({
                       requestKind: "regular",
@@ -1114,15 +1118,11 @@ export function PlaylistManagementSurface(
                           {song.tuning ?? t("management.manual.noTuningInfo")}
                         </p>
                         <p className="mt-1 truncate text-sm text-(--muted)">
-                          {(() => {
-                            const displayParts = getPlaylistDisplayParts(
-                              song.parts
-                            );
-
-                            return displayParts.length > 0
-                              ? displayParts.join(", ")
-                              : t("management.manual.noPathInfo");
-                          })()}
+                          {displaySongParts.length > 0
+                            ? displaySongParts
+                                .map((part) => formatPathLabel(part))
+                                .join(", ")
+                            : t("management.manual.noPathInfo")}
                         </p>
                       </div>
                       <div className="dashboard-playlist__manual-add grid justify-items-end gap-1 self-start text-right">
@@ -2831,6 +2831,13 @@ function PlaylistQueueItem(props: {
             </motion.div>
 
             <motion.div layout="position" className="grid gap-1.5">
+              <p className="break-words text-sm text-(--brand-deep)">
+                {formatPlaylistItemSummaryLine(props.item, {
+                  hasMultipleVersions,
+                  chartedByLabel: t("management.versionsTable.chartedBy"),
+                  unknownArtistLabel: t("management.manual.unknownArtist"),
+                })}
+              </p>
               {itemDurationText || compactTuning || itemHasLyrics ? (
                 <p className="flex flex-wrap items-center gap-x-1.5 gap-y-1 text-sm text-(--muted)">
                   {itemDurationText ? (
@@ -3464,148 +3471,152 @@ function PlaylistVersionsTable(props: {
                 isBlocked,
               },
               sortedIndex
-            ) => (
-              <tr
-                key={`${props.itemId}-${candidate.id}-${index}`}
-                className={`border-b border-(--border) align-top ${
-                  sortedIndex % 2 === 0 ? "bg-(--panel)" : "bg-(--panel-soft)"
-                } ${isBlocked ? "opacity-55" : ""}`}
-              >
-                <td className="px-4 py-3">
-                  <div className="grid gap-0.5">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <p className="font-medium text-(--text)">
-                        {candidate.title}
-                        {candidate.album ? ` · ${candidate.album}` : ""}
+            ) => {
+              const displayParts = getPlaylistDisplayParts(candidate.parts);
+              const hasLyrics = playlistDisplayCandidateHasLyrics(candidate);
+
+              return (
+                <tr
+                  key={`${props.itemId}-${candidate.id}-${index}`}
+                  className={`border-b border-(--border) align-top ${
+                    sortedIndex % 2 === 0 ? "bg-(--panel)" : "bg-(--panel-soft)"
+                  } ${isBlocked ? "opacity-55" : ""}`}
+                >
+                  <td className="px-4 py-3">
+                    <div className="grid gap-0.5">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <p className="font-medium text-(--text)">
+                          {candidate.title}
+                          {candidate.album ? ` · ${candidate.album}` : ""}
+                        </p>
+                        {isBlacklistedCandidateSong ? (
+                          <span className="inline-flex items-center border border-rose-400/40 bg-rose-500/10 px-2 py-[3px] text-[10px] font-semibold uppercase tracking-[0.14em] text-rose-200">
+                            {t("management.versionsTable.blacklisted")}
+                          </span>
+                        ) : null}
+                      </div>
+                      <p className="text-xs text-(--muted)">
+                        {candidate.artist ??
+                          t("management.versionsTable.unknownArtist")}
                       </p>
-                      {isBlacklistedCandidateSong ? (
-                        <span className="inline-flex items-center border border-rose-400/40 bg-rose-500/10 px-2 py-[3px] text-[10px] font-semibold uppercase tracking-[0.14em] text-rose-200">
-                          {t("management.versionsTable.blacklisted")}
+                      {candidate.creator ? (
+                        <p className="text-xs text-(--muted)">
+                          <span className="text-(--brand-deep)">
+                            {t("management.versionsTable.chartedBy")}
+                          </span>{" "}
+                          {candidate.creator}
+                          {isBlacklistedCharter
+                            ? ` · ${t("management.versionsTable.charterBlacklisted")}`
+                            : ""}
+                        </p>
+                      ) : null}
+                    </div>
+                  </td>
+                  <td className="px-4 py-3 text-(--muted)">
+                    {candidate.tuning ?? t("management.versionsTable.unknown")}
+                  </td>
+                  <td className="px-4 py-3">
+                    <div className="flex flex-wrap gap-1">
+                      {displayParts.map((part) => (
+                        <span
+                          key={`${candidate.id}-${part}`}
+                          className={getPlaylistPathBadgeClass(part)}
+                          title={formatPathLabel(part)}
+                        >
+                          {getPathAbbreviation(part)}
+                        </span>
+                      ))}
+                      {hasLyrics ? (
+                        <span className="inline-flex h-6 items-center justify-center border border-(--border-strong) bg-(--panel) px-1.5 text-[10px] font-semibold uppercase tracking-[0.08em] text-(--muted)">
+                          {t("management.versionsTable.lyrics")}
+                        </span>
+                      ) : null}
+                      {displayParts.length === 0 && !hasLyrics ? (
+                        <span className="text-xs text-(--muted)">
+                          {t("management.versionsTable.unknown")}
                         </span>
                       ) : null}
                     </div>
-                    <p className="text-xs text-(--muted)">
-                      {candidate.artist ??
-                        t("management.versionsTable.unknownArtist")}
-                    </p>
-                    {candidate.creator ? (
-                      <p className="text-xs text-(--muted)">
-                        <span className="text-(--brand-deep)">
-                          {t("management.versionsTable.chartedBy")}
-                        </span>{" "}
-                        {candidate.creator}
-                        {isBlacklistedCharter
-                          ? ` · ${t("management.versionsTable.charterBlacklisted")}`
-                          : ""}
-                      </p>
-                    ) : null}
-                  </div>
-                </td>
-                <td className="px-4 py-3 text-(--muted)">
-                  {candidate.tuning ?? t("management.versionsTable.unknown")}
-                </td>
-                <td className="px-4 py-3">
-                  <div className="flex flex-wrap gap-1">
-                    {getPlaylistDisplayParts(candidate.parts).map((part) => (
-                      <span
-                        key={`${candidate.id}-${part}`}
-                        className={getPlaylistPathBadgeClass(part)}
-                        title={formatPathLabel(part)}
-                      >
-                        {getPathAbbreviation(part)}
-                      </span>
-                    ))}
-                    {playlistDisplayCandidateHasLyrics(candidate) ? (
-                      <span className="inline-flex h-6 items-center justify-center border border-(--border) bg-(--panel-strong) px-2 text-[10px] font-medium uppercase tracking-[0.08em] text-(--muted)">
-                        {t("management.versionsTable.lyrics")}
-                      </span>
-                    ) : null}
-                    {getPlaylistDisplayParts(candidate.parts).length === 0 &&
-                    !playlistDisplayCandidateHasLyrics(candidate) ? (
-                      <span className="text-xs text-(--muted)">
-                        {t("management.versionsTable.unknown")}
-                      </span>
-                    ) : null}
-                  </div>
-                </td>
-                <td className="px-4 py-3 text-(--muted)">
-                  {candidate.sourceUpdatedAt
-                    ? formatLocaleDate(locale, candidate.sourceUpdatedAt, {
-                        dateStyle: "medium",
-                      })
-                    : t("management.versionsTable.unknown")}
-                </td>
-                <td className="px-4 py-3 text-(--muted)">
-                  {candidate.downloads != null
-                    ? formatNumber(locale, candidate.downloads)
-                    : t("management.versionsTable.unknown")}
-                </td>
-                <td className="px-4 py-3">
-                  <div className="flex flex-wrap gap-1.5">
-                    {candidate.sourceUrl ? (
-                      isBlocked ? (
-                        <Button
-                          type="button"
-                          size="sm"
-                          variant="outline"
-                          className="h-7 px-2 text-[11px]"
-                          disabled
-                          title={t("management.versionsTable.blacklisted")}
-                        >
-                          <Download className="h-3.5 w-3.5" />
-                          {t("management.versionsTable.download")}
-                        </Button>
-                      ) : (
-                        <Button
-                          type="button"
-                          size="sm"
-                          variant="outline"
-                          asChild
-                          className="h-7 px-2 text-[11px]"
-                        >
-                          <a
-                            href={candidate.sourceUrl}
-                            target="_blank"
-                            rel="noreferrer"
-                            className="no-underline"
+                  </td>
+                  <td className="px-4 py-3 text-(--muted)">
+                    {candidate.sourceUpdatedAt
+                      ? formatLocaleDate(locale, candidate.sourceUpdatedAt, {
+                          dateStyle: "medium",
+                        })
+                      : t("management.versionsTable.unknown")}
+                  </td>
+                  <td className="px-4 py-3 text-(--muted)">
+                    {candidate.downloads != null
+                      ? formatNumber(locale, candidate.downloads)
+                      : t("management.versionsTable.unknown")}
+                  </td>
+                  <td className="px-4 py-3">
+                    <div className="flex flex-wrap gap-1.5">
+                      {candidate.sourceUrl ? (
+                        isBlocked ? (
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="outline"
+                            className="h-7 px-2 text-[11px]"
+                            disabled
+                            title={t("management.versionsTable.blacklisted")}
                           >
                             <Download className="h-3.5 w-3.5" />
                             {t("management.versionsTable.download")}
-                          </a>
-                        </Button>
-                      )
-                    ) : null}
-                    {props.canManageBlacklist ? (
-                      <Button
-                        type="button"
-                        size="sm"
-                        variant={
-                          isBlacklistedCandidateSong ? "outline" : "secondary"
-                        }
-                        className="h-7 px-2 text-[11px]"
-                        disabled={
-                          candidate.sourceId == null ||
-                          props.isBlacklistSongPending
-                        }
-                        onClick={() => {
-                          if (isBlacklistedCandidateSong) {
-                            props.onUnblacklistCandidateSong(candidate);
-                            return;
+                          </Button>
+                        ) : (
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="outline"
+                            asChild
+                            className="h-7 px-2 text-[11px]"
+                          >
+                            <a
+                              href={candidate.sourceUrl}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="no-underline"
+                            >
+                              <Download className="h-3.5 w-3.5" />
+                              {t("management.versionsTable.download")}
+                            </a>
+                          </Button>
+                        )
+                      ) : null}
+                      {props.canManageBlacklist ? (
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant={
+                            isBlacklistedCandidateSong ? "outline" : "secondary"
                           }
+                          className="h-7 px-2 text-[11px]"
+                          disabled={
+                            candidate.sourceId == null ||
+                            props.isBlacklistSongPending
+                          }
+                          onClick={() => {
+                            if (isBlacklistedCandidateSong) {
+                              props.onUnblacklistCandidateSong(candidate);
+                              return;
+                            }
 
-                          props.onBlacklistCandidateSong(candidate);
-                        }}
-                      >
-                        <Ban className="h-3.5 w-3.5" />
-                        {isBlacklistedCandidateSong
-                          ? t("management.versionsTable.unblacklist")
-                          : t("management.versionsTable.blacklist")}
-                      </Button>
-                    ) : null}
-                  </div>
-                </td>
-              </tr>
-            )
+                            props.onBlacklistCandidateSong(candidate);
+                          }}
+                        >
+                          <Ban className="h-3.5 w-3.5" />
+                          {isBlacklistedCandidateSong
+                            ? t("management.versionsTable.unblacklist")
+                            : t("management.versionsTable.blacklist")}
+                        </Button>
+                      ) : null}
+                    </div>
+                  </td>
+                </tr>
+              );
+            }
           )}
         </tbody>
       </table>

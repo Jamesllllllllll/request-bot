@@ -18,7 +18,7 @@
   },
   "commands": {
     "how": {
-      "commands": "Comandos: {commandPrefix}sr artista - musica; {commandPrefix}sr artista *random; {commandPrefix}sr artista *choice; {commandPrefix}vip; {commandPrefix}vip artista - musica; {commandPrefix}edit #2 artista - musica; {commandPrefix}remove reg|vip|all; {commandPrefix}position.",
+      "commands": "Comandos: {commandPrefix}sr artista - musica; {commandPrefix}sr artista *random; {commandPrefix}sr favorite; {commandPrefix}sr artista *choice; {commandPrefix}vip; {commandPrefix}vip artista - musica; {commandPrefix}edit #2 artista - musica; {commandPrefix}remove reg|vip|all; {commandPrefix}position.",
       "partRequests": "Pedidos de parte: adicione {modifiers} a {commandPrefix}sr, {commandPrefix}vip ou {commandPrefix}edit.",
       "partRequestsVip": "Pedidos de parte: adicione {modifiers} a {commandPrefix}sr, {commandPrefix}vip ou {commandPrefix}edit. Eles adicionam {countText}. VIP adiciona mais 1.",
       "vipBase": "Pedidos VIP: {commandPrefix}vip adiciona 1 token VIP e toca em seguida.",
@@ -87,6 +87,7 @@
     "requestQueryMissing": "{mention} inclua um artista ou música antes de usar modificadores de pedido.",
     "songLookupFailed": "{mention} tive um problema ao procurar essa musica. Tente novamente.",
     "randomNotFound": "{mention} não encontrei uma combinação aleatória permitida para \"{query}\".",
+    "favoriteNotFound": "{mention} não encontrei um favorito permitido deste canal agora.",
     "rejectedSongBlocked": "{mention} não consigo adicionar essa música à lista.",
     "rejectedSongReason": "{mention} {reason}",
     "choiceAlreadyActive": "{mention} esse pedido de escolha do streamer ja esta nos seus pedidos ativos.",

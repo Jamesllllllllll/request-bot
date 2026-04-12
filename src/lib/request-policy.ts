@@ -783,7 +783,7 @@ export function buildHowMessage(input: {
     input.translate?.("commands.how.commands", {
       commandPrefix: normalized,
     }) ??
-      `Commands: ${normalized}sr artist - song; ${normalized}sr artist *random; ${normalized}sr artist *choice; ${normalized}vip; ${normalized}vip artist - song; ${normalized}edit #2 artist - song; ${normalized}remove reg|vip|all; ${normalized}position.`,
+      `Commands: ${normalized}sr artist - song; ${normalized}sr artist *random; ${normalized}sr favorite; ${normalized}sr artist *choice; ${normalized}vip; ${normalized}vip artist - song; ${normalized}edit #2 artist - song; ${normalized}remove reg|vip|all; ${normalized}position.`,
     input.translate?.("commands.how.vipBase", {
       commandPrefix: normalized,
     }) ?? `VIP requests: ${normalized}vip adds 1 VIP token and plays next.`,

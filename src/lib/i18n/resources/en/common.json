@@ -20,5 +20,19 @@
     "button": "Help us translate!",
     "title": "Help us translate!",
     "messageLead": "This website was translated with AI. If you notice anything wrong, please reach out to"
+  },
+  "pagination": {
+    "previous": "Previous",
+    "next": "Next",
+    "morePages": "More pages",
+    "goToPreviousPage": "Go to previous page",
+    "goToNextPage": "Go to next page"
+  },
+  "commandPalette": {
+    "title": "Command palette",
+    "description": "Search for a command to run..."
+  },
+  "dialog": {
+    "close": "Close"
   }
 }

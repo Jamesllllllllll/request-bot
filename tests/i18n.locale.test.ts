@@ -7,6 +7,7 @@ import { resolveRequestLocale } from "~/lib/i18n/server";
 describe("normalizeLocale", () => {
   it("accepts supported locales", () => {
     expect(normalizeLocale("en")).toBe("en");
+    expect(normalizeLocale("de")).toBe("de");
     expect(normalizeLocale("es")).toBe("es");
     expect(normalizeLocale("fr")).toBe("fr");
     expect(normalizeLocale("pt-BR")).toBe("pt-BR");
@@ -20,7 +21,7 @@ describe("normalizeLocale", () => {
 
   it("rejects unsupported locales", () => {
     expect(normalizeLocale("pt")).toBeNull();
-    expect(normalizeLocale("de")).toBeNull();
+    expect(normalizeLocale("it")).toBeNull();
   });
 });
 
@@ -87,7 +88,7 @@ describe("resolveRequestLocale", () => {
   it("falls back to English when the request cookie locale is invalid", () => {
     const request = new Request("https://rocklist.live", {
       headers: {
-        cookie: "rb_locale=de",
+        cookie: "rb_locale=it",
       },
     });
 
@@ -109,7 +110,7 @@ describe("resolveRequestLocale", () => {
       resolveRequestLocale(
         request,
         { APP_URL: "https://rocklist.live" } as never,
-        "de"
+        "it"
       )
     ).toBe("fr");
   });

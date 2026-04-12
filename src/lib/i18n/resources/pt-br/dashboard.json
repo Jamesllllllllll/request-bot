@@ -2,7 +2,7 @@
   "nav": {
     "channels": "Canais",
     "settings": "Configuracao",
-    "admin": "Admin"
+    "admin": "Administracao"
   },
   "botStatus": {
     "active": "Ativo",
@@ -87,7 +87,7 @@
       "savingButton": "Salvando..."
     },
     "actions": {
-      "saveSettings": "Salvar configuracoes",
+      "saveSettings": "Salvar",
       "reconnectTwitch": "Reconectar Twitch",
       "copyUrl": "Copiar URL",
       "copyCode": "Copiar codigo",
@@ -98,6 +98,46 @@
       "done": "Concluir",
       "show": "Mostrar",
       "hide": "Ocultar"
+    },
+    "tabs": {
+      "caption": "Categorias",
+      "helper": "Troque de categoria sem perder as alteracoes. Salve uma vez quando terminar.",
+      "general": {
+        "label": "Geral",
+        "description": "Comportamento principal do canal, padroes da playlist e ajustes do comando do chat."
+      },
+      "access": {
+        "label": "Acesso",
+        "description": "Escolha quem pode pedir musicas entre os seus espectadores."
+      },
+      "vipCosts": {
+        "label": "Limites de duração",
+        "description": "Defina como musicas mais longas mudam o custo dos tokens VIP."
+      },
+      "filters": {
+        "label": "Filtros",
+        "description": "Limite os resultados da busca e controle quais musicas podem ser pedidas."
+      },
+      "limits": {
+        "label": "Limites",
+        "description": "Controle o tamanho da playlist e o ritmo dos pedidos."
+      },
+      "rewards": {
+        "label": "Conceder tokens VIP",
+        "description": "Configure recompensas automaticas de tokens VIP e tempos de espera."
+      },
+      "requestModifiers": {
+        "label": "Modificadores de pedido",
+        "description": "Permita pedir partes especificas e escolha se esses modificadores gastam tokens VIP."
+      },
+      "moderation": {
+        "label": "Moderacao",
+        "description": "Revise as instrucoes do canal, a aplicacao das regras e os controles dos moderadores."
+      },
+      "overlay": {
+        "label": "Overlay",
+        "description": "Ajuste o overlay da live sem sair da pagina."
+      }
     },
     "ownerOnly": {
       "title": "Apenas configuracoes do proprietario",
@@ -116,6 +156,8 @@
         "enableRequests": "Ativar pedidos",
         "enableRequestsHelp": "Desativar pedidos ainda permite que voce e seus moderadores gerenciem a playlist, mas os espectadores nao poderao adicionar musicas.",
         "playlistDisplay": "Exibicao da playlist",
+        "chatDefaults": "Padroes do chat",
+        "chatDefaultsHelp": "Escolha o idioma padrao e o comportamento dos comandos para os espectadores.",
         "showPositions": "Mostrar posicoes da playlist",
         "showPickOrderBadges": "Mostrar badges de vez",
         "showPickOrderBadgesHelpBefore": "Mostra badges como",
@@ -125,21 +167,24 @@
         "commandPrefixHelp": "Use o comando que os espectadores digitam no chat.",
         "requestModifiers": "Modificadores de pedido",
         "requestModifiersHelp": "Permita que os viewers pecam uma parte tocavel especifica quando a musica incluir essa parte.",
-        "requestModifiersPreamble": "Use isto se voce normalmente toca um tipo de parte, mas quer permitir que sua audiencia peca outra quando voce quiser. Por exemplo, se voce normalmente toca guitarra, pode deixar os viewers pedirem baixo especificamente.",
+        "requestModifiersPreamble": "Use isto se quiser permitir que os viewers peçam uma parte. Por exemplo, se você costuma tocar guitarra, pode deixar que peçam baixo ou uma parte específica de guitarra.",
         "requestModifiersToggle": "Permitir modificadores de pedido como *guitar e *bass",
         "allowedPathModifiers": "Modificadores de pedido ativados",
         "allowedPathModifiersHelp": "Ative um ou mais modificadores. Os viewers so podem escolher opcoes ativadas quando a musica inclui uma parte compativel.",
+        "modifierBehavior": "Comportamento do modificador",
+        "modifierBehaviorHelp": "Escolha se os modificadores pagos ficam na fila normal ou usam prioridade VIP. O custo do modificador e o custo extra total.",
         "requestPathModifierOptions": {
           "guitar": "Permitir *guitar",
           "lead": "Permitir *lead",
           "rhythm": "Permitir *rhythm",
           "bass": "Permitir *bass"
         },
-        "requestPathModifierGuitarTip": "Ative isto se sua audiencia deve poder pedir guitarra em geral enquanto voce escolhe lead ou rhythm. Voce pode deixar *lead e *rhythm desligados.",
+        "requestPathModifierGuitarTip": "(sua escolha entre lead ou rhythm)",
         "pathModifierVipTokenCost": "Custo em VIP tokens ao usar um modificador",
+        "pathModifierVipTokenRequired": "Tokens VIP",
         "pathModifierVipTokenCostHelp": "Defina 0 para deixar os viewers usarem um modificador sem VIP tokens.",
-        "pathModifierUsesVipPriority": "Usar um modificador tambem transforma o pedido em VIP",
-        "pathModifierUsesVipPriorityHelp": "Desative isto se usar um modificador deve gastar VIP tokens sem mover o pedido para o topo.",
+        "pathModifierUsesVipPriority": "Modificadores pagos também usam prioridade VIP",
+        "pathModifierUsesVipPriorityHelp": "O custo do modificador é o custo extra total.",
         "duplicateCooldown": "Tempo de espera para duplicados (minutos)",
         "duplicateCooldownHelp": "Defina quanto tempo a mesma musica precisa esperar antes de poder ser pedida de novo."
       },
@@ -176,8 +221,8 @@
         "requiredPaths": {
           "title": "Caminhos obrigatorios",
           "description": "Escolha os caminhos que uma musica precisa ter antes de aparecer na busca ou poder ser pedida.",
-          "triggerAny": "ANY:",
-          "triggerAll": "ALL:",
+          "triggerAny": "QUALQUER:",
+          "triggerAll": "TODAS:",
           "matchAny": "Corresponder a qualquer caminho selecionado",
           "matchAll": "Corresponder a todos os caminhos selecionados",
           "none": "Nenhum filtro de caminho esta ativo. As musicas podem corresponder com qualquer combinacao de caminhos.",
@@ -290,7 +335,7 @@
         "minimumCheerExample": "Cheer minimo: {bits} bits concede {tokenCount} de um token VIP com o limite de {percent}%.",
         "bitsExample": "{oneTokenBits} bits concede 1 token VIP. {fiveTokenBits} bits concede 5 tokens VIP.",
         "bitsExampleEmpty": "Defina bits por token VIP acima de 0 para ver o limite minimo do cheer.",
-        "tips": "Tips",
+        "tips": "Gorjetas",
         "tipsToggle": "Dar tokens VIP por tips do StreamElements",
         "tipAmount": "Valor da gorjeta por 1 token VIP",
         "tipAmountHelp": "Uma gorjeta de $25 concede 5 tokens VIP quando isto esta definido como 5.",
@@ -370,34 +415,35 @@
         }
       },
       "channelInstructions": {
-        "title": "Instrucoes do canal",
-        "description": "Copie um resumo pronto para colar na secao Sobre do seu canal na Twitch.",
-        "copy": "Copiar instrucoes",
+        "title": "Copiar e colar resumo",
+        "description": "Copie um resumo pronto para colar na pagina do seu canal.",
+        "copy": "Copiar resumo",
+        "aboutSection": "Copiar e colar resumo",
         "playlist": "Playlist: {url}",
-        "availabilityDisabled": "Os pedidos estao desativados no momento.",
-        "availabilityEveryone": "Os pedidos estao abertos para todo mundo.",
-        "availabilitySubscribersAndVips": "Os pedidos estao abertos para inscritos e VIPs do canal.",
-        "availabilitySubscribersOnly": "Os pedidos estao abertos apenas para inscritos.",
-        "availabilityVipsOnly": "Os pedidos estao abertos apenas para VIPs do canal.",
-        "availabilityModeratorsOnly": "Os pedidos no chat estao limitados no momento ao streamer e a moderacao.",
+        "availabilityDisabled": "Pedidos: desligados",
+        "availabilityEveryone": "Pedidos: todos",
+        "availabilitySubscribersAndVips": "Pedidos: inscritos + VIPs",
+        "availabilitySubscribersOnly": "Pedidos: so inscritos",
+        "availabilityVipsOnly": "Pedidos: so VIPs",
+        "availabilityModeratorsOnly": "Pedidos: streamer + mods",
         "requestTitle": "Como pedir",
         "requestSong": "Use {requestCommand} artist - song para pedir uma musica.",
         "requestRandom": "Use {requestCommand} artist *random para um resultado aleatorio.",
         "requestChoice": "Use {requestCommand} artist *choice para um pedido de escolha do streamer.",
         "editTitle": "Como editar",
         "editCurrent": "Use {editCommand} artist - song para mudar seu pedido atual.",
-        "editPosition": "Use {editCommand} #2 artist - song quando precisar editar um pedido especifico na fila.",
+        "editPosition": "Use {editCommand} #2 artist - song para editar um pedido especifico na fila.",
         "vipTitle": "Como usar pedidos VIP",
         "vipRequest": "Use {vipCommand} artist - song para tornar um pedido VIP e coloca-lo no topo.",
         "vipBalance": "Use {vipCommand} sozinho para conferir seu saldo de tokens VIP.",
-        "vipBaseCost": "Pedidos VIP custam pelo menos {countText}.",
+        "vipBaseCost": "Pedidos VIP adicionam {countText} e vao para o topo.",
         "vipThresholdTitle": "Musicas mais longas podem exigir mais:",
-        "vipThresholdLine": "Musicas com mais de {minutes} minutos exigem {countText}.",
+        "vipThresholdLine": "Musicas com mais de {minutes} minutos adicionam {countText}.",
         "pathTitle": "Como escolher uma parte especifica",
         "pathFree": "Adicione {modifiers} a {requestCommand}, {vipCommand} ou {editCommand} quando a musica incluir uma parte compativel.",
-        "pathPaidVip": "Adicione {modifiers} a {vipCommand} artist - song quando a musica incluir uma parte compativel. Escolher uma parte custa {countText} e usa prioridade VIP.",
-        "pathPaidRegular": "Adicione {modifiers} a {requestCommand}, {vipCommand} ou {editCommand} quando a musica incluir uma parte compativel. Escolher uma parte custa {countText}.",
-        "pathPaidRegularNote": "Use {vipCommand} tambem se quiser que o pedido toque em seguida.",
+        "pathPaidVip": "Adicione {modifiers} a {vipCommand} artist - song quando a musica incluir uma parte compativel. Escolher uma parte adiciona {countText} e usa prioridade VIP.",
+        "pathPaidRegular": "Adicione {modifiers} a {requestCommand}, {vipCommand} ou {editCommand} quando a musica incluir uma parte compativel. Escolher uma parte adiciona {countText}.",
+        "pathPaidRegularNote": "Use {vipCommand} tambem para tocar em seguida. VIP adiciona mais 1 token VIP.",
         "otherTitle": "Outros comandos",
         "otherPosition": "Use {positionCommand} para ver sua posicao na playlist.",
         "otherRemove": "Use {removeCommand} reg, {removeCommand} vip ou {removeCommand} all para remover seus pedidos.",

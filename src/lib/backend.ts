@@ -1,17 +1,9 @@
 import type { AppEnv } from "./env";
 import { withInternalApiSecret } from "./internal-api";
+import type { PlaylistStreamNotifyReason } from "./playlist/realtime";
 import { getErrorMessage } from "./utils";
 
-export type PlaylistStreamNotifyReason =
-  | "playlist"
-  | "requests"
-  | "settings"
-  | "stream-status"
-  | "blacklist"
-  | "setlist"
-  | "blocks"
-  | "vip-tokens"
-  | "favorites";
+export type { PlaylistStreamNotifyReason } from "./playlist/realtime";
 
 export async function callBackend(
   env: AppEnv,

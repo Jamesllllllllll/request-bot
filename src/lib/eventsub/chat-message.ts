@@ -31,21 +31,26 @@ import {
   buildHowMessage,
   buildSearchMessage,
   buildSetlistMessage,
+  formatPathLabel,
   formatPathList,
   getActiveRequestLimit,
   getAllowedRequestPathsSetting,
-  getArraySetting,
   getMissingRequiredPaths,
   getRateLimitWindow,
   getRequiredPathsMatchMode,
+  getRequiredPathsSetting,
   getRequiredPathsWarning,
   isRequesterAllowed,
   isSongAllowed,
   songMatchesRequestedPaths,
 } from "~/lib/request-policy";
-import { getRequestVipTokenPlan } from "~/lib/requested-paths";
+import {
+  getRequestVipTokenPlan,
+  type RequestVipTokenPlanReason,
+} from "~/lib/requested-paths";
 import type { NormalizedChatEvent, ParsedChatCommand } from "~/lib/requests";
 import type { SongSearchResult } from "~/lib/song-search/types";
+import { parseStoredTuningIds } from "~/lib/tunings";
 import {
   type RequesterChatBadge,
   resolveRequesterChatBadges,
@@ -56,6 +61,7 @@ import {
   isVipRequestCooldownEnabled,
 } from "~/lib/vip-request-cooldowns";
 import {
+  formatVipDurationThresholdMinutes,
   formatVipTokenCostLabel,
   parseVipTokenDurationThresholds,
 } from "~/lib/vip-token-duration-thresholds";
@@ -78,6 +84,10 @@ export interface EventSubChatSettings {
   allowRequestPathModifiers: boolean;
   allowedRequestPathsJson?: string | null;
   requestPathModifierVipTokenCost?: number | null;
+  requestPathModifierGuitarVipTokenCost?: number | null;
+  requestPathModifierLeadVipTokenCost?: number | null;
+  requestPathModifierRhythmVipTokenCost?: number | null;
+  requestPathModifierBassVipTokenCost?: number | null;
   requestPathModifierUsesVipPriority?: boolean | null;
   vipTokenDurationThresholdsJson?: string | null;
   vipRequestCooldownEnabled?: boolean;
@@ -528,12 +538,10 @@ function buildCatalogSearchInput(input: {
     page: input.page,
     pageSize: input.pageSize,
     restrictToOfficial: !!input.state.settings.onlyOfficialDlc,
-    allowedTuningsFilter: getArraySetting(
+    allowedTuningsFilter: parseStoredTuningIds(
       input.state.settings.allowedTuningsJson
     ),
-    requiredPartsFilter: getArraySetting(
-      input.state.settings.requiredPathsJson
-    ),
+    requiredPartsFilter: getRequiredPathsSetting(input.state.settings),
     requiredPartsFilterMatchMode: getRequiredPathsMatchMode(
       input.state.settings.requiredPathsMatchMode
     ),
@@ -802,7 +810,10 @@ function formatSpecialRequestReply(input: {
   translate: Translate;
 }) {
   if (input.requestKind === "vip") {
-    const vipTokenCostSuffix = getVipTokenCostMessageSuffix(input.vipTokenCost);
+    const vipTokenCostSuffix = getVipTokenCostMessageSuffix(
+      input.vipTokenCost,
+      input.translate
+    );
     const nextPositionSuffix =
       input.status === "current" ? "." : " and will play next.";
     return input.existing
@@ -832,7 +843,7 @@ function getStoredVipTokenCost(input: {
   if (
     typeof input.vipTokenCost === "number" &&
     Number.isFinite(input.vipTokenCost) &&
-    input.vipTokenCost > 0
+    input.vipTokenCost >= 0
   ) {
     return Math.trunc(input.vipTokenCost);
   }
@@ -874,40 +885,186 @@ function getRequestedQueryForStorage(input: {
   return input.normalizedQuery;
 }
 
-function getVipTokenCostMessageSuffix(vipTokenCost?: number | null) {
-  if (vipTokenCost == null || vipTokenCost <= 1) {
+function getLocalizedVipTokenCostLabel(input: {
+  count: number;
+  translate?: Translate;
+}) {
+  const normalizedCount = Math.max(0, input.count);
+  const countText = formatVipTokenCount(normalizedCount);
+
+  return input.translate
+    ? input.translate("labels.vipTokenCount", {
+        count: normalizedCount,
+        countText,
+      })
+    : formatVipTokenCostLabel(normalizedCount);
+}
+
+function getVipTokenCostMessageSuffix(
+  vipTokenCost?: number | null,
+  translate?: Translate
+) {
+  if (vipTokenCost == null || vipTokenCost <= 0) {
     return "";
   }
 
-  return ` for ${formatVipTokenCostLabel(vipTokenCost)}`;
+  const countText = getLocalizedVipTokenCostLabel({
+    count: vipTokenCost,
+    translate,
+  });
+
+  return translate
+    ? translate("replies.vipTokenCostSuffix", {
+        countText,
+      })
+    : ` for ${countText}`;
+}
+
+function getVipTokenDeltaMessage(vipTokenDelta: number, translate?: Translate) {
+  if (vipTokenDelta > 0) {
+    const countText = getLocalizedVipTokenCostLabel({
+      count: vipTokenDelta,
+      translate,
+    });
+
+    return translate
+      ? translate("replies.vipTokenSpent", {
+          countText,
+        })
+      : `Spent ${countText}.`;
+  }
+
+  if (vipTokenDelta < 0) {
+    const countText = getLocalizedVipTokenCostLabel({
+      count: Math.abs(vipTokenDelta),
+      translate,
+    });
+
+    return translate
+      ? translate("replies.vipTokenRefunded", {
+          countText,
+        })
+      : `Refunded ${countText}.`;
+  }
+
+  return "";
+}
+
+function getVipTokenReasonMessages(
+  reasons: RequestVipTokenPlanReason[],
+  translate?: Translate
+) {
+  return reasons
+    .filter((reason) => reason.type !== "base_vip")
+    .map((reason) => {
+      const countText = getLocalizedVipTokenCostLabel({
+        count: reason.cost,
+        translate,
+      });
+
+      switch (reason.type) {
+        case "duration":
+          return translate
+            ? translate("replies.vipReasonDuration", {
+                minutes: formatVipDurationThresholdMinutes(
+                  reason.minimumDurationMinutes
+                ),
+                countText,
+              })
+            : `Songs over ${formatVipDurationThresholdMinutes(reason.minimumDurationMinutes)} minutes cost ${countText}.`;
+        case "requested_path":
+          return translate
+            ? translate("replies.vipReasonPath", {
+                path: formatPathLabel(reason.path),
+                countText,
+              })
+            : `${formatPathLabel(reason.path)} requests cost ${countText}.`;
+        case "explicit_vip":
+          return translate
+            ? translate("replies.vipReasonExplicit", {
+                countText,
+              })
+            : `This VIP request is set to ${countText}.`;
+      }
+
+      return "";
+    });
 }
 
 function getVipTokenShortageReplyMessage(input: {
+  mention: string;
   requestKind: "regular" | "vip";
   requestedVipTokenCost: number;
   additionalVipTokenCost: number;
   availableVipTokens: number;
+  reasons: RequestVipTokenPlanReason[];
+  translate?: Translate;
 }) {
-  const formattedBalance = `${formatVipTokenCount(
-    input.availableVipTokens
-  )} VIP token${input.availableVipTokens === 1 ? "" : "s"}`;
-  const balanceSuffix = ` You have ${formattedBalance}.`;
+  const reasonMessage = getVipTokenReasonMessages(
+    input.reasons,
+    input.translate
+  ).join(" ");
+  const reasonText = reasonMessage ? ` ${reasonMessage}` : "";
+  const formattedBalance = getLocalizedVipTokenCostLabel({
+    count: input.availableVipTokens,
+    translate: input.translate,
+  });
+  const balanceSuffix = input.translate
+    ? input.translate("replies.vipShortageBalanceSuffix", {
+        count: input.availableVipTokens,
+        countText: formattedBalance,
+      })
+    : ` You have ${formattedBalance}.`;
 
-  if (input.requestedVipTokenCost <= 1 && input.additionalVipTokenCost <= 1) {
-    return `You do not have enough VIP tokens for this ${input.requestKind === "vip" ? "VIP request" : "request"}.${balanceSuffix}`;
+  if (input.additionalVipTokenCost > 0 && input.requestedVipTokenCost > 0) {
+    if (input.requestedVipTokenCost === input.additionalVipTokenCost) {
+      const countText = getLocalizedVipTokenCostLabel({
+        count: input.requestedVipTokenCost,
+        translate: input.translate,
+      });
+
+      if (input.translate) {
+        return input.translate("replies.vipShortageNeedRequest", {
+          mention: input.mention,
+          countText,
+          requestLabel: input.translate(
+            input.requestKind === "vip" ? "labels.vipRequest" : "labels.request"
+          ),
+          reasonText,
+          balanceSuffix,
+        });
+      }
+
+      return `${input.mention} you need ${countText} for this ${input.requestKind === "vip" ? "VIP request" : "request"}.${reasonText}${balanceSuffix}`;
+    }
+
+    const additionalCountText = getLocalizedVipTokenCostLabel({
+      count: input.additionalVipTokenCost,
+      translate: input.translate,
+    });
+    const requestedCountText = getLocalizedVipTokenCostLabel({
+      count: input.requestedVipTokenCost,
+      translate: input.translate,
+    });
+
+    if (input.translate) {
+      return input.translate("replies.vipShortageNeedMore", {
+        mention: input.mention,
+        additionalCountText,
+        requestedCountText,
+        reasonText,
+        balanceSuffix,
+      });
+    }
+
+    return `${input.mention} you need ${additionalCountText} more to update this request to ${requestedCountText}.${reasonText}${balanceSuffix}`;
   }
 
-  if (input.additionalVipTokenCost === input.requestedVipTokenCost) {
-    return `You do not have enough VIP tokens for this request. It requires ${formatVipTokenCostLabel(
-      input.requestedVipTokenCost
-    )}.${balanceSuffix}`;
-  }
-
-  return `You need ${formatVipTokenCostLabel(
-    input.additionalVipTokenCost
-  )} more to update this request to ${formatVipTokenCostLabel(
-    input.requestedVipTokenCost
-  )}.${balanceSuffix}`;
+  return input.translate
+    ? input.translate("replies.vipShortageFallback", {
+        mention: input.mention,
+      })
+    : `${input.mention} you do not have enough VIP tokens for this request.`;
 }
 
 function getVipRequestCooldownReplyMessage(input: {
@@ -1414,6 +1571,18 @@ export async function processEventSubChatMessage(input: {
         allowedRequestPaths,
         requestPathModifierVipTokenCost:
           state.settings.requestPathModifierVipTokenCost,
+        requestPathModifierGuitarVipTokenCost:
+          state.settings.requestPathModifierGuitarVipTokenCost,
+        requestPathModifierLeadVipTokenCost:
+          state.settings.requestPathModifierLeadVipTokenCost,
+        requestPathModifierRhythmVipTokenCost:
+          state.settings.requestPathModifierRhythmVipTokenCost,
+        requestPathModifierBassVipTokenCost:
+          state.settings.requestPathModifierBassVipTokenCost,
+        requestPathModifierUsesVipPriority:
+          state.settings.requestPathModifierUsesVipPriority,
+        vipTokenDurationThresholdsJson:
+          state.settings.vipTokenDurationThresholdsJson,
         translate: t,
       }),
     });
@@ -1966,7 +2135,9 @@ export async function processEventSubChatMessage(input: {
     }
 
     warningCode = "no_song_match";
-    warningMessage = `No matching track found for "${unmatchedQuery}".`;
+    warningMessage = t("replies.noMatchingTrackFound", {
+      query: unmatchedQuery,
+    });
   }
 
   if (firstMatch) {
@@ -2049,10 +2220,6 @@ export async function processEventSubChatMessage(input: {
     thresholds: vipTokenDurationThresholds,
     settings: state.settings,
   });
-  const requiredRequestVipTokenCost = Math.max(
-    requestVipTokenPlan.requiredSongVipTokenCost,
-    requestVipTokenPlan.requestedPathVipTokenCost
-  );
   const nextVipTokenCost = requestVipTokenPlan.totalVipTokenCost;
   const matchingRequestStoredVipTokenCost = existingMatchingRequest
     ? getStoredVipTokenCost(existingMatchingRequest)
@@ -2219,38 +2386,6 @@ export async function processEventSubChatMessage(input: {
     return { body: "Rejected", status: 202 };
   }
 
-  if (
-    effectiveRequestKind !== "vip" &&
-    requestVipTokenPlan.regularRequestRequiresVip
-  ) {
-    await deps.createRequestLog(env, {
-      channelId: channel.id,
-      twitchMessageId: event.messageId,
-      twitchUserId: requesterIdentity.twitchUserId,
-      requesterLogin: requesterIdentity.login,
-      requesterDisplayName: requesterIdentity.displayName,
-      rawMessage: event.rawMessage,
-      normalizedQuery: parsed.query,
-      matchedSongId: firstMatch?.id ?? null,
-      matchedSongTitle: firstMatch?.title ?? null,
-      matchedSongArtist: firstMatch?.artist ?? null,
-      outcome: "rejected",
-      outcomeReason:
-        requestVipTokenPlan.requestedPathVipTokenCost > 0
-          ? "vip_token_required_by_requested_path"
-          : "vip_token_required_by_duration",
-    });
-    await deps.sendChatReply(env, {
-      channelId: channel.id,
-      broadcasterUserId: channel.twitchChannelId,
-      message: t("replies.requestRequiresVipTokens", {
-        mention: mention(requesterIdentity.login),
-        countText: formatVipTokenCostLabel(requiredRequestVipTokenCost),
-      }),
-    });
-    return { body: "Rejected", status: 202 };
-  }
-
   const vipRequestCooldown =
     effectiveRequestKind === "vip" &&
     isVipRequestCooldownEnabled(state.settings)
@@ -2328,10 +2463,13 @@ export async function processEventSubChatMessage(input: {
       channelId: channel.id,
       broadcasterUserId: channel.twitchChannelId,
       message: getVipTokenShortageReplyMessage({
+        mention: mention(requesterIdentity.login),
         requestKind: effectiveRequestKind,
         requestedVipTokenCost: nextVipTokenCost,
         additionalVipTokenCost: vipTokenDelta,
         availableVipTokens: vipTokenBalance?.availableCount ?? 0,
+        reasons: requestVipTokenPlan.vipTokenReasons,
+        translate: t,
       }),
     });
     return { body: "Rejected", status: 202 };
@@ -2474,10 +2612,13 @@ export async function processEventSubChatMessage(input: {
         channelId: channel.id,
         broadcasterUserId: channel.twitchChannelId,
         message: getVipTokenShortageReplyMessage({
+          mention: mention(requesterIdentity.login),
           requestKind: effectiveRequestKind,
           requestedVipTokenCost: nextVipTokenCost,
           additionalVipTokenCost: vipTokenDelta,
           availableVipTokens: vipTokenBalance?.availableCount ?? 0,
+          reasons: requestVipTokenPlan.vipTokenReasons,
+          translate: t,
         }),
       });
       return false;
@@ -2579,59 +2720,78 @@ export async function processEventSubChatMessage(input: {
       await deps.sendChatReply(env, {
         channelId: channel.id,
         broadcasterUserId: channel.twitchChannelId,
-        message: existingRequestNeedsSongRewrite
-          ? effectiveRequestKind === "vip"
-            ? t("replies.songEditedVip", {
-                mention: mention(requesterIdentity.login),
-                song: firstMatch
-                  ? formatSongForReply(firstMatch)
-                  : unmatchedQuery,
-                suffix: getVipTokenCostMessageSuffix(nextVipTokenCost),
-              })
-            : t("replies.songEditedRegular", {
-                mention: mention(requesterIdentity.login),
-                song: firstMatch
-                  ? formatSongForReply(firstMatch)
-                  : unmatchedQuery,
-              })
-          : existingMatchingRequest.requestKind === effectiveRequestKind &&
-              effectiveRequestKind === "vip"
-            ? requestMode === "choice"
-              ? `${mention(requesterIdentity.login)} the VIP token cost for your streamer choice request "${unmatchedQuery}" is now ${formatVipTokenCostLabel(
-                  nextVipTokenCost
-                )}.`
-              : `${mention(requesterIdentity.login)} the VIP token cost for your request "${
-                  firstMatch ? formatSongForReply(firstMatch) : unmatchedQuery
-                }" is now ${formatVipTokenCostLabel(nextVipTokenCost)}.`
-            : requestMode === "choice"
-              ? `${mention(requesterIdentity.login)} ${formatSpecialRequestReply(
-                  {
-                    requestedText: unmatchedQuery,
-                    requestKind: effectiveRequestKind,
-                    vipTokenCost: nextVipTokenCost,
-                    status: existingMatchingRequest.status,
-                    existing: true,
-                    translate: t,
-                  }
-                )}`
-              : effectiveRequestKind === "vip"
-                ? t("replies.existingSongVip", {
+        message: [
+          existingRequestNeedsSongRewrite
+            ? effectiveRequestKind === "vip"
+              ? t("replies.songEditedVip", {
+                  mention: mention(requesterIdentity.login),
+                  song: firstMatch
+                    ? formatSongForReply(firstMatch)
+                    : unmatchedQuery,
+                  suffix: getVipTokenCostMessageSuffix(nextVipTokenCost, t),
+                })
+              : t("replies.songEditedRegular", {
+                  mention: mention(requesterIdentity.login),
+                  song: firstMatch
+                    ? formatSongForReply(firstMatch)
+                    : unmatchedQuery,
+                  suffix: getVipTokenCostMessageSuffix(nextVipTokenCost, t),
+                })
+            : existingMatchingRequest.requestKind === effectiveRequestKind &&
+                effectiveRequestKind === "vip"
+              ? requestMode === "choice"
+                ? t("replies.choiceVipTokenCostUpdated", {
                     mention: mention(requesterIdentity.login),
-                    song: firstMatch
-                      ? formatSongForReply(firstMatch)
-                      : unmatchedQuery,
-                    suffix: `${getVipTokenCostMessageSuffix(nextVipTokenCost)}${
-                      existingMatchingRequest.status === "current"
-                        ? "."
-                        : " and will play next."
-                    }`,
+                    query: unmatchedQuery,
+                    countText: getLocalizedVipTokenCostLabel({
+                      count: nextVipTokenCost,
+                      translate: t,
+                    }),
                   })
-                : t("replies.existingSongRegular", {
+                : t("replies.songVipTokenCostUpdated", {
                     mention: mention(requesterIdentity.login),
                     song: firstMatch
                       ? formatSongForReply(firstMatch)
                       : unmatchedQuery,
-                  }),
+                    countText: getLocalizedVipTokenCostLabel({
+                      count: nextVipTokenCost,
+                      translate: t,
+                    }),
+                  })
+              : requestMode === "choice"
+                ? `${mention(requesterIdentity.login)} ${formatSpecialRequestReply(
+                    {
+                      requestedText: unmatchedQuery,
+                      requestKind: effectiveRequestKind,
+                      vipTokenCost: nextVipTokenCost,
+                      status: existingMatchingRequest.status,
+                      existing: true,
+                      translate: t,
+                    }
+                  )}`
+                : effectiveRequestKind === "vip"
+                  ? t("replies.existingSongVip", {
+                      mention: mention(requesterIdentity.login),
+                      song: firstMatch
+                        ? formatSongForReply(firstMatch)
+                        : unmatchedQuery,
+                      suffix: `${getVipTokenCostMessageSuffix(nextVipTokenCost, t)}${
+                        existingMatchingRequest.status === "current"
+                          ? "."
+                          : " and will play next."
+                      }`,
+                    })
+                  : t("replies.existingSongRegular", {
+                      mention: mention(requesterIdentity.login),
+                      song: firstMatch
+                        ? formatSongForReply(firstMatch)
+                        : unmatchedQuery,
+                      suffix: getVipTokenCostMessageSuffix(nextVipTokenCost, t),
+                    }),
+          getVipTokenDeltaMessage(vipTokenDelta, t),
+        ]
+          .filter(Boolean)
+          .join(" "),
       });
       return { body: "Accepted", status: 202 };
     }
@@ -2706,13 +2866,13 @@ export async function processEventSubChatMessage(input: {
       await deps.sendChatReply(env, {
         channelId: channel.id,
         broadcasterUserId: channel.twitchChannelId,
-        message:
+        message: [
           requestMode === "choice"
             ? effectiveRequestKind === "vip"
               ? t("replies.choiceEditedVip", {
                   mention: mention(requesterIdentity.login),
                   query: unmatchedQuery,
-                  suffix: getVipTokenCostMessageSuffix(nextVipTokenCost),
+                  suffix: getVipTokenCostMessageSuffix(nextVipTokenCost, t),
                 })
               : t("replies.choiceEditedRegular", {
                   mention: mention(requesterIdentity.login),
@@ -2724,14 +2884,19 @@ export async function processEventSubChatMessage(input: {
                   song: firstMatch
                     ? formatSongForReply(firstMatch)
                     : unmatchedQuery,
-                  suffix: getVipTokenCostMessageSuffix(nextVipTokenCost),
+                  suffix: getVipTokenCostMessageSuffix(nextVipTokenCost, t),
                 })
               : t("replies.songEditedRegular", {
                   mention: mention(requesterIdentity.login),
                   song: firstMatch
                     ? formatSongForReply(firstMatch)
                     : unmatchedQuery,
+                  suffix: getVipTokenCostMessageSuffix(nextVipTokenCost, t),
                 }),
+          getVipTokenDeltaMessage(vipTokenDelta, t),
+        ]
+          .filter(Boolean)
+          .join(" "),
       });
       return { body: "Accepted", status: 202 };
     }
@@ -2853,11 +3018,18 @@ export async function processEventSubChatMessage(input: {
                     ? t("replies.vipSongAdded", {
                         mention: mention(requesterIdentity.login),
                         song: formatSongForReply(firstMatch),
-                        suffix: getVipTokenCostMessageSuffix(nextVipTokenCost),
+                        suffix: getVipTokenCostMessageSuffix(
+                          nextVipTokenCost,
+                          t
+                        ),
                       })
                     : t("replies.songAdded", {
                         mention: mention(requesterIdentity.login),
                         song: formatSongForReply(firstMatch),
+                        suffix: getVipTokenCostMessageSuffix(
+                          nextVipTokenCost,
+                          t
+                        ),
                       }),
         });
       }
@@ -2926,11 +3098,12 @@ export async function processEventSubChatMessage(input: {
                 ? t("replies.vipSongAdded", {
                     mention: mention(requesterIdentity.login),
                     song: formatSongForReply(firstMatch),
-                    suffix: getVipTokenCostMessageSuffix(nextVipTokenCost),
+                    suffix: getVipTokenCostMessageSuffix(nextVipTokenCost, t),
                   })
                 : t("replies.songAdded", {
                     mention: mention(requesterIdentity.login),
                     song: formatSongForReply(firstMatch),
+                    suffix: getVipTokenCostMessageSuffix(nextVipTokenCost, t),
                   }),
     });
   } catch (error) {

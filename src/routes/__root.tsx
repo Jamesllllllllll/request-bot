@@ -1,4 +1,5 @@
 // Route: Defines the shared document shell, navigation, and app-wide providers.
+
 import { QueryClientProvider, useQuery } from "@tanstack/react-query";
 import { ReactQueryDevtools } from "@tanstack/react-query-devtools";
 import {
@@ -10,7 +11,6 @@ import {
   useRouter,
   useRouterState,
 } from "@tanstack/react-router";
-import { TanStackRouterDevtools } from "@tanstack/react-router-devtools";
 import {
   AlertTriangle,
   Headphones,
@@ -18,6 +18,7 @@ import {
   Radio,
   Settings2,
 } from "lucide-react";
+import { type ComponentType, useEffect, useState } from "react";
 import { LanguagePicker } from "~/components/language-picker";
 import { TranslationHelpButton } from "~/components/translation-help-button";
 import { Button } from "~/components/ui/button";
@@ -79,7 +80,7 @@ function RootComponent() {
           <AppI18nProvider initialLocale={locale}>
             <AppShell />
           </AppI18nProvider>
-          {showDevtools ? <TanStackRouterDevtools /> : null}
+          {showDevtools ? <SafeTanStackRouterDevtools /> : null}
           {showDevtools ? (
             <ReactQueryDevtools buttonPosition="bottom-right" />
           ) : null}
@@ -88,6 +89,42 @@ function RootComponent() {
       </body>
     </html>
   );
+}
+
+function SafeTanStackRouterDevtools() {
+  const [RouterDevtools, setRouterDevtools] = useState<ComponentType | null>(
+    null
+  );
+
+  useEffect(() => {
+    let isMounted = true;
+
+    void import("@tanstack/react-router-devtools")
+      .then((module) => {
+        if (!isMounted) {
+          return;
+        }
+
+        setRouterDevtools(() => module.TanStackRouterDevtools);
+      })
+      .catch((error: unknown) => {
+        if (!isMounted) {
+          return;
+        }
+
+        console.warn("TanStack Router devtools failed to load.", error);
+      });
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
+  if (!RouterDevtools) {
+    return null;
+  }
+
+  return <RouterDevtools />;
 }
 
 function AppShell() {

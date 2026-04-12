@@ -1,5 +1,7 @@
 import {
   formatRequestPathModifierTokens,
+  formatRequestPathModifierVipTokenCostSummary,
+  getAllowedRequestPathVipTokenCostDetails,
   legacyRequestPathModifierOptions,
   normalizeAllowedRequestPaths,
   normalizeCommandPrefix,
@@ -16,9 +18,18 @@ export type ChannelInstructionsSettings = {
   allowAnyoneToRequest: boolean;
   allowSubscribersToRequest: boolean;
   allowVipsToRequest: boolean;
+  maxViewerRequestsAtOnce: number;
+  maxSubscriberRequestsAtOnce: number;
+  maxVipViewerRequestsAtOnce: number;
+  maxVipSubscriberRequestsAtOnce: number;
   allowRequestPathModifiers: boolean;
   allowedRequestPaths?: string[];
   requestPathModifierVipTokenCost: number;
+  requestPathModifierGuitarVipTokenCost?: number | null;
+  requestPathModifierLeadVipTokenCost?: number | null;
+  requestPathModifierRhythmVipTokenCost?: number | null;
+  requestPathModifierBassVipTokenCost?: number | null;
+  requestPathModifierVipTokenCosts?: Partial<Record<string, unknown>>;
   requestPathModifierUsesVipPriority: boolean;
   autoGrantVipTokenToSubscribers: boolean;
   autoGrantVipTokensForSharedSubRenewalMessage: boolean;
@@ -34,6 +45,11 @@ export type ChannelInstructionsSettings = {
   streamElementsTipAmountPerVipToken: number;
   vipTokenDurationThresholds: VipTokenDurationThreshold[];
   commandPrefix: string;
+};
+
+export type ChannelInstructionSection = {
+  title: string | null;
+  lines: string[];
 };
 
 function getText(
@@ -76,6 +92,17 @@ function formatDollarAmount(value: number, locale: string) {
   return formatNumberForLocale(value, locale);
 }
 
+function canQueueMultipleRequests(settings: ChannelInstructionsSettings) {
+  return (
+    Math.max(
+      settings.maxViewerRequestsAtOnce,
+      settings.maxSubscriberRequestsAtOnce,
+      settings.maxVipViewerRequestsAtOnce,
+      settings.maxVipSubscriberRequestsAtOnce
+    ) > 1
+  );
+}
+
 function getAvailabilityLine(
   settings: ChannelInstructionsSettings,
   translate?: Translate
@@ -84,23 +111,19 @@ function getAvailabilityLine(
     return getText(
       translate,
       "settings.sections.channelInstructions.availabilityDisabled",
-      "Requests are currently turned off."
+      "Requests: off"
     );
   }
 
   if (settings.allowAnyoneToRequest) {
-    return getText(
-      translate,
-      "settings.sections.channelInstructions.availabilityEveryone",
-      "Requests are open to everyone."
-    );
+    return null;
   }
 
   if (settings.allowSubscribersToRequest && settings.allowVipsToRequest) {
     return getText(
       translate,
       "settings.sections.channelInstructions.availabilitySubscribersAndVips",
-      "Requests are open to subscribers and channel VIPs."
+      "Requests: subscribers + VIPs"
     );
   }
 
@@ -108,7 +131,7 @@ function getAvailabilityLine(
     return getText(
       translate,
       "settings.sections.channelInstructions.availabilitySubscribersOnly",
-      "Requests are open to subscribers only."
+      "Requests: subscribers only"
     );
   }
 
@@ -116,14 +139,14 @@ function getAvailabilityLine(
     return getText(
       translate,
       "settings.sections.channelInstructions.availabilityVipsOnly",
-      "Requests are open to channel VIPs only."
+      "Requests: VIPs only"
     );
   }
 
   return getText(
     translate,
     "settings.sections.channelInstructions.availabilityModeratorsOnly",
-    "Chat requests are currently limited to the streamer and moderators."
+    "Requests: streamer + mods"
   );
 }
 
@@ -237,7 +260,7 @@ function getRewardLines(input: {
   return lines;
 }
 
-export function buildChannelInstructions(input: {
+export function buildChannelInstructionSections(input: {
   channelSlug?: string | null;
   settings: ChannelInstructionsSettings;
   locale?: string;
@@ -274,129 +297,172 @@ export function buildChannelInstructions(input: {
     locale,
     translate,
   });
-  const lines = [
+  const overviewLines = [
     getText(
       translate,
       "settings.sections.channelInstructions.playlist",
       "Playlist: {url}",
       { url: playlistUrl }
     ),
-    "",
-    getAvailabilityLine(input.settings, translate),
-    "",
-    getText(
-      translate,
-      "settings.sections.channelInstructions.requestTitle",
-      "How to request"
-    ),
-    getText(
-      translate,
-      "settings.sections.channelInstructions.requestSong",
-      "Use {requestCommand} artist - song to request a song.",
-      { requestCommand }
-    ),
-    getText(
-      translate,
-      "settings.sections.channelInstructions.requestRandom",
-      "Use {requestCommand} artist *random for a random match.",
-      { requestCommand }
-    ),
-    getText(
-      translate,
-      "settings.sections.channelInstructions.requestChoice",
-      "Use {requestCommand} artist *choice for a streamer choice request.",
-      { requestCommand }
-    ),
-    "",
-    getText(
-      translate,
-      "settings.sections.channelInstructions.editTitle",
-      "How to edit"
-    ),
-    getText(
-      translate,
-      "settings.sections.channelInstructions.editCurrent",
-      "Use {editCommand} artist - song to change your current request.",
-      { editCommand }
-    ),
-    getText(
-      translate,
-      "settings.sections.channelInstructions.editPosition",
-      "Use {editCommand} #2 artist - song when you need to edit a specific queued request.",
-      { editCommand }
-    ),
-    "",
-    getText(
-      translate,
-      "settings.sections.channelInstructions.vipTitle",
-      "How to use VIP requests"
-    ),
-    getText(
-      translate,
-      "settings.sections.channelInstructions.vipRequest",
-      "Use {vipCommand} artist - song to make a request VIP and move it to the top.",
-      { vipCommand }
-    ),
-    getText(
-      translate,
-      "settings.sections.channelInstructions.vipBalance",
-      "Use {vipCommand} on its own to check your VIP token balance.",
-      { vipCommand }
-    ),
-    getText(
-      translate,
-      "settings.sections.channelInstructions.vipBaseCost",
-      "VIP requests cost at least {countText}.",
-      {
-        countText: formatVipTokenCount(1, translate),
-      }
-    ),
   ];
+  const availabilityLine = getAvailabilityLine(input.settings, translate);
 
-  if (thresholdLines.length > 0) {
-    lines.push(
-      getText(
-        translate,
-        "settings.sections.channelInstructions.vipThresholdTitle",
-        "Longer songs can require more:"
-      )
-    );
-
-    for (const threshold of thresholdLines) {
-      lines.push(
-        getText(
-          translate,
-          "settings.sections.channelInstructions.vipThresholdLine",
-          "Songs over {minutes} minutes require {countText}.",
-          {
-            minutes: formatNumberForLocale(
-              threshold.minimumDurationMinutes,
-              locale
-            ),
-            countText: formatVipTokenCount(threshold.tokenCost, translate),
-          }
-        )
-      );
-    }
+  if (availabilityLine) {
+    overviewLines.push(availabilityLine);
   }
 
-  if (allowedRequestPaths.length > 0) {
-    lines.push(
-      "",
-      getText(
+  const sections: ChannelInstructionSection[] = [
+    {
+      title: null,
+      lines: overviewLines,
+    },
+    {
+      title: getText(
         translate,
-        "settings.sections.channelInstructions.pathTitle",
-        "How to choose a specific part"
-      )
-    );
+        "settings.sections.channelInstructions.requestTitle",
+        "How to request"
+      ),
+      lines: [
+        getText(
+          translate,
+          "settings.sections.channelInstructions.requestSong",
+          "Use {requestCommand} artist - song to request a song.",
+          { requestCommand }
+        ),
+        getText(
+          translate,
+          "settings.sections.channelInstructions.requestRandom",
+          "Use {requestCommand} artist *random for a random match.",
+          { requestCommand }
+        ),
+        getText(
+          translate,
+          "settings.sections.channelInstructions.requestChoice",
+          "Use {requestCommand} artist *choice for a streamer choice request.",
+          { requestCommand }
+        ),
+      ],
+    },
+    {
+      title: getText(
+        translate,
+        "settings.sections.channelInstructions.editTitle",
+        "How to edit"
+      ),
+      lines: [
+        getText(
+          translate,
+          "settings.sections.channelInstructions.editCurrent",
+          "Use {editCommand} artist - song to change your current request.",
+          { editCommand }
+        ),
+        ...(canQueueMultipleRequests(input.settings)
+          ? [
+              getText(
+                translate,
+                "settings.sections.channelInstructions.editPosition",
+                "Use {editCommand} #2 artist - song when you need to edit a specific queued request.",
+                { editCommand }
+              ),
+            ]
+          : []),
+      ],
+    },
+    {
+      title: getText(
+        translate,
+        "settings.sections.channelInstructions.vipTitle",
+        "How to use VIP requests"
+      ),
+      lines: [
+        getText(
+          translate,
+          "settings.sections.channelInstructions.vipRequest",
+          "Use {vipCommand} artist - song to make a request VIP and move it to the top.",
+          { vipCommand }
+        ),
+        getText(
+          translate,
+          "settings.sections.channelInstructions.vipBaseCost",
+          "VIP requests add {countText} and play next.",
+          {
+            countText: formatVipTokenCount(1, translate),
+          }
+        ),
+        ...thresholdLines.map((threshold) =>
+          getText(
+            translate,
+            "settings.sections.channelInstructions.vipThresholdLine",
+            "Songs over {minutes} minutes add {countText}.",
+            {
+              minutes: formatNumberForLocale(
+                threshold.minimumDurationMinutes,
+                locale
+              ),
+              countText: formatVipTokenCount(threshold.tokenCost, translate),
+            }
+          )
+        ),
+        getText(
+          translate,
+          "settings.sections.channelInstructions.vipBalance",
+          "Use {vipCommand} on its own to check your VIP token balance.",
+          { vipCommand }
+        ),
+      ],
+    },
+  ];
 
-    const pathCost = Math.max(
-      0,
-      Math.trunc(input.settings.requestPathModifierVipTokenCost || 0)
+  if (allowedRequestPaths.length > 0) {
+    const pathCostDetails = getAllowedRequestPathVipTokenCostDetails({
+      allowedRequestPaths,
+      settings: {
+        requestPathModifierVipTokenCost:
+          input.settings.requestPathModifierVipTokenCost,
+        requestPathModifierGuitarVipTokenCost:
+          input.settings.requestPathModifierGuitarVipTokenCost,
+        requestPathModifierLeadVipTokenCost:
+          input.settings.requestPathModifierLeadVipTokenCost,
+        requestPathModifierRhythmVipTokenCost:
+          input.settings.requestPathModifierRhythmVipTokenCost,
+        requestPathModifierBassVipTokenCost:
+          input.settings.requestPathModifierBassVipTokenCost,
+        requestPathModifierVipTokenCosts:
+          input.settings.requestPathModifierVipTokenCosts,
+      },
+    });
+    const paidPathCostDetails = pathCostDetails.filter(
+      (detail) => detail.cost > 0
     );
+    const uniquePathCosts = new Set(
+      pathCostDetails.map((detail) => detail.cost)
+    );
+    const uniformPaidPathCost =
+      uniquePathCosts.size === 1 &&
+      paidPathCostDetails.length === pathCostDetails.length
+        ? (pathCostDetails[0]?.cost ?? 0)
+        : null;
+    const pathCostSummary = formatRequestPathModifierVipTokenCostSummary({
+      allowedRequestPaths,
+      settings: {
+        requestPathModifierVipTokenCost:
+          input.settings.requestPathModifierVipTokenCost,
+        requestPathModifierGuitarVipTokenCost:
+          input.settings.requestPathModifierGuitarVipTokenCost,
+        requestPathModifierLeadVipTokenCost:
+          input.settings.requestPathModifierLeadVipTokenCost,
+        requestPathModifierRhythmVipTokenCost:
+          input.settings.requestPathModifierRhythmVipTokenCost,
+        requestPathModifierBassVipTokenCost:
+          input.settings.requestPathModifierBassVipTokenCost,
+        requestPathModifierVipTokenCosts:
+          input.settings.requestPathModifierVipTokenCosts,
+      },
+    });
+    const pathLines: string[] = [];
 
-    if (pathCost <= 0) {
-      lines.push(
+    if (paidPathCostDetails.length === 0) {
+      pathLines.push(
         getText(
           translate,
           "settings.sections.channelInstructions.pathFree",
@@ -409,83 +475,108 @@ export function buildChannelInstructions(input: {
           }
         )
       );
-    } else if (input.settings.requestPathModifierUsesVipPriority) {
-      lines.push(
-        getText(
-          translate,
-          "settings.sections.channelInstructions.pathPaidVip",
-          "Add {modifiers} to {vipCommand} artist - song when the song includes a matching part. Choosing a part costs {countText} and uses VIP priority.",
-          {
-            modifiers: requestPathModifiers,
-            vipCommand,
-            countText: formatVipTokenCount(pathCost, translate),
-          }
-        )
-      );
-    } else {
-      lines.push(
+    } else if (uniformPaidPathCost != null) {
+      pathLines.push(
         getText(
           translate,
           "settings.sections.channelInstructions.pathPaidRegular",
-          "Add {modifiers} to {requestCommand}, {vipCommand}, or {editCommand} when the song includes a matching part. Choosing a part costs {countText}.",
+          "Add {modifiers} to {requestCommand}, {vipCommand}, or {editCommand} when the song includes a matching part. Choosing a part adds {countText}.",
           {
             modifiers: requestPathModifiers,
             requestCommand,
             vipCommand,
             editCommand,
-            countText: formatVipTokenCount(pathCost, translate),
+            countText: formatVipTokenCount(uniformPaidPathCost, translate),
           }
         ),
         getText(
           translate,
           "settings.sections.channelInstructions.pathPaidRegularNote",
-          "Use {vipCommand} as well if you want the request to play next.",
+          "Use {vipCommand} as well to play next. VIP adds 1 more VIP token.",
+          {
+            vipCommand,
+          }
+        )
+      );
+    } else {
+      pathLines.push(
+        `Add ${requestPathModifiers} to ${requestCommand}, ${vipCommand}, or ${editCommand} when the song includes a matching part. Costs: ${pathCostSummary}.`,
+        getText(
+          translate,
+          "settings.sections.channelInstructions.pathPaidRegularNote",
+          "Use {vipCommand} as well to play next. VIP adds 1 more VIP token.",
           {
             vipCommand,
           }
         )
       );
     }
+
+    sections.push({
+      title: getText(
+        translate,
+        "settings.sections.channelInstructions.pathTitle",
+        "How to choose a specific part"
+      ),
+      lines: pathLines,
+    });
   }
 
-  lines.push(
-    "",
-    getText(
-      translate,
-      "settings.sections.channelInstructions.otherTitle",
-      "Other commands"
-    ),
-    getText(
-      translate,
-      "settings.sections.channelInstructions.otherPosition",
-      "Use {positionCommand} to check your place in the playlist.",
-      { positionCommand }
-    ),
-    getText(
-      translate,
-      "settings.sections.channelInstructions.otherRemove",
-      "Use {removeCommand} reg, {removeCommand} vip, or {removeCommand} all to remove your requests.",
-      { removeCommand }
-    ),
-    "",
-    getText(
-      translate,
-      "settings.sections.channelInstructions.rewardsTitle",
-      "How VIP tokens are awarded"
-    )
+  sections.push(
+    {
+      title: getText(
+        translate,
+        "settings.sections.channelInstructions.otherTitle",
+        "Other commands"
+      ),
+      lines: [
+        getText(
+          translate,
+          "settings.sections.channelInstructions.otherPosition",
+          "Use {positionCommand} to check your place in the playlist.",
+          { positionCommand }
+        ),
+        getText(
+          translate,
+          "settings.sections.channelInstructions.otherRemove",
+          "Use {removeCommand} reg, {removeCommand} vip, or {removeCommand} all to remove your requests.",
+          { removeCommand }
+        ),
+      ],
+    },
+    {
+      title: getText(
+        translate,
+        "settings.sections.channelInstructions.rewardsTitle",
+        "How VIP tokens are awarded"
+      ),
+      lines:
+        rewardLines.length === 0
+          ? [
+              getText(
+                translate,
+                "settings.sections.channelInstructions.rewardsNone",
+                "VIP tokens are not awarded automatically right now."
+              ),
+            ]
+          : rewardLines,
+    }
   );
 
-  if (rewardLines.length === 0) {
-    lines.push(
-      getText(
-        translate,
-        "settings.sections.channelInstructions.rewardsNone",
-        "VIP tokens are not awarded automatically right now."
-      )
-    );
-  } else {
-    lines.push(...rewardLines);
-  }
+  return sections;
+}
 
-  return lines.join("\n");
+export function buildChannelInstructions(input: {
+  channelSlug?: string | null;
+  settings: ChannelInstructionsSettings;
+  locale?: string;
+  translate?: Translate;
+}) {
+  return buildChannelInstructionSections(input)
+    .map((section) =>
+      section.title == null
+        ? section.lines.join("\n")
+        : [section.title, ...section.lines].join("\n")
+    )
+    .join("\n\n");
 }

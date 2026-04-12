@@ -20,5 +20,19 @@
     "button": "Aidez-nous a traduire",
     "title": "Aidez-nous a traduire",
     "messageLead": "Ce site a ete traduit avec l'IA. Si vous remarquez quelque chose d'incorrect, ecrivez a"
+  },
+  "pagination": {
+    "previous": "Précédent",
+    "next": "Suivant",
+    "morePages": "Autres pages",
+    "goToPreviousPage": "Aller à la page précédente",
+    "goToNextPage": "Aller à la page suivante"
+  },
+  "commandPalette": {
+    "title": "Palette de commandes",
+    "description": "Recherchez une commande à exécuter..."
+  },
+  "dialog": {
+    "close": "Fermer"
   }
 }

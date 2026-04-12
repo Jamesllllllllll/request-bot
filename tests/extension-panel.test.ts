@@ -3,13 +3,18 @@ import type { AppEnv } from "~/lib/env";
 
 vi.mock("~/lib/db/repositories", () => ({
   consumeSearchRateLimit: vi.fn(),
+  getCachedSearchResultState: vi.fn(),
+  getCatalogSearchVersionToken: vi.fn(),
   getChannelBlacklistByChannelId: vi.fn(),
   getChannelByTwitchChannelId: vi.fn(),
+  getChannelSearchVersionToken: vi.fn(),
   getChannelSettingsByChannelId: vi.fn(),
   getExtensionPanelPlaylistByChannelId: vi.fn(),
   getUserByTwitchUserId: vi.fn(),
   getVipTokenBalance: vi.fn(),
   searchCatalogSongs: vi.fn(),
+  tryAcquireSearchCacheRevalidationLease: vi.fn(),
+  upsertCachedSearchResult: vi.fn(),
   upsertUserProfile: vi.fn(),
 }));
 
@@ -32,13 +37,18 @@ vi.mock("~/lib/server/viewer-request", () => ({
 
 import {
   consumeSearchRateLimit,
+  getCachedSearchResultState,
+  getCatalogSearchVersionToken,
   getChannelBlacklistByChannelId,
   getChannelByTwitchChannelId,
+  getChannelSearchVersionToken,
   getChannelSettingsByChannelId,
   getExtensionPanelPlaylistByChannelId,
   getUserByTwitchUserId,
   getVipTokenBalance,
   searchCatalogSongs,
+  tryAcquireSearchCacheRevalidationLease,
+  upsertCachedSearchResult,
   upsertUserProfile,
 } from "~/lib/db/repositories";
 import {
@@ -134,6 +144,13 @@ describe("extension panel service", () => {
       allowed: true,
       remaining: 9,
     } as never);
+    vi.mocked(getCachedSearchResultState).mockResolvedValue({
+      state: "miss",
+      response: null,
+    } as never);
+    vi.mocked(getCatalogSearchVersionToken).mockResolvedValue(
+      "catalog-v1" as never
+    );
     vi.mocked(getChannelBlacklistByChannelId).mockResolvedValue({
       blacklistArtists: [{ artistId: 1, artistName: "Blocked Artist" }],
       blacklistCharters: [{ charterId: 2, charterName: "Blocked Charter" }],
@@ -142,6 +159,9 @@ describe("extension panel service", () => {
         { groupedProjectId: 4, songTitle: "Blocked Group" },
       ],
     } as never);
+    vi.mocked(getChannelSearchVersionToken).mockResolvedValue(
+      "channel-v1" as never
+    );
     vi.mocked(searchCatalogSongs).mockResolvedValue({
       results: [],
       total: 0,
@@ -149,6 +169,10 @@ describe("extension panel service", () => {
       pageSize: 10,
       hasNextPage: false,
     } as never);
+    vi.mocked(tryAcquireSearchCacheRevalidationLease).mockResolvedValue(
+      true as never
+    );
+    vi.mocked(upsertCachedSearchResult).mockResolvedValue(undefined as never);
     vi.mocked(getVipTokenBalance).mockResolvedValue({
       availableCount: 2,
     } as never);
@@ -177,6 +201,8 @@ describe("extension panel service", () => {
     vi.mocked(getChannelSettingsByChannelId).mockResolvedValue({
       defaultLocale: "es",
       blacklistEnabled: true,
+      requiredPathsJson: '["lead","bass"]',
+      requiredPathsMatchMode: "any",
       showPlaylistPositions: true,
       showPickOrderBadges: true,
       moderatorCanManageRequests: true,
@@ -259,6 +285,8 @@ describe("extension panel service", () => {
       },
       settings: {
         defaultLocale: "es",
+        defaultSearchPaths: ["lead", "bass"],
+        defaultSearchPathsMatchMode: "any",
         showPlaylistPositions: true,
       },
       playlist: {
@@ -367,6 +395,8 @@ describe("extension panel service", () => {
       },
       settings: {
         defaultLocale: "es",
+        defaultSearchPaths: ["lead", "bass"],
+        defaultSearchPathsMatchMode: "any",
         showPlaylistPositions: true,
       },
       playlist: {
@@ -540,7 +570,7 @@ describe("extension panel service", () => {
     );
   });
 
-  it("passes channel request filters through extension search", async () => {
+  it("passes official and tuning filters through extension search", async () => {
     vi.mocked(getChannelSettingsByChannelId).mockResolvedValue({
       onlyOfficialDlc: true,
       allowedTuningsJson: '["E Standard","Drop D"]',
@@ -562,9 +592,137 @@ describe("extension panel service", () => {
       env,
       expect.objectContaining({
         restrictToOfficial: true,
-        allowedTuningsFilter: ["E Standard", "Drop D"],
-        requiredPartsFilter: ["lead", "voice"],
-        requiredPartsFilterMatchMode: "all",
+        allowedTuningsFilter: [1, 4],
+      })
+    );
+  });
+
+  it("surfaces default search path filters in bootstrap state", async () => {
+    await expect(
+      getExtensionBootstrapState({
+        env,
+        auth,
+      })
+    ).resolves.toMatchObject({
+      settings: {
+        defaultSearchPaths: ["lead", "bass"],
+        defaultSearchPathsMatchMode: "any",
+      },
+    });
+  });
+
+  it("drops legacy lyrics paths from bootstrap defaults", async () => {
+    vi.mocked(getChannelSettingsByChannelId).mockResolvedValue({
+      requiredPathsJson: '["lead","voice"]',
+      requiredPathsMatchMode: "all",
+    } as never);
+
+    await expect(
+      getExtensionBootstrapState({
+        env,
+        auth,
+      })
+    ).resolves.toMatchObject({
+      settings: {
+        defaultSearchPaths: ["lead"],
+        defaultSearchPathsMatchMode: "all",
+      },
+    });
+  });
+
+  it("surfaces request modifier pricing settings for panel filters and actions", async () => {
+    vi.mocked(getChannelSettingsByChannelId).mockResolvedValue({
+      defaultLocale: "es",
+      requestsEnabled: true,
+      requiredPathsJson: '["lead","bass"]',
+      requiredPathsMatchMode: "all",
+      allowRequestPathModifiers: true,
+      allowedRequestPathsJson: '["guitar","bass"]',
+      requestPathModifierVipTokenCost: 1,
+      requestPathModifierGuitarVipTokenCost: 0,
+      requestPathModifierLeadVipTokenCost: 0,
+      requestPathModifierRhythmVipTokenCost: 0,
+      requestPathModifierBassVipTokenCost: 2,
+      requestPathModifierUsesVipPriority: false,
+      vipTokenDurationThresholdsJson:
+        '[{"minimumDurationMinutes":9,"tokenCost":2}]',
+      showPlaylistPositions: true,
+      showPickOrderBadges: true,
+    } as never);
+
+    await expect(
+      getExtensionBootstrapState({
+        env,
+        auth,
+      })
+    ).resolves.toMatchObject({
+      settings: {
+        defaultSearchPaths: ["lead", "bass"],
+        defaultSearchPathsMatchMode: "all",
+        allowRequestPathModifiers: true,
+        allowedRequestPaths: ["guitar", "bass"],
+        requestPathModifierVipTokenCost: 1,
+        requestPathModifierVipTokenCosts: {
+          guitar: 0,
+          lead: 0,
+          rhythm: 0,
+          bass: 2,
+        },
+        requestPathModifierUsesVipPriority: false,
+        vipTokenDurationThresholdsJson:
+          '[{"minimumDurationMinutes":9,"tokenCost":2}]',
+      },
+    });
+
+    await expect(
+      getExtensionPanelState({
+        env,
+        auth,
+      })
+    ).resolves.toMatchObject({
+      settings: {
+        defaultSearchPaths: ["lead", "bass"],
+        defaultSearchPathsMatchMode: "all",
+        allowRequestPathModifiers: true,
+        allowedRequestPaths: ["guitar", "bass"],
+        requestPathModifierVipTokenCost: 1,
+        requestPathModifierVipTokenCosts: {
+          guitar: 0,
+          lead: 0,
+          rhythm: 0,
+          bass: 2,
+        },
+        requestPathModifierUsesVipPriority: false,
+        vipTokenDurationThresholdsJson:
+          '[{"minimumDurationMinutes":9,"tokenCost":2}]',
+      },
+    });
+  });
+
+  it("passes favorites and path filters through extension search", async () => {
+    await searchExtensionCatalog({
+      env,
+      auth,
+      search: {
+        query: undefined,
+        favoritesOnly: true,
+        parts: ["lead", "voice"],
+        partsMatchMode: "all",
+        page: 1,
+        pageSize: 10,
+      },
+    });
+
+    expect(searchCatalogSongs).toHaveBeenCalledWith(
+      env,
+      expect.objectContaining({
+        favoriteChannelId: "channel-1",
+        parts: ["lead"],
+        partsMatchMode: "all",
+        excludeSongIds: [3],
+        excludeGroupedProjectIds: [4],
+        excludeArtistIds: [1],
+        excludeAuthorIds: [2],
       })
     );
   });

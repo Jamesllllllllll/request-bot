@@ -1,7 +1,8 @@
 import { z } from "zod";
-import { pathOptions, tuningOptions } from "./channel-options";
+import { pathOptions } from "./channel-options";
 import { supportedLocales } from "./i18n/locales";
 import { requestPathModifierOptions } from "./request-policy";
+import { allKnownTuningIds } from "./tunings";
 import { defaultChannelPointRewardCost } from "./twitch/channel-point-rewards";
 
 const searchSortSchema = z.enum([
@@ -27,6 +28,12 @@ const vipTokenDurationThresholdSchema = z.object({
   tokenCost: z.number().int().min(1).max(100),
 });
 const vipTokenCostSchema = z.number().int().min(1).max(100);
+const requestPathModifierVipTokenCostsSchema = z.object({
+  guitar: z.number().int().min(0).max(100),
+  lead: z.number().int().min(0).max(100),
+  rhythm: z.number().int().min(0).max(100),
+  bass: z.number().int().min(0).max(100),
+});
 
 export const searchInputSchema = z
   .object({
@@ -63,13 +70,13 @@ export const searchInputSchema = z
     artist: z.string().trim().max(200).optional(),
     album: z.string().trim().max(200).optional(),
     creator: z.string().trim().max(200).optional(),
-    tuning: z.array(z.string().trim().max(200)).max(50).optional(),
+    tuning: z
+      .array(z.coerce.number().int().positive())
+      .max(allKnownTuningIds.length)
+      .optional(),
     parts: z.array(z.enum(pathOptions)).max(pathOptions.length).optional(),
     partsMatchMode: z.enum(["any", "all"]).default("any"),
-    year: z
-      .array(z.coerce.number().int().min(1900).max(2100))
-      .max(200)
-      .optional(),
+    year: z.array(z.coerce.number().int().min(1).max(2100)).max(200).optional(),
     page: z.coerce.number().int().min(1).default(1),
     pageSize: z.coerce.number().int().min(1).max(50).default(10),
     sortBy: searchSortSchema.default("relevance"),
@@ -194,7 +201,9 @@ export const settingsInputSchema = z
     allowSubscribersToRequest: z.boolean(),
     allowVipsToRequest: z.boolean(),
     onlyOfficialDlc: z.boolean(),
-    allowedTunings: z.array(z.enum(tuningOptions)).max(tuningOptions.length),
+    allowedTunings: z
+      .array(z.number().int().positive())
+      .max(allKnownTuningIds.length),
     requiredPaths: z.array(z.enum(pathOptions)).max(pathOptions.length),
     requiredPathsMatchMode: z.enum(["any", "all"]),
     maxQueueSize: z.number().int().min(1).max(1000),
@@ -227,6 +236,13 @@ export const settingsInputSchema = z
       .array(z.enum(requestPathModifierOptions))
       .max(requestPathModifierOptions.length),
     requestPathModifierVipTokenCost: z.number().int().min(0).max(100),
+    requestPathModifierVipTokenCosts:
+      requestPathModifierVipTokenCostsSchema.default({
+        guitar: 0,
+        lead: 0,
+        rhythm: 0,
+        bass: 0,
+      }),
     requestPathModifierUsesVipPriority: z.boolean(),
     cheerBitsPerVipToken: z.number().int().min(1).max(100_000),
     channelPointRewardCost: z
@@ -406,6 +422,7 @@ export const playlistMutationSchema = z.discriminatedUnion("action", [
     source: z.string(),
     sourceUrl: z.string().optional(),
     sourceId: z.number().optional(),
+    requestedQuery: z.string().trim().min(2).max(200).optional(),
     candidateMatchesJson: z.string().optional(),
   }),
 ]);
@@ -453,11 +470,36 @@ export const channelFavoriteMutationSchema = z.object({
   favorited: z.boolean(),
 });
 
-export const extensionSearchInputSchema = z.object({
-  query: z.string().trim().min(3).max(200),
-  page: z.coerce.number().int().min(1).default(1),
-  pageSize: z.coerce.number().int().min(1).max(25).default(10),
-});
+export const extensionSearchInputSchema = z
+  .object({
+    query: z.string().trim().max(200).optional(),
+    favoritesOnly: z
+      .preprocess(
+        (value) =>
+          value === undefined
+            ? undefined
+            : value === true || value === "true"
+              ? true
+              : value === false || value === "false"
+                ? false
+                : value,
+        z.boolean().optional()
+      )
+      .default(false),
+    parts: z.array(z.enum(pathOptions)).max(pathOptions.length).optional(),
+    partsMatchMode: z.enum(["any", "all"]).default("any"),
+    page: z.coerce.number().int().min(1).default(1),
+    pageSize: z.coerce.number().int().min(1).max(25).default(10),
+  })
+  .superRefine((input, ctx) => {
+    if (input.query && input.query.length < 3) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "Search terms must be at least 3 characters.",
+        path: ["query"],
+      });
+    }
+  });
 
 export const extensionSubmitRequestSchema = z.union([
   z.object({
@@ -517,6 +559,7 @@ export const extensionPlaylistMutationSchema = z.discriminatedUnion("action", [
     source: z.string().trim().min(1).max(50),
     sourceUrl: z.string().url().optional(),
     sourceId: z.number().int().positive().optional(),
+    requestedQuery: z.string().trim().min(2).max(200).optional(),
     candidateMatchesJson: z.string().trim().min(2).max(20_000).optional(),
   }),
   z.object({

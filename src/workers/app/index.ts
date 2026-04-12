@@ -11,8 +11,13 @@ const appHandler = createStartHandler(defaultStreamHandler);
 const rawHandler = {
   async fetch(request, env, ctx) {
     void env;
-    void ctx;
-    return appHandler(request);
+    return appHandler(request, {
+      context: {
+        cloudflare: {
+          waitUntil: ctx.waitUntil.bind(ctx),
+        },
+      },
+    });
   },
 } satisfies ExportedHandler<AppEnv>;
 

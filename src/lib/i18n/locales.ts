@@ -1,4 +1,4 @@
-export const supportedLocales = ["en", "es", "fr", "pt-BR"] as const;
+export const supportedLocales = ["en", "de", "es", "fr", "pt-BR"] as const;
 
 export type AppLocale = (typeof supportedLocales)[number];
 
@@ -10,6 +10,7 @@ export const localeOptions: Array<{
   shortLabel: string;
 }> = [
   { value: "en", nativeLabel: "English", shortLabel: "EN" },
+  { value: "de", nativeLabel: "Deutsch", shortLabel: "DE" },
   { value: "es", nativeLabel: "Español", shortLabel: "ES" },
   { value: "fr", nativeLabel: "Français", shortLabel: "FR" },
   { value: "pt-BR", nativeLabel: "Português (Brasil)", shortLabel: "PT" },
@@ -36,7 +37,10 @@ export function normalizeLocale(value: string | null | undefined) {
   }
 
   const [baseLocale] = lower.split("-");
-  return baseLocale === "en" || baseLocale === "es" || baseLocale === "fr"
+  return baseLocale === "en" ||
+    baseLocale === "de" ||
+    baseLocale === "es" ||
+    baseLocale === "fr"
     ? baseLocale
     : null;
 }

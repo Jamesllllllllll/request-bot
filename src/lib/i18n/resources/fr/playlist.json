@@ -2,7 +2,10 @@
   "page": {
     "title": "Playlist de {channel}",
     "loading": "Chargement de la playlist...",
+    "loadFailed": "Le chargement de la playlist a echoue.",
     "empty": "Cette playlist est vide pour le moment.",
+    "notFoundTitle": "Cet utilisateur n'existe pas.",
+    "notFoundDescription": "Nous n'avons pas trouve de page de demandes pour @{channel}.",
     "viewerStateFailed": "Le chargement de l'etat des demandes spectateur a echoue.",
     "viewerToolsFailed": "Le chargement des outils de demande spectateur a echoue.",
     "requestsLiveOnly": "Vous pourrez ajouter des demandes quand le stream sera en direct."
@@ -178,8 +181,8 @@
       "searchMin": "Saisissez au moins 4 caracteres pour rechercher des noms Twitch.",
       "searchMinExisting": "Les detenteurs de tokens VIP existants apparaissent ci-dessous. Saisissez au moins 4 caracteres pour rechercher parmi tous les noms Twitch.",
       "tokenHoldersFirst": "Detenteurs de tokens VIP en premier",
-      "tokenCountSingle": "{count} token",
-      "tokenCountPlural": "{count} tokens",
+      "tokenCountSingle": "{count} jeton",
+      "tokenCountPlural": "{count} jetons",
       "viewOnly": "Vous pouvez voir les soldes VIP, mais seul le streamer ou un moderateur autorise peut les modifier.",
       "username": "Nom d'utilisateur",
       "tokens": "Tokens",
@@ -215,6 +218,11 @@
     "requiresVipTokens": "Necessite {count}.",
     "pathRequiresVip": "{path} necessite {count}.",
     "pathCostsVipTokens": "{path} coute {count}.",
+    "free": "Gratuit",
+    "vipShort": "VIP",
+    "durationShort": "{minutes}+ min",
+    "costSummary": "{reasons} : {count}",
+    "copyCommandCostNotice": "!sr coute {regularCount}. !vip coute {vipCount}.",
     "addCost": "Ajouter ({count})",
     "editCost": "Modifier ({count})",
     "updateExisting": "Met a jour votre demande existante.",
@@ -250,10 +258,12 @@
     "reconnectMessage": "Reconnectez Twitch pour rechercher les viewers actuellement dans le chat.",
     "reconnect": "Reconnecter",
     "searching": "Recherche des viewers actuels...",
-    "noMatches": "Aucun viewer actuel ne correspond a ce nom."
+    "noMatches": "Aucun viewer actuel ne correspond a ce nom.",
+    "costWithBalance": "{cost} · {count} disponibles",
+    "insufficientWithBalance": "Il faut {cost} · {count} disponibles"
   },
   "row": {
-    "viewer": "viewer",
+    "viewer": "spectateur",
     "added": "Ajoute {time}",
     "edited": "Modifie {time}",
     "streamerChoiceTitle": "Choix du streamer : {query}",
@@ -268,10 +278,11 @@
       "first": "1er pick",
       "second": "2e pick",
       "third": "3e pick",
-      "nth": "{ordinal} pick"
+      "nth": "{ordinal}e choix"
     }
   },
   "management": {
+    "blacklistPanelTitle": "Listes noires de la chaîne",
     "states": {
       "searchFailed": "La recherche a echoue.",
       "playlistUpdateFailed": "La playlist n'a pas pu etre mise a jour.",
@@ -392,6 +403,7 @@
       "songBlacklisted": "Morceau blackliste",
       "artistBlacklisted": "Artiste blackliste",
       "requestedBy": "Demande par {requester}",
+      "lyrics": "Paroles",
       "vipTokens": "{count} tokens VIP",
       "added": "Ajoute {time}",
       "requestedText": "Texte demande : {query}",
@@ -409,7 +421,7 @@
       "openActionsAria": "Ouvrir les actions pour {title}",
       "removing": "Suppression...",
       "removeFromPlaylist": "Retirer de la playlist",
-      "blacklist": "Blacklist",
+      "blacklist": "Liste noire",
       "blacklistTitle": "Actions de blacklist",
       "back": "Retour",
       "description": "Choisissez si vous voulez bloquer la version en file, toutes les versions de ce morceau, l'artiste ou un charter.",
@@ -440,10 +452,12 @@
       "unknownArtist": "Artiste inconnu",
       "chartedBy": "Charte par",
       "charterBlacklisted": "Charter blackliste",
+      "lyrics": "Paroles",
       "unknown": "Inconnu",
       "download": "Telecharger",
       "blacklisted": "Blackliste",
-      "blacklist": "Blacklister"
+      "blacklist": "Blacklister",
+      "unblacklist": "Retirer de la blacklist"
     },
     "preview": {
       "removed": "La ligne de demo a ete retiree de la playlist.",

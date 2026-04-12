@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Copy } from "lucide-react";
-import { useEffect, useId, useMemo, useState } from "react";
+import { useEffect, useId, useMemo, useRef, useState } from "react";
 import {
   StreamOverlay,
   type StreamOverlayTheme,
@@ -94,9 +94,28 @@ const defaultOverlayForm: OverlaySettingsInputData = {
   overlayMetaFontSize: 14,
 };
 
-export function OverlaySettingsPanel() {
+export type OverlaySettingsPanelState = {
+  hasUnsavedChanges: boolean;
+  isSaving: boolean;
+};
+
+export function OverlaySettingsPanel(props: {
+  hideSaveButton?: boolean;
+  saveSignal?: number;
+  onStateChange?: (state: OverlaySettingsPanelState) => void;
+  onSaveSuccess?: () => void;
+  onSaveError?: (message: string) => void;
+}) {
+  const {
+    hideSaveButton,
+    onSaveError,
+    onSaveSuccess,
+    onStateChange,
+    saveSignal,
+  } = props;
   const { t } = useLocaleTranslation("dashboard");
   const queryClient = useQueryClient();
+  const lastSaveSignal = useRef(saveSignal);
   const cachedOverlayData = queryClient.getQueryData<OverlaySettingsResponse>([
     "dashboard-overlay",
   ]);
@@ -213,11 +232,16 @@ export function OverlaySettingsPanel() {
       setErrorMessage(null);
     },
     onSuccess: async (payload) => {
-      setMessage(payload?.message ?? t("overlay.states.saved"));
+      setMessage(
+        hideSaveButton ? null : (payload?.message ?? t("overlay.states.saved"))
+      );
+      onSaveSuccess?.();
       await queryClient.invalidateQueries({ queryKey: ["dashboard-overlay"] });
     },
     onError: (error) => {
-      setErrorMessage(getErrorMessage(error));
+      const message = getErrorMessage(error);
+      setErrorMessage(message);
+      onSaveError?.(message);
     },
   });
 
@@ -291,6 +315,36 @@ export function OverlaySettingsPanel() {
 
     setPreviewMode(liveItems.length === 0 ? "sample" : "live");
   }, [liveItems.length, previewModeTouched]);
+
+  useEffect(() => {
+    onStateChange?.({
+      hasUnsavedChanges,
+      isSaving: saveMutation.isPending,
+    });
+  }, [hasUnsavedChanges, onStateChange, saveMutation.isPending]);
+
+  useEffect(() => {
+    if (saveSignal === undefined) {
+      return;
+    }
+
+    if (lastSaveSignal.current === saveSignal) {
+      return;
+    }
+
+    lastSaveSignal.current = saveSignal;
+
+    if (!hasUnsavedChanges || saveMutation.isPending) {
+      return;
+    }
+
+    saveMutation.mutate();
+  }, [
+    hasUnsavedChanges,
+    saveMutation.isPending,
+    saveMutation.mutate,
+    saveSignal,
+  ]);
 
   async function copyOverlayUrl() {
     if (!overlayUrl) {
@@ -514,44 +568,48 @@ export function OverlaySettingsPanel() {
               <CardHeader className="gap-4">
                 <div className="flex flex-wrap items-center justify-between gap-3">
                   <CardTitle>{t("overlay.preview.title")}</CardTitle>
-                  <Button
-                    variant={hasUnsavedChanges ? "default" : "outline"}
-                    onClick={() => saveMutation.mutate()}
-                    disabled={saveMutation.isPending || !hasUnsavedChanges}
-                  >
-                    {saveMutation.isPending
-                      ? t("overlay.actions.saving")
-                      : t("overlay.actions.saveChanges")}
-                  </Button>
-                  <div className="inline-flex border border-(--border) bg-(--panel-soft) p-1">
-                    <button
-                      type="button"
-                      className={`px-3 py-1.5 text-sm transition-colors ${
-                        previewMode === "live"
-                          ? "bg-(--brand) text-white"
-                          : "text-(--muted)"
-                      }`}
-                      onClick={() => {
-                        setPreviewMode("live");
-                        setPreviewModeTouched(true);
-                      }}
-                    >
-                      {t("overlay.preview.live")}
-                    </button>
-                    <button
-                      type="button"
-                      className={`px-3 py-1.5 text-sm transition-colors ${
-                        previewMode === "sample"
-                          ? "bg-(--brand) text-white"
-                          : "text-(--muted)"
-                      }`}
-                      onClick={() => {
-                        setPreviewMode("sample");
-                        setPreviewModeTouched(true);
-                      }}
-                    >
-                      {t("overlay.preview.sample")}
-                    </button>
+                  <div className="ml-auto flex flex-wrap items-center justify-end gap-3">
+                    {hideSaveButton ? null : (
+                      <Button
+                        variant={hasUnsavedChanges ? "default" : "outline"}
+                        onClick={() => saveMutation.mutate()}
+                        disabled={saveMutation.isPending || !hasUnsavedChanges}
+                      >
+                        {saveMutation.isPending
+                          ? t("overlay.actions.saving")
+                          : t("overlay.actions.saveChanges")}
+                      </Button>
+                    )}
+                    <div className="inline-flex border border-(--border) bg-(--panel-soft) p-1">
+                      <button
+                        type="button"
+                        className={`px-3 py-1.5 text-sm transition-colors ${
+                          previewMode === "live"
+                            ? "bg-(--brand) text-white"
+                            : "text-(--muted)"
+                        }`}
+                        onClick={() => {
+                          setPreviewMode("live");
+                          setPreviewModeTouched(true);
+                        }}
+                      >
+                        {t("overlay.preview.live")}
+                      </button>
+                      <button
+                        type="button"
+                        className={`px-3 py-1.5 text-sm transition-colors ${
+                          previewMode === "sample"
+                            ? "bg-(--brand) text-white"
+                            : "text-(--muted)"
+                        }`}
+                        onClick={() => {
+                          setPreviewMode("sample");
+                          setPreviewModeTouched(true);
+                        }}
+                      >
+                        {t("overlay.preview.sample")}
+                      </button>
+                    </div>
                   </div>
                 </div>
               </CardHeader>

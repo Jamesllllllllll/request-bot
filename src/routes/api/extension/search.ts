@@ -25,7 +25,16 @@ export const Route = createFileRoute("/api/extension/search")({
           });
           const url = new URL(request.url);
           const search = extensionSearchInputSchema.parse({
-            query: url.searchParams.get("query") ?? "",
+            query: url.searchParams.get("query") ?? undefined,
+            favoritesOnly: url.searchParams.get("favoritesOnly") ?? undefined,
+            parts: (() => {
+              const values = url.searchParams
+                .getAll("parts")
+                .map((value) => value.trim())
+                .filter(Boolean);
+              return values.length > 0 ? values : undefined;
+            })(),
+            partsMatchMode: url.searchParams.get("partsMatchMode") ?? undefined,
             page: url.searchParams.get("page") ?? undefined,
             pageSize: url.searchParams.get("pageSize") ?? undefined,
           });

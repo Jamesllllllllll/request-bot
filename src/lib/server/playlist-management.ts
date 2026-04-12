@@ -12,13 +12,13 @@ import {
   getDashboardChannelAccess,
   getDashboardState,
   getPlaylistByChannelId,
+  getSessionPlayedSongsByChannelId,
   getVipTokenBalance,
   grantVipToken,
   updateChannelBotEnabled,
 } from "~/lib/db/repositories";
 import {
   blockedUsers,
-  playedSongs,
   playlistItems,
   setlistArtists,
   vipTokens,
@@ -35,7 +35,8 @@ import {
 } from "~/lib/request-availability";
 import {
   getAllowedRequestPathsSetting,
-  getArraySetting,
+  getRequestPathModifierVipTokenCostsSetting,
+  getRequiredPathsSetting,
 } from "~/lib/request-policy";
 import {
   getRequestVipTokenPlan,
@@ -197,10 +198,10 @@ export async function loadPlaylistManagementStateForAccess(
     runtimeEnv,
     access.channel.id
   );
-  const playedRows = await getDb(runtimeEnv).query.playedSongs.findMany({
-    where: eq(playedSongs.channelId, access.channel.id),
-    orderBy: [desc(playedSongs.playedAt)],
+  const playedRows = await getSessionPlayedSongsByChannelId(runtimeEnv, {
+    channelId: access.channel.id,
     limit: 100,
+    order: "desc",
   });
   const blockRows = await getDb(runtimeEnv).query.blockedUsers.findMany({
     where: eq(blockedUsers.channelId, access.channel.id),
@@ -266,6 +267,7 @@ export async function enrichPlaylistItems(
       songGroupedProjectId: catalogSong?.groupedProjectId ?? null,
       songArtistId: catalogSong?.artistId ?? null,
       songCharterId: catalogSong?.authorId ?? null,
+      songHasLyrics: catalogSong?.hasLyrics ?? catalogSong?.hasVocals ?? null,
       songUrl: item.songUrl ?? catalogSong?.sourceUrl ?? null,
       songSourceUpdatedAt: catalogSong?.sourceUpdatedAt ?? null,
       songDownloads: catalogSong?.downloads ?? null,
@@ -290,7 +292,7 @@ export function getPlaylistManagementResponseBody(
     setlistArtists: state.setlistArtists,
     accessRole: state.accessRole,
     requiredPaths: state.settings
-      ? getArraySetting(state.settings.requiredPathsJson)
+      ? getRequiredPathsSetting(state.settings)
       : [],
   };
 }
@@ -324,6 +326,8 @@ export async function getPlaylistManagementPageData(
       allowedRequestPaths,
       requestPathModifierVipTokenCost:
         state.settings?.requestPathModifierVipTokenCost ?? 0,
+      requestPathModifierVipTokenCosts:
+        getRequestPathModifierVipTokenCostsSetting(state.settings ?? {}),
       requestPathModifierUsesVipPriority:
         state.settings?.requestPathModifierUsesVipPriority ?? true,
       requiredPathsJson: state.settings?.requiredPathsJson ?? "[]",
@@ -558,12 +562,45 @@ function getStoredVipTokenCost(input: {
   if (
     typeof input.vipTokenCost === "number" &&
     Number.isFinite(input.vipTokenCost) &&
-    input.vipTokenCost > 0
+    input.vipTokenCost >= 0
   ) {
     return Math.trunc(input.vipTokenCost);
   }
 
   return input.requestKind === "vip" ? 1 : 0;
+}
+
+function isVipTokenExemptPlaylistRequester(input: {
+  channelTwitchUserId: string;
+  requesterTwitchUserId?: string | null;
+  assumeChannelOwnerWhenMissing?: boolean;
+}) {
+  if (input.requesterTwitchUserId) {
+    return input.requesterTwitchUserId === input.channelTwitchUserId;
+  }
+
+  return input.assumeChannelOwnerWhenMissing === true;
+}
+
+function getPlaylistItemVipTokenCost(input: {
+  channelTwitchUserId: string;
+  requesterTwitchUserId?: string | null;
+  requestKind?: string | null;
+  vipTokenCost?: number | null;
+}) {
+  if (
+    isVipTokenExemptPlaylistRequester({
+      channelTwitchUserId: input.channelTwitchUserId,
+      requesterTwitchUserId: input.requesterTwitchUserId,
+    })
+  ) {
+    return 0;
+  }
+
+  return getStoredVipTokenCost({
+    requestKind: input.requestKind,
+    vipTokenCost: input.vipTokenCost,
+  });
 }
 
 export async function performPlaylistMutation(
@@ -650,7 +687,13 @@ export async function performPlaylistMutation(
 
     const actorType = state.accessRole === "moderator" ? "moderator" : "owner";
     const songTitle = formatPlaylistItemReplyTitle(item);
-    const currentVipTokenCost = getStoredVipTokenCost(item);
+    const requesterIsVipTokenExempt = isVipTokenExemptPlaylistRequester({
+      channelTwitchUserId: state.channel.twitchChannelId,
+      requesterTwitchUserId: item.requestedByTwitchUserId,
+    });
+    const currentVipTokenCost = requesterIsVipTokenExempt
+      ? 0
+      : getStoredVipTokenCost(item);
     const vipTokenDurationThresholds = parseVipTokenDurationThresholds(
       state.settings?.vipTokenDurationThresholdsJson
     );
@@ -668,11 +711,21 @@ export async function performPlaylistMutation(
       settings: {
         requestPathModifierVipTokenCost:
           state.settings?.requestPathModifierVipTokenCost,
+        requestPathModifierGuitarVipTokenCost:
+          state.settings?.requestPathModifierGuitarVipTokenCost,
+        requestPathModifierLeadVipTokenCost:
+          state.settings?.requestPathModifierLeadVipTokenCost,
+        requestPathModifierRhythmVipTokenCost:
+          state.settings?.requestPathModifierRhythmVipTokenCost,
+        requestPathModifierBassVipTokenCost:
+          state.settings?.requestPathModifierBassVipTokenCost,
         requestPathModifierUsesVipPriority:
           state.settings?.requestPathModifierUsesVipPriority,
       },
     });
-    const nextVipTokenCost = requestVipTokenPlan.totalVipTokenCost;
+    const nextVipTokenCost = requesterIsVipTokenExempt
+      ? 0
+      : requestVipTokenPlan.totalVipTokenCost;
     const vipTokenDelta = nextVipTokenCost - currentVipTokenCost;
 
     if (item.requestKind === body.requestKind && vipTokenDelta === 0) {
@@ -782,7 +835,7 @@ export async function performPlaylistMutation(
     }
 
     try {
-      if (vipTokenDelta < 0) {
+      if (vipTokenDelta < 0 && !requesterIsVipTokenExempt) {
         await grantVipToken(runtimeEnv, {
           channelId: state.channel.id,
           login: item.requestedByLogin,
@@ -856,6 +909,236 @@ export async function performPlaylistMutation(
       body,
     });
     return json({ ok: true });
+  }
+
+  if (body.action === "manualAdd") {
+    const requestedPaths = getStoredRequestedPaths({
+      requestedQuery: body.requestedQuery,
+    });
+    const requesterIsVipTokenExempt = isVipTokenExemptPlaylistRequester({
+      channelTwitchUserId: state.channel.twitchChannelId,
+      requesterTwitchUserId: body.requesterTwitchUserId,
+      assumeChannelOwnerWhenMissing:
+        !body.requesterTwitchUserId && !body.requesterLogin,
+    });
+    const nextVipTokenCost = requesterIsVipTokenExempt
+      ? 0
+      : getRequestVipTokenPlan({
+          requestKind: "regular",
+          song: {
+            durationText: body.durationText,
+          },
+          requestedPaths,
+          thresholds: parseVipTokenDurationThresholds(
+            state.settings?.vipTokenDurationThresholdsJson
+          ),
+          settings: {
+            requestPathModifierVipTokenCost:
+              state.settings?.requestPathModifierVipTokenCost,
+            requestPathModifierGuitarVipTokenCost:
+              state.settings?.requestPathModifierGuitarVipTokenCost,
+            requestPathModifierLeadVipTokenCost:
+              state.settings?.requestPathModifierLeadVipTokenCost,
+            requestPathModifierRhythmVipTokenCost:
+              state.settings?.requestPathModifierRhythmVipTokenCost,
+            requestPathModifierBassVipTokenCost:
+              state.settings?.requestPathModifierBassVipTokenCost,
+            requestPathModifierUsesVipPriority:
+              state.settings?.requestPathModifierUsesVipPriority,
+          },
+        }).totalVipTokenCost;
+    let reservedVipTokens = false;
+
+    if (nextVipTokenCost > 0) {
+      if (!body.requesterLogin) {
+        return json(
+          {
+            error:
+              "A requester username is required to charge VIP tokens for this request.",
+          },
+          { status: 400 }
+        );
+      }
+
+      const balance = await getVipTokenBalance(runtimeEnv, {
+        channelId: state.channel.id,
+        login: body.requesterLogin,
+      });
+
+      if (
+        !balance ||
+        !hasRedeemableVipToken(balance.availableCount, nextVipTokenCost)
+      ) {
+        const availableCount = balance?.availableCount ?? 0;
+        const formattedCount = formatVipTokenCount(availableCount);
+        return json(
+          {
+            error: `@${body.requesterLogin} does not have enough VIP tokens. They need ${formatVipTokenCostLabel(nextVipTokenCost)}. Current balance: ${formattedCount}.`,
+          },
+          { status: 400 }
+        );
+      }
+
+      const consumed = await consumeVipToken(runtimeEnv, {
+        channelId: state.channel.id,
+        login: body.requesterLogin,
+        displayName: body.requesterDisplayName,
+        twitchUserId: body.requesterTwitchUserId,
+        count: nextVipTokenCost,
+      });
+
+      if (!consumed) {
+        return json(
+          {
+            error: `@${body.requesterLogin} no longer has enough VIP tokens for this request.`,
+          },
+          { status: 409 }
+        );
+      }
+
+      reservedVipTokens = true;
+    }
+
+    logPlaylistMutationStep("Playlist mutation forwarding to backend", {
+      traceId,
+      state,
+      body,
+      extra: {
+        path: "/internal/playlist/mutate",
+        vipTokenCost: nextVipTokenCost,
+      },
+    });
+    const response = await callBackend(
+      runtimeEnv,
+      "/internal/playlist/mutate",
+      {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({
+          channelId: state.channel.id,
+          actorUserId: state.actorUserId,
+          traceId,
+          ...body,
+          vipTokenCost: nextVipTokenCost,
+        }),
+      }
+    );
+
+    if (!response.ok) {
+      if (reservedVipTokens && body.requesterLogin) {
+        await grantVipToken(runtimeEnv, {
+          channelId: state.channel.id,
+          login: body.requesterLogin,
+          displayName: body.requesterDisplayName,
+          twitchUserId: body.requesterTwitchUserId,
+          count: nextVipTokenCost,
+        });
+      }
+
+      return new Response(await response.text(), {
+        status: response.status,
+        headers: {
+          "content-type": "application/json; charset=utf-8",
+        },
+      });
+    }
+
+    return new Response(await response.text(), {
+      status: response.status,
+      headers: {
+        "content-type": "application/json; charset=utf-8",
+      },
+    });
+  }
+
+  if (body.action === "deleteItem") {
+    const item = await getDb(runtimeEnv).query.playlistItems.findFirst({
+      where: and(
+        eq(playlistItems.channelId, state.channel.id),
+        eq(playlistItems.id, body.itemId)
+      ),
+    });
+    const refundableVipTokenCost = item
+      ? getPlaylistItemVipTokenCost({
+          channelTwitchUserId: state.channel.twitchChannelId,
+          requesterTwitchUserId: item.requestedByTwitchUserId,
+          requestKind: item.requestKind,
+          vipTokenCost: item.vipTokenCost,
+        })
+      : 0;
+
+    logPlaylistMutationStep("Playlist mutation forwarding to backend", {
+      traceId,
+      state,
+      body,
+      extra: {
+        path: "/internal/playlist/mutate",
+      },
+    });
+    const response = await callBackend(
+      runtimeEnv,
+      "/internal/playlist/mutate",
+      {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({
+          channelId: state.channel.id,
+          actorUserId: state.actorUserId,
+          traceId,
+          ...body,
+        }),
+      }
+    );
+
+    const responseText = await response.text();
+    if (!response.ok) {
+      return new Response(responseText, {
+        status: response.status,
+        headers: {
+          "content-type": "application/json; charset=utf-8",
+        },
+      });
+    }
+
+    if (item?.requestedByLogin && refundableVipTokenCost > 0) {
+      try {
+        await grantVipToken(runtimeEnv, {
+          channelId: state.channel.id,
+          login: item.requestedByLogin,
+          displayName: item.requestedByDisplayName,
+          twitchUserId: item.requestedByTwitchUserId,
+          count: refundableVipTokenCost,
+        });
+      } catch (error) {
+        console.error("Playlist delete refund failed", {
+          traceId,
+          channelId: state.channel.id,
+          itemId: body.itemId,
+          requestedByLogin: item.requestedByLogin,
+          refundableVipTokenCost,
+          error: error instanceof Error ? error.message : String(error),
+        });
+
+        return json(
+          {
+            error:
+              "The request was removed, but the VIP token refund failed. Refresh the page and confirm the balance.",
+          },
+          { status: 500 }
+        );
+      }
+    }
+
+    return new Response(responseText, {
+      status: response.status,
+      headers: {
+        "content-type": "application/json; charset=utf-8",
+      },
+    });
   }
 
   if (body.action === "setBotChannelEnabled") {

@@ -543,50 +543,7 @@ describe("viewer request service", () => {
     );
   });
 
-  it("rejects a regular request when the song duration requires VIP tokens", async () => {
-    vi.mocked(getChannelSettingsByChannelId).mockResolvedValue({
-      ...baseSettings,
-      vipTokenDurationThresholdsJson: JSON.stringify([
-        {
-          minimumDurationMinutes: 7,
-          tokenCost: 1,
-        },
-        {
-          minimumDurationMinutes: 9,
-          tokenCost: 2,
-        },
-      ]),
-    } as never);
-    vi.mocked(getCatalogSongById).mockResolvedValue({
-      ...baseSong,
-      durationText: "9:30",
-    } as never);
-
-    await expect(
-      performViewerRequestMutation({
-        env,
-        request,
-        slug: "streamer",
-        mutation: {
-          action: "submit",
-          songId: "song-1",
-          requestKind: "regular",
-          replaceExisting: false,
-        },
-      })
-    ).rejects.toSatisfy((error) => {
-      expect(error).toBeInstanceOf(ViewerRequestError);
-      expect((error as ViewerRequestError).status).toBe(409);
-      expect((error as Error).message).toBe(
-        "This request requires 2 VIP tokens. Use a VIP request instead."
-      );
-      return true;
-    });
-
-    expect(callBackend).not.toHaveBeenCalled();
-  });
-
-  it("adds a VIP request that consumes multiple tokens when the song duration requires it", async () => {
+  it("adds a regular request that consumes multiple tokens when the song duration requires it", async () => {
     vi.mocked(getChannelSettingsByChannelId).mockResolvedValue({
       ...baseSettings,
       vipTokenDurationThresholdsJson: JSON.stringify([
@@ -617,6 +574,178 @@ describe("viewer request service", () => {
         mutation: {
           action: "submit",
           songId: "song-1",
+          requestKind: "regular",
+          replaceExisting: false,
+        },
+      })
+    ).resolves.toEqual({
+      ok: true,
+      message:
+        'Added "The Smashing Pumpkins - Cherub Rock" to the playlist for 2 VIP tokens.',
+    });
+
+    const body = JSON.parse(
+      String(vi.mocked(callBackend).mock.calls[0]?.[2]?.body)
+    ) as Record<string, unknown>;
+
+    expect(body).toMatchObject({
+      channelId: "channel-1",
+      requestKind: "regular",
+      vipTokenCost: 2,
+    });
+    expect(consumeVipToken).toHaveBeenCalledWith(
+      env,
+      expect.objectContaining({
+        channelId: "channel-1",
+        login: "viewer_one",
+        count: 2,
+      })
+    );
+  });
+
+  it("adds a regular request when duration and a requested part both add VIP cost", async () => {
+    vi.mocked(getChannelSettingsByChannelId).mockResolvedValue({
+      ...baseSettings,
+      allowRequestPathModifiers: true,
+      allowedRequestPathsJson: JSON.stringify(["bass"]),
+      requestPathModifierVipTokenCost: 1,
+      requestPathModifierGuitarVipTokenCost: 0,
+      requestPathModifierLeadVipTokenCost: 0,
+      requestPathModifierRhythmVipTokenCost: 0,
+      requestPathModifierBassVipTokenCost: 1,
+      requestPathModifierUsesVipPriority: true,
+      vipTokenDurationThresholdsJson: JSON.stringify([
+        {
+          minimumDurationMinutes: 7,
+          tokenCost: 1,
+        },
+        {
+          minimumDurationMinutes: 9,
+          tokenCost: 2,
+        },
+      ]),
+    } as never);
+    vi.mocked(getCatalogSongById).mockResolvedValue({
+      ...baseSong,
+      parts: ["bass"],
+      durationText: "9:30",
+    } as never);
+    vi.mocked(getVipTokenBalance).mockResolvedValue({
+      availableCount: 3,
+    } as never);
+    vi.mocked(consumeVipToken).mockResolvedValue({
+      availableCount: 0,
+      consumedCount: 3,
+    } as never);
+
+    await expect(
+      performViewerRequestMutation({
+        env,
+        request,
+        slug: "streamer",
+        mutation: {
+          action: "submit",
+          songId: "song-1",
+          requestKind: "regular",
+          requestedPath: "bass",
+          replaceExisting: false,
+        },
+      })
+    ).resolves.toEqual({
+      ok: true,
+      message:
+        'Added "The Smashing Pumpkins - Cherub Rock (Bass)" to the playlist for 3 VIP tokens.',
+    });
+
+    const body = JSON.parse(
+      String(vi.mocked(callBackend).mock.calls[0]?.[2]?.body)
+    ) as Record<string, unknown>;
+
+    expect(body).toMatchObject({
+      channelId: "channel-1",
+      requestKind: "regular",
+      vipTokenCost: 3,
+      song: {
+        requestedQuery: "*bass",
+      },
+    });
+    expect(consumeVipToken).toHaveBeenCalledWith(
+      env,
+      expect.objectContaining({
+        channelId: "channel-1",
+        login: "viewer_one",
+        count: 3,
+      })
+    );
+  });
+
+  it("rejects a request when the song is missing the channel's required paths", async () => {
+    vi.mocked(getChannelSettingsByChannelId).mockResolvedValue({
+      ...baseSettings,
+      requiredPathsJson: JSON.stringify(["lead", "rhythm"]),
+      requiredPathsMatchMode: "any",
+    } as never);
+    vi.mocked(getCatalogSongById).mockResolvedValue({
+      ...baseSong,
+      parts: ["bass"],
+    } as never);
+
+    await expect(
+      performViewerRequestMutation({
+        env,
+        request,
+        slug: "streamer",
+        mutation: {
+          action: "submit",
+          songId: "song-1",
+          requestKind: "regular",
+          replaceExisting: false,
+        },
+      })
+    ).rejects.toSatisfy((error) => {
+      expect(error).toBeInstanceOf(ViewerRequestError);
+      expect((error as ViewerRequestError).status).toBe(409);
+      expect((error as Error).message).toBe("Requires one of: Lead, Rhythm.");
+      return true;
+    });
+
+    expect(callBackend).not.toHaveBeenCalled();
+  });
+
+  it("adds a VIP request that consumes multiple tokens when the song duration requires it", async () => {
+    vi.mocked(getChannelSettingsByChannelId).mockResolvedValue({
+      ...baseSettings,
+      vipTokenDurationThresholdsJson: JSON.stringify([
+        {
+          minimumDurationMinutes: 7,
+          tokenCost: 1,
+        },
+        {
+          minimumDurationMinutes: 9,
+          tokenCost: 2,
+        },
+      ]),
+    } as never);
+    vi.mocked(getCatalogSongById).mockResolvedValue({
+      ...baseSong,
+      durationText: "9:30",
+    } as never);
+    vi.mocked(getVipTokenBalance).mockResolvedValue({
+      availableCount: 3,
+    } as never);
+    vi.mocked(consumeVipToken).mockResolvedValue({
+      availableCount: 0,
+      consumedCount: 3,
+    } as never);
+
+    await expect(
+      performViewerRequestMutation({
+        env,
+        request,
+        slug: "streamer",
+        mutation: {
+          action: "submit",
+          songId: "song-1",
           requestKind: "vip",
           replaceExisting: false,
         },
@@ -624,7 +753,7 @@ describe("viewer request service", () => {
     ).resolves.toEqual({
       ok: true,
       message:
-        'Added "The Smashing Pumpkins - Cherub Rock" as a VIP request for 2 VIP tokens.',
+        'Added "The Smashing Pumpkins - Cherub Rock" as a VIP request for 3 VIP tokens.',
     });
 
     const body = JSON.parse(
@@ -634,14 +763,90 @@ describe("viewer request service", () => {
     expect(body).toMatchObject({
       channelId: "channel-1",
       requestKind: "vip",
-      vipTokenCost: 2,
+      vipTokenCost: 3,
     });
     expect(consumeVipToken).toHaveBeenCalledWith(
       env,
       expect.objectContaining({
         channelId: "channel-1",
         login: "viewer_one",
-        count: 2,
+        count: 3,
+      })
+    );
+  });
+
+  it("adds a VIP request that combines duration and requested-part token costs", async () => {
+    vi.mocked(getChannelSettingsByChannelId).mockResolvedValue({
+      ...baseSettings,
+      allowRequestPathModifiers: true,
+      allowedRequestPathsJson: JSON.stringify(["bass"]),
+      requestPathModifierVipTokenCost: 1,
+      requestPathModifierGuitarVipTokenCost: 0,
+      requestPathModifierLeadVipTokenCost: 0,
+      requestPathModifierRhythmVipTokenCost: 0,
+      requestPathModifierBassVipTokenCost: 1,
+      requestPathModifierUsesVipPriority: true,
+      vipTokenDurationThresholdsJson: JSON.stringify([
+        {
+          minimumDurationMinutes: 7,
+          tokenCost: 1,
+        },
+        {
+          minimumDurationMinutes: 9,
+          tokenCost: 2,
+        },
+      ]),
+    } as never);
+    vi.mocked(getCatalogSongById).mockResolvedValue({
+      ...baseSong,
+      parts: ["bass"],
+      durationText: "9:30",
+    } as never);
+    vi.mocked(getVipTokenBalance).mockResolvedValue({
+      availableCount: 4,
+    } as never);
+    vi.mocked(consumeVipToken).mockResolvedValue({
+      availableCount: 0,
+      consumedCount: 4,
+    } as never);
+
+    await expect(
+      performViewerRequestMutation({
+        env,
+        request,
+        slug: "streamer",
+        mutation: {
+          action: "submit",
+          songId: "song-1",
+          requestKind: "vip",
+          requestedPath: "bass",
+          replaceExisting: false,
+        },
+      })
+    ).resolves.toEqual({
+      ok: true,
+      message:
+        'Added "The Smashing Pumpkins - Cherub Rock (Bass)" as a VIP request for 4 VIP tokens.',
+    });
+
+    const body = JSON.parse(
+      String(vi.mocked(callBackend).mock.calls[0]?.[2]?.body)
+    ) as Record<string, unknown>;
+
+    expect(body).toMatchObject({
+      channelId: "channel-1",
+      requestKind: "vip",
+      vipTokenCost: 4,
+      song: {
+        requestedQuery: "*bass",
+      },
+    });
+    expect(consumeVipToken).toHaveBeenCalledWith(
+      env,
+      expect.objectContaining({
+        channelId: "channel-1",
+        login: "viewer_one",
+        count: 4,
       })
     );
   });
@@ -696,7 +901,7 @@ describe("viewer request service", () => {
     ).resolves.toEqual({
       ok: true,
       message:
-        'Your request "The Smashing Pumpkins - Cherub Rock" is now marked as VIP for 2 VIP tokens and will play next.',
+        'Your request "The Smashing Pumpkins - Cherub Rock" is now marked as VIP for 3 VIP tokens and will play next. Spent 2 VIP tokens.',
     });
 
     const body = JSON.parse(
@@ -709,14 +914,14 @@ describe("viewer request service", () => {
       itemId: "item-1",
       actorUserId: null,
       requestKind: "vip",
-      vipTokenCost: 2,
+      vipTokenCost: 3,
     });
     expect(consumeVipToken).toHaveBeenCalledWith(
       env,
       expect.objectContaining({
         channelId: "channel-1",
         login: "viewer_one",
-        count: 1,
+        count: 2,
       })
     );
   });
@@ -940,7 +1145,7 @@ describe("viewer request service", () => {
     ).resolves.toEqual({
       ok: true,
       message:
-        'Edited your request to "Foo Fighters - Everlong" as a VIP request.',
+        'Edited your request to "Foo Fighters - Everlong" as a VIP request for 1 VIP token.',
     });
 
     expect(callBackend).toHaveBeenCalledTimes(1);
@@ -1026,7 +1231,8 @@ describe("viewer request service", () => {
       })
     ).resolves.toEqual({
       ok: true,
-      message: 'Added "Foo Fighters - Everlong" as a VIP request.',
+      message:
+        'Added "Foo Fighters - Everlong" as a VIP request for 1 VIP token.',
     });
 
     expect(callBackend).toHaveBeenCalledTimes(2);
@@ -1053,10 +1259,13 @@ describe("viewer request service", () => {
           replaceExisting: false,
         },
       })
-    ).rejects.toMatchObject({
-      status: 409,
-      message:
-        "You need 1 VIP token for this VIP request. You currently have 2.",
+    ).rejects.toSatisfy((error) => {
+      expect(error).toBeInstanceOf(ViewerRequestError);
+      expect((error as ViewerRequestError).status).toBe(409);
+      expect((error as Error).message).toBe(
+        "You need 1 VIP token for this VIP request. You currently have 2."
+      );
+      return true;
     });
 
     expect(callBackend).not.toHaveBeenCalled();
@@ -1185,7 +1394,8 @@ describe("viewer request service", () => {
       })
     ).resolves.toEqual({
       ok: true,
-      message: 'Edited your request to "The Smashing Pumpkins - Cherub Rock".',
+      message:
+        'Edited your request to "The Smashing Pumpkins - Cherub Rock". Refunded 1 VIP token.',
     });
 
     expect(callBackend).toHaveBeenCalledTimes(1);
@@ -1255,7 +1465,7 @@ describe("viewer request service", () => {
     ).resolves.toEqual({
       ok: true,
       message:
-        'Edited your request to "The Smashing Pumpkins - Cherub Rock" as a VIP request.',
+        'Edited your request to "The Smashing Pumpkins - Cherub Rock" as a VIP request for 1 VIP token. Refunded 1 VIP token.',
     });
 
     expect(grantVipToken).toHaveBeenCalledWith(
@@ -1424,10 +1634,13 @@ describe("viewer request service", () => {
           replaceExisting: false,
         },
       })
-    ).rejects.toMatchObject({
-      status: 409,
-      message:
-        "You need 1 VIP token for this VIP request. You currently have 0.5.",
+    ).rejects.toSatisfy((error) => {
+      expect(error).toBeInstanceOf(ViewerRequestError);
+      expect((error as ViewerRequestError).status).toBe(409);
+      expect((error as Error).message).toBe(
+        "You need 1 VIP token for this VIP request. You currently have 0.5."
+      );
+      return true;
     });
 
     expect(callBackend).not.toHaveBeenCalled();

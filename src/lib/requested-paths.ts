@@ -2,6 +2,8 @@ import { parseRequestModifiers } from "./request-modes";
 import {
   type ChannelRequestSettings,
   getAllowedRequestPathsSetting,
+  getRequestPathModifierUsesVipPrioritySetting,
+  getRequiredVipTokenCostDetailsForRequestedPaths,
   getRequiredVipTokenCostForRequestedPaths,
   normalizeAllowedRequestPaths,
   normalizeRequestPathModifier,
@@ -9,7 +11,7 @@ import {
   songSupportsRequestedPath,
 } from "./request-policy";
 import {
-  getEffectiveVipTokenCost,
+  getMatchedVipTokenDurationThresholdForSong,
   getRequiredVipTokenCostForSong,
   type VipTokenDurationThreshold,
 } from "./vip-token-duration-thresholds";
@@ -85,11 +87,25 @@ export function buildRequestedPathQuery(requestedPaths: string[]) {
   return normalizedPaths.map((path) => `*${path}`).join(" ");
 }
 
-export function getRequestPathModifierUsesVipPriority(
-  value: boolean | null | undefined
-) {
-  return value !== false;
-}
+export type RequestVipTokenPlanReason =
+  | {
+      type: "base_vip";
+      cost: number;
+    }
+  | {
+      type: "duration";
+      cost: number;
+      minimumDurationMinutes: number;
+    }
+  | {
+      type: "requested_path";
+      cost: number;
+      path: RequestPathOption;
+    }
+  | {
+      type: "explicit_vip";
+      cost: number;
+    };
 
 export function getRequestVipTokenPlan(input: {
   requestKind: "regular" | "vip";
@@ -100,10 +116,18 @@ export function getRequestVipTokenPlan(input: {
   } | null;
   requestedPaths: string[];
   thresholds: VipTokenDurationThreshold[];
-  settings: Pick<ChannelRequestSettings, "requestPathModifierVipTokenCost"> & {
+  settings: Pick<
+    ChannelRequestSettings,
+    | "requestPathModifierVipTokenCost"
+    | "requestPathModifierGuitarVipTokenCost"
+    | "requestPathModifierLeadVipTokenCost"
+    | "requestPathModifierRhythmVipTokenCost"
+    | "requestPathModifierBassVipTokenCost"
+  > & {
     allowRequestPathModifiers?: boolean;
     allowedRequestPathsJson?: string | null;
     requestPathModifierUsesVipPriority?: boolean | null;
+    requestPathModifierVipTokenCosts?: Partial<Record<string, unknown>> | null;
   };
 }) {
   const normalizedSettings = {
@@ -112,6 +136,16 @@ export function getRequestVipTokenPlan(input: {
     allowedRequestPathsJson: input.settings.allowedRequestPathsJson ?? null,
     requestPathModifierVipTokenCost:
       input.settings.requestPathModifierVipTokenCost,
+    requestPathModifierGuitarVipTokenCost:
+      input.settings.requestPathModifierGuitarVipTokenCost ?? null,
+    requestPathModifierLeadVipTokenCost:
+      input.settings.requestPathModifierLeadVipTokenCost ?? null,
+    requestPathModifierRhythmVipTokenCost:
+      input.settings.requestPathModifierRhythmVipTokenCost ?? null,
+    requestPathModifierBassVipTokenCost:
+      input.settings.requestPathModifierBassVipTokenCost ?? null,
+    requestPathModifierVipTokenCosts:
+      input.settings.requestPathModifierVipTokenCosts ?? null,
     requestPathModifierUsesVipPriority:
       input.settings.requestPathModifierUsesVipPriority,
   };
@@ -119,6 +153,11 @@ export function getRequestVipTokenPlan(input: {
   const effectiveRequestedPaths = normalizeAllowedRequestPaths(
     input.requestedPaths
   ).filter((path) => allowedRequestPaths.includes(path));
+  const requestedPathVipTokenCostDetails =
+    getRequiredVipTokenCostDetailsForRequestedPaths({
+      requestedPaths: effectiveRequestedPaths,
+      settings: normalizedSettings,
+    });
   const requestedPathVipTokenCost = getRequiredVipTokenCostForRequestedPaths({
     requestedPaths: effectiveRequestedPaths,
     settings: normalizedSettings,
@@ -127,40 +166,84 @@ export function getRequestVipTokenPlan(input: {
     input.song,
     input.thresholds
   );
-  const pathSelectionUsesVipPriority = getRequestPathModifierUsesVipPriority(
-    normalizedSettings.requestPathModifierUsesVipPriority
+  const matchedDurationThreshold = getMatchedVipTokenDurationThresholdForSong(
+    input.song,
+    input.thresholds
   );
-  const regularRequestRequiresVip =
-    requiredSongVipTokenCost > 0 ||
-    (pathSelectionUsesVipPriority && requestedPathVipTokenCost > 0);
+  const pathSelectionUsesVipPriority =
+    getRequestPathModifierUsesVipPrioritySetting({
+      allowedRequestPaths,
+      settings: normalizedSettings,
+    });
+  const regularRequestRequiresVip = false;
+  const normalizedExplicitVipTokenCost =
+    input.explicitVipTokenCost != null &&
+    Number.isFinite(input.explicitVipTokenCost)
+      ? Math.max(1, Math.trunc(input.explicitVipTokenCost))
+      : 1;
+  const requiredRegularRequestTokenCost =
+    requiredSongVipTokenCost + requestedPathVipTokenCost;
+  const requiredVipRequestTokenCost = 1 + requiredRegularRequestTokenCost;
+  const vipTokenReasons: RequestVipTokenPlanReason[] = [];
+
+  if (input.requestKind === "vip") {
+    if (normalizedExplicitVipTokenCost > requiredVipRequestTokenCost) {
+      vipTokenReasons.push({
+        type: "explicit_vip",
+        cost: normalizedExplicitVipTokenCost,
+      });
+    } else {
+      vipTokenReasons.push({
+        type: "base_vip",
+        cost: 1,
+      });
+    }
+  }
+
+  if (matchedDurationThreshold && requiredSongVipTokenCost > 0) {
+    vipTokenReasons.push({
+      type: "duration",
+      cost: matchedDurationThreshold.tokenCost,
+      minimumDurationMinutes: matchedDurationThreshold.minimumDurationMinutes,
+    });
+  }
+
+  for (const detail of requestedPathVipTokenCostDetails) {
+    vipTokenReasons.push({
+      type: "requested_path",
+      cost: detail.cost,
+      path: detail.path,
+    });
+  }
 
   if (input.requestKind !== "vip") {
     return {
+      effectiveRequestedPaths,
+      requestedPathVipTokenCostDetails,
       requestedPathVipTokenCost,
       requiredSongVipTokenCost,
+      matchedDurationThreshold,
       pathSelectionUsesVipPriority,
       regularRequestRequiresVip,
-      totalVipTokenCost: regularRequestRequiresVip
-        ? 0
-        : requestedPathVipTokenCost,
+      requiredVipRequestTokenCost,
+      vipTokenReasons,
+      totalVipTokenCost: requiredRegularRequestTokenCost,
     };
   }
 
-  const baseVipTokenCost = getEffectiveVipTokenCost({
-    requestKind: "vip",
-    explicitVipTokenCost: input.explicitVipTokenCost,
-    song: input.song,
-    thresholds: input.thresholds,
-    minimumVipTokenCost: requiredSongVipTokenCost,
-  });
-
   return {
+    effectiveRequestedPaths,
+    requestedPathVipTokenCostDetails,
     requestedPathVipTokenCost,
     requiredSongVipTokenCost,
+    matchedDurationThreshold,
     pathSelectionUsesVipPriority,
     regularRequestRequiresVip,
-    totalVipTokenCost: pathSelectionUsesVipPriority
-      ? Math.max(baseVipTokenCost, requestedPathVipTokenCost)
-      : baseVipTokenCost + requestedPathVipTokenCost,
+    requiredVipRequestTokenCost,
+    vipTokenReasons,
+    totalVipTokenCost: Math.max(
+      normalizedExplicitVipTokenCost,
+      requiredVipRequestTokenCost
+    ),
   };
 }

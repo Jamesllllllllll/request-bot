@@ -107,7 +107,7 @@
     "noExtraValues": "No se registraron valores extra.",
     "none": "Ninguno",
     "yes": "Sí",
-    "no": "No"
+    "no": "N."
   },
   "requestLog": {
     "columns": {
@@ -126,7 +126,7 @@
   "auditLog": {
     "columns": {
       "time": "Hora",
-      "action": "Acción",
+      "action": "Accion",
       "entity": "Entidad",
       "actor": "Actor",
       "details": "Detalles"

@@ -13,13 +13,16 @@
   "labels": {
     "request": "request",
     "regularRequest": "regular request",
-    "vipRequest": "VIP request"
+    "vipRequest": "VIP request",
+    "vipTokenCount": "{countText} VIP token{count, plural, one {} other {s}}"
   },
   "commands": {
     "how": {
-      "commands": "Commands: {commandPrefix}sr artist - song; {commandPrefix}sr artist *random; {commandPrefix}sr artist *choice; {commandPrefix}vip; {commandPrefix}vip artist - song; {commandPrefix}vip artist - song *2; {commandPrefix}edit #2 artist - song; {commandPrefix}remove reg|vip|all; {commandPrefix}position.",
+      "commands": "Commands: {commandPrefix}sr artist - song; {commandPrefix}sr artist *random; {commandPrefix}sr artist *choice; {commandPrefix}vip; {commandPrefix}vip artist - song; {commandPrefix}edit #2 artist - song; {commandPrefix}remove reg|vip|all; {commandPrefix}position.",
       "partRequests": "Part requests: add {modifiers} to {commandPrefix}sr, {commandPrefix}vip, or {commandPrefix}edit.",
-      "partRequestsVip": "Part requests: add {modifiers} to {commandPrefix}sr, {commandPrefix}vip, or {commandPrefix}edit. They require {countText}.",
+      "partRequestsVip": "Part requests: add {modifiers} to {commandPrefix}sr, {commandPrefix}vip, or {commandPrefix}edit. They add {countText}. VIP adds 1 more.",
+      "vipBase": "VIP requests: {commandPrefix}vip adds 1 VIP token and plays next.",
+      "durationThreshold": "Long songs: over {minutes} minutes add {countText}.",
       "browse": "Browse the track list and request songs here: {url}"
     },
     "search": "Search the song database here: {url}",
@@ -98,15 +101,29 @@
     "choiceEditedVip": "{mention} edited your streamer choice request to \"{query}\" as a VIP request{suffix}.",
     "choiceEditedRegular": "{mention} edited your streamer choice request to \"{query}\".",
     "existingSongVip": "{mention} your existing request \"{song}\" is now a VIP request{suffix}",
-    "existingSongRegular": "{mention} your existing VIP request \"{song}\" is now a regular request again.",
+    "existingSongRegular": "{mention} your existing VIP request \"{song}\" is now a regular request again{suffix}.",
     "songEditedVip": "{mention} edited your request to \"{song}\" as a VIP request{suffix}.",
-    "songEditedRegular": "{mention} edited your request to \"{song}\".",
+    "songEditedRegular": "{mention} edited your request to \"{song}\"{suffix}.",
     "unmatchedAdded": "{mention} there was no matching track found for \"{query}\", but I added it anyway. {playlistUrlMessage}",
     "missingRequiredPathsAdded": "{mention} your song \"{song}\" has been added to the playlist, but it is missing required paths: {paths}.",
     "vipSongAdded": "{mention} your VIP song \"{song}\" will play next{suffix}.",
-    "songAdded": "{mention} your song \"{song}\" has been added to the playlist.",
+    "songAdded": "{mention} your song \"{song}\" has been added to the playlist{suffix}.",
     "choiceAddFailed": "{mention} I couldn't add your streamer choice request right now. Please try again.",
     "songAddFailedMatched": "{mention} I found a song match, but I couldn't add it to the playlist. Please try again.",
-    "songAddFailedUnmatched": "{mention} I couldn't find a song match, and I couldn't add the warning request to the playlist. Please try again."
+    "songAddFailedUnmatched": "{mention} I couldn't find a song match, and I couldn't add the warning request to the playlist. Please try again.",
+    "vipTokenCostSuffix": " for {countText}",
+    "vipTokenSpent": "Spent {countText}.",
+    "vipTokenRefunded": "Refunded {countText}.",
+    "vipReasonBase": "VIP requests cost {countText}.",
+    "vipReasonDuration": "Songs over {minutes} minutes cost {countText}.",
+    "vipReasonPath": "{path} requests cost {countText}.",
+    "vipReasonExplicit": "This VIP request is set to {countText}.",
+    "vipShortageBalanceSuffix": " You have {countText} available.",
+    "vipShortageNeedRequest": "{mention} you need {countText} for this {requestLabel}.{reasonText}{balanceSuffix}",
+    "vipShortageNeedMore": "{mention} you need {additionalCountText} more to update this request to {requestedCountText}.{reasonText}{balanceSuffix}",
+    "vipShortageFallback": "{mention} you do not have enough VIP tokens for this request.",
+    "choiceVipTokenCostUpdated": "{mention} the VIP token cost for your streamer choice request \"{query}\" is now {countText}.",
+    "songVipTokenCostUpdated": "{mention} the VIP token cost for your request \"{song}\" is now {countText}.",
+    "noMatchingTrackFound": "No matching track found for \"{query}\"."
   }
 }

@@ -203,6 +203,29 @@ export function getRequiredVipTokenCostForDuration(
   return requiredTokenCost;
 }
 
+export function getMatchedVipTokenDurationThreshold(
+  durationSeconds: number | null | undefined,
+  thresholds: VipTokenDurationThreshold[]
+) {
+  if (
+    durationSeconds == null ||
+    !Number.isFinite(durationSeconds) ||
+    durationSeconds <= 0
+  ) {
+    return null;
+  }
+
+  let matchedThreshold: VipTokenDurationThreshold | null = null;
+
+  for (const threshold of normalizeVipTokenDurationThresholds(thresholds)) {
+    if (durationSeconds > threshold.minimumDurationMinutes * 60) {
+      matchedThreshold = threshold;
+    }
+  }
+
+  return matchedThreshold;
+}
+
 export function getRequiredVipTokenCostForSong(
   input:
     | {
@@ -221,6 +244,26 @@ export function getRequiredVipTokenCostForSong(
     input.durationSeconds ?? parseDurationTextToSeconds(input.durationText);
 
   return getRequiredVipTokenCostForDuration(durationSeconds, thresholds);
+}
+
+export function getMatchedVipTokenDurationThresholdForSong(
+  input:
+    | {
+        durationSeconds?: number | null;
+        durationText?: string | null;
+      }
+    | null
+    | undefined,
+  thresholds: VipTokenDurationThreshold[]
+) {
+  if (!input) {
+    return null;
+  }
+
+  const durationSeconds =
+    input.durationSeconds ?? parseDurationTextToSeconds(input.durationText);
+
+  return getMatchedVipTokenDurationThreshold(durationSeconds, thresholds);
 }
 
 export function getEffectiveVipTokenCost(input: {
@@ -262,4 +305,13 @@ export function formatVipTokenCostLabel(count: number) {
   return normalizedCount === 1
     ? "1 VIP token"
     : `${normalizedCount} VIP tokens`;
+}
+
+export function formatVipActionLabel(count: number | null | undefined) {
+  const normalizedCount =
+    typeof count === "number" && Number.isFinite(count)
+      ? Math.max(1, Math.trunc(count))
+      : 1;
+
+  return normalizedCount === 1 ? "VIP" : `VIPx${normalizedCount}`;
 }

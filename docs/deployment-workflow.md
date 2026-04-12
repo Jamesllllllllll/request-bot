@@ -180,22 +180,24 @@ Preview deploys create isolated Worker names, but they do not provision dedicate
 
 ## Twitch Panel Hosted Test
 
-Build the standalone panel artifact:
+Build and package the standalone panel artifact locally when you need a fresh Twitch upload:
 
 ```bash
-npm run build:extension:panel
+npm run build:extension:package
 ```
 
 When the panel talks to a deployed app origin, set the API base URL in the same shell before building:
 
 ```bash
-VITE_TWITCH_EXTENSION_API_BASE_URL=https://your-app-host npm run build:extension:panel
+VITE_TWITCH_EXTENSION_API_BASE_URL=https://your-app-host npm run build:extension:package
 ```
 
-Then upload the contents of:
+The zip lands under:
 
 ```text
-dist/twitch-extension/panel
+output/twitch-extension/request-bot-panel-YYYYMMDD-HHmmss.zip
 ```
+
+The zip contains the contents of `dist/twitch-extension/panel` directly, so `index.html`, `assets`, and `backgrounds` sit at the archive root.
 
 For the full hosted-test rollout checklist, use [docs/twitch-panel-extension-beta-rollout-checklist.md](twitch-panel-extension-beta-rollout-checklist.md).

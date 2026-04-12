@@ -57,14 +57,16 @@ Twitch extension settings:
 ## 6. Build And Upload The Hosted Test Artifact
 
 ```bash
-VITE_TWITCH_EXTENSION_API_BASE_URL=https://your-app-host npm run build:extension:panel
+VITE_TWITCH_EXTENSION_API_BASE_URL=https://your-app-host npm run build:extension:package
 ```
 
-Upload:
+Upload the newest zip from:
 
 ```text
-dist/twitch-extension/panel
+output/twitch-extension/request-bot-panel-YYYYMMDD-HHmmss.zip
 ```
+
+The zip contains `index.html`, `assets`, and `backgrounds` at the archive root.
 
 Hosted Test asset paths:
 

@@ -5,7 +5,7 @@
 Use either panel entry point:
 
 - in-app route: `/extension/panel`
-- standalone artifact build: `npm run build:extension:panel`
+- standalone artifact build: `npm run build:extension:package`
 
 The in-app route is the fastest local UI path. The standalone build is the Hosted Test artifact path.
 
@@ -30,20 +30,22 @@ npm run dev
 Build the standalone panel artifact:
 
 ```bash
-npm run build:extension:panel
+npm run build:extension:package
 ```
 
 Build against a deployed app origin:
 
 ```bash
-VITE_TWITCH_EXTENSION_API_BASE_URL=https://your-app-host npm run build:extension:panel
+VITE_TWITCH_EXTENSION_API_BASE_URL=https://your-app-host npm run build:extension:package
 ```
 
-The built artifact is written to:
+The upload zip is written to:
 
 ```text
-dist/twitch-extension/panel
+output/twitch-extension/request-bot-panel-YYYYMMDD-HHmmss.zip
 ```
+
+The zip contains `index.html`, `assets`, and `backgrounds` at the archive root for Twitch Hosted Test upload.
 
 ## Local Workflow
 

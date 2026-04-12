@@ -135,6 +135,17 @@ describe("parseRequestModifiers", () => {
     });
   });
 
+  it("treats favorite keywords as random favorite requests", () => {
+    expect(parseRequestModifiers("favourite")).toEqual({
+      query: "",
+      mode: "favorite",
+      hasRandomModifier: false,
+      hasChoiceModifier: false,
+      ignoredOfficialModifier: false,
+      requestedPaths: [],
+    });
+  });
+
   it("parses arrangement modifiers when enabled", () => {
     expect(
       parseRequestModifiers("The Cure - Lovesong *guitar *lead *bass *lyrics", {

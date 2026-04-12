@@ -25,6 +25,7 @@ export type SearchResponse = {
     parts?: string[];
     durationText?: string;
     year?: number;
+    hasLyrics?: boolean;
     downloads?: number;
     sourceId?: number;
     source: string;

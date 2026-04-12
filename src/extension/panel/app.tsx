@@ -305,6 +305,11 @@ type PanelViewerRequestSubmitInput =
       requestKind: "regular" | "vip";
       requestMode: "random" | "choice";
       vipTokenCost?: number;
+    }
+  | {
+      requestKind: "regular" | "vip";
+      requestMode: "favorite";
+      vipTokenCost?: number;
     };
 
 type PanelDropTargetState = {
@@ -1145,10 +1150,14 @@ function ExtensionPanelAppContent(props: {
                   requestMode: "catalog",
                   requestedPath: input.requestedPath,
                 }
-              : {
-                  query: input.query.trim(),
-                  requestMode: input.requestMode,
-                }),
+              : "query" in input
+                ? {
+                    query: input.query.trim(),
+                    requestMode: input.requestMode,
+                  }
+                : {
+                    requestMode: input.requestMode,
+                  }),
             requestKind: input.requestKind,
             vipTokenCost: input.vipTokenCost,
             itemId: editingRequestItemId ?? undefined,
@@ -2472,7 +2481,10 @@ export function ExtensionPanelModeratorPreview() {
   }
 
   async function handleSubmitRequest(input: PanelViewerRequestSubmitInput) {
-    const normalizedQuery = "query" in input ? input.query.trim() : null;
+    const normalizedQuery =
+      "query" in input && typeof input.query === "string"
+        ? input.query.trim()
+        : null;
     const song =
       "songId" in input
         ? (searchResults?.items.find(
@@ -2521,10 +2533,14 @@ export function ExtensionPanelModeratorPreview() {
                 requestedPath:
                   "songId" in input ? input.requestedPath : undefined,
               }
-            : {
-                query: normalizedQuery ?? "",
-                requestMode: input.requestMode,
-              }),
+            : "query" in input
+              ? {
+                  query: normalizedQuery ?? "",
+                  requestMode: input.requestMode,
+                }
+              : {
+                  requestMode: input.requestMode,
+                }),
           requestKind: input.requestKind,
           vipTokenCost: input.vipTokenCost,
           replaceExisting: false,
@@ -3039,18 +3055,21 @@ function PanelPlaylistRow(props: {
     (!props.canManagePlaylist && canOpenViewerActions);
   const isActionTrayOpen = props.expandedActionItemId === props.itemId;
   const confirmingRemove = props.confirmingRemoveItemId === props.itemId;
-  const itemHasLyrics =
-    props.canManagePlaylist &&
-    playlistDisplayItemHasLyrics({
-      songHasLyrics: props.item.songHasLyrics === true,
-      songPartsJson: getString(props.item, "songPartsJson") ?? undefined,
-    });
   const canReorder = props.canReorderPlaylist && !isCurrent;
   const isDragging = props.draggingItemId === props.itemId;
   const dropEdge =
     props.dropTargetState?.itemId === props.itemId
       ? props.dropTargetState.edge
       : null;
+  const itemHasLyrics =
+    props.canManagePlaylist &&
+    playlistDisplayItemHasLyrics({
+      songHasLyrics:
+        typeof props.item.songHasLyrics === "boolean"
+          ? props.item.songHasLyrics
+          : null,
+      songPartsJson: getString(props.item, "songPartsJson") ?? undefined,
+    });
 
   useEffect(() => {
     const element = itemRef.current;
@@ -3301,6 +3320,11 @@ function PanelPlaylistRow(props: {
                     {getPanelRequestedPathLabel(props.item) ? (
                       <span className="inline-flex h-5 items-center border border-(--border-strong) bg-(--panel-soft) px-1.5 text-[9px] leading-none font-semibold tracking-[0.12em] text-(--text) uppercase">
                         {getPanelRequestedPathLabel(props.item)}
+                      </span>
+                    ) : null}
+                    {itemHasLyrics ? (
+                      <span className="inline-flex h-5 items-center border border-(--border-strong) bg-(--panel-soft) px-1.5 text-[9px] leading-none font-medium uppercase tracking-[0.12em] text-(--muted)">
+                        {t("queue.lyrics")}
                       </span>
                     ) : null}
                     {(isVipRequest &&
@@ -3626,19 +3650,47 @@ function PanelSpecialRequestControls(props: {
   pendingAction: string | null;
   isEditingRequest: boolean;
   onSubmit: (
-    requestMode: "random" | "choice",
+    requestMode: "random" | "favorite" | "choice",
     requestKind: "regular" | "vip"
   ) => void;
 }) {
   const { t } = useLocaleTranslation("extension");
   const normalizedQuery = props.query.trim();
-  const regularDisabledReason = getPanelSpecialRequestDisabledReason({
+  const randomDisabledReason = getPanelSpecialRequestDisabledReason({
     query: normalizedQuery,
+    requestMode: "random",
     canRequest: props.canRequest,
     t,
   });
-  const vipDisabledReason = getPanelSpecialRequestDisabledReason({
+  const randomVipDisabledReason = getPanelSpecialRequestDisabledReason({
     query: normalizedQuery,
+    requestMode: "random",
+    canRequest: props.canVipRequest,
+    fallbackReason: props.vipDisabledReason ?? t("vip.insufficient"),
+    t,
+  });
+  const choiceDisabledReason = getPanelSpecialRequestDisabledReason({
+    query: normalizedQuery,
+    requestMode: "choice",
+    canRequest: props.canRequest,
+    t,
+  });
+  const choiceVipDisabledReason = getPanelSpecialRequestDisabledReason({
+    query: normalizedQuery,
+    requestMode: "choice",
+    canRequest: props.canVipRequest,
+    fallbackReason: props.vipDisabledReason ?? t("vip.insufficient"),
+    t,
+  });
+  const favoriteDisabledReason = getPanelSpecialRequestDisabledReason({
+    query: normalizedQuery,
+    requestMode: "favorite",
+    canRequest: props.canRequest,
+    t,
+  });
+  const favoriteVipDisabledReason = getPanelSpecialRequestDisabledReason({
+    query: normalizedQuery,
+    requestMode: "favorite",
     canRequest: props.canVipRequest,
     fallbackReason: props.vipDisabledReason ?? t("vip.insufficient"),
     t,
@@ -3652,8 +3704,8 @@ function PanelSpecialRequestControls(props: {
       <div className="grid gap-2">
         <PanelSpecialRequestRow
           label={t("requests.randomSong")}
-          disabledReason={regularDisabledReason}
-          vipDisabledReason={vipDisabledReason}
+          disabledReason={randomDisabledReason}
+          vipDisabledReason={randomVipDisabledReason}
           busy={props.pendingAction != null}
           regularPending={
             props.pendingAction ===
@@ -3676,9 +3728,32 @@ function PanelSpecialRequestControls(props: {
           onVipClick={() => props.onSubmit("random", "vip")}
         />
         <PanelSpecialRequestRow
+          label={t("requests.randomFavorite")}
+          disabledReason={favoriteDisabledReason}
+          vipDisabledReason={favoriteVipDisabledReason}
+          busy={props.pendingAction != null}
+          regularPending={
+            props.pendingAction ===
+            getPanelViewerRequestActionKey({
+              requestMode: "favorite",
+              requestKind: "regular",
+            })
+          }
+          vipPending={
+            props.pendingAction ===
+            getPanelViewerRequestActionKey({
+              requestMode: "favorite",
+              requestKind: "vip",
+            })
+          }
+          isEditingRequest={props.isEditingRequest}
+          onRegularClick={() => props.onSubmit("favorite", "regular")}
+          onVipClick={() => props.onSubmit("favorite", "vip")}
+        />
+        <PanelSpecialRequestRow
           label={t("requests.streamerChoice")}
-          disabledReason={regularDisabledReason}
-          vipDisabledReason={vipDisabledReason}
+          disabledReason={choiceDisabledReason}
+          vipDisabledReason={choiceVipDisabledReason}
           busy={props.pendingAction != null}
           regularPending={
             props.pendingAction ===
@@ -4892,16 +4967,19 @@ function getPanelViewerRequestActionKey(input: PanelViewerRequestSubmitInput) {
     return `${input.songId}:${input.requestKind}:${input.requestedPath ?? "none"}`;
   }
 
-  return `special:${input.requestMode}:${input.requestKind}:${input.query.trim().toLowerCase()}`;
+  return "query" in input
+    ? `special:${input.requestMode}:${input.requestKind}:${input.query.trim().toLowerCase()}`
+    : `special:${input.requestMode}:${input.requestKind}`;
 }
 
 function getPanelSpecialRequestDisabledReason(input: {
   query: string;
+  requestMode: "random" | "favorite" | "choice";
   canRequest: boolean;
   fallbackReason?: string;
   t: TFunction;
 }) {
-  if (input.query.length < 2) {
+  if (input.requestMode !== "favorite" && input.query.length < 2) {
     return input.t("search.typeAtLeastTwo");
   }
 

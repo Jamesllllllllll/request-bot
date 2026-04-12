@@ -18,7 +18,7 @@
   },
   "commands": {
     "how": {
-      "commands": "Commandes : {commandPrefix}sr artiste - chanson; {commandPrefix}sr artiste *random; {commandPrefix}sr artiste *choice; {commandPrefix}vip; {commandPrefix}vip artiste - chanson; {commandPrefix}edit #2 artiste - chanson; {commandPrefix}remove reg|vip|all; {commandPrefix}position.",
+      "commands": "Commandes : {commandPrefix}sr artiste - chanson; {commandPrefix}sr artiste *random; {commandPrefix}sr favorite; {commandPrefix}sr artiste *choice; {commandPrefix}vip; {commandPrefix}vip artiste - chanson; {commandPrefix}edit #2 artiste - chanson; {commandPrefix}remove reg|vip|all; {commandPrefix}position.",
       "partRequests": "Demandes de partie : ajoutez {modifiers} a {commandPrefix}sr, {commandPrefix}vip ou {commandPrefix}edit.",
       "partRequestsVip": "Demandes de partie : ajoutez {modifiers} a {commandPrefix}sr, {commandPrefix}vip ou {commandPrefix}edit. Elles ajoutent {countText}. VIP ajoute 1 de plus.",
       "vipBase": "Demandes VIP : {commandPrefix}vip ajoute 1 token VIP et passe ensuite.",
@@ -87,6 +87,7 @@
     "requestQueryMissing": "{mention} ajoutez un artiste ou une chanson avant d'utiliser les modificateurs de demande.",
     "songLookupFailed": "{mention} j'ai rencontre un probleme en recherchant cette chanson. Reessayez.",
     "randomNotFound": "{mention} je n'ai pas trouvé de correspondance aléatoire autorisée pour \"{query}\".",
+    "favoriteNotFound": "{mention} je n'ai pas trouvé de favori autorisé de cette chaîne pour le moment.",
     "rejectedSongBlocked": "{mention} je ne peux pas ajouter cette chanson à la playlist.",
     "rejectedSongReason": "{mention} {reason}",
     "choiceAlreadyActive": "{mention} cette demande de choix du streamer est deja dans vos demandes actives.",

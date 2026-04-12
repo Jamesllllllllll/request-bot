@@ -35,6 +35,7 @@
     "offRightNow": "Anfragen sind derzeit deaktiviert.",
     "quick": "Kurze Anfrage",
     "randomSong": "Zufälliges Lied",
+    "randomFavorite": "Zufälliger Favorit",
     "streamerChoice": "Streamer-Wahl",
     "limitReached": "Das haben Sie bereits{count}aktiv{count, plural, one {Anfrage} other {Anfragen}}in dieser Playlist.",
     "noPermission": "Sie können derzeit keine Songs anfordern.",

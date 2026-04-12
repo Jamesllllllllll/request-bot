@@ -40,14 +40,22 @@ export const Route = createFileRoute("/api/extension/request")({
                   requestedPath: body.requestedPath,
                   replaceExisting: false,
                 }
-              : {
-                  action: "submit",
-                  query: body.query,
-                  requestMode: body.requestMode,
-                  requestKind: body.requestKind,
-                  vipTokenCost: body.vipTokenCost,
-                  replaceExisting: false,
-                };
+              : "query" in body
+                ? {
+                    action: "submit",
+                    query: body.query,
+                    requestMode: body.requestMode,
+                    requestKind: body.requestKind,
+                    vipTokenCost: body.vipTokenCost,
+                    replaceExisting: false,
+                  }
+                : {
+                    action: "submit",
+                    requestMode: body.requestMode,
+                    requestKind: body.requestKind,
+                    vipTokenCost: body.vipTokenCost,
+                    replaceExisting: false,
+                  };
 
           return withExtensionCors(
             json(

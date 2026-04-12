@@ -325,6 +325,7 @@ function buildCandidateMatchesJson(results: SongSearchResult[]) {
       creator: result.creator,
       tuning: result.tuning,
       parts: result.parts ?? [],
+      hasLyrics: result.hasLyrics,
       durationText: result.durationText,
       year: result.year,
       sourceUpdatedAt: result.sourceUpdatedAt,
@@ -510,6 +511,7 @@ function buildCatalogSearchInput(input: {
   pageSize: number;
   state: EventSubChatState;
   allowBlacklistOverride: boolean;
+  favoriteChannelId?: string;
 }) {
   const blacklistFilters =
     input.allowBlacklistOverride || !input.state.settings.blacklistEnabled
@@ -537,6 +539,7 @@ function buildCatalogSearchInput(input: {
     query: input.query,
     page: input.page,
     pageSize: input.pageSize,
+    favoriteChannelId: input.favoriteChannelId,
     restrictToOfficial: !!input.state.settings.onlyOfficialDlc,
     allowedTuningsFilter: parseStoredTuningIds(
       input.state.settings.allowedTuningsJson
@@ -603,6 +606,7 @@ async function resolveChatRandomMatch(input: {
   requesterContext: Parameters<typeof isRequesterAllowed>[1];
   allowBlacklistOverride: boolean;
   requestedPaths: string[];
+  favoriteChannelId?: string;
 }) {
   const baseSearchInput = buildCatalogSearchInput({
     query: input.query,
@@ -610,6 +614,7 @@ async function resolveChatRandomMatch(input: {
     pageSize: 1,
     state: input.state,
     allowBlacklistOverride: input.allowBlacklistOverride,
+    favoriteChannelId: input.favoriteChannelId,
   });
   const filteredSearch = await input.deps.searchSongs(
     input.env,
@@ -871,7 +876,7 @@ function requestedPathsMatch(left: string[], right: string[]) {
 function getRequestedQueryForStorage(input: {
   parsedQuery?: string | null;
   normalizedQuery: string;
-  requestMode: "catalog" | "random" | "choice";
+  requestMode: "catalog" | "random" | "favorite" | "choice";
   requestedPaths: string[];
 }) {
   if (input.requestMode === "choice") {
@@ -1894,7 +1899,7 @@ export async function processEventSubChatMessage(input: {
     requestedPaths,
   });
 
-  if (!normalizedQuery) {
+  if (!normalizedQuery && requestMode !== "favorite") {
     await deps.createRequestLog(env, {
       channelId: channel.id,
       twitchMessageId: event.messageId,
@@ -1960,6 +1965,19 @@ export async function processEventSubChatMessage(input: {
       });
       firstMatch = randomMatch.firstMatch;
       firstRejectedMatch = randomMatch.firstRejectedMatch;
+    } else if (requestMode === "favorite") {
+      const favoriteMatch = await resolveChatRandomMatch({
+        env,
+        deps,
+        query: "",
+        state,
+        requesterContext,
+        allowBlacklistOverride,
+        requestedPaths,
+        favoriteChannelId: channel.id,
+      });
+      firstMatch = favoriteMatch.firstMatch;
+      firstRejectedMatch = favoriteMatch.firstRejectedMatch;
     } else if (requestedSourceSongId != null) {
       firstMatch = await deps.getCatalogSongBySourceId(
         env,
@@ -2111,7 +2129,7 @@ export async function processEventSubChatMessage(input: {
       return { body: "Rejected", status: 202 };
     }
 
-    if (requestMode === "random") {
+    if (requestMode === "random" || requestMode === "favorite") {
       await deps.createRequestLog(env, {
         channelId: channel.id,
         twitchMessageId: event.messageId,
@@ -2121,15 +2139,23 @@ export async function processEventSubChatMessage(input: {
         rawMessage: event.rawMessage,
         normalizedQuery: parsed.query,
         outcome: "rejected",
-        outcomeReason: "random_match_missing",
+        outcomeReason:
+          requestMode === "favorite"
+            ? "favorite_match_missing"
+            : "random_match_missing",
       });
       await deps.sendChatReply(env, {
         channelId: channel.id,
         broadcasterUserId: channel.twitchChannelId,
-        message: t("replies.randomNotFound", {
-          mention: mention(requesterIdentity.login),
-          query: unmatchedQuery,
-        }),
+        message:
+          requestMode === "favorite"
+            ? t("replies.favoriteNotFound", {
+                mention: mention(requesterIdentity.login),
+              })
+            : t("replies.randomNotFound", {
+                mention: mention(requesterIdentity.login),
+                query: unmatchedQuery,
+              }),
       });
       return { body: "Rejected", status: 202 };
     }

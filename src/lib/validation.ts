@@ -448,6 +448,15 @@ const viewerSubmitSpecialSchema = z.object({
   itemId: z.string().trim().min(1).max(80).optional(),
 });
 
+const viewerSubmitFavoriteSchema = z.object({
+  action: z.literal("submit"),
+  requestMode: z.literal("favorite"),
+  requestKind: z.enum(["regular", "vip"]),
+  vipTokenCost: vipTokenCostSchema.optional(),
+  replaceExisting: z.boolean().optional().default(false),
+  itemId: z.string().trim().min(1).max(80).optional(),
+});
+
 const viewerRemoveRequestSchema = z.object({
   action: z.literal("remove"),
   kind: z.enum(["regular", "vip", "all"]).optional().default("all"),
@@ -457,6 +466,7 @@ const viewerRemoveRequestSchema = z.object({
 export const viewerRequestMutationSchema = z.union([
   viewerSubmitCatalogSchema,
   viewerSubmitSpecialSchema,
+  viewerSubmitFavoriteSchema,
   viewerRemoveRequestSchema,
 ]);
 
@@ -513,6 +523,12 @@ export const extensionSubmitRequestSchema = z.union([
   z.object({
     query: z.string().trim().min(2).max(200),
     requestMode: z.enum(["random", "choice"]),
+    requestKind: z.enum(["regular", "vip"]),
+    vipTokenCost: vipTokenCostSchema.optional(),
+    itemId: z.string().trim().min(1).max(80).optional(),
+  }),
+  z.object({
+    requestMode: z.literal("favorite"),
     requestKind: z.enum(["regular", "vip"]),
     vipTokenCost: vipTokenCostSchema.optional(),
     itemId: z.string().trim().min(1).max(80).optional(),

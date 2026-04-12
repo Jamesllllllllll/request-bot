@@ -1,7 +1,10 @@
 import { describe, expect, it } from "vitest";
 import {
   formatPlaylistItemSummaryLine,
+  getPlaylistDisplayParts,
   getResolvedPlaylistCandidates,
+  playlistDisplayCandidateHasLyrics,
+  playlistDisplayItemHasLyrics,
 } from "~/lib/playlist/management-display";
 
 describe("playlist management display helpers", () => {
@@ -89,5 +92,22 @@ describe("playlist management display helpers", () => {
       parts: ["lead", "bass"],
       sourceUrl: expect.stringContaining("/cdlc/99081"),
     });
+  });
+
+  it("keeps lyrics as metadata instead of a display path", () => {
+    expect(
+      getPlaylistDisplayParts(["lead", "voice", "vocals", "bass"])
+    ).toEqual(["lead", "bass"]);
+    expect(
+      playlistDisplayCandidateHasLyrics({
+        parts: ["lead", "voice"],
+      })
+    ).toBe(true);
+    expect(
+      playlistDisplayItemHasLyrics({
+        songHasLyrics: true,
+        songPartsJson: JSON.stringify(["lead"]),
+      })
+    ).toBe(true);
   });
 });

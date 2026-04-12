@@ -239,6 +239,7 @@
     "chooseMode": "Wählen Sie den Modus",
     "chooseType": "Wählen Sie Typ",
     "random": "Zufällig",
+    "favorite": "Favorit",
     "choice": "Auswahl",
     "regular": "Regulär",
     "add": "Hinzufügen",
@@ -246,7 +247,9 @@
     "edit": "Bearbeiten",
     "editVip": "VIP bearbeiten",
     "adding": "Hinzufügen...",
+    "favoritePlaceholder": "Für Favoriten nicht verwendet",
     "randomHelp": "Fügt einen zufälligen Song aus den passenden Songs für diesen Künstler hinzu.",
+    "favoriteHelp": "Fügt einen zufälligen Song aus den gespeicherten Favoriten dieses Kanals hinzu.",
     "choiceHelp": "Fügt eine Streamer-Auswahlanfrage für diesen Künstler hinzu."
   },
   "manageActions": {

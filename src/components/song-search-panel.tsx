@@ -88,6 +88,7 @@ export interface SearchSong {
   downloads?: number;
   sourceUpdatedAt?: number;
   sourceId?: number;
+  hasLyrics?: boolean;
   source: string;
 }
 
@@ -1191,6 +1192,7 @@ export function SongSearchPanel(props: {
                   const compactTuning = formatCompactTuningSummary([
                     song.tuning,
                   ]);
+                  const displaySongPaths = normalizePathOptions(song.parts);
                   const tuningTitle =
                     compactTuning && song.tuning
                       ? (() => {
@@ -1202,7 +1204,6 @@ export function SongSearchPanel(props: {
                             : undefined;
                         })()
                       : undefined;
-                  const displaySongPaths = normalizePathOptions(song.parts);
 
                   return (
                     <div

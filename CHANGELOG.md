@@ -4,6 +4,11 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.4.1] - 2026-04-12
+
+### Fixed
+- CI now builds the standalone Twitch panel artifact with the configured production app URL from GitHub repo configuration instead of a hardcoded domain.
+
 ## [0.4.0] - 2026-04-12
 
 ### Added

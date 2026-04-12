@@ -4,6 +4,7 @@
     "ignoreUnknown": true,
     "includes": [
       "src/**",
+      "scripts/**",
       "tests/**",
       "*.json",
       "*.jsonc",

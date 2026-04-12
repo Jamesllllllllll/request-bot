@@ -1,32 +1,27 @@
 # Twitch Panel Extension Local Test
 
-## Panel entry points
+## Entry Points
 
 Use either panel entry point:
 
-- in-app panel route: `/extension/panel`
-- standalone extension artifact build: `npm run build:extension:panel`
+- in-app route: `/extension/panel`
+- standalone artifact build: `npm run build:extension:panel`
 
-The in-app route is useful while building the UI inside the existing app shell and API environment. The standalone build is the artifact path for Twitch Hosted Test and review.
+The in-app route is the fastest local UI path. The standalone build is the Hosted Test artifact path.
 
-## Required environment values
+## Required Values
 
-Add these values before testing the Twitch panel flow:
+Add these values before testing the panel end to end:
 
 - `TWITCH_EXTENSION_CLIENT_ID`
 - `TWITCH_EXTENSION_SECRET`
 - `VITE_TWITCH_EXTENSION_API_BASE_URL`
 
-Notes:
+`VITE_TWITCH_EXTENSION_API_BASE_URL` should point at the app origin that serves `/api/extension/*`.
 
-- `TWITCH_EXTENSION_CLIENT_ID` is the Twitch Extension client ID from the Twitch developer console.
-- `TWITCH_EXTENSION_SECRET` must be the base64 shared secret from the Twitch Extensions developer console.
-- `VITE_TWITCH_EXTENSION_API_BASE_URL` points at the app origin that serves the `/api/extension/*` endpoints.
-- For local development, `VITE_TWITCH_EXTENSION_API_BASE_URL` can be a tunnel URL if Twitch cannot reach `localhost`.
+## Commands
 
-## Useful commands
-
-Run the app:
+Run the local app:
 
 ```bash
 npm run dev
@@ -38,52 +33,43 @@ Build the standalone panel artifact:
 npm run build:extension:panel
 ```
 
-For any build that calls a deployed app origin, set the API base URL in the same shell before you build:
+Build against a deployed app origin:
 
 ```bash
 VITE_TWITCH_EXTENSION_API_BASE_URL=https://your-app-host npm run build:extension:panel
 ```
 
-The built panel artifact is written to:
+The built artifact is written to:
 
 ```text
 dist/twitch-extension/panel
 ```
 
-## Local workflow
+## Local Workflow
 
 Without Twitch Local Test:
 
-- validate the backend contract with unit tests
-- open the in-app route at `/extension/panel`
-- let the route load the Twitch helper and wait for `onAuthorized`
-- confirm the waiting state before Twitch provides panel authorization
+- open `/extension/panel`
+- confirm the waiting state before Twitch authorization is available
+- validate the local UI states and local API responses
 
 With Twitch Local Test:
 
-1. Run the app locally or expose it through a tunnel.
-2. Make sure `APP_URL` and `VITE_TWITCH_EXTENSION_API_BASE_URL` match the origin that Twitch can reach.
-3. Point the extension panel view to the app route or the built standalone artifact URL.
-4. Open Twitch Local Test and confirm:
-   - bootstrap succeeds
-   - unlinked viewers can read the queue
-   - linked viewers can search and submit requests
-   - blocked viewers can read the queue and search, but request actions stay unavailable
-   - blacklisted search results stay hidden when the channel blacklist is enabled
-   - VIP token balance is shown
-   - edit/remove works for the linked viewer
-   - channel owners can use playlist actions from the panel
-   - channel moderators can use playlist actions when the channel settings allow them
+1. Run the app locally or through a tunnel.
+2. Make `APP_URL` and `VITE_TWITCH_EXTENSION_API_BASE_URL` match the origin Twitch can reach.
+3. Point the extension panel view at the app route or the built artifact URL.
+4. Verify:
 
-## Website auth note
+- unlinked viewers can read the queue
+- linked viewers can search and submit requests
+- blocked viewers stay read-only
+- VIP token balances and request costs are shown
+- edit and remove work for the linked viewer
+- owner controls appear for the channel owner
+- moderator controls follow the configured channel permissions
 
-Opening the website from the panel does not create a website session.
+## Website Session Note
 
-The website recognizes the viewer only when the browser already has the normal RockList.Live session cookie. Otherwise the viewer still signs in through the website Twitch OAuth flow.
+The panel identity-share flow does not create a normal website session.
 
-## After Local Test
-
-- package the final hosted panel artifact for Twitch Hosted Test
-- rebuild and re-upload the Hosted Test zip whenever panel code or `VITE_TWITCH_EXTENSION_API_BASE_URL` changes
-- add review-prep notes for fetched URLs and enabled capabilities
-- validate the full identity-share flow with a real extension registration
+The website recognizes the viewer only when the browser already has the standard RockList.Live session cookie. Otherwise the viewer still signs in through the normal website OAuth flow.

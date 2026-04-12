@@ -32,6 +32,9 @@ jobs:
       - name: Lint
         run: npm run lint
 
+      - name: i18n coverage
+        run: npm run check:i18n
+
       - name: Typecheck
         run: npm run typecheck
 
@@ -40,3 +43,8 @@ jobs:
 
       - name: Build
         run: npm run build
+
+      - name: Build panel artifact
+        env:
+          APP_URL: https://requestbot.radg.tv
+        run: npm run build:extension:panel

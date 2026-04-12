@@ -9,5 +9,11 @@
 
 ## Shipping Workflow
 
+- Never commit directly to `main`.
+- Never push directly to `main`.
+- If work starts on `main`, create a feature branch before staging, committing, or pushing. Do not use hook bypasses or one-off environment variables to commit on `main`.
 - When shipping a branch or preparing a commit, stage the full repo worktree with `git add -A` before committing.
 - Do not rely on an already partially staged worktree unless the user explicitly says to exclude specific files.
+- When a branch is intended to merge into `main`, update the release version in `package.json` and `package-lock.json` and add a matching top changelog entry in `CHANGELOG.md`.
+- Use a real semver release heading for shipped work. Do not leave shipped changes under an `Unreleased` section.
+- Choose the version bump deliberately: patch for routine shipped work and fixes, minor for materially expanded shipped scope, major for intentional breaking release boundaries.

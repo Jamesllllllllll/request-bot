@@ -43,14 +43,15 @@ Use the bundled sample catalog for normal local development. For Twitch auth, Ev
 The default contributor path is:
 
 ```bash
+git switch -c codex/my-change
 git add -A
 git commit
 git push
 ```
 
-Stage the full worktree before every commit unless you intentionally need to exclude something.
+Do not commit or push on `main`. If you start on `main`, create a feature branch first. Stage the full worktree before every commit unless you intentionally need to exclude something.
 
-The repo hooks run staged Biome checks on commit and generated-file checks, typecheck, and tests on push.
+The repo hooks run staged Biome checks on commit, including staged JSON under `src`, `tests`, and `scripts`, and generated-file checks, i18n coverage, lint, typecheck, and tests on push.
 
 Run the same push-time gate manually with:
 

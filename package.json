@@ -2,7 +2,7 @@
   "name": "request-bot",
   "private": true,
   "type": "module",
-  "version": "0.4.2",
+  "version": "0.4.4",
   "engines": {
     "node": ">=22"
   },
@@ -37,7 +37,7 @@
     "check:staged": "lint-staged",
     "check:generated": "node scripts/generate-route-tree.mjs --check && node scripts/write-latest-migration.mjs --check",
     "check:i18n": "node scripts/check-i18n-coverage.mjs",
-    "check:prepush": "npm run check:generated && npm run check:i18n && npm run typecheck && npm run test",
+    "check:prepush": "npm run check:generated && npm run check:i18n && npm run lint && npm run typecheck && npm run test",
     "check:ship": "npm run format && npm run check:generated && npm run lint && npm run check:i18n && npm run typecheck && npm run test && npm run build",
     "typecheck": "tsc --noEmit",
     "test": "vitest run --config vitest.config.ts",
@@ -45,7 +45,7 @@
     "test:e2e": "playwright test"
   },
   "lint-staged": {
-    "{src,tests,scripts}/**/*.{css,html,js,mjs,ts,tsx}": "node scripts/run-biome.mjs check-write-compact",
+    "{src,tests,scripts}/**/*.{css,html,js,json,mjs,ts,tsx}": "node scripts/run-biome.mjs check-write-compact",
     "{package.json,biome.json,drizzle.config.ts,playwright.config.ts,postcss.config.js,tsconfig.json,vite.config.ts,vite.extension.config.ts,vitest.config.ts,wrangler.aux.jsonc,wrangler.jsonc}": "node scripts/run-biome.mjs check-write-compact"
   },
   "dependencies": {

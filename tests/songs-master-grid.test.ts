@@ -15,8 +15,7 @@ describe("parseSongsMasterGridOwnedOfficialDlc", () => {
             colArtistTitleAlbumDate:
               "Pearl Jam;Even Flow;Ten;2017-02-23T11:57:00",
             colAppID: "590185",
-            colFilePath:
-              "Rocksmith2014/dlc/peareven_p.psarc",
+            colFilePath: "Rocksmith2014/dlc/peareven_p.psarc",
             colArrangements: "Bass, Lead, Rhythm",
             colTunings: "Drop D, E Standard, Open D",
           },
@@ -65,8 +64,7 @@ describe("parseSongsMasterGridOwnedOfficialDlc", () => {
         artistName: "Pearl Jam",
         title: "Even Flow",
         albumName: "Ten",
-        filePath:
-          "Rocksmith2014/dlc/peareven_p.psarc",
+        filePath: "Rocksmith2014/dlc/peareven_p.psarc",
         arrangements: ["Bass", "Lead", "Rhythm"],
         tunings: ["Drop D", "E Standard", "Open D"],
       },

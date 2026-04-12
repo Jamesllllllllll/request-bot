@@ -789,15 +789,8 @@ function DashboardSettingsPage() {
           ) : null
         }
         actions={
-          hasOwnerChannel || canSeeTwitchExtensionInstall ? (
+          canSeeTwitchExtensionInstall ? (
             <div className="flex flex-wrap gap-2">
-              {hasOwnerChannel ? (
-                <Button asChild variant="outline">
-                  <Link to="/dashboard/panel-preview" className="no-underline">
-                    {t("settings.header.previewPanel")}
-                  </Link>
-                </Button>
-              ) : null}
               {canSeeTwitchExtensionInstall ? (
                 <Button asChild variant="outline">
                   <a

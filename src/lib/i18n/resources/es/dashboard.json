@@ -71,7 +71,6 @@
       "title": "Configuración",
       "description": "Configuración del canal solo para el propietario: solicitudes, moderadores y overlay del stream.",
       "betaNote": "Los beta testers pueden instalar el panel de la extensión de Twitch.",
-      "previewPanel": "Vista previa del panel de moderación",
       "installExtension": "Instalar beta de la extensión de Twitch"
     },
     "states": {

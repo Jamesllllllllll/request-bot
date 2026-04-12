@@ -4,6 +4,15 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.4.2] - 2026-04-12
+
+### Changed
+- The shipping workflow now stages the full worktree before commit, keeps the standalone Twitch panel package as a local-only upload step, and documents the current release checks more clearly.
+
+### Fixed
+- CI no longer builds the standalone Twitch panel artifact, which keeps GitHub checks aligned with the normal app verification path.
+- The dashboard no longer exposes the unused `/dashboard/panel-preview` route or related preview copy.
+
 ## [0.4.1] - 2026-04-12
 
 ### Fixed

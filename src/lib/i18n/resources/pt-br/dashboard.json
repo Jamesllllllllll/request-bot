@@ -71,7 +71,6 @@
       "title": "Configuracao",
       "description": "Configuracao do canal apenas para o proprietario: pedidos, moderadores e overlay da live.",
       "betaNote": "Os beta testers podem instalar o painel da extensao da Twitch.",
-      "previewPanel": "Prever painel de moderacao",
       "installExtension": "Instalar beta da extensao da Twitch"
     },
     "states": {

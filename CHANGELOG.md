@@ -4,6 +4,23 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-04-12
+
+### Added
+- Random favorite requests on the web and Twitch panel, plus lyrics metadata and richer public played-history coverage. (#79, #80, #81, #82)
+- German locale support and a full translation sweep across the web app, Twitch panel, and bot replies. (#82)
+
+### Changed
+- Channel settings now use a sidebar-tab layout with a shared save flow, clearer moderation sections, integrated overlay editing, and more consistent field grouping. (#70, #82)
+- VIP token pricing now uses one additive model across chat, web, and panel for duration rules, request modifiers, manager adds, and refunds. (#82)
+- Channel search now uses versioned shared caching, normalized tuning IDs, and aligned tuning filters across settings, search, and displayed results. (#66, #78, #82)
+- Public and admin playlist views now show richer song metadata, smoother pagination, stronger VIP styling, sorted public rules lists, and clearer version-level blacklist handling. (#73, #78, #82)
+
+### Fixed
+- Twitch auth and token handling now follow the latest security remediation pass. (#71)
+- Viewer and moderator request surfaces now show correct VIP-token costs and insufficient-balance states before submit. (#67, #82)
+- Documentation now reflects the current app flow, current deploy workflow, and the active docs set instead of older feature plans. (#82)
+
 ## [0.3.1] - 2026-04-01
 
 ### Added

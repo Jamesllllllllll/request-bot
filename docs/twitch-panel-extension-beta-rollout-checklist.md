@@ -1,52 +1,29 @@
 # Twitch Panel Extension Beta Rollout Checklist
 
-## 1. Choose the final app origin
+## 1. Choose The Production App Origin
 
-Use one public app origin for the beta:
+Use one public app origin for the website and the panel API:
 
-- the frontend Worker's `workers.dev` URL
+- the frontend Worker `workers.dev` URL
 - or a custom domain such as `https://rocklist.live`
 
-Use the same origin everywhere that depends on the app URL.
+## 2. Set The Production App URL
 
-If you plan to use a custom domain, attach it before you update Twitch settings so the panel and website keep one stable origin.
+Set the same app URL in:
 
-## 2. Set the production app URL
+- `.env.deploy` `APP_URL`
+- GitHub Actions `APP_URL` secret
+- `VITE_TWITCH_EXTENSION_API_BASE_URL` when you build the standalone panel artifact
 
-Set the production app URL in:
-
-- `.env.deploy`
-  - `APP_URL=https://your-app-host`
-- GitHub Actions production secret
-  - `APP_URL=https://your-app-host`
-
-If you build the standalone panel artifact, also set:
-
-- `VITE_TWITCH_EXTENSION_API_BASE_URL=https://your-app-host`
-
-## 3. Attach the custom domain if you use one
-
-If you use a custom domain:
-
-1. Open `Workers & Pages` in Cloudflare.
-2. Select the frontend Worker: `request-bot`.
-3. Open `Settings` -> `Domains & Routes`.
-4. Add the hostname for the app, such as `rocklist.live`.
-5. Wait for DNS and certificate provisioning to finish.
-
-The backend Worker does not need a public domain.
-
-## 4. Deploy production
-
-Deploy the production app and backend:
+## 3. Deploy Production
 
 ```bash
 npm run deploy
 ```
 
-Confirm the site loads on the final app origin before you update Twitch settings.
+Confirm the site loads on the final app origin before you update the Twitch extension settings.
 
-## 5. Set production Worker secrets
+## 4. Set Worker Secrets
 
 Make sure the frontend Worker has:
 
@@ -65,89 +42,44 @@ Make sure the backend Worker has:
 - `TWITCH_EVENTSUB_SECRET`
 - `SENTRY_DSN` when Sentry is enabled
 
-## 6. Update the Twitch developer application
+## 5. Update Twitch
 
-In the Twitch developer console for the website app, set the OAuth redirect URLs for the final app origin:
+Website app redirect URIs:
 
 - `https://your-app-host/auth/twitch/callback`
 - `https://your-app-host/auth/twitch/bot/callback`
 
-## 7. Update the Twitch extension version
-
-In the Twitch Extensions console, use the final production app origin for the panel:
+Twitch extension settings:
 
 - `Request Identity Link`: enabled
 - `Allowlist for URL Fetching Domains`: `https://your-app-host`
 
-Keep `Chat Capabilities` disabled unless the panel sends extension chat messages.
-
-## 8. Move the panel from Local Test to Hosted Test
-
-Build the hosted panel files:
-
-```bash
-npm run build:extension:panel
-```
-
-When you build the Hosted Test artifact, make sure the shell sets the final app origin:
+## 6. Build And Upload The Hosted Test Artifact
 
 ```bash
 VITE_TWITCH_EXTENSION_API_BASE_URL=https://your-app-host npm run build:extension:panel
 ```
 
-The build requires `VITE_TWITCH_EXTENSION_API_BASE_URL` or `APP_URL`. If neither is set, it fails instead of falling back to the Twitch asset host.
-
-Upload the contents of:
+Upload:
 
 ```text
 dist/twitch-extension/panel
 ```
 
-Set the Hosted Test asset paths for the panel version:
+Hosted Test asset paths:
 
 - `Panel Viewer Path`: `index.html`
 - `Config Path`: `index.html`
-- `Live Config Path`: leave blank unless you add a live config surface
 
-Use Hosted Test for beta channels that should load the production panel without your local dev server or tunnel.
+## 7. Add Tester Access
 
-The uploaded Twitch panel bundle is separate from the website deploy. When you change panel code or the extension API base URL, rebuild the panel artifact and upload a new zip before you retest Hosted Test.
+Add the intended beta accounts to the Twitch extension `Testing Account Allowlist`.
 
-## 9. Set tester access
+## 8. Verify The Beta Flows
 
-Add beta channels to:
+- unlinked viewer: playlist and search load, write actions require identity share
+- linked viewer: add, VIP add, edit, and remove work
+- owner: queue moderation controls appear and work
+- moderator: controls follow the channel’s moderator permission settings
 
-- `Testing Account Allowlist`
-
-If the version stays unreleased, only accounts on the testing allowlist can install and use the panel in testing mode.
-
-## 10. Verify the beta flows
-
-Verify these paths on the Hosted Test build:
-
-- viewer, unlinked:
-  - playlist loads
-  - search loads
-  - write actions require identity share
-- viewer, linked:
-  - add request works
-  - add VIP request works when a VIP token is available
-  - edit current request works
-  - remove current request works
-- channel owner:
-  - playlist moderation controls appear
-  - set current, mark played, shuffle, reorder, delete item, and request-kind changes work
-- channel moderator:
-  - playlist moderation controls follow the channel's moderator capability settings
-  - queue shuffle and manual reorder work when request-management access is enabled
-
-If an extension request fails in production, check the frontend Worker logs. Slow and failed panel `bootstrap` and `state` requests log a trace id, elapsed time, and stage timings for channel lookup, viewer resolution, viewer request state, and live playlist state.
-
-## 11. Keep the website login expectation clear
-
-The panel identity-share flow does not create a website session.
-
-Opening the website from the panel uses the normal website auth state:
-
-- the website recognizes the user when the browser already has the RockList.Live session cookie
-- otherwise the website still requires the normal Twitch OAuth flow
+If a production panel request fails, check the frontend Worker logs for panel bootstrap and state traces.

@@ -3,6 +3,7 @@ node_modules
 .tanstack
 .wrangler
 dist
+output
 coverage
 playwright-report
 test-results

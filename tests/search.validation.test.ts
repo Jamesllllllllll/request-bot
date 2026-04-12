@@ -25,11 +25,33 @@ describe("searchInputSchema", () => {
     expect(parsed.success).toBe(true);
   });
 
+  it("rejects legacy lyrics path filters", () => {
+    const parsed = searchInputSchema.safeParse({
+      field: "any",
+      parts: ["voice"],
+      page: 1,
+      pageSize: 20,
+    });
+
+    expect(parsed.success).toBe(false);
+  });
+
   it("allows channel-scoped favorites browsing without a text query", () => {
     const parsed = searchInputSchema.safeParse({
       channelSlug: "tester",
       favoritesOnly: true,
       field: "any",
+      page: 1,
+      pageSize: 20,
+    });
+
+    expect(parsed.success).toBe(true);
+  });
+
+  it("allows year filters before 1900", () => {
+    const parsed = searchInputSchema.safeParse({
+      field: "any",
+      year: [1888],
       page: 1,
       pageSize: 20,
     });

@@ -1,0 +1,38 @@
+{
+  "brand": {
+    "name": "RockList.Live"
+  },
+  "nav": {
+    "search": "Suchen",
+    "account": "Konto"
+  },
+  "auth": {
+    "goToPlaylist": "Gehen Sie zu Ihrer Playlist.",
+    "logOut": "Abmelden",
+    "signIn": "Melden Sie sich mit Twitch an",
+    "permissionsRefresh": "Die Twitch-Berechtigungen müssen für dieses Konto aktualisiert werden.",
+    "reconnect": "Verbinde Twitch erneut"
+  },
+  "language": {
+    "label": "Sprache"
+  },
+  "translationHelp": {
+    "button": "Helfen Sie uns beim Übersetzen!",
+    "title": "Helfen Sie uns beim Übersetzen!",
+    "messageLead": "Diese Website wurde mit KI übersetzt. Wenn Ihnen etwas auffällt, wenden Sie sich bitte an"
+  },
+  "pagination": {
+    "previous": "Zurück",
+    "next": "Weiter",
+    "morePages": "Weitere Seiten",
+    "goToPreviousPage": "Zur vorherigen Seite",
+    "goToNextPage": "Zur nächsten Seite"
+  },
+  "commandPalette": {
+    "title": "Befehlspalette",
+    "description": "Suche nach einem Befehl zum Ausführen..."
+  },
+  "dialog": {
+    "close": "Schließen"
+  }
+}

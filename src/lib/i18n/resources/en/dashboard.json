@@ -87,7 +87,7 @@
       "savingButton": "Saving..."
     },
     "actions": {
-      "saveSettings": "Save settings",
+      "saveSettings": "Save",
       "reconnectTwitch": "Reconnect Twitch",
       "copyUrl": "Copy URL",
       "copyCode": "Copy code",
@@ -98,6 +98,46 @@
       "done": "Done",
       "show": "Show",
       "hide": "Hide"
+    },
+    "tabs": {
+      "caption": "Categories",
+      "helper": "Switch categories without losing changes. Save once when you are ready.",
+      "general": {
+        "label": "General",
+        "description": "Core channel behavior, playlist defaults, and chat command settings."
+      },
+      "access": {
+        "label": "Access",
+        "description": "Choose who can request songs from your viewers."
+      },
+      "vipCosts": {
+        "label": "Duration limits",
+        "description": "Set how longer songs change VIP token pricing."
+      },
+      "filters": {
+        "label": "Filters",
+        "description": "Limit search results and control which songs can be requested."
+      },
+      "limits": {
+        "label": "Limits",
+        "description": "Control playlist size and request pacing."
+      },
+      "rewards": {
+        "label": "Granting VIP tokens",
+        "description": "Configure automatic VIP token rewards and cooldowns."
+      },
+      "requestModifiers": {
+        "label": "Request modifiers",
+        "description": "Let viewers request specific playable parts and decide whether modifiers spend VIP tokens."
+      },
+      "moderation": {
+        "label": "Moderation",
+        "description": "Review channel instructions, rule enforcement, and moderator controls."
+      },
+      "overlay": {
+        "label": "Overlay",
+        "description": "Tune the stream overlay without leaving the page."
+      }
     },
     "ownerOnly": {
       "title": "Owner settings only",
@@ -116,6 +156,8 @@
         "enableRequests": "Enable requests",
         "enableRequestsHelp": "Turning requests off keeps playlist management available to you and your moderators, but viewers cannot add songs.",
         "playlistDisplay": "Playlist display",
+        "chatDefaults": "Chat defaults",
+        "chatDefaultsHelp": "Choose the default language and command behavior for viewers.",
         "showPositions": "Show playlist positions",
         "showPickOrderBadges": "Show pick order badges",
         "showPickOrderBadgesHelpBefore": "Show badges like",
@@ -125,21 +167,24 @@
         "commandPrefixHelp": "Use the command viewers type in chat.",
         "requestModifiers": "Request modifiers",
         "requestModifiersHelp": "Let viewers request a specific playable part when a song includes one.",
-        "requestModifiersPreamble": "Use this if you normally play one kind of part, but want viewers to be able to request another one when you allow it. For example, if you usually play guitar, you can let viewers specifically request bass.",
+        "requestModifiersPreamble": "Use this if you want viewers to be able to request a path. For example, if you usually play guitar, you can let viewers request bass or a specific guitar part.",
         "requestModifiersToggle": "Allow request modifiers like *guitar and *bass",
         "allowedPathModifiers": "Enabled request modifiers",
         "allowedPathModifiersHelp": "Enable one or more modifiers. Viewers can only choose enabled options when the song includes a matching part.",
+        "modifierBehavior": "Modifier behavior",
+        "modifierBehaviorHelp": "Choose whether paid modifiers stay in the regular queue or use VIP priority. The modifier cost is the total extra cost.",
         "requestPathModifierOptions": {
           "guitar": "Allow *guitar",
           "lead": "Allow *lead",
           "rhythm": "Allow *rhythm",
           "bass": "Allow *bass"
         },
-        "requestPathModifierGuitarTip": "Use this if viewers should be able to request guitar in general while you choose lead or rhythm. You can leave *lead and *rhythm off.",
+        "requestPathModifierGuitarTip": "(your choice of lead or rhythm)",
         "pathModifierVipTokenCost": "VIP token cost when a modifier is used",
+        "pathModifierVipTokenRequired": "VIP tokens",
         "pathModifierVipTokenCostHelp": "Set to 0 to let viewers use a modifier without VIP tokens.",
-        "pathModifierUsesVipPriority": "Using a modifier also makes the request VIP",
-        "pathModifierUsesVipPriorityHelp": "Turn this off if using a modifier should spend VIP tokens without moving the request to the top.",
+        "pathModifierUsesVipPriority": "Paid modifiers also use VIP priority",
+        "pathModifierUsesVipPriorityHelp": "The modifier cost is the total extra cost.",
         "duplicateCooldown": "Duplicate cooldown (minutes)",
         "duplicateCooldownHelp": "Set how long the same song waits before it can be requested again."
       },
@@ -370,34 +415,35 @@
         }
       },
       "channelInstructions": {
-        "title": "Channel instructions",
-        "description": "Copy a ready-to-paste summary for your Twitch About section.",
-        "copy": "Copy instructions",
+        "title": "Copy and paste summary",
+        "description": "Copy a ready-to-paste summary for your channel page.",
+        "copy": "Copy summary",
+        "aboutSection": "Copy and paste summary",
         "playlist": "Playlist: {url}",
-        "availabilityDisabled": "Requests are currently turned off.",
-        "availabilityEveryone": "Requests are open to everyone.",
-        "availabilitySubscribersAndVips": "Requests are open to subscribers and channel VIPs.",
-        "availabilitySubscribersOnly": "Requests are open to subscribers only.",
-        "availabilityVipsOnly": "Requests are open to channel VIPs only.",
-        "availabilityModeratorsOnly": "Chat requests are currently limited to the streamer and moderators.",
+        "availabilityDisabled": "Requests: off",
+        "availabilityEveryone": "Requests: everyone",
+        "availabilitySubscribersAndVips": "Requests: subscribers + VIPs",
+        "availabilitySubscribersOnly": "Requests: subscribers only",
+        "availabilityVipsOnly": "Requests: VIPs only",
+        "availabilityModeratorsOnly": "Requests: streamer + mods",
         "requestTitle": "How to request",
         "requestSong": "Use {requestCommand} artist - song to request a song.",
         "requestRandom": "Use {requestCommand} artist *random for a random match.",
         "requestChoice": "Use {requestCommand} artist *choice for a streamer choice request.",
         "editTitle": "How to edit",
         "editCurrent": "Use {editCommand} artist - song to change your current request.",
-        "editPosition": "Use {editCommand} #2 artist - song when you need to edit a specific queued request.",
+        "editPosition": "Use {editCommand} #2 artist - song to edit a specific queued request.",
         "vipTitle": "How to use VIP requests",
         "vipRequest": "Use {vipCommand} artist - song to make a request VIP and move it to the top.",
         "vipBalance": "Use {vipCommand} on its own to check your VIP token balance.",
-        "vipBaseCost": "VIP requests cost at least {countText}.",
+        "vipBaseCost": "VIP requests add {countText} and play next.",
         "vipThresholdTitle": "Longer songs can require more:",
-        "vipThresholdLine": "Songs over {minutes} minutes require {countText}.",
+        "vipThresholdLine": "Songs over {minutes} minutes add {countText}.",
         "pathTitle": "How to choose a specific part",
         "pathFree": "Add {modifiers} to {requestCommand}, {vipCommand}, or {editCommand} when the song includes a matching part.",
-        "pathPaidVip": "Add {modifiers} to {vipCommand} artist - song when the song includes a matching part. Choosing a part costs {countText} and uses VIP priority.",
-        "pathPaidRegular": "Add {modifiers} to {requestCommand}, {vipCommand}, or {editCommand} when the song includes a matching part. Choosing a part costs {countText}.",
-        "pathPaidRegularNote": "Use {vipCommand} as well if you want the request to play next.",
+        "pathPaidVip": "Add {modifiers} to {vipCommand} artist - song when the song includes a matching part. Choosing a part adds {countText} and uses VIP priority.",
+        "pathPaidRegular": "Add {modifiers} to {requestCommand}, {vipCommand}, or {editCommand} when the song includes a matching part. Choosing a part adds {countText}.",
+        "pathPaidRegularNote": "Use {vipCommand} as well to play next. VIP adds 1 more VIP token.",
         "otherTitle": "Other commands",
         "otherPosition": "Use {positionCommand} to check your place in the playlist.",
         "otherRemove": "Use {removeCommand} reg, {removeCommand} vip, or {removeCommand} all to remove your requests.",

@@ -51,7 +51,7 @@ function AlertDialogContent({
       <AlertDialogPrimitive.Content
         data-slot="alert-dialog-content"
         className={cn(
-          "fixed top-[50%] left-[50%] z-50 grid w-full max-w-[calc(100%-2rem)] translate-x-[-50%] translate-y-[-50%] gap-4 rounded-none border border-oklch(0.923 0.003 48.717) bg-oklch(1 0 0) p-6 shadow-lg duration-200 outline-none data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:animate-in data-[state=open]:fade-in-0 sm:max-w-lg dark:border-oklch(1 0 0 / 10%) dark:bg-oklch(0.147 0.004 49.25)",
+          "fixed top-[50%] left-[50%] z-50 grid w-[calc(100%-2rem)] max-w-[calc(100%-2rem)] translate-x-[-50%] translate-y-[-50%] gap-4 rounded-none border border-oklch(0.923 0.003 48.717) bg-oklch(1 0 0) p-6 shadow-lg duration-200 outline-none data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:animate-in data-[state=open]:fade-in-0 sm:w-max sm:min-w-[28rem] sm:max-w-[calc(100vw-2rem)] dark:border-oklch(1 0 0 / 10%) dark:bg-oklch(0.147 0.004 49.25)",
           className
         )}
         {...props}
@@ -81,7 +81,7 @@ function AlertDialogFooter({
     <div
       data-slot="alert-dialog-footer"
       className={cn(
-        "flex flex-col-reverse gap-2 sm:flex-row sm:justify-end",
+        "flex flex-col-reverse gap-2 sm:flex-row sm:flex-wrap sm:justify-end",
         className
       )}
       {...props}
@@ -125,7 +125,7 @@ function AlertDialogAction({
   return (
     <AlertDialogPrimitive.Action
       data-slot="alert-dialog-action"
-      className={cn(buttonVariants(), className)}
+      className={cn("max-w-full shrink-0", buttonVariants(), className)}
       {...props}
     />
   );
@@ -138,7 +138,11 @@ function AlertDialogCancel({
   return (
     <AlertDialogPrimitive.Cancel
       data-slot="alert-dialog-cancel"
-      className={cn(buttonVariants({ variant: "outline" }), className)}
+      className={cn(
+        "max-w-full shrink-0",
+        buttonVariants({ variant: "outline" }),
+        className
+      )}
       {...props}
     />
   );

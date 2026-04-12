@@ -1,0 +1,540 @@
+{
+  "nav": {
+    "channels": "Kanäle",
+    "settings": "Einstellungen",
+    "admin": "Verwaltung"
+  },
+  "botStatus": {
+    "active": "Aktiv",
+    "activeOfflineTesting": "Offline-Tests aktiviert",
+    "waitingForLive": "Ich warte darauf, live zu gehen",
+    "botAuthRequired": "Bot-Authentifizierung erforderlich",
+    "broadcasterAuthRequired": "Authentifizierung des Senders erforderlich",
+    "subscriptionError": "Abonnementfehler",
+    "disabled": "Deaktiviert"
+  },
+  "overview": {
+    "title": "Konto",
+    "description": "Kanalzugriff und Besitzereinstellungen.",
+    "cards": {
+      "openPlaylist": "Öffne deine Playlist",
+      "manageSettings": "Kanaleinstellungen verwalten"
+    },
+    "indicators": {
+      "channelStatus": "Kanalstatus",
+      "requests": "Anfragen",
+      "bot": "Bot"
+    },
+    "status": {
+      "live": "Live",
+      "offline": "Offline",
+      "unavailable": "Nicht verfügbar",
+      "enabled": "Aktiviert",
+      "paused": "Angehalten"
+    },
+    "moderatedChannels": {
+      "title": "Online-Kanäle, die Sie moderieren",
+      "reconnect": "Verbinde Twitch erneut, um deinen moderierten Kanalzugriff zu aktualisieren.",
+      "openChannel": "Kanal öffnen",
+      "empty": "Derzeit sind keine moderierten Kanäle live."
+    },
+    "notesTitle": "Notizen",
+    "notes": {
+      "enableBot": {
+        "title": "Aktivieren Sie den Bot",
+        "body": "Aktiviere die Bot-Kontrolle in den Einstellungen, bevor du Anfragen auf deinem Kanal verwendest."
+      },
+      "offlineTesting": {
+        "title": "Offline-Tests sind aktiviert",
+        "body": "Anfragen bleiben verfügbar, während Sie den Bot offline testen."
+      },
+      "goLive": {
+        "title": "Gehen Sie live, um Anfragen entgegenzunehmen",
+        "body": "Anfragen sollen ausgeführt werden, während Ihr Kanal live ist."
+      },
+      "requestsPaused": {
+        "title": "Anfragen werden pausiert",
+        "body": "Aktivieren Sie Anfragen in den Einstellungen erneut, wenn Sie möchten, dass Zuschauer erneut Songs hinzufügen."
+      },
+      "channelReady": {
+        "title": "Der Kanal ist bereit",
+        "body": "Ihr Stream ist live und Anfragen sind möglich."
+      },
+      "checkStatus": {
+        "title": "Überprüfen Sie den Kanalstatus",
+        "body": "Stellen Sie sicher, dass der Bot verbunden ist, bevor Sie mit der Annahme von Anfragen beginnen."
+      }
+    }
+  },
+  "settings": {
+    "header": {
+      "title": "Einstellungen",
+      "description": "Nur-Eigentümer-Kanalkonfiguration für Anfragen, Moderatoren und das Stream-Overlay.",
+      "betaNote": "Betatester können das Twitch-Erweiterungspanel auf Twitch installieren.",
+      "previewPanel": "Vorschau des Mod-Panels",
+      "installExtension": "Installieren Sie die Betaversion der Twitch-Erweiterung"
+    },
+    "states": {
+      "failedToLoad": "Einstellungen konnten nicht geladen werden.",
+      "failedToSave": "Einstellungen konnten nicht gespeichert werden.",
+      "loadingAccess": "Einstellungszugriff wird geladen...",
+      "loading": "Einstellungen werden geladen...",
+      "saveFailed": "Speichern fehlgeschlagen. Überprüfen Sie die Nachricht unten und versuchen Sie es erneut.",
+      "saving": "Einstellungen speichern...",
+      "unsavedChanges": "Sie haben nicht gespeicherte Änderungen.",
+      "allChangesSaved": "Alle Änderungen werden gespeichert.",
+      "saved": "Gespeichert",
+      "savingButton": "Speichern..."
+    },
+    "actions": {
+      "saveSettings": "Speichern",
+      "reconnectTwitch": "Verbinde Twitch erneut",
+      "copyUrl": "URL kopieren",
+      "copyCode": "Code kopieren",
+      "copied": "Kopiert",
+      "instructions": "Anweisungen",
+      "previous": "Zurück",
+      "next": "Nächste",
+      "done": "Erledigt",
+      "show": "Zeigen",
+      "hide": "Verstecken"
+    },
+    "tabs": {
+      "caption": "Kategorien",
+      "helper": "Wechseln Sie Kategorien, ohne Änderungen zu verlieren. Speichern Sie einmal, wenn Sie bereit sind.",
+      "general": {
+        "label": "Allgemein",
+        "description": "Verhalten des Kernkanals, Standardeinstellungen für Wiedergabelisten und Einstellungen für Chatbefehle."
+      },
+      "access": {
+        "label": "Zugang",
+        "description": "Wählen Sie aus, wer Lieder von Ihren Zuschauern anfordern kann."
+      },
+      "vipCosts": {
+        "label": "Dauerbegrenzungen",
+        "description": "Legen Sie fest, wie längere Songs den VIP-Token-Preis ändern."
+      },
+      "filters": {
+        "label": "Filter",
+        "description": "Begrenzen Sie die Suchergebnisse und steuern Sie, welche Songs angefordert werden können."
+      },
+      "limits": {
+        "label": "Grenzen",
+        "description": "Steuern Sie die Größe der Wiedergabeliste und die Geschwindigkeit der Anfragen."
+      },
+      "rewards": {
+        "label": "Vergabe von VIP-Tokens",
+        "description": "Konfigurieren Sie automatische VIP-Token-Belohnungen und Abklingzeiten."
+      },
+      "requestModifiers": {
+        "label": "Modifikatoren anfordern",
+        "description": "Lassen Sie die Zuschauer bestimmte spielbare Teile anfordern und entscheiden, ob Modifikatoren VIP-Tokens ausgeben."
+      },
+      "moderation": {
+        "label": "Moderation",
+        "description": "Überprüfen Sie die Kanalanweisungen, die Durchsetzung von Regeln und die Moderatorkontrollen."
+      },
+      "overlay": {
+        "label": "Overlay",
+        "description": "Passen Sie das Stream-Overlay an, ohne die Seite zu verlassen."
+      }
+    },
+    "ownerOnly": {
+      "title": "Nur Besitzereinstellungen",
+      "description": "Dieser Bereich ist nur für Kanäle verfügbar, die Sie besitzen. Nutzen Sie die Kanalseite für die Moderationsarbeit auf den von Ihnen verwalteten Kanälen.",
+      "openChannel": "Kanalseite öffnen",
+      "signInHint": "Melden Sie sich hier mit einem Streamer-Konto an, dem ein Kanal gehört, um die Besitzereinstellungen zu verwalten."
+    },
+    "sections": {
+      "channelSetup": {
+        "title": "Kanaleinrichtung",
+        "description": "Steuern Sie die Haupt-Playlist-Umschaltung, den Chat-Befehl und das Verhalten der Playlist gegenüber dem Zuschauer.",
+        "reconnectNotice": "Die Twitch-Berechtigungen müssen aktualisiert werden, bevor der Bot ausgeführt werden kann.",
+        "mainToggles": "Hauptschalter",
+        "enableBot": "Bot auf diesem Kanal aktivieren",
+        "enableBotHelp": "Schalten Sie dies aus, wenn Sie keine RockList.Live-Aktionen wünschen, einschließlich der Vergabe von VIP-Tokens für Abonnements, Raids usw.",
+        "enableRequests": "Anfragen aktivieren",
+        "enableRequestsHelp": "Wenn Sie Anfragen deaktivieren, steht Ihnen und Ihren Moderatoren weiterhin die Playlist-Verwaltung zur Verfügung, Zuschauer können jedoch keine Songs hinzufügen.",
+        "playlistDisplay": "Wiedergabelistenanzeige",
+        "chatDefaults": "Chat-Standardeinstellungen",
+        "chatDefaultsHelp": "Wählen Sie die Standardsprache und das Befehlsverhalten für Betrachter.",
+        "showPositions": "Playlist-Positionen anzeigen",
+        "showPickOrderBadges": "Pick-Order-Abzeichen anzeigen",
+        "showPickOrderBadgesHelpBefore": "Abzeichen anzeigen wie",
+        "showPickOrderBadgesHelpBetween": "Und",
+        "showPickOrderBadgesHelpAfter": "So können Sie nach dem Mischen sehen, welche Anfrage die nächste Wahl jedes Zuschauers ist.",
+        "commandPrefix": "Befehlspräfix",
+        "commandPrefixHelp": "Verwenden Sie den Befehl, den Zuschauer im Chat eingeben.",
+        "requestModifiers": "Modifikatoren anfordern",
+        "requestModifiersHelp": "Ermöglichen Sie den Zuschauern, eine bestimmte spielbare Rolle anzufordern, wenn ein Song eine solche enthält.",
+        "requestModifiersPreamble": "Verwenden Sie diese Option, wenn Sie möchten, dass Zuschauer einen Pfad anfordern können. Wenn Sie beispielsweise normalerweise Gitarre spielen, können Sie den Zuschauern die Möglichkeit geben, Bass oder einen bestimmten Gitarrenpart anzufordern.",
+        "requestModifiersToggle": "Erlaube Anforderungsmodifikatoren wie *guitar und *bass",
+        "allowedPathModifiers": "Aktivierte Anforderungsmodifikatoren",
+        "allowedPathModifiersHelp": "Aktivieren Sie einen oder mehrere Modifikatoren. Zuschauer können aktivierte Optionen nur auswählen, wenn das Lied einen passenden Teil enthält.",
+        "modifierBehavior": "Verhalten des Modifikators",
+        "modifierBehaviorHelp": "Wählen Sie, ob bezahlte Modifikatoren in der regulären Warteschlange bleiben oder VIP-Priorität verwenden. Die Modifikatorkosten sind die gesamten Mehrkosten.",
+        "requestPathModifierOptions": {
+          "guitar": "Erlaube *Gitarre",
+          "lead": "Erlaube *lead",
+          "rhythm": "*Rhythmus zulassen",
+          "bass": "*Bass zulassen"
+        },
+        "requestPathModifierGuitarTip": "(Leitung oder Rhythmus frei wählbar)",
+        "pathModifierVipTokenCost": "VIP-Token-Kosten bei Verwendung eines Modifikators",
+        "pathModifierVipTokenRequired": "VIP-Token",
+        "pathModifierVipTokenCostHelp": "Auf 0 setzen, damit Zuschauer einen Modifikator ohne VIP-Token verwenden können.",
+        "pathModifierUsesVipPriority": "Bezahlte Modifikatoren nutzen ebenfalls die VIP-Priorität",
+        "pathModifierUsesVipPriorityHelp": "Die Modifikatorkosten sind die gesamten Mehrkosten.",
+        "duplicateCooldown": "Doppelte Abklingzeit (Minuten)",
+        "duplicateCooldownHelp": "Legen Sie fest, wie lange das gleiche Lied wartet, bevor es erneut angefordert werden kann."
+      },
+      "requestAccess": {
+        "title": "Wer kann eine Anfrage stellen?",
+        "description": "Wählen Sie aus, welche Zuschauer Ihrer Playlist Songs hinzufügen können.",
+        "anyone": "Jeder kann eine Anfrage stellen",
+        "subscribers": "Abonnenten können eine Anfrage stellen",
+        "vips": "Kanal-VIPs können eine Anfrage stellen"
+      },
+      "filters": {
+        "title": "Such- und Anforderungsfilter",
+        "description": "Diese Regeln schränken ein, was in der Suche angezeigt wird und was Zuschauer auf Ihrer Kanalseite anfordern können.",
+        "officialDlc": {
+          "title": "Offizieller DLC",
+          "description": "Beschränken Sie Suchergebnisse und Anfragen auf offizielle DLCs.",
+          "notice": "Offizielle DLC-Filter sind noch nicht verfügbar. In diesem Abschnitt wird eine Vorschau der Einstellungen angezeigt, die hier in einem zukünftigen Update angezeigt werden.",
+          "onlyOfficial": "Nur offizielle DLCs enthalten",
+          "onlyOwned": "Enthalten sind nur die offiziellen DLCs, die ich besitze",
+          "ownedTitle": "Eigener offizieller DLC",
+          "import": "Import aus CustomsForge Song Manager",
+          "owned": "Im Besitz",
+          "notOwned": "Nicht im Besitz"
+        },
+        "allowedTunings": {
+          "title": "Erlaubte Tunings",
+          "description": "Klicken Sie auf eine beliebige Abstimmung, um sie zuzulassen oder zu blockieren.",
+          "allowAll": "Alles zulassen",
+          "groups": {
+            "open": "Offen",
+            "other": "Andere"
+          }
+        },
+        "requiredPaths": {
+          "title": "Erforderliche Pfade",
+          "description": "Wählen Sie die Pfade aus, die ein Song benötigt, bevor er in der Suche erscheint oder angefordert werden kann.",
+          "triggerAny": "BELIEBIG:",
+          "triggerAll": "ALLE:",
+          "matchAny": "Passen Sie einen beliebigen ausgewählten Pfad an",
+          "matchAll": "Alle ausgewählten Pfade abgleichen",
+          "none": "Es ist kein Pfadfilter aktiv. Songs können mit jeder Pfadkombination übereinstimmen.",
+          "singlePrefix": "Lieder müssen enthalten",
+          "singleSuffix": "Sie können weiterhin beliebige andere Pfade enthalten.",
+          "exampleLabel": "Beispiel: ein Lied mit",
+          "singleExample": "passt immer noch.",
+          "nonMatchExampleLabel": "Passt nicht: ein Lied mit",
+          "singleNonMatchExample": "stimmt nicht überein, da der ausgewählte Pfad nicht enthalten ist.",
+          "matchAnyPrefix": "Songs stimmen überein, wenn sie mindestens eines davon enthalten",
+          "matchAnySuffix": "Sie können weiterhin beliebige andere Pfade enthalten.",
+          "matchAnyAllSelectedSuffix": "Songs können mit jeder Pfadkombination übereinstimmen.",
+          "matchAnyExample": "stimmt immer noch überein, da es einen ausgewählten Pfad enthält.",
+          "matchAnyNonMatchExample": "stimmt nicht überein, da es keinen ausgewählten Pfad enthält.",
+          "matchAllPrefix": "Songs stimmen nur dann überein, wenn sie alle enthalten",
+          "matchAllSuffix": "Sie können weiterhin beliebige andere Pfade enthalten.",
+          "matchAllExample": "stimmt immer noch überein, da es jeden ausgewählten Pfad enthält.",
+          "matchAllNonMatchExample": "stimmt nicht überein, da ein ausgewählter Pfad fehlt.",
+          "paths": {
+            "lyrics": "Text"
+          }
+        }
+      },
+      "queueLimits": {
+        "title": "Warteschlangen- und Ratenlimits",
+        "description": "Legen Sie die Größe der Playlist fest und entscheiden Sie, wie oft reguläre oder VIP-Anfragen hinzugefügt werden können.",
+        "queueLimits": "Warteschlangenlimits",
+        "maxPlaylist": "Maximale Playlist-Größe",
+        "maxPerViewer": "Maximale Anzahl an Anfragen pro Zuschauer",
+        "maxPerSubscriber": "Maximale Anfragen pro Abonnent",
+        "maxVipPerViewer": "Maximale VIP-Anfragen pro Zuschauer",
+        "maxVipPerSubscriber": "Maximale VIP-Anfragen pro Abonnent",
+        "rateLimits": "Ratenlimits anfordern",
+        "regular": "Regulär",
+        "enableRegular": "Aktivieren Sie die Begrenzung der regulären Anforderungsrate",
+        "regularAllowed": "Regelmäßige Anfragen sind möglich",
+        "regularPeriod": "Regulärer Zeitraum (Sekunden)",
+        "vip": "VIP",
+        "enableVip": "Aktivieren Sie die Begrenzung der VIP-Anfragerate",
+        "vipAllowed": "VIP-Anfragen erlaubt",
+        "vipPeriod": "VIP-Zeitraum (Sekunden)"
+      },
+      "vipAutomation": {
+        "title": "VIP-Token-Automatisierung",
+        "description": "Belohnen Sie automatisch VIP-Tokens für neue Abonnenten, geschenkte Abonnenten, Cheers, Kanalpunktbelohnungen, Raids und StreamElements-Tipps.",
+        "subscribes": "Abonniert",
+        "newSub": "Geben Sie 1 VIP-Token für ein neues kostenpflichtiges Abo",
+        "sharedRenewal": "Geben Sie 1 VIP-Token für eine geteilte Abo-Erneuerungsnachricht",
+        "sharedRenewalHelp": "Bei Sub-Verlängerungen wird nur dann ein VIP-Token gewährt, wenn dieser im Chat geteilt wird.",
+        "giftedSubs": "Beschenkte Subs",
+        "subGifter": "Geben Sie dem Schenkenden für jedes geschenkte Abo 1 VIP-Token",
+        "subRecipient": "Geben Sie jedem beschenkten Sub-Empfänger 1 VIP-Token",
+        "channelPoints": "Kanalpunkte",
+        "channelPointsToggle": "Geben Sie 1 VIP-Token für eine Kanalpunktbelohnung",
+        "channelPointCost": "Kosten für Kanalpunkte",
+        "channelPointCostHelp": "Bei jeder Einlösung dieser Belohnung erhalten Sie 1 VIP-Token.",
+        "channelPointRewardName": "Belohnungsname",
+        "channelPointRewardNameHelp": "RockList.Live erstellt und synchronisiert diese Twitch-Belohnung für Sie.",
+        "channelPointSetup": "Aufstellen",
+        "channelPointSetupHelp": "RockList.Live erstellt diese Belohnung, nachdem Sie die Einstellungen gespeichert haben. Zuschauer können es auf Twitch einlösen, wenn Ihr Kanal live ist.",
+        "channelPointSetupNote": "Dies erfordert einen Twitch-Affiliate- oder Partnerkanal und funktioniert, wenn der Bot für Ihren Kanal aktiviert ist. Wenn Twitch Sie auffordert, die Verbindung erneut herzustellen, verbinden Sie Ihr Twitch-Konto erneut und speichern Sie erneut.",
+        "channelPointUnavailable": "Dieser Twitch-Kanal ist derzeit weder Affiliate noch Partner, daher kann RockList.Live hier noch keine Kanalpunktbelohnung erstellen.",
+        "channelPointInstructions": {
+          "title": "Einrichtung der Kanalpunktbelohnung",
+          "description": "Aktivieren Sie dies hier, verbinden Sie Twitch erneut, wenn Sie dazu aufgefordert werden, und lassen Sie RockList.Live die Belohnung für Sie erstellen und verwalten. Dies erfordert einen Twitch-Affiliate- oder Partnerkanal.",
+          "progress": "Schritt{current}von{total}",
+          "rewardNameLabel": "Belohnungsname",
+          "rewardNameHelp": "Dies ist der genaue Name der Twitch-Belohnung, den RockList.Live erstellt.",
+          "pages": {
+            "enable": {
+              "title": "Aktivieren Sie hier die Belohnung",
+              "body": "Beginnen Sie in diesem Dashboard, damit RockList.Live die Punktkosten kennt und die Belohnung erstellen kann.",
+              "steps": {
+                "toggle": "Aktivieren Sie „1 VIP-Token für eine Kanalpunktbelohnung geben“.",
+                "cost": "Legen Sie fest, wie viele Kanalpunkte jede Einlösung kosten soll.",
+                "save": "Speichern Sie die Einstellungen, damit RockList.Live die Belohnung erstellen oder aktualisieren kann."
+              }
+            },
+            "reconnect": {
+              "title": "Verbinde Twitch bei Bedarf erneut",
+              "body": "Bei einigen älteren Twitch-Verbindungen fehlt der Umfang der Belohnungsverwaltung.",
+              "steps": {
+                "notice": "Wenn auf dieser Seite ein Hinweis zur erneuten Verbindung angezeigt wird, klicken Sie auf „Twitch erneut verbinden“.",
+                "signIn": "Schließen Sie die Twitch-Anmeldung mit dem Broadcaster-Konto ab, dem dieser Kanal gehört.",
+                "saveAgain": "Kehren Sie hierher zurück und speichern Sie erneut, damit RockList.Live die Erstellung der Belohnung abschließen kann."
+              }
+            },
+            "check": {
+              "title": "Bestätige es auf Twitch",
+              "body": "Sobald die Belohnung erstellt wurde, können Zuschauer sie direkt bei Twitch einlösen.",
+              "steps": {
+                "reward": "Suchen Sie in Ihren Twitch-Kanalpunktbelohnungen nach dem unten angezeigten Belohnungsnamen.",
+                "live": "Wenn Ihr Kanal live ist, können Zuschauer ihn einlösen, um 1 VIP-Token zu verdienen.",
+                "fulfill": "RockList.Live führt die Einlösung durch und fügt den VIP-Token automatisch hinzu."
+              }
+            }
+          }
+        },
+        "raids": "Überfälle",
+        "raidReward": "Geben Sie dem Streamer, der diesen Kanal überfällt, 1 VIP-Token",
+        "minimumRaid": "Mindestgröße des Raids",
+        "minimumRaidHelp": "Stellen Sie 1 ein, um jeden Raid zu belohnen.",
+        "raidNotice": "Twitch verschickt hier Raid-Belohnungen nur, wenn der Raid im Chat auftaucht.",
+        "cheers": "Prost",
+        "cheersToggle": "Geben Sie VIP-Tokens zum Jubeln",
+        "cheerConversion": "Cheer-Umwandlung",
+        "bitsPerToken": "Bits pro 1 VIP-Token",
+        "minimumCheer": "Minimaler Jubel, um einen Teil-Token zu verdienen",
+        "liveExample": "Live-Beispiel",
+        "minimumCheerExample": "Minimaler Jubel:{bits}Bits gewährt{tokenCount}eines VIP-Tokens am{percent}% Schwelle.",
+        "bitsExample": "{oneTokenBits}Bits gewährt 1 VIP-Token.{fiveTokenBits}Bits gewährt 5 VIP-Token.",
+        "bitsExampleEmpty": "Setzen Sie die Bits pro VIP-Token auf über 0, um eine Vorschau der Mindestjubelschwelle anzuzeigen.",
+        "tips": "Tipps",
+        "tipsToggle": "Geben Sie VIP-Tokens für StreamElements-Tipps",
+        "tipAmount": "Trinkgeldbetrag pro 1 VIP-Token",
+        "tipAmountHelp": "Ein Trinkgeld von 25 $ gewährt 5 VIP-Tokens, wenn dieser Wert auf 5 eingestellt ist.",
+        "relayUrl": "Relay-URL",
+        "relayUrlHelp": "Verwenden Sie diese URL im Streamer.bot-Schritt, der Ihr StreamElements-Tippereignis weiterleitet.",
+        "setup": "Aufstellen",
+        "setupHelp": "StreamElements kann Trinkgeldwarnungen in OBS weiterhin so anzeigen, wie Sie sie bereits verwenden. VIP-Token-Belohnungen benötigen Streamer.bot, um das Tipp-Event hier weiterzuleiten.",
+        "setupNote": "Trinkgeldbelohnungen funktionieren nur, wenn der Name des StreamElements-Tipps mit dem Twitch-Benutzernamen des Zuschauers übereinstimmt.",
+        "songLength": "Songlänge",
+        "songLengthHelp": "Für längere Songs sind mehr VIP-Tokens erforderlich, wenn die Songdauer bekannt ist.",
+        "songLengthMinutes": "Über diese vielen Minuten hinweg",
+        "songLengthTokens": "VIP-Token erforderlich",
+        "songLengthRemove": "Entfernen",
+        "songLengthExample": "Lieder vorbei{minutes}Minuten erfordern{count}VIP-Token.",
+        "songLengthEmpty": "Es sind noch keine VIP-Grenzwerte für Songlängen aktiv.",
+        "songLengthNote": "Wenn ein Lied keine bekannte Dauer hat, können Zuschauer es trotzdem normal hinzufügen und Sie können VIP-Tokens manuell verwalten.",
+        "songLengthAdd": "Schwelle hinzufügen",
+        "vipCooldown": "Abklingzeit der VIP-Anfrage",
+        "vipCooldownHelp": "Nachdem ein Zuschauer eine VIP-Anfrage hinzugefügt hat, lassen Sie ihn warten, bevor er eine weitere hinzufügt. Regelmäßige Anfragen folgen weiterhin Ihren normalen Regeln.",
+        "vipCooldownToggle": "Erfordert eine Abklingzeit, bevor ein Zuschauer eine weitere VIP-Anfrage hinzufügen kann",
+        "vipCooldownMinutes": "Abklingzeit in Minuten",
+        "vipCooldownExample": "Nachdem eine VIP-Anfrage hinzugefügt wurde, muss dieser Betrachter warten{minutes}Minuten, bevor eine weitere VIP-Anfrage hinzugefügt wird.",
+        "vipCooldownNote": "Wenn der Zuschauer diese VIP-Anfrage vor der Wiedergabe entfernt, endet die Abklingzeit und er kann sofort eine weitere VIP-Anfrage hinzufügen.",
+        "instructions": {
+          "title": "Einrichtung des StreamElements-Tipprelais",
+          "description": "Verwenden Sie Streamer.bot, um jeden StreamElements-Tipp hierher weiterzuleiten, damit RockList.Live automatisch VIP-Token vergeben kann.",
+          "progress": "Schritt{current}von{total}",
+          "pages": {
+            "enable": {
+              "title": "Aktivieren Sie hier Trinkgeldprämien",
+              "body": "Beginnen Sie in diesem Dashboard, damit das Relais den Tipp irgendwohin senden kann.",
+              "steps": {
+                "toggle": "Aktivieren Sie VIP-Tokens für StreamElements-Tipps geben.",
+                "amount": "Legen Sie fest, wie hoch der Trinkgeldwert für 1 VIP-Token ist.",
+                "save": "Speichern Sie die Einstellungen, bevor Sie Ihren ersten Testtipp ausführen."
+              }
+            },
+            "connect": {
+              "title": "Verbinden Sie Streamer.bot mit StreamElements",
+              "body": "Richten Sie Streamer.bot ein, um StreamElements-Tippereignisse zu empfangen.",
+              "steps": {
+                "open": "Öffnen Sie in Streamer.bot Integrationen > StreamElements.",
+                "connect": "Klicken Sie auf „Mit StreamElements verbinden“ und melden Sie sich mit dem StreamElements-Konto an, das Ihre Tipps erhält.",
+                "autoConnect": "Aktivieren Sie „Auto Connect“, damit die Tipp-Relais weiterhin funktionieren, wenn Streamer.bot neu startet.",
+                "action": "Erstellen Sie eine neue Aktion und fügen Sie den StreamElements-Tipp-Trigger hinzu."
+              }
+            },
+            "relay": {
+              "title": "Fügen Sie den Relaisschritt hinzu",
+              "body": "Fügen Sie in derselben Aktion eine Unteraktion „C#-Code ausführen“ hinzu. Verwenden Sie unten die Webhook-URL und den Einfügecode.",
+              "steps": {
+                "subAction": "Fügen Sie innerhalb der Aktion eine Unteraktion „C#-Code ausführen“ hinzu, die den StreamElements-Tipp-Trigger verwendet.",
+                "paste": "Fügen Sie die Webhook-URL und den Code unten ein und speichern Sie dann die Aktion."
+              },
+              "webhookLabel": "Ihre Webhook-URL",
+              "webhookHelp": "Fügen Sie genau diese URL in den Streamer.bot-Code unten ein.",
+              "codeLabel": "C#-Code für Streamer.bot",
+              "codeHelp": "Fügen Sie dies in die Unteraktion „C#-Code ausführen“ ein."
+            },
+            "test": {
+              "title": "Senden Sie einen Testtipp",
+              "body": "Führen Sie einen Testtipp vollständig durch, bevor Sie sich live darauf verlassen.",
+              "steps": {
+                "tip": "Senden Sie einen Testtipp über StreamElements, nachdem die Aktion aktiviert wurde.",
+                "chat": "Achten Sie auf die Chat-Antwort von RockList.Live, die bestätigt, dass VIP-Tokens hinzugefügt wurden.",
+                "username": "Stellen Sie sicher, dass der Name des StreamElements-Tipps mit dem Twitch-Login des Zuschauers übereinstimmt. Ist dies nicht der Fall, kann RockList.Live den Tipp diesem Zuschauer nicht zuordnen.",
+                "obs": "Ohne dass Streamer.bot das Ereignis weiterleitet, können StreamElements-Benachrichtigungen weiterhin in OBS angezeigt werden, es werden hier jedoch keine VIP-Tokens vergeben."
+              }
+            }
+          }
+        },
+        "setupSteps": {
+          "connect": "Verbinden Sie Streamer.bot mit StreamElements.",
+          "trigger": "Verwenden Sie den StreamElements-Tipp-Trigger in Streamer.bot.",
+          "send": "Senden Sie dieses Tippereignis an die hier angezeigte Relay-URL.",
+          "note": "Ohne Streamer.bot werden Tipps immer noch in OBS angezeigt, aber sie fügen hier keine VIP-Tokens hinzu."
+        }
+      },
+      "channelInstructions": {
+        "title": "Zusammenfassung kopieren und einfügen",
+        "description": "Kopieren Sie eine fertige Zusammenfassung für Ihre Kanalseite.",
+        "copy": "Zusammenfassung kopieren",
+        "aboutSection": "Zusammenfassung kopieren und einfügen",
+        "playlist": "Playlist:{url}",
+        "availabilityDisabled": "Anfragen: aus",
+        "availabilityEveryone": "Anfragen: alle",
+        "availabilitySubscribersAndVips": "Anfragen: Abonnenten + VIPs",
+        "availabilitySubscribersOnly": "Anfragen: Nur für Abonnenten",
+        "availabilityVipsOnly": "Anfragen: Nur VIPs",
+        "availabilityModeratorsOnly": "Anfragen: Streamer + Mods",
+        "requestTitle": "So fordern Sie an",
+        "requestSong": "Verwenden{requestCommand}Künstler - Lied, um ein Lied anzufordern.",
+        "requestRandom": "Verwenden{requestCommand}Künstler *zufällig für eine zufällige Übereinstimmung.",
+        "requestChoice": "Verwenden{requestCommand}Künstler *Auswahl für eine Streamer-Auswahlanfrage.",
+        "editTitle": "So bearbeiten Sie",
+        "editCurrent": "Verwenden{editCommand}Künstler – Lied, um Ihre aktuelle Anfrage zu ändern.",
+        "editPosition": "Verwenden{editCommand}#2 Künstler – Lied zum Bearbeiten einer bestimmten Anfrage in der Warteschlange.",
+        "vipTitle": "So nutzen Sie VIP-Anfragen",
+        "vipRequest": "Verwenden{vipCommand}Künstler – Lied, um eine VIP-Anfrage zu erstellen und nach oben zu verschieben.",
+        "vipBalance": "Verwenden{vipCommand}allein, um Ihr VIP-Token-Guthaben zu überprüfen.",
+        "vipBaseCost": "VIP-Anfragen hinzufügen{countText}und als nächstes spielen.",
+        "vipThresholdTitle": "Längere Songs können mehr erfordern:",
+        "vipThresholdLine": "Lieder vorbei{minutes}Minuten hinzufügen{countText}.",
+        "pathTitle": "So wählen Sie ein bestimmtes Teil aus",
+        "pathFree": "Hinzufügen{modifiers}Zu{requestCommand}, {vipCommand}, oder{editCommand}wenn das Lied einen passenden Teil enthält.",
+        "pathPaidVip": "Hinzufügen{modifiers}Zu{vipCommand}Künstler – Lied, wenn das Lied einen passenden Teil enthält. Die Auswahl eines Teils fügt hinzu{countText}und nutzt VIP-Priorität.",
+        "pathPaidRegular": "Hinzufügen{modifiers}Zu{requestCommand}, {vipCommand}, oder{editCommand}wenn das Lied einen passenden Teil enthält. Die Auswahl eines Teils fügt hinzu{countText}.",
+        "pathPaidRegularNote": "Verwenden{vipCommand}auch als nächstes spielen. VIP fügt 1 weiteren VIP-Token hinzu.",
+        "otherTitle": "Andere Befehle",
+        "otherPosition": "Verwenden{positionCommand}um Ihren Platz in der Playlist zu überprüfen.",
+        "otherRemove": "Verwenden{removeCommand}reg,{removeCommand}vip, oder{removeCommand}Alles, um Ihre Anfragen zu entfernen.",
+        "rewardsTitle": "So werden VIP-Tokens vergeben",
+        "rewardsNone": "VIP-Tokens werden derzeit nicht automatisch vergeben.",
+        "rewardChannelPoints": "Belohnung für Kanalpunkte: 1 VIP-Token pro Einlösung ({cost}Punkte).",
+        "rewardRaid": "Raids: 1 VIP-Token für Raids von{count}+ Zuschauer.",
+        "rewardCheers": "Prost: 1 VIP-Token pro{bits}Bits.",
+        "rewardTips": "StreamElements-Tipps: 1 VIP-Token pro ${amount}.",
+        "tokenCount": "{count} VIP-Token"
+      },
+      "rules": {
+        "title": "Blacklist- und Setlist-Regeln",
+        "description": "Blacklist- und Setlist-Einträge werden auf der Kanalseite verwaltet. Diese Schalter steuern, wie diese Regeln durchgesetzt werden.",
+        "enableBlacklist": "Blacklist aktivieren",
+        "bypassBlacklist": "Lassen Sie die Setlist die Blacklist umgehen",
+        "enableSetlist": "Setlist aktivieren",
+        "subscribersFollowSetlist": "Abonnenten müssen der Setlist folgen"
+      },
+      "moderatorPermissions": {
+        "title": "Moderatorberechtigungen",
+        "description": "Moderatoren sehen immer VIP-Token. Schalten Sie hier andere Kanalverwaltungsaktionen ein oder aus.",
+        "manageRequests": "Anfragen verwalten",
+        "manageBlacklist": "Blacklist verwalten",
+        "manageSetlist": "Setlist verwalten",
+        "manageBlockedViewers": "Blockierte Zuschauer verwalten",
+        "manageVipTokens": "VIP-Tokens verwalten",
+        "manageTags": "Tags verwalten"
+      }
+    }
+  },
+  "overlay": {
+    "title": "Stream-Overlay",
+    "description": "Zeigen Sie Ihre Playlist mithilfe einer Browserquelle in Ihrem Stream an.",
+    "channelFallback": "Dein Kanal",
+    "states": {
+      "failedToLoad": "Overlay-Einstellungen konnten nicht geladen werden.",
+      "failedPreview": "Die Playlist-Vorschau konnte nicht geladen werden.",
+      "failedToSave": "Overlay-Einstellungen konnten nicht gespeichert werden.",
+      "saved": "Overlay-Einstellungen gespeichert.",
+      "copied": "Overlay-URL kopiert."
+    },
+    "url": {
+      "title": "Overlay-URL",
+      "copy": "URL kopieren",
+      "open": "Overlay öffnen"
+    },
+    "layout": {
+      "title": "Layout und Verhalten",
+      "showPlaylistTitle": "Titel der Playlist anzeigen",
+      "showCreator": "Ersteller anzeigen",
+      "showAlbum": "Album anzeigen",
+      "animateNowPlaying": "Animate wird gerade abgespielt"
+    },
+    "theme": {
+      "title": "Thema",
+      "accent": "Akzent",
+      "vipBadge": "VIP-Abzeichen",
+      "text": "Text",
+      "mutedText": "Stummgeschalteter Text",
+      "requestBackground": "Artikelhintergrund anfordern",
+      "backgroundColor": "Hintergrundfarbe",
+      "backgroundColorHelp": "Für einen transparenten Hintergrund stellen Sie die Hintergrundopazität auf 0 ein.",
+      "border": "Grenze"
+    },
+    "sizing": {
+      "title": "Dichte und Größe",
+      "backgroundOpacity": "Hintergrundopazität",
+      "cornerRadius": "Eckenradius",
+      "itemGap": "Artikellücke",
+      "itemPadding": "Artikelpolsterung",
+      "titleFontSize": "Schriftgröße des Titels",
+      "metaFontSize": "Meta-Schriftgröße",
+      "value": "Wert"
+    },
+    "actions": {
+      "restoreDefaults": "Standardeinstellungen wiederherstellen",
+      "saveChanges": "Änderungen speichern",
+      "saving": "Speichern...",
+      "cancel": "Abbrechen"
+    },
+    "preview": {
+      "title": "Vorschau",
+      "live": "Live",
+      "sample": "Probe",
+      "channelTitle": "{channel}'s Playlist"
+    },
+    "restoreDialog": {
+      "title": "Standardeinstellungen wiederherstellen?",
+      "description": "Dadurch wird der Overlay-Editor auf das Standarddesign zurückgesetzt. Nicht gespeicherte Änderungen gehen verloren.",
+      "confirm": "Standardeinstellungen wiederherstellen"
+    }
+  }
+}

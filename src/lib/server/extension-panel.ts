@@ -1,12 +1,11 @@
+import { normalizePathOptions } from "~/lib/channel-options";
 import {
   consumeSearchRateLimit,
-  getChannelBlacklistByChannelId,
   getChannelByTwitchChannelId,
   getChannelSettingsByChannelId,
   getExtensionPanelPlaylistByChannelId,
   getUserByTwitchUserId,
   getVipTokenBalance,
-  searchCatalogSongs as searchCatalogSongsInDb,
   upsertUserProfile,
 } from "~/lib/db/repositories";
 import type { AppEnv } from "~/lib/env";
@@ -14,11 +13,12 @@ import { defaultLocale } from "~/lib/i18n/locales";
 import { getPickNumbersForQueuedItems } from "~/lib/pick-order";
 import {
   getAllowedRequestPathsSetting,
-  getArraySetting,
+  getRequestPathModifierVipTokenCostsSetting,
   getRequiredPathsMatchMode,
   getRequiredPathsSetting,
 } from "~/lib/request-policy";
 import { getAppAccessToken, getTwitchUserById } from "~/lib/twitch/api";
+import { performCachedCatalogSearch } from "./cached-catalog-search";
 import type { ExtensionAuthContext } from "./extension-auth";
 import {
   canPerformPlaylistMutationAction,
@@ -34,21 +34,16 @@ import {
 } from "./viewer-request";
 
 type ExtensionSearchInput = {
-  query: string;
+  query?: string;
   page: number;
   pageSize: number;
+  favoritesOnly?: boolean;
+  parts?: string[];
+  partsMatchMode?: "any" | "all";
 };
 
 type ExtensionTraceContext = {
   traceId?: string;
-};
-
-type SharedCatalogSearchResponse = {
-  results: Array<Record<string, unknown>>;
-  total: number;
-  page: number;
-  pageSize: number;
-  hasNextPage?: boolean;
 };
 
 type ExtensionPlaylistMutationInput =
@@ -109,9 +104,17 @@ type ExtensionPanelLiveState = {
   settings: {
     defaultLocale: string;
     requestsEnabled: boolean;
+    defaultSearchPaths: string[];
+    defaultSearchPathsMatchMode: "any" | "all";
     allowRequestPathModifiers: boolean;
     allowedRequestPaths: string[];
     requestPathModifierVipTokenCost: number;
+    requestPathModifierVipTokenCosts: {
+      guitar: number;
+      lead: number;
+      rhythm: number;
+      bass: number;
+    };
     requestPathModifierUsesVipPriority: boolean;
     vipTokenDurationThresholdsJson: string;
     showPlaylistPositions: boolean;
@@ -266,9 +269,17 @@ export async function getExtensionBootstrapState(input: {
         settings: {
           defaultLocale,
           requestsEnabled: true,
+          defaultSearchPaths: [],
+          defaultSearchPathsMatchMode: "any",
           allowRequestPathModifiers: false,
           allowedRequestPaths: [],
           requestPathModifierVipTokenCost: 0,
+          requestPathModifierVipTokenCosts: {
+            guitar: 0,
+            lead: 0,
+            rhythm: 0,
+            bass: 0,
+          },
           requestPathModifierUsesVipPriority: true,
           vipTokenDurationThresholdsJson: "[]",
           showPlaylistPositions: false,
@@ -519,46 +530,27 @@ export async function searchExtensionCatalog(input: {
       rateLimit.message ?? "Please wait before performing another search."
     );
   }
-
-  const [blacklist, settings] = await Promise.all([
-    getChannelBlacklistByChannelId(input.env, channel.id),
-    getChannelSettingsByChannelId(input.env, channel.id),
-  ]);
-  const blacklistFilterInput = settings?.blacklistEnabled
-    ? {
-        excludeSongIds: blacklist.blacklistSongs.map((song) => song.songId),
-        excludeGroupedProjectIds: blacklist.blacklistSongGroups.map(
-          (song) => song.groupedProjectId
-        ),
-        excludeArtistIds: blacklist.blacklistArtists.map(
-          (artist) => artist.artistId
-        ),
-        excludeArtistNames: blacklist.blacklistArtists.map(
-          (artist) => artist.artistName
-        ),
-        excludeAuthorIds: blacklist.blacklistCharters.map(
-          (charter) => charter.charterId
-        ),
-        excludeCreatorNames: blacklist.blacklistCharters.map(
-          (charter) => charter.charterName
-        ),
-      }
-    : {};
-
-  const results = (await searchCatalogSongsInDb(input.env, {
-    query: input.search.query,
-    page: input.search.page,
-    pageSize: input.search.pageSize,
-    sortBy: "updated",
-    sortDirection: "desc",
-    restrictToOfficial: !!settings?.onlyOfficialDlc,
-    allowedTuningsFilter: getArraySetting(settings?.allowedTuningsJson),
-    requiredPartsFilter: settings ? getRequiredPathsSetting(settings) : [],
-    requiredPartsFilterMatchMode: getRequiredPathsMatchMode(
-      settings?.requiredPathsMatchMode
-    ),
-    ...blacklistFilterInput,
-  })) as SharedCatalogSearchResponse;
+  const settings = await getChannelSettingsByChannelId(input.env, channel.id);
+  const requestedParts = normalizePathOptions(input.search.parts);
+  const defaultSearchParts = settings ? getRequiredPathsSetting(settings) : [];
+  const searchResult = await performCachedCatalogSearch({
+    env: input.env,
+    search: {
+      query: input.search.query,
+      favoritesOnly: input.search.favoritesOnly,
+      parts: requestedParts.length > 0 ? requestedParts : defaultSearchParts,
+      partsMatchMode:
+        requestedParts.length > 0
+          ? (input.search.partsMatchMode ?? "any")
+          : getRequiredPathsMatchMode(settings?.requiredPathsMatchMode),
+      page: input.search.page,
+      pageSize: input.search.pageSize,
+    },
+    channelScope: {
+      resolvedChannel: channel,
+    },
+  });
+  const results = searchResult.data;
 
   return {
     items: results.results,
@@ -674,6 +666,7 @@ async function getExtensionPanelLiveState(input: {
     getExtensionPanelPlaylistByChannelId(input.env, input.channel.id),
     getChannelSettingsByChannelId(input.env, input.channel.id),
   ]);
+  const defaultSearchPaths = settings ? getRequiredPathsSetting(settings) : [];
   const items = withExtensionPanelPickNumbers(
     (playlist?.items ?? []) as Array<Record<string, unknown>>,
     playlist?.playedSongs ?? []
@@ -715,10 +708,16 @@ async function getExtensionPanelLiveState(input: {
     settings: {
       defaultLocale: settings?.defaultLocale ?? defaultLocale,
       requestsEnabled: !!settings?.requestsEnabled,
+      defaultSearchPaths,
+      defaultSearchPathsMatchMode: getRequiredPathsMatchMode(
+        settings?.requiredPathsMatchMode
+      ),
       allowRequestPathModifiers: allowedRequestPaths.length > 0,
       allowedRequestPaths,
       requestPathModifierVipTokenCost:
         settings?.requestPathModifierVipTokenCost ?? 0,
+      requestPathModifierVipTokenCosts:
+        getRequestPathModifierVipTokenCostsSetting(settings ?? {}),
       requestPathModifierUsesVipPriority:
         settings?.requestPathModifierUsesVipPriority ?? true,
       vipTokenDurationThresholdsJson:

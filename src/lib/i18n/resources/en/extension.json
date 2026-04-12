@@ -52,7 +52,13 @@
     "noPathPreference": "No path preference",
     "requestRequiresVip": "Requires {count}.",
     "pathRequiresVip": "{path} requires {count}.",
-    "pathCostsVipTokens": "{path} costs {count}."
+    "pathCostsVipTokens": "{path} costs {count}.",
+    "free": "Free",
+    "vipShort": "VIP",
+    "durationShort": "{minutes}+ min",
+    "costSummary": "{reasons}: {count}",
+    "costWithBalance": "{cost} · {count} VIP available",
+    "insufficientWithBalance": "Needs {cost} · {count} VIP available"
   },
   "queue": {
     "tab": "Playlist",
@@ -84,6 +90,12 @@
     "tab": "Search",
     "placeholder": "Search title, artist, or album",
     "placeholderEdit": "Search for a song to edit your request",
+    "filtersLabel": "Filters",
+    "favoritesOnly": "Favorites only",
+    "defaultPathsSummary": "Streamer defaults: {paths} · {mode}",
+    "resetFilters": "Reset",
+    "matchAny": "ANY",
+    "matchAll": "ALL",
     "noResults": "No songs matched that search.",
     "unavailable": "That song is unavailable right now.",
     "typeArtistOrSong": "Type an artist or song first.",

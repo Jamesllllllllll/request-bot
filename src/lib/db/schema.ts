@@ -243,6 +243,26 @@ export const channelSettings = sqliteTable("channel_settings", {
   )
     .notNull()
     .default(0),
+  requestPathModifierGuitarVipTokenCost: integer(
+    "request_path_modifier_guitar_vip_token_cost"
+  )
+    .notNull()
+    .default(0),
+  requestPathModifierLeadVipTokenCost: integer(
+    "request_path_modifier_lead_vip_token_cost"
+  )
+    .notNull()
+    .default(0),
+  requestPathModifierRhythmVipTokenCost: integer(
+    "request_path_modifier_rhythm_vip_token_cost"
+  )
+    .notNull()
+    .default(0),
+  requestPathModifierBassVipTokenCost: integer(
+    "request_path_modifier_bass_vip_token_cost"
+  )
+    .notNull()
+    .default(0),
   requestPathModifierUsesVipPriority: integer(
     "request_path_modifier_uses_vip_priority",
     {
@@ -916,12 +936,22 @@ export const catalogSongs = sqliteTable(
 export const searchCache = sqliteTable("search_cache", {
   cacheKey: text("cache_key").primaryKey(),
   responseJson: text("response_json").notNull(),
+  versionToken: text("version_token").notNull().default(""),
+  freshUntil: integer("fresh_until").notNull().default(0),
+  staleUntil: integer("stale_until").notNull().default(0),
+  revalidatingAt: integer("revalidating_at"),
   expiresAt: integer("expires_at").notNull(),
   createdAt: integer("created_at").notNull().default(sql`(unixepoch() * 1000)`),
   updatedAt: integer("updated_at").notNull().default(sql`(unixepoch() * 1000)`),
   lastAccessedAt: integer("last_accessed_at")
     .notNull()
     .default(sql`(unixepoch() * 1000)`),
+});
+
+export const catalogSearchState = sqliteTable("catalog_search_state", {
+  scope: text("scope").primaryKey(),
+  version: integer("version").notNull().default(0),
+  updatedAt: integer("updated_at").notNull().default(sql`(unixepoch() * 1000)`),
 });
 
 export const searchRateLimits = sqliteTable("search_rate_limits", {

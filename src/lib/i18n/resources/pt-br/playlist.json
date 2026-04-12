@@ -2,7 +2,10 @@
   "page": {
     "title": "Playlist de {channel}",
     "loading": "Carregando playlist...",
+    "loadFailed": "Nao foi possivel carregar a playlist.",
     "empty": "Esta playlist esta vazia agora.",
+    "notFoundTitle": "Este usuario nao existe.",
+    "notFoundDescription": "Nao encontramos uma pagina de pedidos para @{channel}.",
     "viewerStateFailed": "Nao foi possivel carregar o estado de pedidos do espectador.",
     "viewerToolsFailed": "Nao foi possivel carregar as ferramentas de pedido do espectador.",
     "requestsLiveOnly": "Voce podera adicionar pedidos quando a live estiver online."
@@ -84,7 +87,7 @@
     "requestsOff": "Os pedidos estao desativados",
     "turnRequestsOn": "Ativar pedidos",
     "turnRequestsOff": "Desativar pedidos",
-    "online": "Stream online",
+    "online": "Stream ao vivo",
     "offline": "Stream offline",
     "vipBalance": "Voce tem {countText} token{count, plural, one {} other {s}} VIP",
     "vipTokens": "Tokens VIP"
@@ -215,6 +218,11 @@
     "requiresVipTokens": "Requer {count}.",
     "pathRequiresVip": "{path} requer {count}.",
     "pathCostsVipTokens": "{path} custa {count}.",
+    "free": "Gratis",
+    "vipShort": "VIP",
+    "durationShort": "{minutes}+ min",
+    "costSummary": "{reasons}: {count}",
+    "copyCommandCostNotice": "!sr custa {regularCount}. !vip custa {vipCount}.",
     "addCost": "Adicionar ({count})",
     "editCost": "Editar ({count})",
     "updateExisting": "Atualiza seu pedido existente.",
@@ -253,7 +261,9 @@
     "reconnectMessage": "Reconecte a Twitch para buscar espectadores que estao no chat agora.",
     "reconnect": "Reconectar",
     "searching": "Buscando espectadores atuais...",
-    "noMatches": "Nenhum espectador atual corresponde a esse usuario."
+    "noMatches": "Nenhum espectador atual corresponde a esse usuario.",
+    "costWithBalance": "{cost} · {count} disponiveis",
+    "insufficientWithBalance": "Precisa de {cost} · {count} disponiveis"
   },
   "row": {
     "viewer": "espectador",
@@ -275,6 +285,7 @@
     }
   },
   "management": {
+    "blacklistPanelTitle": "Listas de bloqueio do canal",
     "states": {
       "searchFailed": "A busca falhou.",
       "playlistUpdateFailed": "Nao foi possivel atualizar a playlist.",
@@ -413,7 +424,7 @@
       "openActionsAria": "Abrir acoes para {title}",
       "removing": "Removendo...",
       "removeFromPlaylist": "Remover da playlist",
-      "blacklist": "Blacklist",
+      "blacklist": "Lista de bloqueio",
       "blacklistTitle": "Acoes de blacklist",
       "back": "Voltar",
       "description": "Escolha se quer bloquear a versao na fila, todas as versoes desta musica, o artista ou um charter.",
@@ -448,7 +459,8 @@
       "unknown": "Desconhecido",
       "download": "Baixar",
       "blacklisted": "Bloqueada",
-      "blacklist": "Bloquear"
+      "blacklist": "Bloquear",
+      "unblacklist": "Remover do bloqueio"
     },
     "preview": {
       "removed": "A linha de demo foi removida da playlist.",

@@ -115,7 +115,7 @@
       "request": "Demande",
       "requester": "Demandeur",
       "result": "Résultat",
-      "details": "Détails"
+      "details": "Details"
     },
     "query": "Requête : {query}",
     "unknownUser": "Utilisateur inconnu",
@@ -129,7 +129,7 @@
       "action": "Action",
       "entity": "Entité",
       "actor": "Acteur",
-      "details": "Détails"
+      "details": "Details"
     }
   },
   "labels": {

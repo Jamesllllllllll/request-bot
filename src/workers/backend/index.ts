@@ -8,6 +8,7 @@ import {
   getActiveBroadcasterAuthorizationForChannel,
   getBotAuthorization,
   getChannelBlacklistByChannelId,
+  getSessionPlayedSongsByChannelId,
   upsertVipRequestCooldown,
 } from "~/lib/db/repositories";
 import * as schema from "~/lib/db/schema";
@@ -42,6 +43,10 @@ import {
   toPublicPlaylistSettings,
   toPublicSetlistArtist,
 } from "~/lib/playlist/public-response";
+import {
+  isPlaylistStreamNotifyReason,
+  type PlaylistStreamNotifyReason,
+} from "~/lib/playlist/realtime";
 import type {
   AddRequestInput,
   ChangeRequestKindInput,
@@ -64,6 +69,7 @@ import type {
 } from "~/lib/playlist/types";
 import {
   getAllowedRequestPathsSetting,
+  getRequestPathModifierVipTokenCostsSetting,
   getRequiredPathsWarning,
   isSongAllowed,
 } from "~/lib/request-policy";
@@ -78,6 +84,7 @@ import {
   parseRequesterChatBadges,
   serializeRequesterChatBadges,
 } from "~/lib/twitch/chat-badges";
+import { sendExtensionPlaylistPubSubMessage } from "~/lib/twitch/extension-pubsub";
 import { createId, json, normalizeSongSourceUrl } from "~/lib/utils";
 import { isVipRequestCooldownEnabled } from "~/lib/vip-request-cooldowns";
 
@@ -753,6 +760,7 @@ class D1PlaylistCoordinator implements PlaylistCoordinator {
       requesterLogin: input.requesterLogin ?? null,
       requesterTwitchUserId: input.requesterTwitchUserId ?? null,
       requesterDisplayName: input.requesterDisplayName ?? null,
+      vipTokenCost: input.vipTokenCost ?? 0,
       songId: input.song.id,
       title: input.song.title,
       source: input.song.source,
@@ -851,6 +859,7 @@ class D1PlaylistCoordinator implements PlaylistCoordinator {
       requestedByLogin: requester?.login ?? channel.login,
       requestedByDisplayName: requester?.display_name ?? channel.displayName,
       requestKind: "regular",
+      vipTokenCost: input.vipTokenCost ?? 0,
       song: input.song,
     });
   }
@@ -1693,9 +1702,6 @@ class D1PlaylistCoordinator implements PlaylistCoordinator {
       items.map((item) => item.id)
     );
     await db
-      .delete(schema.playedSongs)
-      .where(eq(schema.playedSongs.channelId, input.channelId));
-    await db
       .insert(channelSettings)
       .values({
         channelId: input.channelId,
@@ -1748,6 +1754,7 @@ class ChannelPlaylistDurableObjectBase {
       state,
       env,
       async (channelId, reason) => {
+        this.state.waitUntil(this.broadcastExtensionPubSub(channelId, reason));
         await this.broadcastSnapshot(channelId, reason);
       }
     );
@@ -1859,10 +1866,10 @@ class ChannelPlaylistDurableObjectBase {
       db.query.playlistItems.findMany({
         where: eq(playlistItems.playlistId, playlist.id),
       }),
-      db.query.playedSongs.findMany({
-        where: eq(schema.playedSongs.channelId, channelId),
-        orderBy: [schema.playedSongs.playedAt],
+      getSessionPlayedSongsByChannelId(this.env, {
+        channelId,
         limit: 500,
+        order: "desc",
       }),
       db.query.blacklistedArtists.findMany({
         where: eq(schema.blacklistedArtists.channelId, channelId),
@@ -1931,6 +1938,8 @@ class ChannelPlaylistDurableObjectBase {
         allowedRequestPaths,
         requestPathModifierVipTokenCost:
           settings?.requestPathModifierVipTokenCost ?? 0,
+        requestPathModifierVipTokenCosts:
+          getRequestPathModifierVipTokenCostsSetting(settings ?? {}),
         requestPathModifierUsesVipPriority:
           settings?.requestPathModifierUsesVipPriority ?? true,
         requiredPathsJson: settings?.requiredPathsJson ?? "[]",
@@ -2017,6 +2026,38 @@ class ChannelPlaylistDurableObjectBase {
       reason,
       remainingClientCount: this.streamClients.size,
     });
+  }
+
+  private async broadcastExtensionPubSub(
+    channelId: string,
+    reason = "playlist"
+  ) {
+    try {
+      const channel = await getDb(this.env).query.channels.findFirst({
+        where: eq(channels.id, channelId),
+        columns: {
+          twitchChannelId: true,
+        },
+      });
+
+      if (!channel?.twitchChannelId) {
+        return;
+      }
+
+      const notifyReason: PlaylistStreamNotifyReason =
+        isPlaylistStreamNotifyReason(reason) ? reason : "playlist";
+
+      await sendExtensionPlaylistPubSubMessage(this.env, {
+        broadcasterId: channel.twitchChannelId,
+        reason: notifyReason,
+      });
+    } catch (error) {
+      console.error("Failed to send Twitch extension PubSub invalidation", {
+        channelId,
+        reason,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
   }
 
   private async handleStream(request: Request) {
@@ -2182,6 +2223,11 @@ async function handleMutation(
           requesterDisplayName:
             typeof payload.requesterDisplayName === "string"
               ? payload.requesterDisplayName
+              : undefined,
+          vipTokenCost:
+            typeof payload.vipTokenCost === "number" &&
+            Number.isFinite(payload.vipTokenCost)
+              ? payload.vipTokenCost
               : undefined,
           song: payload.song ?? {
             id: String(payload.songId),

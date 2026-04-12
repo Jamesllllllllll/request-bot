@@ -412,12 +412,12 @@ describe("processEventSubChatMessage", () => {
       env,
       expect.objectContaining({
         message:
-          "You do not have enough VIP tokens for this VIP request. You have 0.5 VIP tokens.",
+          "@viewer_one you need 1 VIP token for this VIP request. You have 0.5 VIP tokens available.",
       })
     );
   });
 
-  it("rejects a regular request when the song duration requires VIP tokens", async () => {
+  it("adds a regular request when the song duration requires VIP tokens", async () => {
     const deps = createDeps({
       getDashboardState: vi.fn().mockResolvedValue(
         createState({
@@ -438,6 +438,10 @@ describe("processEventSubChatMessage", () => {
           durationText: "9:30",
         })
       ),
+      getVipTokenBalance: vi.fn().mockResolvedValue({
+        availableCount: 2,
+        autoSubscriberGranted: false,
+      }),
     });
 
     const result = await processEventSubChatMessage({
@@ -448,20 +452,35 @@ describe("processEventSubChatMessage", () => {
     });
 
     expect(result).toEqual({
-      body: "Rejected",
+      body: "Accepted",
       status: 202,
     });
-    expect(deps.addRequestToPlaylist).not.toHaveBeenCalled();
+    expect(deps.addRequestToPlaylist).toHaveBeenCalledWith(
+      env,
+      expect.objectContaining({
+        channelId: "channel-1",
+        requestKind: "regular",
+        vipTokenCost: 2,
+      })
+    );
+    expect(deps.consumeVipToken).toHaveBeenCalledWith(
+      env,
+      expect.objectContaining({
+        channelId: "channel-1",
+        login: "viewer_one",
+        count: 2,
+      })
+    );
     expect(deps.sendChatReply).toHaveBeenCalledWith(
       env,
       expect.objectContaining({
         message:
-          "@viewer_one this request requires 2 VIP tokens. Use a VIP request instead.",
+          '@viewer_one your song "The Smashing Pumpkins - Cherub Rock" has been added to the playlist for 2 VIP tokens.',
       })
     );
   });
 
-  it("rejects a regular request when choosing a part requires VIP tokens", async () => {
+  it("adds a regular request when choosing a part requires VIP tokens", async () => {
     const deps = createDeps({
       getDashboardState: vi.fn().mockResolvedValue(
         createState({
@@ -469,6 +488,10 @@ describe("processEventSubChatMessage", () => {
           requestPathModifierVipTokenCost: 2,
         })
       ),
+      getVipTokenBalance: vi.fn().mockResolvedValue({
+        availableCount: 2,
+        autoSubscriberGranted: false,
+      }),
       searchSongs: vi.fn().mockResolvedValue({
         results: [
           createSong({
@@ -492,15 +515,112 @@ describe("processEventSubChatMessage", () => {
     });
 
     expect(result).toEqual({
-      body: "Rejected",
+      body: "Accepted",
       status: 202,
     });
-    expect(deps.addRequestToPlaylist).not.toHaveBeenCalled();
+    expect(deps.addRequestToPlaylist).toHaveBeenCalledWith(
+      env,
+      expect.objectContaining({
+        channelId: "channel-1",
+        requestKind: "regular",
+        vipTokenCost: 2,
+        song: expect.objectContaining({
+          requestedQuery: "cherub rock *bass",
+        }),
+      })
+    );
+    expect(deps.consumeVipToken).toHaveBeenCalledWith(
+      env,
+      expect.objectContaining({
+        channelId: "channel-1",
+        login: "viewer_one",
+        count: 2,
+      })
+    );
     expect(deps.sendChatReply).toHaveBeenCalledWith(
       env,
       expect.objectContaining({
         message:
-          "@viewer_one this request requires 2 VIP tokens. Use a VIP request instead.",
+          '@viewer_one your song "The Smashing Pumpkins - Cherub Rock" has been added to the playlist for 2 VIP tokens.',
+      })
+    );
+  });
+
+  it("adds a regular request when duration and a requested part both add VIP cost", async () => {
+    const deps = createDeps({
+      getDashboardState: vi.fn().mockResolvedValue(
+        createState({
+          allowRequestPathModifiers: true,
+          allowedRequestPathsJson: '["bass"]',
+          requestPathModifierVipTokenCost: 1,
+          requestPathModifierGuitarVipTokenCost: 0,
+          requestPathModifierLeadVipTokenCost: 0,
+          requestPathModifierRhythmVipTokenCost: 0,
+          requestPathModifierBassVipTokenCost: 1,
+          requestPathModifierUsesVipPriority: true,
+          vipTokenDurationThresholdsJson: JSON.stringify([
+            {
+              minimumDurationMinutes: 7,
+              tokenCost: 1,
+            },
+            {
+              minimumDurationMinutes: 9,
+              tokenCost: 2,
+            },
+          ]),
+        })
+      ),
+      getVipTokenBalance: vi.fn().mockResolvedValue({
+        availableCount: 3,
+        autoSubscriberGranted: false,
+      }),
+      getCatalogSongBySourceId: vi.fn().mockResolvedValue(
+        createSong({
+          parts: ["bass"],
+          durationText: "9:30",
+        })
+      ),
+    });
+
+    const result = await processEventSubChatMessage({
+      env,
+      event: createEvent({
+        rawMessage: "!sr song:12345 *bass",
+      }),
+      parsed: createParsed({
+        query: "song:12345 *bass",
+      }),
+      deps,
+    });
+
+    expect(result).toEqual({
+      body: "Accepted",
+      status: 202,
+    });
+    expect(deps.addRequestToPlaylist).toHaveBeenCalledWith(
+      env,
+      expect.objectContaining({
+        channelId: "channel-1",
+        requestKind: "regular",
+        vipTokenCost: 3,
+        song: expect.objectContaining({
+          requestedQuery: "song:12345 *bass",
+        }),
+      })
+    );
+    expect(deps.consumeVipToken).toHaveBeenCalledWith(
+      env,
+      expect.objectContaining({
+        channelId: "channel-1",
+        login: "viewer_one",
+        count: 3,
+      })
+    );
+    expect(deps.sendChatReply).toHaveBeenCalledWith(
+      env,
+      expect.objectContaining({
+        message:
+          '@viewer_one your song "The Smashing Pumpkins - Cherub Rock" has been added to the playlist for 3 VIP tokens.',
       })
     );
   });
@@ -549,7 +669,7 @@ describe("processEventSubChatMessage", () => {
       expect.objectContaining({
         channelId: "channel-1",
         requestKind: "vip",
-        vipTokenCost: 2,
+        vipTokenCost: 3,
       })
     );
     expect(deps.consumeVipToken).toHaveBeenCalledWith(
@@ -557,7 +677,7 @@ describe("processEventSubChatMessage", () => {
       expect.objectContaining({
         channelId: "channel-1",
         login: "viewer_one",
-        count: 2,
+        count: 3,
       })
     );
   });
@@ -621,21 +741,21 @@ describe("processEventSubChatMessage", () => {
       channelId: "channel-1",
       itemId: "item-1",
       requestKind: "vip",
-      vipTokenCost: 2,
+      vipTokenCost: 3,
     });
     expect(deps.consumeVipToken).toHaveBeenCalledWith(
       env,
       expect.objectContaining({
         channelId: "channel-1",
         login: "viewer_one",
-        count: 1,
+        count: 2,
       })
     );
     expect(deps.sendChatReply).toHaveBeenCalledWith(
       env,
       expect.objectContaining({
         message:
-          '@viewer_one the VIP token cost for your request "The Smashing Pumpkins - Cherub Rock" is now 2 VIP tokens.',
+          '@viewer_one the VIP token cost for your request "The Smashing Pumpkins - Cherub Rock" is now 3 VIP tokens. Spent 2 VIP tokens.',
       })
     );
   });
@@ -1362,7 +1482,7 @@ describe("processEventSubChatMessage", () => {
       env,
       expect.objectContaining({
         message:
-          "Commands: !sr artist - song; !sr artist *random; !sr favorite; !sr artist *choice; !vip; !vip artist - song; !vip artist - song *2; !edit #2 artist - song; !remove reg|vip|all; !position. Browse the track list and request songs here: https://example.com/streamer",
+          "Commands: !sr artist - song; !sr artist *random; !sr favorite; !sr artist *choice; !vip; !vip artist - song; !edit #2 artist - song; !remove reg|vip|all; !position. VIP requests: !vip adds 1 VIP token and plays next. Browse the track list and request songs here: https://example.com/streamer",
       })
     );
   });
@@ -2071,7 +2191,7 @@ describe("processEventSubChatMessage", () => {
         ],
       }),
       getVipTokenBalance: vi.fn().mockResolvedValue({
-        availableCount: 1,
+        availableCount: 2,
         autoSubscriberGranted: false,
       }),
     });
@@ -2099,7 +2219,7 @@ describe("processEventSubChatMessage", () => {
         channelId: "channel-1",
         itemId: "item-1",
         requestKind: "vip",
-        vipTokenCost: 1,
+        vipTokenCost: 2,
         song: expect.objectContaining({
           id: "song-bass",
           requestedQuery: "cherub rock *bass",

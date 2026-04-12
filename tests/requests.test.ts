@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { buildVipRequestCommand } from "~/components/song-search-panel";
 import { parseRequestModifiers } from "~/lib/request-modes";
 import {
   buildHowMessage,
@@ -57,6 +58,21 @@ describe("parseChatCommand", () => {
       targetLogin: "viewer_two",
       vipTokenCost: 2,
     });
+  });
+
+  it("keeps inferred path costs out of copied vip commands", () => {
+    expect(
+      buildVipRequestCommand(
+        {
+          id: "song-1",
+          sourceId: 9941,
+          source: "library",
+          title: "Cherub Rock",
+          artist: "The Smashing Pumpkins",
+        },
+        ["bass"]
+      )
+    ).toBe("!vip song:9941 *bass");
   });
 
   it("parses addvip commands", () => {
@@ -234,12 +250,29 @@ describe("request policy", () => {
     expect(message).toContain("!sr artist *choice");
     expect(message).toContain("!vip");
     expect(message).toContain("!vip artist - song");
-    expect(message).toContain("!vip artist - song *2");
+    expect(message).not.toContain("*2");
+    expect(message).toContain("!vip adds 1 VIP token and plays next");
     expect(message).toContain("!edit #2 artist - song");
     expect(message).toContain("!position");
     expect(message).toContain(
       "Browse the track list and request songs here: https://example.com/streamer"
     );
+  });
+
+  it("includes long-song surcharge help when configured", () => {
+    const message = buildHowMessage({
+      commandPrefix: "!sr",
+      appUrl: "https://example.com",
+      channelSlug: "streamer",
+      vipTokenDurationThresholdsJson: JSON.stringify([
+        {
+          minimumDurationMinutes: 7,
+          tokenCost: 1,
+        },
+      ]),
+    });
+
+    expect(message).toContain("Long songs: over 7 minutes add 1 VIP token.");
   });
 
   it("includes arrangement modifier help when enabled", () => {
@@ -279,6 +312,26 @@ describe("request policy", () => {
     });
 
     expect(message).toContain("2 VIP tokens");
+  });
+
+  it("lists mixed per-part costs in arrangement modifier help", () => {
+    const message = buildHowMessage({
+      commandPrefix: "!sr",
+      appUrl: "https://example.com",
+      channelSlug: "streamer",
+      allowedRequestPaths: ["guitar", "bass"],
+      requestPathModifierVipTokenCosts: {
+        guitar: 0,
+        lead: 0,
+        rhythm: 0,
+        bass: 1,
+      },
+      requestPathModifierUsesVipPriority: true,
+    });
+
+    expect(message).toContain(
+      "Costs: *guitar = free, *bass = 1 VIP token. VIP adds 1 more."
+    );
   });
 
   it("rejects viewers when only subscribers or VIPs are allowed", () => {

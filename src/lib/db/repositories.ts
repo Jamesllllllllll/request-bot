@@ -1,10 +1,19 @@
 import "@tanstack/react-start/server-only";
 import { and, asc, desc, eq, gt, inArray, sql } from "drizzle-orm";
 import { rollupFavoriteCharts } from "~/lib/channel-favorites";
-import { tuningOptions } from "~/lib/channel-options";
 import type { AppEnv } from "~/lib/env";
 import { toPublicOverlaySettings } from "~/lib/overlay/public-settings";
+import { filterPlayedSongsSinceReset } from "~/lib/playlist/session";
 import { DEFAULT_MAX_QUEUE_SIZE } from "~/lib/settings-defaults";
+import {
+  allKnownTuningIds,
+  compareTuningIds,
+  getTuningIdsFromFields,
+  getTuningOptionById,
+  getTuningSummaryFromFields,
+  parseTuningIds,
+  serializeStoredTuningIds,
+} from "~/lib/tunings";
 import {
   getAppAccessToken,
   getLiveStreams,
@@ -51,6 +60,7 @@ import {
   blockedUsers,
   type CatalogSongInsert,
   type ChannelOwnedOfficialDlcInsert,
+  catalogSearchState,
   catalogSongs,
   channelFavoriteCharts,
   channelOwnedOfficialDlcs,
@@ -209,6 +219,35 @@ function unwrapD1Rows<T>(result: T[] | { results: T[] }) {
   return Array.isArray(result) ? result : result.results;
 }
 
+const defaultCatalogSearchStateScope = "catalog";
+type RepositoryDbEnv = Parameters<typeof getDb>[0];
+
+export async function bumpCatalogSearchVersion(
+  env: AppEnv,
+  input?: {
+    now?: number;
+    scope?: string;
+  }
+) {
+  const now = input?.now ?? Date.now();
+  const scope = input?.scope ?? defaultCatalogSearchStateScope;
+
+  await getDb(env)
+    .insert(catalogSearchState)
+    .values({
+      scope,
+      version: 1,
+      updatedAt: now,
+    })
+    .onConflictDoUpdate({
+      target: catalogSearchState.scope,
+      set: {
+        version: sql`${catalogSearchState.version} + 1`,
+        updatedAt: now,
+      },
+    });
+}
+
 export async function upsertUserAndChannel(
   env: AppEnv,
   input: {
@@ -288,7 +327,7 @@ export async function upsertUserAndChannel(
       moderatorCanViewVipTokens: true,
       moderatorCanManageVipTokens: true,
       moderatorCanManageTags: true,
-      allowedTuningsJson: JSON.stringify(Array.from(tuningOptions)),
+      allowedTuningsJson: serializeStoredTuningIds(allKnownTuningIds),
       maxQueueSize: DEFAULT_MAX_QUEUE_SIZE,
     })
     .onConflictDoNothing();
@@ -493,10 +532,10 @@ export async function getDashboardState(env: AppEnv, ownerUserId: string) {
       where: eq(vipTokens.channelId, channel.id),
       orderBy: [asc(vipTokens.login)],
     }),
-    db.query.playedSongs.findMany({
-      where: eq(playedSongs.channelId, channel.id),
-      orderBy: [desc(playedSongs.playedAt)],
+    getSessionPlayedSongsByChannelId(env, {
+      channelId: channel.id,
       limit: 100,
+      order: "desc",
     }),
   ]);
 
@@ -831,6 +870,7 @@ export async function getExtensionPanelPlaylistByChannelId(
       songTitle: true,
       songArtist: true,
       songPartsJson: true,
+      candidateMatchesJson: true,
       requestedByTwitchUserId: true,
       requestedByLogin: true,
       requestedByDisplayName: true,
@@ -855,17 +895,10 @@ export async function getExtensionPanelPlaylistByChannelId(
     ])
   );
 
-  const playedRows = await db.query.playedSongs.findMany({
-    where: eq(playedSongs.channelId, channelId),
-    orderBy: [desc(playedSongs.playedAt)],
+  const playedRows = await getSessionPlayedSongsByChannelId(env, {
+    channelId,
     limit: 500,
-    columns: {
-      requestedByTwitchUserId: true,
-      requestedByLogin: true,
-      requestedAt: true,
-      playedAt: true,
-      createdAt: true,
-    },
+    order: "desc",
   });
 
   return {
@@ -1205,10 +1238,10 @@ export async function getOverlayStateBySlugAndToken(
 
   const [playlist, playedRows] = await Promise.all([
     getPlaylistByChannelId(env, channel.id),
-    getDb(env).query.playedSongs.findMany({
-      where: eq(playedSongs.channelId, channel.id),
-      orderBy: [desc(playedSongs.playedAt)],
+    getSessionPlayedSongsByChannelId(env, {
+      channelId: channel.id,
       limit: 500,
+      order: "desc",
     }),
   ]);
 
@@ -1273,6 +1306,47 @@ export async function searchPlayedSongRequesters(
   }));
 }
 
+export async function getLatestSessionResetAt(
+  env: RepositoryDbEnv,
+  channelId: string
+) {
+  const latestReset = await getDb(env).query.auditLogs.findFirst({
+    where: and(
+      eq(auditLogs.channelId, channelId),
+      eq(auditLogs.action, "reset_session")
+    ),
+    orderBy: [desc(auditLogs.createdAt)],
+    columns: {
+      createdAt: true,
+    },
+  });
+
+  return latestReset?.createdAt ?? null;
+}
+
+export async function getSessionPlayedSongsByChannelId(
+  env: RepositoryDbEnv,
+  input: {
+    channelId: string;
+    limit?: number;
+    order?: "asc" | "desc";
+  }
+) {
+  const [resetAt, rows] = await Promise.all([
+    getLatestSessionResetAt(env, input.channelId),
+    getDb(env).query.playedSongs.findMany({
+      where: eq(playedSongs.channelId, input.channelId),
+      orderBy:
+        input.order === "asc"
+          ? [asc(playedSongs.playedAt)]
+          : [desc(playedSongs.playedAt)],
+      limit: input.limit,
+    }),
+  ]);
+
+  return filterPlayedSongsSinceReset(rows, resetAt);
+}
+
 export async function getPlayedHistoryPage(
   env: AppEnv,
   input: {
@@ -1329,12 +1403,12 @@ export interface CatalogSearchInput {
   artist?: string;
   album?: string;
   creator?: string;
-  tuning?: string[];
+  tuning?: Array<number | string>;
   parts?: string[];
   partsMatchMode?: "any" | "all";
   year?: number[];
   restrictToOfficial?: boolean;
-  allowedTuningsFilter?: string[];
+  allowedTuningsFilter?: Array<number | string>;
   requiredPartsFilter?: string[];
   requiredPartsFilterMatchMode?: "any" | "all";
   excludeSongIds?: number[];
@@ -1386,6 +1460,69 @@ function buildCatalogPartFilterCondition(part: CatalogPartFilter) {
     case "bass":
       return sql`${catalogSongs.hasBass} = 1`;
   }
+}
+
+function buildCatalogTuningIdsJson() {
+  return sql`json_array(
+    ${catalogSongs.leadTuningId},
+    ${catalogSongs.rhythmTuningId},
+    ${catalogSongs.bassTuningId},
+    ${catalogSongs.altLeadTuningId},
+    ${catalogSongs.altRhythmTuningId},
+    ${catalogSongs.altBassTuningId},
+    ${catalogSongs.bonusLeadTuningId},
+    ${catalogSongs.bonusRhythmTuningId},
+    ${catalogSongs.bonusBassTuningId}
+  )`;
+}
+
+function buildCatalogAnySelectedTuningCondition(
+  tunings: Array<number | string>
+) {
+  const normalizedTuningIds = parseTuningIds(tunings);
+
+  if (normalizedTuningIds.length === 0) {
+    return null;
+  }
+
+  return sql`
+    EXISTS (
+      SELECT 1
+      FROM json_each(${buildCatalogTuningIdsJson()}) AS tuning_entry
+      WHERE tuning_entry.value IS NOT NULL
+        AND CAST(tuning_entry.value AS INTEGER) IN ${sql`(${sql.join(
+          normalizedTuningIds.map((tuningId) => sql`${tuningId}`),
+          sql`, `
+        )})`}
+    )
+  `;
+}
+
+function buildCatalogAllowedTuningsCondition(
+  allowedTunings: Array<number | string>
+) {
+  const normalizedTuningIds = parseTuningIds(allowedTunings);
+
+  if (normalizedTuningIds.length === 0) {
+    return null;
+  }
+
+  return sql`
+    EXISTS (
+      SELECT 1
+      FROM json_each(${buildCatalogTuningIdsJson()}) AS tuning_entry
+      WHERE tuning_entry.value IS NOT NULL
+    )
+    AND NOT EXISTS (
+      SELECT 1
+      FROM json_each(${buildCatalogTuningIdsJson()}) AS tuning_entry
+      WHERE tuning_entry.value IS NOT NULL
+        AND CAST(tuning_entry.value AS INTEGER) NOT IN ${sql`(${sql.join(
+          normalizedTuningIds.map((tuningId) => sql`${tuningId}`),
+          sql`, `
+        )})`}
+    )
+  `;
 }
 
 function normalizeSearchPhrase(value: string) {
@@ -1731,22 +1868,25 @@ export async function searchCatalogSongs(
     input.creator
       ? buildMatchLike(catalogSongs.creatorName, input.creator)
       : null,
-    input.tuning?.length
-      ? sql`(${sql.join(
-          input.tuning.map((tuning) =>
-            buildMatchLike(catalogSongs.tuningSummary, tuning)
-          ),
-          sql` OR `
-        )})`
-      : null,
-    input.parts?.length
-      ? sql`(${sql.join(
-          input.parts.map((part) =>
-            buildMatchLike(catalogSongs.partsJson, part)
-          ),
-          input.partsMatchMode === "all" ? sql` AND ` : sql` OR `
-        )})`
-      : null,
+    buildCatalogAnySelectedTuningCondition(input.tuning ?? []),
+    (() => {
+      const normalizedParts = [
+        ...new Set(
+          (input.parts ?? [])
+            .map((part) => normalizeCatalogPartFilter(part))
+            .filter((part): part is CatalogPartFilter => part !== null)
+        ),
+      ];
+
+      if (normalizedParts.length === 0) {
+        return null;
+      }
+
+      return sql`(${sql.join(
+        normalizedParts.map((part) => buildCatalogPartFilterCondition(part)),
+        input.partsMatchMode === "all" ? sql` AND ` : sql` OR `
+      )})`;
+    })(),
     input.year?.length
       ? sql`(${sql.join(
           input.year.map((year) => sql`${catalogSongs.year} = ${year}`),
@@ -1761,10 +1901,8 @@ export async function searchCatalogSongs(
   const advancedCondition = hasAdvancedFilters
     ? sql.join(advancedConditions, sql` AND `)
     : null;
-  const normalizedAllowedTunings = uniqueCompact(
-    (input.allowedTuningsFilter ?? []).map((tuning) =>
-      normalizeCatalogFilterValue(tuning)
-    )
+  const normalizedAllowedTunings = parseTuningIds(
+    input.allowedTuningsFilter ?? []
   );
   const requiredPartsFilter = [
     ...new Set(
@@ -1800,12 +1938,7 @@ export async function searchCatalogSongs(
     input.restrictToOfficial
       ? sql`${catalogSongs.source} = ${"official"}`
       : null,
-    normalizedAllowedTunings.length
-      ? sql`lower(trim(coalesce(${catalogSongs.tuningSummary}, ''))) IN ${sql`(${sql.join(
-          normalizedAllowedTunings.map((tuning) => sql`${tuning}`),
-          sql`, `
-        )})`}`
-      : null,
+    buildCatalogAllowedTuningsCondition(normalizedAllowedTunings),
     requiredPartsFilterCondition,
   ].filter(
     (condition): condition is ReturnType<typeof sql> => condition !== null
@@ -2144,6 +2277,18 @@ export async function searchCatalogSongs(
       albumName: string | null;
       creatorName: string | null;
       tuningSummary: string | null;
+      leadTuningId: number | null;
+      leadTuningName: string | null;
+      rhythmTuningId: number | null;
+      rhythmTuningName: string | null;
+      bassTuningId: number | null;
+      bassTuningName: string | null;
+      altLeadTuningId: number | null;
+      altRhythmTuningId: number | null;
+      altBassTuningId: number | null;
+      bonusLeadTuningId: number | null;
+      bonusRhythmTuningId: number | null;
+      bonusBassTuningId: number | null;
       partsJson: string;
       durationText: string | null;
       durationSeconds: number | null;
@@ -2172,6 +2317,18 @@ export async function searchCatalogSongs(
         catalog_songs.album_name AS albumName,
         catalog_songs.creator_name AS creatorName,
         catalog_songs.tuning_summary AS tuningSummary,
+        catalog_songs.lead_tuning_id AS leadTuningId,
+        catalog_songs.lead_tuning_name AS leadTuningName,
+        catalog_songs.rhythm_tuning_id AS rhythmTuningId,
+        catalog_songs.rhythm_tuning_name AS rhythmTuningName,
+        catalog_songs.bass_tuning_id AS bassTuningId,
+        catalog_songs.bass_tuning_name AS bassTuningName,
+        catalog_songs.alt_lead_tuning_id AS altLeadTuningId,
+        catalog_songs.alt_rhythm_tuning_id AS altRhythmTuningId,
+        catalog_songs.alt_bass_tuning_id AS altBassTuningId,
+        catalog_songs.bonus_lead_tuning_id AS bonusLeadTuningId,
+        catalog_songs.bonus_rhythm_tuning_id AS bonusRhythmTuningId,
+        catalog_songs.bonus_bass_tuning_id AS bonusBassTuningId,
         catalog_songs.parts_json AS partsJson,
         catalog_songs.duration_text AS durationText,
         catalog_songs.duration_seconds AS durationSeconds,
@@ -2212,9 +2369,40 @@ export async function searchCatalogSongs(
         creator: row.creatorName
           ? decodeHtmlEntities(row.creatorName)
           : undefined,
-        tuning: row.tuningSummary
-          ? decodeHtmlEntities(row.tuningSummary)
-          : undefined,
+        tuning: getTuningSummaryFromFields({
+          tuningSummary: row.tuningSummary
+            ? decodeHtmlEntities(row.tuningSummary)
+            : row.tuningSummary,
+          leadTuningId: row.leadTuningId,
+          leadTuningName: row.leadTuningName
+            ? decodeHtmlEntities(row.leadTuningName)
+            : row.leadTuningName,
+          rhythmTuningId: row.rhythmTuningId,
+          rhythmTuningName: row.rhythmTuningName
+            ? decodeHtmlEntities(row.rhythmTuningName)
+            : row.rhythmTuningName,
+          bassTuningId: row.bassTuningId,
+          bassTuningName: row.bassTuningName
+            ? decodeHtmlEntities(row.bassTuningName)
+            : row.bassTuningName,
+          altLeadTuningId: row.altLeadTuningId,
+          altRhythmTuningId: row.altRhythmTuningId,
+          altBassTuningId: row.altBassTuningId,
+          bonusLeadTuningId: row.bonusLeadTuningId,
+          bonusRhythmTuningId: row.bonusRhythmTuningId,
+          bonusBassTuningId: row.bonusBassTuningId,
+        }),
+        tuningIds: getTuningIdsFromFields({
+          leadTuningId: row.leadTuningId,
+          rhythmTuningId: row.rhythmTuningId,
+          bassTuningId: row.bassTuningId,
+          altLeadTuningId: row.altLeadTuningId,
+          altRhythmTuningId: row.altRhythmTuningId,
+          altBassTuningId: row.altBassTuningId,
+          bonusLeadTuningId: row.bonusLeadTuningId,
+          bonusRhythmTuningId: row.bonusRhythmTuningId,
+          bonusBassTuningId: row.bonusBassTuningId,
+        }),
         parts: parseJsonStringArray(row.partsJson),
         durationText: row.durationText ?? undefined,
         durationSeconds: row.durationSeconds ?? undefined,
@@ -2284,9 +2472,40 @@ function toCatalogSongSearchResult(
     artist: decodeHtmlEntities(row.artistName),
     album: row.albumName ? decodeHtmlEntities(row.albumName) : undefined,
     creator: row.creatorName ? decodeHtmlEntities(row.creatorName) : undefined,
-    tuning: row.tuningSummary
-      ? decodeHtmlEntities(row.tuningSummary)
-      : undefined,
+    tuning: getTuningSummaryFromFields({
+      tuningSummary: row.tuningSummary
+        ? decodeHtmlEntities(row.tuningSummary)
+        : row.tuningSummary,
+      leadTuningId: row.leadTuningId,
+      leadTuningName: row.leadTuningName
+        ? decodeHtmlEntities(row.leadTuningName)
+        : row.leadTuningName,
+      rhythmTuningId: row.rhythmTuningId,
+      rhythmTuningName: row.rhythmTuningName
+        ? decodeHtmlEntities(row.rhythmTuningName)
+        : row.rhythmTuningName,
+      bassTuningId: row.bassTuningId,
+      bassTuningName: row.bassTuningName
+        ? decodeHtmlEntities(row.bassTuningName)
+        : row.bassTuningName,
+      altLeadTuningId: row.altLeadTuningId,
+      altRhythmTuningId: row.altRhythmTuningId,
+      altBassTuningId: row.altBassTuningId,
+      bonusLeadTuningId: row.bonusLeadTuningId,
+      bonusRhythmTuningId: row.bonusRhythmTuningId,
+      bonusBassTuningId: row.bonusBassTuningId,
+    }),
+    tuningIds: getTuningIdsFromFields({
+      leadTuningId: row.leadTuningId,
+      rhythmTuningId: row.rhythmTuningId,
+      bassTuningId: row.bassTuningId,
+      altLeadTuningId: row.altLeadTuningId,
+      altRhythmTuningId: row.altRhythmTuningId,
+      altBassTuningId: row.altBassTuningId,
+      bonusLeadTuningId: row.bonusLeadTuningId,
+      bonusRhythmTuningId: row.bonusRhythmTuningId,
+      bonusBassTuningId: row.bonusBassTuningId,
+    }),
     parts: parseJsonStringArray(row.partsJson),
     durationText: row.durationText ?? undefined,
     year: row.year ?? undefined,
@@ -2553,23 +2772,34 @@ export async function getCatalogSearchFilterOptions(env: AppEnv) {
       .from(catalogSongs)
       .where(sql`${catalogSongs.year} IS NOT NULL`)
       .orderBy(desc(catalogSongs.year)),
-    db
-      .selectDistinct({ tuning: catalogSongs.tuningSummary })
-      .from(catalogSongs)
-      .where(
-        sql`${catalogSongs.tuningSummary} IS NOT NULL AND trim(${catalogSongs.tuningSummary}) != ''`
-      )
-      .orderBy(asc(catalogSongs.tuningSummary)),
+    db.all<{ tuningId: number }>(sql`
+      SELECT DISTINCT CAST(tuning_entry.value AS INTEGER) AS tuningId
+      FROM catalog_songs
+      CROSS JOIN json_each(json_array(
+        lead_tuning_id,
+        rhythm_tuning_id,
+        bass_tuning_id,
+        alt_lead_tuning_id,
+        alt_rhythm_tuning_id,
+        alt_bass_tuning_id,
+        bonus_lead_tuning_id,
+        bonus_rhythm_tuning_id,
+        bonus_bass_tuning_id
+      )) AS tuning_entry
+      WHERE tuning_entry.value IS NOT NULL
+      ORDER BY tuningId ASC
+    `),
   ]);
+  const resolvedTuningRows = unwrapD1Rows(tuningRows);
 
   return {
     years: yearRows
       .map((row) => row.year)
       .filter((year): year is number => year != null),
-    tunings: tuningRows
-      .map((row) => row.tuning)
-      .filter((tuning): tuning is string => !!tuning)
-      .map((tuning) => decodeHtmlEntities(tuning)),
+    tunings: resolvedTuningRows
+      .map((row) => getTuningOptionById(row.tuningId))
+      .filter((option): option is NonNullable<typeof option> => option != null)
+      .sort((left, right) => compareTuningIds(left.id, right.id)),
   };
 }
 
@@ -2818,6 +3048,10 @@ export async function upsertCatalogSongs(
     }
   }
 
+  if (inserted > 0 || updated > 0) {
+    await bumpCatalogSearchVersion(env);
+  }
+
   return { inserted, updated, skipped, changedSongIds };
 }
 
@@ -2952,7 +3186,7 @@ export async function updateSettings(
     allowSubscribersToRequest: boolean;
     allowVipsToRequest: boolean;
     onlyOfficialDlc: boolean;
-    allowedTunings: string[];
+    allowedTunings: number[];
     requiredPaths: string[];
     requiredPathsMatchMode: "any" | "all";
     maxQueueSize: number;
@@ -2983,6 +3217,12 @@ export async function updateSettings(
     allowRequestPathModifiers: boolean;
     allowedRequestPaths: string[];
     requestPathModifierVipTokenCost: number;
+    requestPathModifierVipTokenCosts: {
+      guitar: number;
+      lead: number;
+      rhythm: number;
+      bass: number;
+    };
     requestPathModifierUsesVipPriority: boolean;
     cheerBitsPerVipToken: number;
     channelPointRewardCost: number;
@@ -3019,7 +3259,7 @@ export async function updateSettings(
       allowSubscribersToRequest: input.allowSubscribersToRequest,
       allowVipsToRequest: input.allowVipsToRequest,
       onlyOfficialDlc: input.onlyOfficialDlc,
-      allowedTuningsJson: JSON.stringify(input.allowedTunings),
+      allowedTuningsJson: serializeStoredTuningIds(input.allowedTunings),
       requiredPathsJson: JSON.stringify(input.requiredPaths),
       requiredPathsMatchMode: input.requiredPathsMatchMode,
       maxQueueSize: input.maxQueueSize,
@@ -3054,6 +3294,14 @@ export async function updateSettings(
       allowRequestPathModifiers: input.allowRequestPathModifiers,
       allowedRequestPathsJson: JSON.stringify(input.allowedRequestPaths),
       requestPathModifierVipTokenCost: input.requestPathModifierVipTokenCost,
+      requestPathModifierGuitarVipTokenCost:
+        input.requestPathModifierVipTokenCosts.guitar,
+      requestPathModifierLeadVipTokenCost:
+        input.requestPathModifierVipTokenCosts.lead,
+      requestPathModifierRhythmVipTokenCost:
+        input.requestPathModifierVipTokenCosts.rhythm,
+      requestPathModifierBassVipTokenCost:
+        input.requestPathModifierVipTokenCosts.bass,
       requestPathModifierUsesVipPriority:
         input.requestPathModifierUsesVipPriority,
       cheerBitsPerVipToken: input.cheerBitsPerVipToken,
@@ -4210,24 +4458,19 @@ export async function getDashboardChannelAccess(
     where: eq(channels.ownerUserId, userId),
   });
 
-  if (!requestedChannel) {
-    if (!ownedChannel) {
-      return null;
-    }
+  const ownerAccess = resolveOwnerDashboardChannelAccess({
+    requestedSlug,
+    requestedChannel,
+    ownedChannel,
+    userId,
+  });
 
-    return {
-      channel: ownedChannel,
-      accessRole: "owner" as const,
-      actorUserId: userId,
-    };
+  if (ownerAccess !== undefined) {
+    return ownerAccess;
   }
 
-  if (requestedChannel.ownerUserId === userId) {
-    return {
-      channel: requestedChannel,
-      accessRole: "owner" as const,
-      actorUserId: userId,
-    };
+  if (!requestedChannel) {
+    return null;
   }
 
   const settings = await db.query.channelSettings.findFirst({
@@ -4264,6 +4507,43 @@ export async function getDashboardChannelAccess(
     channel: requestedChannel,
     accessRole: "moderator" as const,
     actorUserId: userId,
+  };
+}
+
+export function resolveOwnerDashboardChannelAccess<
+  TChannel extends { ownerUserId: string },
+>(input: {
+  requestedSlug?: string | null;
+  requestedChannel: TChannel | null | undefined;
+  ownedChannel: TChannel | null | undefined;
+  userId: string;
+}) {
+  const hasRequestedSlug = Boolean(input.requestedSlug?.trim());
+
+  if (!input.requestedChannel) {
+    if (hasRequestedSlug) {
+      return null;
+    }
+
+    if (!input.ownedChannel) {
+      return null;
+    }
+
+    return {
+      channel: input.ownedChannel,
+      accessRole: "owner" as const,
+      actorUserId: input.userId,
+    };
+  }
+
+  if (input.requestedChannel.ownerUserId !== input.userId) {
+    return undefined;
+  }
+
+  return {
+    channel: input.requestedChannel,
+    accessRole: "owner" as const,
+    actorUserId: input.userId,
   };
 }
 
@@ -4472,21 +4752,71 @@ async function refreshBroadcasterAuthorization(
 export async function getCachedSearchResult<T>(
   env: AppEnv,
   cacheKey: string,
-  now = Date.now()
+  now = Date.now(),
+  versionToken?: string
 ) {
+  const cached = await getCachedSearchResultState<T>(env, {
+    cacheKey,
+    now,
+    versionToken,
+  });
+
+  return cached.state === "fresh" ? cached.response : null;
+}
+
+function getSearchCacheFreshUntil(cacheEntry: {
+  freshUntil: number;
+  expiresAt: number;
+}) {
+  return cacheEntry.freshUntil > 0
+    ? cacheEntry.freshUntil
+    : cacheEntry.expiresAt;
+}
+
+function getSearchCacheStaleUntil(cacheEntry: {
+  staleUntil: number;
+  expiresAt: number;
+}) {
+  return cacheEntry.staleUntil > 0
+    ? cacheEntry.staleUntil
+    : cacheEntry.expiresAt;
+}
+
+export async function getCachedSearchResultState<T>(
+  env: AppEnv,
+  input: {
+    cacheKey: string;
+    now?: number;
+    versionToken?: string;
+  }
+): Promise<
+  | {
+      state: "miss";
+    }
+  | {
+      state: "fresh" | "stale";
+      response: T;
+    }
+> {
+  const now = input.now ?? Date.now();
   const cached = await getDb(env).query.searchCache.findFirst({
-    where: eq(searchCache.cacheKey, cacheKey),
+    where: eq(searchCache.cacheKey, input.cacheKey),
   });
 
   if (!cached) {
-    return null;
+    return {
+      state: "miss",
+    };
   }
 
-  if (cached.expiresAt <= now) {
+  const staleUntil = getSearchCacheStaleUntil(cached);
+  if (staleUntil <= now) {
     await getDb(env)
       .delete(searchCache)
-      .where(eq(searchCache.cacheKey, cacheKey));
-    return null;
+      .where(eq(searchCache.cacheKey, input.cacheKey));
+    return {
+      state: "miss",
+    };
   }
 
   await getDb(env)
@@ -4494,9 +4824,152 @@ export async function getCachedSearchResult<T>(
     .set({
       lastAccessedAt: now,
     })
-    .where(eq(searchCache.cacheKey, cacheKey));
+    .where(eq(searchCache.cacheKey, input.cacheKey));
 
-  return JSON.parse(cached.responseJson) as T;
+  const freshUntil = getSearchCacheFreshUntil(cached);
+  const versionMatches =
+    input.versionToken == null || cached.versionToken === input.versionToken;
+
+  return {
+    state: versionMatches && freshUntil > now ? "fresh" : "stale",
+    response: JSON.parse(cached.responseJson) as T,
+  };
+}
+
+export async function tryAcquireSearchCacheRevalidationLease(
+  env: AppEnv,
+  input: {
+    cacheKey: string;
+    now?: number;
+    leaseMs?: number;
+  }
+) {
+  const now = input.now ?? Date.now();
+  const leaseMs = input.leaseMs ?? 30_000;
+  const expiredBefore = now - leaseMs;
+  const result = await env.DB.prepare(
+    `
+      update search_cache
+      set revalidating_at = ?
+      where cache_key = ?
+        and (
+          revalidating_at is null
+          or revalidating_at <= ?
+        )
+    `
+  )
+    .bind(now, input.cacheKey, expiredBefore)
+    .run();
+
+  return (result.meta?.changes ?? 0) > 0;
+}
+
+export async function getCatalogSearchVersionToken(env: AppEnv) {
+  const state = await getDb(env).query.catalogSearchState.findFirst({
+    where: eq(catalogSearchState.scope, defaultCatalogSearchStateScope),
+  });
+
+  return JSON.stringify({
+    scope: defaultCatalogSearchStateScope,
+    version: state?.version ?? 0,
+    updatedAt: state?.updatedAt ?? 0,
+  });
+}
+
+export async function getChannelSearchVersionToken(
+  env: AppEnv,
+  channelId: string
+) {
+  const version = (await env.DB.prepare(
+    `
+      select
+        coalesce(
+          (select updated_at from channel_settings where channel_id = ?),
+          0
+        ) as settings_updated_at,
+        coalesce(
+          (select count(*) from blacklisted_artists where channel_id = ?),
+          0
+        ) as blacklisted_artist_count,
+        coalesce(
+          (select max(created_at) from blacklisted_artists where channel_id = ?),
+          0
+        ) as blacklisted_artist_updated_at,
+        coalesce(
+          (select count(*) from blacklisted_songs where channel_id = ?),
+          0
+        ) as blacklisted_song_count,
+        coalesce(
+          (select max(created_at) from blacklisted_songs where channel_id = ?),
+          0
+        ) as blacklisted_song_updated_at,
+        coalesce(
+          (select count(*) from blacklisted_song_groups where channel_id = ?),
+          0
+        ) as blacklisted_song_group_count,
+        coalesce(
+          (select max(created_at) from blacklisted_song_groups where channel_id = ?),
+          0
+        ) as blacklisted_song_group_updated_at,
+        coalesce(
+          (select count(*) from blacklisted_charters where channel_id = ?),
+          0
+        ) as blacklisted_charter_count,
+        coalesce(
+          (select max(created_at) from blacklisted_charters where channel_id = ?),
+          0
+        ) as blacklisted_charter_updated_at,
+        coalesce(
+          (select count(*) from channel_favorite_charts where channel_id = ?),
+          0
+        ) as favorite_count,
+        coalesce(
+          (select max(created_at) from channel_favorite_charts where channel_id = ?),
+          0
+        ) as favorite_updated_at
+    `
+  )
+    .bind(
+      channelId,
+      channelId,
+      channelId,
+      channelId,
+      channelId,
+      channelId,
+      channelId,
+      channelId,
+      channelId,
+      channelId,
+      channelId
+    )
+    .first()) as {
+    settings_updated_at?: number;
+    blacklisted_artist_count?: number;
+    blacklisted_artist_updated_at?: number;
+    blacklisted_song_count?: number;
+    blacklisted_song_updated_at?: number;
+    blacklisted_song_group_count?: number;
+    blacklisted_song_group_updated_at?: number;
+    blacklisted_charter_count?: number;
+    blacklisted_charter_updated_at?: number;
+    favorite_count?: number;
+    favorite_updated_at?: number;
+  } | null;
+
+  return JSON.stringify({
+    settingsUpdatedAt: version?.settings_updated_at ?? 0,
+    blacklistedArtistCount: version?.blacklisted_artist_count ?? 0,
+    blacklistedArtistUpdatedAt: version?.blacklisted_artist_updated_at ?? 0,
+    blacklistedSongCount: version?.blacklisted_song_count ?? 0,
+    blacklistedSongUpdatedAt: version?.blacklisted_song_updated_at ?? 0,
+    blacklistedSongGroupCount: version?.blacklisted_song_group_count ?? 0,
+    blacklistedSongGroupUpdatedAt:
+      version?.blacklisted_song_group_updated_at ?? 0,
+    blacklistedCharterCount: version?.blacklisted_charter_count ?? 0,
+    blacklistedCharterUpdatedAt: version?.blacklisted_charter_updated_at ?? 0,
+    favoriteCount: version?.favorite_count ?? 0,
+    favoriteUpdatedAt: version?.favorite_updated_at ?? 0,
+  });
 }
 
 export async function upsertCachedSearchResult(
@@ -4504,17 +4977,29 @@ export async function upsertCachedSearchResult(
   input: {
     cacheKey: string;
     responseJson: string;
-    expiresAt: number;
+    expiresAt?: number;
+    freshUntil?: number;
+    staleUntil?: number;
+    versionToken?: string;
   }
 ) {
   const now = Date.now();
+  const freshUntil = input.freshUntil ?? input.expiresAt ?? now;
+  const staleUntil = Math.max(
+    input.staleUntil ?? input.expiresAt ?? freshUntil,
+    freshUntil
+  );
 
   await getDb(env)
     .insert(searchCache)
     .values({
       cacheKey: input.cacheKey,
       responseJson: input.responseJson,
-      expiresAt: input.expiresAt,
+      versionToken: input.versionToken ?? "",
+      freshUntil,
+      staleUntil,
+      revalidatingAt: null,
+      expiresAt: staleUntil,
       createdAt: now,
       updatedAt: now,
       lastAccessedAt: now,
@@ -4523,7 +5008,11 @@ export async function upsertCachedSearchResult(
       target: searchCache.cacheKey,
       set: {
         responseJson: input.responseJson,
-        expiresAt: input.expiresAt,
+        versionToken: input.versionToken ?? "",
+        freshUntil,
+        staleUntil,
+        revalidatingAt: null,
+        expiresAt: staleUntil,
         updatedAt: now,
         lastAccessedAt: now,
       },

@@ -69,7 +69,7 @@
       "chatSubscriptionIds": "IDs das assinaturas de chat",
       "chatBotUserIds": "IDs do bot de chat",
       "chatCallbacks": "Callbacks de chat",
-      "actions": "Ações"
+      "actions": "Acoes"
     }
   },
   "offlineTesting": {
@@ -126,7 +126,7 @@
   "auditLog": {
     "columns": {
       "time": "Hora",
-      "action": "Ação",
+      "action": "Acao",
       "entity": "Entidade",
       "actor": "Autor",
       "details": "Detalhes"

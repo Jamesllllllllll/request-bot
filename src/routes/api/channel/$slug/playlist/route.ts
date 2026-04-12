@@ -1,7 +1,7 @@
 // Route: Returns public playlist data for a single channel by slug.
 import { env } from "cloudflare:workers";
 import { createFileRoute } from "@tanstack/react-router";
-import { asc, desc, eq } from "drizzle-orm";
+import { asc, eq } from "drizzle-orm";
 import { getSessionUserId } from "~/lib/auth/session.server";
 import { getDb } from "~/lib/db/client";
 import {
@@ -9,8 +9,9 @@ import {
   getChannelBySlug,
   getChannelSettingsByChannelId,
   getPlaylistByChannelId,
+  getSessionPlayedSongsByChannelId,
 } from "~/lib/db/repositories";
-import { playedSongs, setlistArtists } from "~/lib/db/schema";
+import { setlistArtists } from "~/lib/db/schema";
 import type { AppEnv } from "~/lib/env";
 import {
   toPlaylistClientChannel,
@@ -23,7 +24,10 @@ import {
   toPublicPlaylistSettings,
   toPublicSetlistArtist,
 } from "~/lib/playlist/public-response";
-import { getAllowedRequestPathsSetting } from "~/lib/request-policy";
+import {
+  getAllowedRequestPathsSetting,
+  getRequestPathModifierVipTokenCostsSetting,
+} from "~/lib/request-policy";
 import {
   canPerformPlaylistMutationAction,
   enrichPlaylistItems,
@@ -48,13 +52,19 @@ export const Route = createFileRoute("/api/channel/$slug/playlist")({
 
         try {
           const sessionUserId = await getSessionUserId(request, runtimeEnv);
+          const accessRole =
+            sessionUserId && channel.ownerUserId === sessionUserId
+              ? "owner"
+              : sessionUserId
+                ? "viewer"
+                : "anonymous";
           const [playlist, playedRows, blacklist, settings, setlistRows] =
             await Promise.all([
               getPlaylistByChannelId(runtimeEnv, channel.id),
-              getDb(runtimeEnv).query.playedSongs.findMany({
-                where: eq(playedSongs.channelId, channel.id),
-                orderBy: [desc(playedSongs.playedAt)],
+              getSessionPlayedSongsByChannelId(runtimeEnv, {
+                channelId: channel.id,
                 limit: 500,
+                order: "desc",
               }),
               getChannelBlacklistByChannelId(runtimeEnv, channel.id),
               getChannelSettingsByChannelId(runtimeEnv, channel.id),
@@ -79,7 +89,7 @@ export const Route = createFileRoute("/api/channel/$slug/playlist")({
 
           return json({
             channel: toPlaylistClientChannel(channel),
-            accessRole: sessionUserId ? "viewer" : "anonymous",
+            accessRole,
             settings: toPublicPlaylistSettings({
               botChannelEnabled: settings?.botChannelEnabled ?? false,
               requestsEnabled: settings?.requestsEnabled ?? true,
@@ -93,6 +103,8 @@ export const Route = createFileRoute("/api/channel/$slug/playlist")({
               allowedRequestPaths,
               requestPathModifierVipTokenCost:
                 settings?.requestPathModifierVipTokenCost ?? 0,
+              requestPathModifierVipTokenCosts:
+                getRequestPathModifierVipTokenCostsSetting(settings ?? {}),
               requestPathModifierUsesVipPriority:
                 settings?.requestPathModifierUsesVipPriority ?? true,
               requiredPathsJson: settings?.requiredPathsJson ?? "[]",

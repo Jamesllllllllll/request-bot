@@ -2,46 +2,12 @@
 import { env } from "cloudflare:workers";
 import { createFileRoute } from "@tanstack/react-router";
 import { getSessionUserId } from "~/lib/auth/session.server";
-import {
-  consumeSearchRateLimit,
-  getCachedSearchResult,
-  getChannelBlacklistByChannelId,
-  getChannelBySlug,
-  getChannelSettingsByChannelId,
-  searchCatalogSongs as searchCatalogSongsInDb,
-  upsertCachedSearchResult,
-} from "~/lib/db/repositories";
+import { consumeSearchRateLimit } from "~/lib/db/repositories";
 import { assertDatabaseSchemaCurrent } from "~/lib/db/schema-version";
 import type { AppEnv } from "~/lib/env";
-import { getArraySetting } from "~/lib/request-policy";
+import { performCachedCatalogSearch } from "~/lib/server/cached-catalog-search";
 import { getErrorMessage, json, sha256 } from "~/lib/utils";
 import { searchInputSchema } from "~/lib/validation";
-
-const searchCacheTtlMs = 5 * 60 * 1000;
-
-function normalizeSearchCacheInput(
-  input: ReturnType<typeof searchInputSchema.parse>
-) {
-  return {
-    query: input.query ?? "",
-    channelSlug: input.channelSlug ?? "",
-    favoritesOnly: input.favoritesOnly ?? false,
-    showBlacklisted: input.showBlacklisted ?? false,
-    field: input.field,
-    title: input.title ?? "",
-    artist: input.artist ?? "",
-    album: input.album ?? "",
-    creator: input.creator ?? "",
-    tuning: input.tuning ?? [],
-    parts: input.parts ?? [],
-    partsMatchMode: input.partsMatchMode,
-    year: input.year ?? [],
-    page: input.page,
-    pageSize: input.pageSize,
-    sortBy: "updated",
-    sortDirection: "desc",
-  };
-}
 
 async function getSearchIdentity(request: Request, runtimeEnv: AppEnv) {
   const sessionUserId = await getSessionUserId(request, runtimeEnv);
@@ -136,110 +102,20 @@ export const Route = createFileRoute("/api/search")({
           );
         }
 
-        const isChannelScopedSearch = !!normalizedInput.channelSlug;
-        const cacheInput = normalizeSearchCacheInput(normalizedInput);
-        const cacheKey = await sha256(JSON.stringify(cacheInput));
-        const cached = isChannelScopedSearch
-          ? null
-          : await getCachedSearchResult(runtimeEnv, cacheKey);
-
-        if (cached) {
-          return json(cached, {
-            headers: {
-              "x-search-cache": "hit",
-            },
-          });
-        }
-
         try {
-          let blacklistFilterInput = {};
-          let channelPolicyFilterInput = {};
-          let favoritesFilterInput = {};
-          let hasBlacklistFilters = false;
-          if (normalizedInput.channelSlug) {
-            const channel = await getChannelBySlug(
-              runtimeEnv,
-              normalizedInput.channelSlug
-            );
-
-            if (channel) {
-              const [settings, blacklist] = await Promise.all([
-                getChannelSettingsByChannelId(runtimeEnv, channel.id),
-                getChannelBlacklistByChannelId(runtimeEnv, channel.id),
-              ]);
-
-              channelPolicyFilterInput = {
-                restrictToOfficial: !!settings?.onlyOfficialDlc,
-                allowedTuningsFilter: getArraySetting(
-                  settings?.allowedTuningsJson
-                ),
-              };
-              favoritesFilterInput = normalizedInput.favoritesOnly
-                ? {
-                    favoriteChannelId: channel.id,
-                  }
-                : {};
-
-              if (settings?.blacklistEnabled) {
-                blacklistFilterInput = {
-                  excludeSongIds: blacklist.blacklistSongs.map(
-                    (song) => song.songId
-                  ),
-                  excludeGroupedProjectIds: blacklist.blacklistSongGroups.map(
-                    (song) => song.groupedProjectId
-                  ),
-                  excludeArtistIds: blacklist.blacklistArtists.map(
-                    (artist) => artist.artistId
-                  ),
-                  excludeArtistNames: blacklist.blacklistArtists.map(
-                    (artist) => artist.artistName
-                  ),
-                  excludeAuthorIds: blacklist.blacklistCharters.map(
-                    (charter) => charter.charterId
-                  ),
-                  excludeCreatorNames: blacklist.blacklistCharters.map(
-                    (charter) => charter.charterName
-                  ),
-                };
-                hasBlacklistFilters = Object.values(blacklistFilterInput).some(
-                  (value) => Array.isArray(value) && value.length > 0
-                );
-              }
-            }
-          }
-
-          const results = await searchCatalogSongsInDb(runtimeEnv, {
-            ...normalizedInput,
-            ...favoritesFilterInput,
-            ...channelPolicyFilterInput,
-            ...(normalizedInput.showBlacklisted ? {} : blacklistFilterInput),
-          });
-          const resolvedResults =
-            normalizedInput.showBlacklisted && hasBlacklistFilters
+          const searchResult = await performCachedCatalogSearch({
+            env: runtimeEnv,
+            search: normalizedInput,
+            channelScope: normalizedInput.channelSlug
               ? {
-                  ...results,
-                  hiddenBlacklistedCount: (
-                    await searchCatalogSongsInDb(runtimeEnv, {
-                      ...normalizedInput,
-                      ...favoritesFilterInput,
-                      ...channelPolicyFilterInput,
-                      ...blacklistFilterInput,
-                    })
-                  ).hiddenBlacklistedCount,
+                  channelSlug: normalizedInput.channelSlug,
                 }
-              : results;
+              : undefined,
+          });
 
-          if (!isChannelScopedSearch) {
-            await upsertCachedSearchResult(runtimeEnv, {
-              cacheKey,
-              responseJson: JSON.stringify(resolvedResults),
-              expiresAt: Date.now() + searchCacheTtlMs,
-            });
-          }
-
-          return json(resolvedResults, {
+          return json(searchResult.data, {
             headers: {
-              "x-search-cache": isChannelScopedSearch ? "bypass" : "miss",
+              "x-search-cache": searchResult.cacheStatus,
             },
           });
         } catch (error) {

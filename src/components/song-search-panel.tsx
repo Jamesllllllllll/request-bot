@@ -3,6 +3,7 @@ import {
   Check,
   ChevronDown,
   Clock3,
+  LoaderCircle,
   Search as SearchIcon,
   SlidersHorizontal,
   X,
@@ -52,9 +53,19 @@ import {
 import { normalizePathOptions, pathOptions } from "~/lib/channel-options";
 import { useAppLocale, useLocaleTranslation } from "~/lib/i18n/client";
 import {
+  buildRequestedPathQuery,
+  type RequestPathOption,
+} from "~/lib/requested-paths";
+import {
   formatCompactTuningSummary,
   getUniqueTunings,
 } from "~/lib/tuning-summary";
+import {
+  compareTuningIds,
+  getTuningOptionById,
+  parseTuningIds,
+  type TuningOption,
+} from "~/lib/tunings";
 import { cn, getErrorMessage } from "~/lib/utils";
 
 type SearchField = "any" | "title" | "artist" | "album" | "creator";
@@ -69,6 +80,7 @@ export interface SearchSong {
   album?: string;
   creator?: string;
   tuning?: string;
+  tuningIds?: number[];
   parts?: string[];
   durationText?: string;
   durationSeconds?: number;
@@ -94,34 +106,90 @@ type SearchResponse = {
 };
 
 type SearchFilterOptionsResponse = {
-  tunings: string[];
+  tunings: TuningOption[];
   years: number[];
 };
 
-export function buildRequestCommand(song: SearchSong) {
+type SearchFilterOptionsWireResponse = {
+  tunings: Array<TuningOption | string>;
+  years: number[];
+};
+
+type MultiSelectOption = {
+  value: string;
+  label: string;
+  keywords?: string[];
+};
+
+function normalizeSearchFilterOptionsResponse(
+  input: SearchFilterOptionsWireResponse | null
+): SearchFilterOptionsResponse {
+  if (!input) {
+    return {
+      tunings: [],
+      years: [],
+    };
+  }
+
+  const tuningOptionsById = new Map<number, TuningOption>();
+
+  for (const option of input.tunings ?? []) {
+    if (
+      option &&
+      typeof option === "object" &&
+      typeof option.id === "number" &&
+      typeof option.label === "string"
+    ) {
+      tuningOptionsById.set(option.id, option);
+      continue;
+    }
+
+    if (typeof option !== "string") {
+      continue;
+    }
+
+    for (const tuningId of parseTuningIds([option])) {
+      const normalizedOption = getTuningOptionById(tuningId, option);
+      if (normalizedOption) {
+        tuningOptionsById.set(normalizedOption.id, normalizedOption);
+      }
+    }
+  }
+
+  return {
+    tunings: [...tuningOptionsById.values()].sort((left, right) =>
+      compareTuningIds(left.id, right.id)
+    ),
+    years: Array.isArray(input.years) ? input.years : [],
+  };
+}
+
+export function buildRequestCommand(
+  song: SearchSong,
+  requestedPaths?: Array<string | RequestPathOption>
+) {
+  const requestedPathQuery = buildRequestedPathQuery(requestedPaths ?? []);
+
   if (song.sourceId != null) {
-    return `!sr song:${song.sourceId}`;
+    return `!sr song:${song.sourceId}${requestedPathQuery ? ` ${requestedPathQuery}` : ""}`;
   }
 
   const fragments = [song.artist, song.title].filter(Boolean);
-  return `!sr ${fragments.join(" - ")}`.trim();
+  return `!sr ${fragments.join(" - ")}${requestedPathQuery ? ` ${requestedPathQuery}` : ""}`.trim();
 }
 
 export function buildVipRequestCommand(
   song: SearchSong,
-  vipTokenCost?: number
+  requestedPaths?: Array<string | RequestPathOption>
 ) {
-  const baseCommand = buildRequestCommand(song).replace(/^!sr\b/, "!vip");
-
-  if (vipTokenCost == null || vipTokenCost <= 1) {
-    return baseCommand;
-  }
-
-  return `${baseCommand} *${Math.trunc(vipTokenCost)}`;
+  return buildRequestCommand(song, requestedPaths).replace(/^!sr\b/, "!vip");
 }
 
-export function buildEditRequestCommand(song: SearchSong) {
-  return buildRequestCommand(song).replace(/^!sr\b/, "!edit");
+export function buildEditRequestCommand(
+  song: SearchSong,
+  requestedPaths?: Array<string | RequestPathOption>
+) {
+  return buildRequestCommand(song, requestedPaths).replace(/^!sr\b/, "!edit");
 }
 
 export type SearchSongResultState = {
@@ -129,6 +197,7 @@ export type SearchSongResultState = {
   reasons?: string[];
   warning?: string;
   vipTokenCost?: number;
+  defaultRequestedPath?: RequestPathOption;
 };
 
 export type SearchSongResultContext = {
@@ -275,9 +344,8 @@ export function SongSearchPanel(props: {
     setPage(1);
   }, [debouncedAdvancedFilters, debouncedQuery, extraSearchParamsKey, field]);
 
-  const searchParams = useMemo(() => {
+  const searchParamsBase = useMemo(() => {
     const params = new URLSearchParams({
-      page: String(page),
       pageSize: "20",
       field,
     });
@@ -321,9 +389,14 @@ export function SongSearchPanel(props: {
     debouncedAdvancedFilters,
     debouncedQuery,
     field,
-    page,
     props.extraSearchParams,
   ]);
+  const searchParamsBaseKey = searchParamsBase.toString();
+  const searchParams = useMemo(() => {
+    const params = new URLSearchParams(searchParamsBase);
+    params.set("page", String(page));
+    return params;
+  }, [page, searchParamsBase]);
 
   const hasSearchInput = useMemo(
     () =>
@@ -357,11 +430,11 @@ export function SongSearchPanel(props: {
   const searchEnabled = props.searchEnabled ?? true;
 
   const filterOptionsQuery = useQuery<SearchFilterOptionsResponse>({
-    queryKey: ["search-filter-options"],
+    queryKey: ["search-filter-options-v2"],
     queryFn: async () => {
       const response = await fetch("/api/search/filters");
       const body = (await response.json().catch(() => null)) as
-        | SearchFilterOptionsResponse
+        | SearchFilterOptionsWireResponse
         | { message?: string }
         | null;
 
@@ -373,7 +446,9 @@ export function SongSearchPanel(props: {
         );
       }
 
-      return body as SearchFilterOptionsResponse;
+      return normalizeSearchFilterOptionsResponse(
+        body as SearchFilterOptionsWireResponse | null
+      );
     },
     staleTime: 60 * 60 * 1000,
     gcTime: 60 * 60 * 1000,
@@ -405,7 +480,7 @@ export function SongSearchPanel(props: {
   });
 
   const searchQuery = useQuery<SearchResponse>({
-    queryKey: ["song-search", searchParams.toString()],
+    queryKey: ["song-search", searchParamsBaseKey, page],
     enabled: searchEnabled && !queryTooShort,
     queryFn: async (): Promise<SearchResponse> => {
       const response = await fetch(`/api/search?${searchParams.toString()}`);
@@ -424,9 +499,50 @@ export function SongSearchPanel(props: {
 
       return body as SearchResponse;
     },
+    placeholderData: (previousData, previousQuery) =>
+      previousQuery?.queryKey?.[1] === searchParamsBaseKey
+        ? previousData
+        : undefined,
   });
   const { data, error, isLoading } = searchQuery;
   const isResultsTransitioning = searchQuery.isFetching;
+  const isPageTransitioning =
+    searchQuery.isFetching &&
+    searchQuery.data != null &&
+    searchQuery.data.page !== page;
+  const tuningSelectOptions = useMemo(
+    () =>
+      (filterOptionsQuery.data?.tunings ?? []).map(
+        (option) =>
+          ({
+            value: String(option.id),
+            label: option.label,
+          }) satisfies MultiSelectOption
+      ),
+    [filterOptionsQuery.data?.tunings]
+  );
+  const pathSelectOptions = useMemo(
+    () =>
+      pathOptions.map(
+        (path) =>
+          ({
+            value: path,
+            label: getPathLabel(path),
+          }) satisfies MultiSelectOption
+      ),
+    [getPathLabel]
+  );
+  const yearSelectOptions = useMemo(
+    () =>
+      (filterOptionsQuery.data?.years ?? []).map(
+        (year) =>
+          ({
+            value: String(year),
+            label: String(year),
+          }) satisfies MultiSelectOption
+      ),
+    [filterOptionsQuery.data?.years]
+  );
 
   const results = !queryTooShort && !error ? (data?.results ?? []) : [];
   const visibleResults = useMemo(
@@ -455,8 +571,8 @@ export function SongSearchPanel(props: {
   }, [page, totalPages]);
   const hasCustomActions = typeof props.renderActions === "function";
   const resultsGridColumns = hasCustomActions
-    ? "grid-cols-[minmax(0,2.2fr)_minmax(0,1.05fr)_minmax(0,1.15fr)_248px]"
-    : "grid-cols-[minmax(0,2.2fr)_minmax(0,1.05fr)_minmax(0,1.15fr)_188px]";
+    ? "grid-cols-[minmax(0,1.95fr)_minmax(0,0.9fr)_minmax(0,0.95fr)_minmax(17rem,1.15fr)]"
+    : "grid-cols-[minmax(0,1.95fr)_minmax(0,0.9fr)_minmax(0,0.95fr)_minmax(13rem,0.95fr)]";
   const resolvedAdvancedFiltersContent =
     typeof props.advancedFiltersContent === "function"
       ? props.advancedFiltersContent({
@@ -479,12 +595,11 @@ export function SongSearchPanel(props: {
 
   async function copyRequest(
     song: SearchSong,
-    type: "sr" | "edit" | "vip" = "sr",
-    vipTokenCost?: number
+    type: "sr" | "edit" | "vip" = "sr"
   ) {
     const command =
       type === "vip"
-        ? buildVipRequestCommand(song, vipTokenCost)
+        ? buildVipRequestCommand(song)
         : type === "edit"
           ? buildEditRequestCommand(song)
           : buildRequestCommand(song);
@@ -632,9 +747,14 @@ export function SongSearchPanel(props: {
                         isActive={pageNumber === page}
                         onClick={() => setPage(pageNumber)}
                         disabled={isResultsTransitioning}
-                        className="p-0"
+                        className="min-w-[3.25rem] px-2.5 tabular-nums"
                       >
-                        {pageNumber}
+                        <span className="inline-flex items-center gap-1.5">
+                          <span>{pageNumber}</span>
+                          {isPageTransitioning && pageNumber === page ? (
+                            <LoaderCircle className="h-3 w-3 animate-spin" />
+                          ) : null}
+                        </span>
                       </PaginationLink>
                     </PaginationItem>
                   </Fragment>
@@ -656,16 +776,11 @@ export function SongSearchPanel(props: {
 
   function renderDefaultActions(
     song: SearchSong,
-    resultState: SearchSongResultState,
     isDisabled: boolean,
     disabledReason: string,
     copiedType: "sr" | "edit" | "vip" | null
   ) {
-    const vipTokenCost = resultState.vipTokenCost;
-    const vipButtonLabel =
-      vipTokenCost != null && vipTokenCost > 1
-        ? `!vip *${Math.trunc(vipTokenCost)}`
-        : "!vip";
+    const vipButtonLabel = "!vip";
 
     return (
       <div className="grid grid-cols-3 gap-2">
@@ -723,7 +838,7 @@ export function SongSearchPanel(props: {
           <TooltipTrigger asChild>
             <button
               type="button"
-              onClick={() => void copyRequest(song, "vip", vipTokenCost)}
+              onClick={() => void copyRequest(song, "vip")}
               disabled={isDisabled}
               className={cn(
                 "flex h-11 min-w-[3.5rem] items-center justify-center border border-(--border) bg-(--panel) px-3 text-[11px] font-semibold uppercase tracking-[0.16em] transition-colors",
@@ -905,7 +1020,7 @@ export function SongSearchPanel(props: {
                     <Label>{t("controls.tuning")}</Label>
                     <MultiSelectSelect
                       label={t("controls.tuning")}
-                      options={filterOptionsQuery.data?.tunings ?? []}
+                      options={tuningSelectOptions}
                       selectedValues={advancedFilters.tuning}
                       onAdd={(value) => toggleAdvancedTuning(value)}
                       onRemove={(value) => toggleAdvancedTuning(value)}
@@ -915,11 +1030,10 @@ export function SongSearchPanel(props: {
                     <Label>{t("controls.path")}</Label>
                     <MultiSelectSelect
                       label={t("controls.path")}
-                      options={pathOptions}
+                      options={pathSelectOptions}
                       selectedValues={advancedFilters.parts}
                       onAdd={(value) => toggleAdvancedPart(value)}
                       onRemove={(value) => toggleAdvancedPart(value)}
-                      renderValue={getPathLabel}
                       toneByValue={getPathToneByValue}
                     />
                     {advancedFilters.parts.length > 1 ? (
@@ -961,9 +1075,7 @@ export function SongSearchPanel(props: {
                     <Label>{t("controls.year")}</Label>
                     <MultiSelectSelect
                       label={t("controls.year")}
-                      options={(filterOptionsQuery.data?.years ?? []).map(
-                        (year) => String(year)
-                      )}
+                      options={yearSelectOptions}
                       selectedValues={advancedFilters.year.map((year) =>
                         String(year)
                       )}
@@ -1108,10 +1220,10 @@ export function SongSearchPanel(props: {
                       )}
                     >
                       {hasCustomActions ? (
-                        <div className="search-panel__row-main col-span-2 grid min-w-0 grid-cols-[minmax(0,2.2fr)_minmax(0,1.05fr)] gap-4 text-left">
+                        <div className="search-panel__row-main col-span-2 grid min-w-0 grid-cols-[minmax(0,1.8fr)_minmax(0,0.85fr)] gap-4 text-left">
                           <div className="search-panel__song min-w-0">
                             <div className="flex flex-wrap items-center gap-2">
-                              <p className="truncate text-[15px] font-semibold text-(--text)">
+                              <p className="break-words text-[15px] font-semibold leading-5 text-(--text)">
                                 {song.title}
                               </p>
                               {isDisabled ? (
@@ -1120,11 +1232,11 @@ export function SongSearchPanel(props: {
                                 </span>
                               ) : null}
                             </div>
-                            <p className="mt-1 truncate text-sm text-(--brand-deep)">
+                            <p className="mt-1 break-words text-sm leading-5 text-(--brand-deep)">
                               {song.artist ?? t("states.unknownArtist")}
                             </p>
                             {song.album ? (
-                              <p className="mt-1 truncate text-sm text-(--muted)">
+                              <p className="mt-1 break-words text-sm leading-5 text-(--muted)">
                                 {song.album}
                                 {song.year ? ` - ${song.year}` : ""}
                               </p>
@@ -1167,7 +1279,7 @@ export function SongSearchPanel(props: {
                           }}
                           disabled={isDisabled}
                           className={cn(
-                            "search-panel__row-main col-span-2 grid min-w-0 grid-cols-[minmax(0,2.2fr)_minmax(0,1.05fr)] gap-4 text-left",
+                            "search-panel__row-main col-span-2 grid min-w-0 grid-cols-[minmax(0,1.8fr)_minmax(0,0.85fr)] gap-4 text-left",
                             isDisabled
                               ? "cursor-not-allowed opacity-85"
                               : "cursor-pointer"
@@ -1175,7 +1287,7 @@ export function SongSearchPanel(props: {
                         >
                           <div className="search-panel__song min-w-0">
                             <div className="flex flex-wrap items-center gap-2">
-                              <p className="truncate text-[15px] font-semibold text-(--text)">
+                              <p className="break-words text-[15px] font-semibold leading-5 text-(--text)">
                                 {song.title}
                               </p>
                               {isDisabled ? (
@@ -1184,11 +1296,11 @@ export function SongSearchPanel(props: {
                                 </span>
                               ) : null}
                             </div>
-                            <p className="mt-1 truncate text-sm text-(--brand-deep)">
+                            <p className="mt-1 break-words text-sm leading-5 text-(--brand-deep)">
                               {song.artist ?? t("states.unknownArtist")}
                             </p>
                             {song.album ? (
-                              <p className="mt-1 truncate text-sm text-(--muted)">
+                              <p className="mt-1 break-words text-sm leading-5 text-(--muted)">
                                 {song.album}
                                 {song.year ? ` - ${song.year}` : ""}
                               </p>
@@ -1223,7 +1335,7 @@ export function SongSearchPanel(props: {
                         </button>
                       )}
 
-                      <div className="search-panel__stats min-w-0 text-sm">
+                      <div className="search-panel__stats min-w-0 max-w-[15.625rem] text-sm">
                         {song.durationText || compactTuning ? (
                           <p className="search-panel__desktop-stat inline-flex flex-wrap items-center gap-x-1.5 gap-y-1 text-(--text)">
                             {song.durationText ? (
@@ -1237,7 +1349,7 @@ export function SongSearchPanel(props: {
                             ) : null}
                             {compactTuning ? (
                               <span
-                                className="truncate text-(--muted)"
+                                className="break-words text-(--muted)"
                                 title={tuningTitle}
                               >
                                 {compactTuning}
@@ -1246,7 +1358,7 @@ export function SongSearchPanel(props: {
                           </p>
                         ) : null}
                         {song.creator ? (
-                          <p className="mt-1 truncate text-sm text-(--muted)">
+                          <p className="mt-1 break-words text-sm leading-5 text-(--muted)">
                             {t("states.chartedBy", { creator: song.creator })}
                           </p>
                         ) : null}
@@ -1266,7 +1378,6 @@ export function SongSearchPanel(props: {
                           ? props.renderActions?.({ song, resultState })
                           : renderDefaultActions(
                               song,
-                              resultState,
                               isDisabled,
                               disabledReason,
                               copiedType
@@ -1336,16 +1447,18 @@ function haveSameSelectedValues(left: string[], right: string[]) {
 
 function MultiSelectSelect(props: {
   label: string;
-  options: readonly string[];
+  options: readonly MultiSelectOption[];
   selectedValues: readonly string[];
   onAdd: (value: string) => void;
   onRemove: (value: string) => void;
-  renderValue?: (value: string) => string;
   toneByValue?: (value: string) => string;
 }) {
   const { t } = useLocaleTranslation("search");
   const [open, setOpen] = useState(false);
-  const renderValue = props.renderValue ?? ((value: string) => value);
+  const optionLabelByValue = useMemo(
+    () => new Map(props.options.map((option) => [option.value, option.label])),
+    [props.options]
+  );
   const summary =
     props.selectedValues.length > 0
       ? t("multiSelect.selected", { count: props.selectedValues.length })
@@ -1380,19 +1493,20 @@ function MultiSelectSelect(props: {
               <CommandEmpty>{t("multiSelect.noMatches")}</CommandEmpty>
               <CommandGroup>
                 {props.options.map((option) => {
-                  const selected = props.selectedValues.includes(option);
-                  const optionLabel = renderValue(option);
+                  const selected = props.selectedValues.includes(option.value);
+                  const optionLabel = option.label;
+                  const commandValue = `${option.label} ${option.value}`;
 
                   return (
                     <CommandItem
-                      key={option}
-                      value={option}
-                      keywords={[optionLabel]}
+                      key={option.value}
+                      value={commandValue}
+                      keywords={option.keywords}
                       onSelect={() => {
                         if (selected) {
-                          props.onRemove(option);
+                          props.onRemove(option.value);
                         } else {
-                          props.onAdd(option);
+                          props.onAdd(option.value);
                         }
                       }}
                       className={cn(
@@ -1429,7 +1543,7 @@ function MultiSelectSelect(props: {
                   "border-(--brand) bg-(--brand)/15 text-(--text)"
               )}
             >
-              <span>{renderValue(value)}</span>
+              <span>{optionLabelByValue.get(value) ?? value}</span>
               <X className="h-3 w-3" />
             </button>
           ))}

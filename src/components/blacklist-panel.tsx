@@ -1,5 +1,8 @@
+"use client";
+
 import { ChevronDown } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "~/components/ui/card";
+import { useLocaleTranslation } from "~/lib/i18n/client";
 
 export type BlacklistedArtistItem = {
   artistId: number;
@@ -23,6 +26,10 @@ export type BlacklistedCharterItem = {
   charterName: string;
 };
 
+function compareText(left: string, right: string) {
+  return left.localeCompare(right, undefined, { sensitivity: "base" });
+}
+
 export function BlacklistPanel(props: {
   title?: string;
   description?: string;
@@ -35,17 +42,44 @@ export function BlacklistPanel(props: {
   collapsible?: boolean;
   defaultOpen?: boolean;
 }) {
+  const { t } = useLocaleTranslation("playlist");
   const showCharters = props.showCharters !== false;
   const showVersions = props.showVersions !== false;
+  const sortedArtists = [...props.artists].sort((left, right) =>
+    compareText(left.artistName, right.artistName)
+  );
+  const sortedSongGroups = [...(props.songGroups ?? [])].sort((left, right) =>
+    compareText(
+      left.artistName
+        ? `${left.songTitle} - ${left.artistName}`
+        : left.songTitle,
+      right.artistName
+        ? `${right.songTitle} - ${right.artistName}`
+        : right.songTitle
+    )
+  );
+  const sortedSongs = [...props.songs].sort((left, right) =>
+    compareText(
+      left.artistName
+        ? `${left.songTitle} - ${left.artistName}`
+        : left.songTitle,
+      right.artistName
+        ? `${right.songTitle} - ${right.artistName}`
+        : right.songTitle
+    )
+  );
+  const sortedCharters = [...(props.charters ?? [])].sort((left, right) =>
+    compareText(left.charterName, right.charterName)
+  );
   const content = (
     <CardContent className="grid items-start gap-6 lg:grid-cols-2">
       <div className="grid content-start gap-3 self-start">
         <p className="text-xs font-semibold uppercase tracking-[0.18em] text-(--muted)">
-          Artists
+          {t("rules.blacklistedArtists")}
         </p>
-        {props.artists.length > 0 ? (
+        {sortedArtists.length > 0 ? (
           <div className="overflow-hidden border border-(--border)">
-            {props.artists.map((artist, index) => (
+            {sortedArtists.map((artist, index) => (
               <div
                 key={artist.artistId}
                 className={`px-4 py-2.5 text-sm ${
@@ -59,17 +93,19 @@ export function BlacklistPanel(props: {
             ))}
           </div>
         ) : (
-          <p className="text-sm text-(--muted)">No blacklisted artists.</p>
+          <p className="text-sm text-(--muted)">
+            {t("rules.noBlacklistedArtists")}
+          </p>
         )}
       </div>
 
       <div className="grid content-start gap-3 self-start">
         <p className="text-xs font-semibold uppercase tracking-[0.18em] text-(--muted)">
-          Songs
+          {t("rules.blacklistedSongs")}
         </p>
-        {props.songGroups?.length ? (
+        {sortedSongGroups.length > 0 ? (
           <div className="overflow-hidden border border-(--border)">
-            {props.songGroups.map((song, index) => (
+            {sortedSongGroups.map((song, index) => (
               <div
                 key={song.groupedProjectId}
                 className={`px-4 py-2.5 text-sm ${
@@ -86,18 +122,20 @@ export function BlacklistPanel(props: {
             ))}
           </div>
         ) : (
-          <p className="text-sm text-(--muted)">No blacklisted songs.</p>
+          <p className="text-sm text-(--muted)">
+            {t("rules.noBlacklistedSongs")}
+          </p>
         )}
       </div>
 
       {showVersions ? (
         <div className="grid content-start gap-3 self-start">
           <p className="text-xs font-semibold uppercase tracking-[0.18em] text-(--muted)">
-            Versions
+            {t("rules.blacklistedVersions")}
           </p>
-          {props.songs.length > 0 ? (
+          {sortedSongs.length > 0 ? (
             <div className="overflow-hidden border border-(--border)">
-              {props.songs.map((song, index) => (
+              {sortedSongs.map((song, index) => (
                 <div
                   key={song.songId}
                   className={`px-4 py-2.5 text-sm ${
@@ -114,7 +152,9 @@ export function BlacklistPanel(props: {
               ))}
             </div>
           ) : (
-            <p className="text-sm text-(--muted)">No blacklisted versions.</p>
+            <p className="text-sm text-(--muted)">
+              {t("rules.noBlacklistedVersions")}
+            </p>
           )}
         </div>
       ) : null}
@@ -122,11 +162,11 @@ export function BlacklistPanel(props: {
       {showCharters ? (
         <div className="grid content-start gap-3 self-start">
           <p className="text-xs font-semibold uppercase tracking-[0.18em] text-(--muted)">
-            Charters
+            {t("rules.blacklistedCharters")}
           </p>
-          {props.charters?.length ? (
+          {sortedCharters.length > 0 ? (
             <div className="overflow-hidden border border-(--border)">
-              {props.charters.map((charter, index) => (
+              {sortedCharters.map((charter, index) => (
                 <div
                   key={charter.charterId}
                   className={`px-4 py-2.5 text-sm ${
@@ -140,7 +180,9 @@ export function BlacklistPanel(props: {
               ))}
             </div>
           ) : (
-            <p className="text-sm text-(--muted)">No blacklisted charters.</p>
+            <p className="text-sm text-(--muted)">
+              {t("rules.noBlacklistedCharters")}
+            </p>
           )}
         </div>
       ) : null}
@@ -157,7 +199,9 @@ export function BlacklistPanel(props: {
           <summary className="cursor-pointer list-none p-6 [&::-webkit-details-marker]:hidden">
             <div className="flex items-start justify-between gap-4">
               <div className="min-w-0">
-                <CardTitle>{props.title ?? "Channel blacklists"}</CardTitle>
+                <CardTitle>
+                  {props.title ?? t("management.blacklistPanelTitle")}
+                </CardTitle>
                 {props.description ? (
                   <p className="mt-2 text-sm text-(--muted)">
                     {props.description}
@@ -176,7 +220,9 @@ export function BlacklistPanel(props: {
   return (
     <Card>
       <CardHeader>
-        <CardTitle>{props.title ?? "Channel blacklists"}</CardTitle>
+        <CardTitle>
+          {props.title ?? t("management.blacklistPanelTitle")}
+        </CardTitle>
         {props.description ? (
           <p className="text-sm text-(--muted)">{props.description}</p>
         ) : null}

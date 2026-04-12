@@ -3,17 +3,11 @@ import { createServerFn } from "@tanstack/react-start";
 import { getRequest, getRequestIP } from "@tanstack/react-start/server";
 import type { z } from "zod";
 import { getSessionUserId } from "~/lib/auth/session.server";
-import {
-  consumeSearchRateLimit,
-  getCachedSearchResult,
-  searchCatalogSongs as searchCatalogSongsInDb,
-  upsertCachedSearchResult,
-} from "~/lib/db/repositories";
+import { consumeSearchRateLimit } from "~/lib/db/repositories";
 import type { AppEnv } from "~/lib/env";
+import { performCachedCatalogSearch } from "~/lib/server/cached-catalog-search";
 import { sha256 } from "~/lib/utils";
 import { searchInputSchema } from "~/lib/validation";
-
-const searchCacheTtlMs = 5 * 60 * 1000;
 
 export type SearchInput = z.input<typeof searchInputSchema>;
 
@@ -43,29 +37,6 @@ export type SearchResponse = {
   pageSize: number;
   hasNextPage?: boolean;
 };
-
-function normalizeSearchCacheInput(
-  input: ReturnType<typeof searchInputSchema.parse>
-) {
-  return {
-    query: input.query ?? "",
-    channelSlug: input.channelSlug ?? "",
-    favoritesOnly: input.favoritesOnly ?? false,
-    field: input.field,
-    title: input.title ?? "",
-    artist: input.artist ?? "",
-    album: input.album ?? "",
-    creator: input.creator ?? "",
-    tuning: input.tuning ?? [],
-    parts: input.parts ?? [],
-    partsMatchMode: input.partsMatchMode,
-    year: input.year ?? [],
-    page: input.page,
-    pageSize: input.pageSize,
-    sortBy: "updated",
-    sortDirection: "desc",
-  };
-}
 
 async function getSearchIdentity(runtimeEnv: AppEnv) {
   const request = getRequest();
@@ -124,25 +95,15 @@ export const searchCatalogSongs = createServerFn({ method: "GET" })
       );
     }
 
-    const cacheInput = normalizeSearchCacheInput(normalizedInput);
-    const cacheKey = await sha256(JSON.stringify(cacheInput));
-    const cached = await getCachedSearchResult<SearchResponse>(
-      runtimeEnv,
-      cacheKey
-    );
-
-    if (cached) {
-      return normalizeSearchResponse(cached);
-    }
-
-    const results = normalizeSearchResponse(
-      await searchCatalogSongsInDb(runtimeEnv, normalizedInput)
-    );
-    await upsertCachedSearchResult(runtimeEnv, {
-      cacheKey,
-      responseJson: JSON.stringify(results),
-      expiresAt: Date.now() + searchCacheTtlMs,
+    const searchResult = await performCachedCatalogSearch({
+      env: runtimeEnv,
+      search: normalizedInput,
+      channelScope: normalizedInput.channelSlug
+        ? {
+            channelSlug: normalizedInput.channelSlug,
+          }
+        : undefined,
     });
 
-    return results;
+    return normalizeSearchResponse(searchResult.data);
   });

@@ -8,16 +8,18 @@ import {
   ensureStreamElementsTipWebhookToken,
   getActiveBroadcasterAuthorizationForChannel,
   getBotAuthorization,
+  getCatalogSearchFilterOptions,
   getDashboardState,
   updateSettings,
 } from "~/lib/db/repositories";
 import type { AppEnv } from "~/lib/env";
 import {
-  getArraySetting,
+  getAllowedRequestPathsSetting,
   getRequiredPathsMatchMode,
   getRequiredPathsSetting,
   normalizeAllowedRequestPaths,
 } from "~/lib/request-policy";
+import { parseStoredTuningIds } from "~/lib/tunings";
 import { getTwitchUser } from "~/lib/twitch/api";
 import {
   getChannelPointRewardEligibility,
@@ -55,6 +57,7 @@ export const Route = createFileRoute("/api/dashboard/settings")({
           botAuthorization,
           streamElementsTipWebhookToken,
           broadcasterAuthorization,
+          filterOptions,
         ] = await Promise.all([
           getBotAuthorization(runtimeEnv),
           state.settings
@@ -64,6 +67,7 @@ export const Route = createFileRoute("/api/dashboard/settings")({
             runtimeEnv,
             state.channel.id
           ),
+          getCatalogSearchFilterOptions(runtimeEnv),
         ]);
         let channelPointRewardsEligibility =
           unknownChannelPointRewardEligibility;
@@ -93,12 +97,12 @@ export const Route = createFileRoute("/api/dashboard/settings")({
           settings: state.settings
             ? {
                 ...state.settings,
-                allowedTunings: getArraySetting(
+                allowedTunings: parseStoredTuningIds(
                   state.settings.allowedTuningsJson
                 ),
                 requiredPaths: getRequiredPathsSetting(state.settings),
                 allowedRequestPaths: normalizeAllowedRequestPaths(
-                  getArraySetting(state.settings.allowedRequestPathsJson)
+                  getAllowedRequestPathsSetting(state.settings)
                 ),
                 vipTokenDurationThresholds: parseVipTokenDurationThresholds(
                   state.settings.vipTokenDurationThresholdsJson
@@ -110,6 +114,7 @@ export const Route = createFileRoute("/api/dashboard/settings")({
                   state.settings.allowRequestPathModifiers,
               }
             : null,
+          tuningOptions: filterOptions.tunings,
           integrations: {
             streamElementsTipRelayUrl: streamElementsTipWebhookToken
               ? `${runtimeEnv.APP_URL}/api/integrations/streamelements/${state.channel.slug}/${streamElementsTipWebhookToken}`

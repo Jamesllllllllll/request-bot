@@ -65,8 +65,8 @@ describe("resolveExtensionPanelLocale", () => {
         storedLocale: null,
         cookieLocale: null,
         channelDefaultLocale: "es",
-        documentLanguage: "de-DE",
-        navigatorLanguage: "de-DE",
+        documentLanguage: "it-IT",
+        navigatorLanguage: "it-IT",
       })
     ).toBe("es");
   });
@@ -74,9 +74,9 @@ describe("resolveExtensionPanelLocale", () => {
   it("falls back to English when no supported locale can be resolved", () => {
     expect(
       resolveExtensionPanelLocale({
-        search: "?locale=de-DE",
-        documentLanguage: "de-DE",
-        navigatorLanguage: "de-DE",
+        search: "?locale=it-IT",
+        documentLanguage: "it-IT",
+        navigatorLanguage: "it-IT",
       })
     ).toBe("en");
   });

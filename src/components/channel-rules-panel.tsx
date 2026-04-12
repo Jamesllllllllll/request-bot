@@ -32,6 +32,10 @@ type SearchResponse = {
   songs?: SongGroupMatch[];
 };
 
+function compareText(left: string, right: string) {
+  return left.localeCompare(right, undefined, { sensitivity: "base" });
+}
+
 export function ChannelRulesPanel(props: {
   slug: string;
   channelDisplayName?: string | null;
@@ -217,6 +221,55 @@ export function ChannelRulesPanel(props: {
   const visibleSetlistMatches = setlistMatches.filter(
     (artist) => !setlistArtistIds.has(artist.artistId)
   );
+  const sortedArtists = useMemo(
+    () =>
+      [...props.artists].sort((left, right) =>
+        compareText(left.artistName, right.artistName)
+      ),
+    [props.artists]
+  );
+  const sortedCharters = useMemo(
+    () =>
+      [...props.charters].sort((left, right) =>
+        compareText(left.charterName, right.charterName)
+      ),
+    [props.charters]
+  );
+  const sortedSongGroups = useMemo(
+    () =>
+      [...props.songGroups].sort((left, right) =>
+        compareText(
+          left.artistName
+            ? `${left.songTitle} - ${left.artistName}`
+            : left.songTitle,
+          right.artistName
+            ? `${right.songTitle} - ${right.artistName}`
+            : right.songTitle
+        )
+      ),
+    [props.songGroups]
+  );
+  const sortedSongs = useMemo(
+    () =>
+      [...props.songs].sort((left, right) =>
+        compareText(
+          left.artistName
+            ? `${left.songTitle} - ${left.artistName}`
+            : left.songTitle,
+          right.artistName
+            ? `${right.songTitle} - ${right.artistName}`
+            : right.songTitle
+        )
+      ),
+    [props.songs]
+  );
+  const sortedSetlistArtists = useMemo(
+    () =>
+      [...props.setlistArtists].sort((left, right) =>
+        compareText(left.artistName, right.artistName)
+      ),
+    [props.setlistArtists]
+  );
   const showBlacklistedArtistsCard =
     props.canManageBlacklist || props.artists.length > 0;
   const showBlacklistedChartersCard = props.canManageBlacklist;
@@ -280,7 +333,7 @@ export function ChannelRulesPanel(props: {
                         artistName: artist.artistName,
                       }),
                   }))}
-                  currentItems={props.artists.map((item) => ({
+                  currentItems={sortedArtists.map((item) => ({
                     key: `artist-current-${item.artistId}`,
                     label: item.artistName,
                     hoverDetail: t("rules.artistId", { id: item.artistId }),
@@ -314,7 +367,7 @@ export function ChannelRulesPanel(props: {
                         charterName: charter.charterName,
                       }),
                   }))}
-                  currentItems={props.charters.map((item) => ({
+                  currentItems={sortedCharters.map((item) => ({
                     key: `charter-current-${item.charterId}`,
                     label: item.charterName,
                     hoverDetail: t("rules.charterId", { id: item.charterId }),
@@ -355,7 +408,7 @@ export function ChannelRulesPanel(props: {
                         artistName: song.artistName ?? undefined,
                       }),
                   }))}
-                  currentItems={props.songGroups.map((item) => ({
+                  currentItems={sortedSongGroups.map((item) => ({
                     key: `song-group-current-${item.groupedProjectId}`,
                     label: item.artistName
                       ? `${item.songTitle} - ${item.artistName}`
@@ -383,7 +436,7 @@ export function ChannelRulesPanel(props: {
                   onInputChange={() => {}}
                   placeholder=""
                   matches={[]}
-                  currentItems={props.songs.map((item) => ({
+                  currentItems={sortedSongs.map((item) => ({
                     key: `song-version-current-${item.songId}`,
                     label: item.artistName
                       ? `${item.songTitle} - ${item.artistName}`
@@ -422,7 +475,7 @@ export function ChannelRulesPanel(props: {
                     artistName: artist.artistName,
                   }),
               }))}
-              currentItems={props.setlistArtists.map((item) => ({
+              currentItems={sortedSetlistArtists.map((item) => ({
                 key: `setlist-current-${item.artistId}`,
                 label: item.artistName,
                 hoverDetail: t("rules.artistId", { id: item.artistId }),
@@ -435,6 +488,7 @@ export function ChannelRulesPanel(props: {
               isPending={mutateRules.isPending}
               emptyCurrentLabel={t("rules.noSetlistArtists")}
               canManage={props.canManageSetlist}
+              hideReadOnlyRemoveAction
             />
           ) : null}
         </div>

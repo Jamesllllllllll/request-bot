@@ -2,7 +2,10 @@
   "page": {
     "title": "{channel}'s Playlist",
     "loading": "Loading playlist...",
+    "loadFailed": "Playlist failed to load.",
     "empty": "This playlist is empty right now.",
+    "notFoundTitle": "This user does not exist.",
+    "notFoundDescription": "We couldn't find a request page for @{channel}.",
     "viewerStateFailed": "Viewer request state failed to load.",
     "viewerToolsFailed": "Viewer request tools failed to load.",
     "requestsLiveOnly": "You can add requests when the stream goes live."
@@ -201,7 +204,7 @@
     "edit": "Edit",
     "editVip": "Edit VIP",
     "adding": "Adding...",
-    "choosePath": "Path",
+    "choosePath": "Part",
     "noPathPreference": "No path preference",
     "alreadyVip": "Already in your queue as a VIP request.",
     "alreadyRegular": "Already in your queue as a regular request.",
@@ -215,6 +218,11 @@
     "requiresVipTokens": "Requires {count}.",
     "pathRequiresVip": "{path} requires {count}.",
     "pathCostsVipTokens": "{path} costs {count}.",
+    "free": "Free",
+    "vipShort": "VIP",
+    "durationShort": "{minutes}+ min",
+    "costSummary": "{reasons}: {count}",
+    "copyCommandCostNotice": "!sr costs {regularCount}. !vip costs {vipCount}.",
     "addCost": "Add ({count})",
     "editCost": "Edit ({count})",
     "updateExisting": "Updates your existing request.",
@@ -253,7 +261,9 @@
     "reconnectMessage": "Reconnect Twitch to search viewers currently in chat.",
     "reconnect": "Reconnect",
     "searching": "Searching current viewers...",
-    "noMatches": "No current viewers matched that username."
+    "noMatches": "No current viewers matched that username.",
+    "costWithBalance": "{cost} · {count} available",
+    "insufficientWithBalance": "Needs {cost} · {count} available"
   },
   "row": {
     "viewer": "viewer",
@@ -275,6 +285,7 @@
     }
   },
   "management": {
+    "blacklistPanelTitle": "Channel blacklists",
     "states": {
       "searchFailed": "Search failed.",
       "playlistUpdateFailed": "Playlist update failed.",
@@ -448,7 +459,8 @@
       "unknown": "Unknown",
       "download": "Download",
       "blacklisted": "Blacklisted",
-      "blacklist": "Blacklist"
+      "blacklist": "Blacklist",
+      "unblacklist": "Un-blacklist"
     },
     "preview": {
       "removed": "The demo row is removed from the playlist.",

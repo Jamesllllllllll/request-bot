@@ -1,0 +1,79 @@
+{
+  "meta": {
+    "title": "Lieder suchen"
+  },
+  "page": {
+    "title": "Suchen",
+    "infoNote": "Diese Demo enthält nur{count}Lieder.",
+    "placeholder": "Nach Songtitel, Künstler oder Album suchen"
+  },
+  "summary": {
+    "note": "Notiz:",
+    "foundCount": "{count} Songs gefunden",
+    "filters": "Filter",
+    "moreCount": "+{count} mehr",
+    "changeFilters": "Filter wechseln"
+  },
+  "controls": {
+    "searchField": "Suchfeld",
+    "allFields": "Alle Felder",
+    "titleOnly": "Nur Titel",
+    "artistOnly": "Nur Künstler",
+    "albumOnly": "Nur Album",
+    "creatorOnly": "Nur Charter",
+    "showFilters": "Filter anzeigen",
+    "hideFilters": "Filter ausblenden",
+    "title": "Titel",
+    "artist": "Künstler",
+    "album": "Album",
+    "creator": "Charter",
+    "tuning": "Stimmung",
+    "path": "Pfad",
+    "year": "Jahr",
+    "actions": "Aktionen",
+    "clearAdvancedFilters": "Filter löschen",
+    "matchAny": "Passen Sie zu jedem",
+    "matchAll": "Passen Sie alle zusammen"
+  },
+  "columns": {
+    "song": "Titel",
+    "paths": "Pfade",
+    "stats": "Statistiken",
+    "actions": "Aktionen"
+  },
+  "states": {
+    "loading": "Songs werden geladen...",
+    "queryTooShort": "Suchbegriffe müssen mindestens 3 Zeichen lang sein.",
+    "emptyFiltered": "Bisher entsprachen keine Songs diesen Filtern. Versuchen Sie, das Suchfeld zu erweitern oder eine der erweiterten Eingaben zu löschen.",
+    "emptyCatalog": "Im Demokatalog sind noch keine Songs verfügbar.",
+    "blacklisted": "Auf der schwarzen Liste",
+    "blacklistedWithReasons": "Auf der schwarzen Liste -{reasons}",
+    "unknownArtist": "Unbekannter Künstler",
+    "chartedBy": "Chart von {creator}",
+    "updated": "Aktualisiert{date}"
+  },
+  "errors": {
+    "filterOptionsFailed": "Die Filteroptionen konnten nicht geladen werden.",
+    "searchFailed": "Die Suche ist fehlgeschlagen."
+  },
+  "commands": {
+    "copySr": "!sr-Befehl kopieren",
+    "copiedSr": "!sr-Befehl kopiert",
+    "copyEdit": "!edit-Befehl kopieren",
+    "copiedEdit": "!edit-Befehl kopiert",
+    "copyVip": "!vip-Befehl kopieren",
+    "copiedVip": "!vip-Befehl kopiert"
+  },
+  "paths": {
+    "lead": "Lead",
+    "rhythm": "Rhythmus",
+    "bass": "Bass",
+    "lyrics": "Text"
+  },
+  "multiSelect": {
+    "selected": "{count} ausgewählt",
+    "select": "{label} auswählen",
+    "filter": "{label} filtern...",
+    "noMatches": "Keine Treffer gefunden."
+  }
+}

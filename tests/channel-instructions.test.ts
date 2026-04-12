@@ -9,6 +9,10 @@ const baseSettings: ChannelInstructionsSettings = {
   allowAnyoneToRequest: true,
   allowSubscribersToRequest: true,
   allowVipsToRequest: true,
+  maxViewerRequestsAtOnce: 1,
+  maxSubscriberRequestsAtOnce: 1,
+  maxVipViewerRequestsAtOnce: 1,
+  maxVipSubscriberRequestsAtOnce: 1,
   allowRequestPathModifiers: false,
   allowedRequestPaths: [],
   requestPathModifierVipTokenCost: 0,
@@ -30,7 +34,7 @@ const baseSettings: ChannelInstructionsSettings = {
 };
 
 describe("buildChannelInstructions", () => {
-  it("describes VIP priority path modifiers and sorted long-song costs", () => {
+  it("describes additive part and long-song costs in sorted order", () => {
     const instructions = buildChannelInstructions({
       channelSlug: "tester",
       settings: {
@@ -62,12 +66,16 @@ describe("buildChannelInstructions", () => {
     expect(instructions).toContain(
       "Use !vip artist - song to make a request VIP and move it to the top."
     );
-    expect(instructions).toContain("Songs over 7 minutes require 1 VIP token.");
     expect(instructions).toContain(
-      "Songs over 11 minutes require 3 VIP tokens."
+      "VIP requests add 1 VIP token and play next."
+    );
+    expect(instructions).toContain("Songs over 7 minutes add 1 VIP token.");
+    expect(instructions).toContain("Songs over 11 minutes add 3 VIP tokens.");
+    expect(instructions).toContain(
+      "Add *guitar, *bass to !sr, !vip, or !edit when the song includes a matching part. Choosing a part adds 2 VIP tokens."
     );
     expect(instructions).toContain(
-      "Add *guitar, *bass to !vip artist - song when the song includes a matching part. Choosing a part costs 2 VIP tokens and uses VIP priority."
+      "Use !vip as well to play next. VIP adds 1 more VIP token."
     );
     expect(instructions).toContain("Give 1 VIP token for a new paid sub");
     expect(instructions).toContain("Cheers: 1 VIP token per 200 bits.");
@@ -88,14 +96,12 @@ describe("buildChannelInstructions", () => {
       },
     });
 
+    expect(instructions).toContain("Requests: subscribers + VIPs");
     expect(instructions).toContain(
-      "Requests are open to subscribers and channel VIPs."
+      "Add *bass to !sr, !vip, or !edit when the song includes a matching part. Choosing a part adds 1 VIP token."
     );
     expect(instructions).toContain(
-      "Add *bass to !sr, !vip, or !edit when the song includes a matching part. Choosing a part costs 1 VIP token."
-    );
-    expect(instructions).toContain(
-      "Use !vip as well if you want the request to play next."
+      "Use !vip as well to play next. VIP adds 1 more VIP token."
     );
     expect(instructions).toContain(
       "VIP tokens are not awarded automatically right now."
@@ -114,5 +120,30 @@ describe("buildChannelInstructions", () => {
     });
 
     expect(instructions).not.toContain("Add *bass");
+  });
+
+  it("lists mixed per-part VIP token costs", () => {
+    const instructions = buildChannelInstructions({
+      channelSlug: "mixed-costs",
+      settings: {
+        ...baseSettings,
+        allowRequestPathModifiers: true,
+        allowedRequestPaths: ["guitar", "bass"],
+        requestPathModifierVipTokenCosts: {
+          guitar: 0,
+          lead: 0,
+          rhythm: 0,
+          bass: 2,
+        },
+        requestPathModifierUsesVipPriority: true,
+      },
+    });
+
+    expect(instructions).toContain(
+      "Costs: *guitar = free, *bass = 2 VIP tokens."
+    );
+    expect(instructions).toContain(
+      "Use !vip as well to play next. VIP adds 1 more VIP token."
+    );
   });
 });

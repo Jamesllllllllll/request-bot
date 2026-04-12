@@ -200,4 +200,45 @@ describe("searchCatalogSongs", () => {
       /\(lower\(coalesce\("catalog_songs"\."artist_name", ''\)\) LIKE \? OR lower\(coalesce\("catalog_songs"\."artist_name", ''\)\) LIKE \?\) AND \("catalog_songs"\."year" = \?\)/
     );
   });
+
+  it("splits multi-tuning summaries for advanced and policy tuning filters", async () => {
+    const capturedSql: unknown[] = [];
+    const dbAll = vi.fn().mockImplementation((query) => {
+      capturedSql.push(query);
+
+      if (capturedSql.length === 1) {
+        return Promise.resolve([{ count: 0 }]);
+      }
+
+      return Promise.resolve([]);
+    });
+
+    vi.mocked(getDb).mockReturnValue({
+      all: dbAll,
+    } as never);
+
+    await expect(
+      searchCatalogSongs(env, {
+        tuning: ["A Drop G"],
+        allowedTuningsFilter: ["A Drop G", "B Drop A"],
+        page: 1,
+        pageSize: 1,
+        sortBy: "updated",
+        sortDirection: "desc",
+      })
+    ).resolves.toMatchObject({
+      total: 0,
+      results: [],
+    });
+
+    const dialect = new SQLiteAsyncDialect();
+    const totalQuery = dialect.sqlToQuery(capturedSql[0] as never);
+
+    expect(totalQuery.sql).toContain("json_each");
+    expect(totalQuery.sql).toContain("EXISTS");
+    expect(totalQuery.sql).toContain("NOT EXISTS");
+    expect(totalQuery.sql).not.toContain(
+      `lower(trim(coalesce("catalog_songs"."tuning_summary", ''))) IN`
+    );
+  });
 });

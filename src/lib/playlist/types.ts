@@ -145,6 +145,7 @@ export interface ManualAddInput {
   requesterLogin?: string;
   requesterTwitchUserId?: string;
   requesterDisplayName?: string;
+  vipTokenCost?: number;
   song: {
     id: string;
     title: string;

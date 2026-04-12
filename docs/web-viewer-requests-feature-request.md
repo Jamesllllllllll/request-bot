@@ -7,6 +7,7 @@ RockList.Live lets viewers request songs directly from a channel playlist page a
 - Playlist viewing stays public.
 - Signed-in viewers see their Twitch identity, VIP token balance, and active request state for the current channel.
 - Signed-in viewers can add a regular request or a VIP request from search results when channel rules allow it.
+- When the channel enables request-path modifiers, signed-in viewers can choose a path before submitting a request.
 - Signed-in viewers can replace or remove their own active requests.
 - Blocked viewers can still sign in, browse the playlist, search the catalog, and copy the request commands. Request buttons stay unavailable.
 
@@ -17,6 +18,7 @@ RockList.Live lets viewers request songs directly from a channel playlist page a
 - The website can reveal blacklisted results with the public `Show blacklisted songs` toggle.
 - Channel request filters such as official-only, allowed tunings, and required parts stay active during search and submit checks.
 - Viewer requests still run server-side validation for request limits, VIP token balance, setlist rules, queue limits, and blocked-requester checks.
+- Detailed path-modifier and VIP-token combinations live in `docs/request-modifier-vip-token-rules.md`.
 
 ## Main surfaces
 

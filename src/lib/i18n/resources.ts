@@ -1,3 +1,11 @@
+import adminDe from "./resources/de/admin.json";
+import botDe from "./resources/de/bot.json";
+import commonDe from "./resources/de/common.json";
+import dashboardDe from "./resources/de/dashboard.json";
+import extensionDe from "./resources/de/extension.json";
+import homeDe from "./resources/de/home.json";
+import playlistDe from "./resources/de/playlist.json";
+import searchDe from "./resources/de/search.json";
 import adminEn from "./resources/en/admin.json";
 import botEn from "./resources/en/bot.json";
 import commonEn from "./resources/en/common.json";
@@ -41,6 +49,16 @@ export const i18nResources = {
     home: homeEn,
     playlist: playlistEn,
     search: searchEn,
+  },
+  de: {
+    admin: adminDe,
+    bot: botDe,
+    common: commonDe,
+    dashboard: dashboardDe,
+    extension: extensionDe,
+    home: homeDe,
+    playlist: playlistDe,
+    search: searchDe,
   },
   es: {
     admin: adminEs,

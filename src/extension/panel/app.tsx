@@ -17,6 +17,7 @@ import {
   CircleHelp,
   Disc3,
   GripVertical,
+  Heart,
   LoaderCircle,
   MoreHorizontal,
   PencilLine,
@@ -63,6 +64,7 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "~/components/ui/tooltip";
+import { pathOptions } from "~/lib/channel-options";
 import {
   AppI18nProvider,
   useAppLocale,
@@ -75,6 +77,7 @@ import {
   getUpdatedPositionsAfterSetCurrent,
   getUpdatedQueuedPositionsAfterKindChange,
 } from "~/lib/playlist/order";
+import type { PlaylistStreamNotifyReason } from "~/lib/playlist/realtime";
 import { areChannelRequestsOpen } from "~/lib/request-availability";
 import { formatPathLabel } from "~/lib/request-policy";
 import {
@@ -83,12 +86,15 @@ import {
   getRequestVipTokenPlan,
   type RequestPathOption,
 } from "~/lib/requested-paths";
+import { cn } from "~/lib/utils";
 import { getVipTokenAutomationDetails } from "~/lib/vip-token-automation";
 import {
+  formatVipDurationThresholdMinutes,
   formatVipTokenCostLabel,
   parseVipTokenDurationThresholds,
   type VipTokenDurationThreshold,
 } from "~/lib/vip-token-duration-thresholds";
+import { formatVipTokenCount } from "~/lib/vip-tokens";
 import { toExtensionApiUrl, toExtensionAppUrl } from "./config";
 import {
   applyDemoViewerRequestMutation,
@@ -102,6 +108,10 @@ import {
   readPanelStoredLocale,
   resolveExtensionPanelLocale,
 } from "./locale";
+import {
+  parseExtensionPanelPubSubMessage,
+  shouldRefreshPanelSearchFromPubSub,
+} from "./pubsub";
 import {
   getTwitchExtensionHelper,
   loadTwitchExtensionHelper,
@@ -122,9 +132,17 @@ type PanelBootstrapResponse = {
   settings: {
     defaultLocale: string;
     requestsEnabled: boolean;
+    defaultSearchPaths: string[];
+    defaultSearchPathsMatchMode: "any" | "all";
     allowRequestPathModifiers: boolean;
     allowedRequestPaths: string[];
     requestPathModifierVipTokenCost: number;
+    requestPathModifierVipTokenCosts: {
+      guitar: number;
+      lead: number;
+      rhythm: number;
+      bass: number;
+    };
     requestPathModifierUsesVipPriority: boolean;
     vipTokenDurationThresholdsJson: string;
     showPlaylistPositions: boolean;
@@ -224,6 +242,14 @@ type PreviewCatalogSearchResponse = {
   error?: string;
 };
 
+type PanelSearchPath = (typeof pathOptions)[number];
+
+type PanelSearchFilters = {
+  favoritesOnly: boolean;
+  parts: PanelSearchPath[];
+  partsMatchMode: "any" | "all";
+};
+
 type PanelPlaylistMutation =
   | { action: "setCurrent"; itemId: string }
   | { action: "returnToQueue"; itemId: string }
@@ -297,7 +323,7 @@ type TransientPanelNotice = {
   tone: "danger" | "success";
 };
 
-const PANEL_VISIBLE_REFRESH_INTERVAL_MS = 5000;
+const PANEL_VISIBLE_REFRESH_INTERVAL_MS = 15_000;
 
 export function ExtensionPanelApp(props: { apiBaseUrl?: string }) {
   const [initialLocale, setInitialLocale] = useState<AppLocale>(() =>
@@ -340,8 +366,12 @@ function ExtensionPanelAppContent(props: {
   const [connectionMessage, setConnectionMessage] = useState<string | null>(
     null
   );
+  const [pendingPubSubReason, setPendingPubSubReason] =
+    useState<PlaylistStreamNotifyReason | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [debouncedSearchQuery, setDebouncedSearchQuery] = useState("");
+  const [searchFiltersOverride, setSearchFiltersOverride] =
+    useState<PanelSearchFilters | null>(null);
   const [searchResults, setSearchResults] =
     useState<PanelSearchResponse | null>(null);
   const [searchError, setSearchError] = useState<string | null>(null);
@@ -449,6 +479,19 @@ function ExtensionPanelAppContent(props: {
     editingRequestItemId
   );
   const isEditingRequest = editingRequest != null;
+  const defaultSearchFilters = useMemo(
+    () =>
+      createPanelSearchFilters({
+        parts: bootstrap?.settings.defaultSearchPaths,
+        partsMatchMode: bootstrap?.settings.defaultSearchPathsMatchMode,
+      }),
+    [
+      bootstrap?.settings.defaultSearchPaths,
+      bootstrap?.settings.defaultSearchPathsMatchMode,
+    ]
+  );
+  const searchFilters = searchFiltersOverride ?? defaultSearchFilters;
+  const searchFiltersChangedFromDefaults = searchFiltersOverride != null;
 
   useEffect(() => {
     document.documentElement.classList.add("extension-mode");
@@ -528,6 +571,10 @@ function ExtensionPanelAppContent(props: {
   }, [editingRequest, editingRequestItemId]);
 
   useEffect(() => {
+    setSearchFiltersOverride(null);
+  }, [bootstrap?.channel?.slug]);
+
+  useEffect(() => {
     let cancelled = false;
 
     void loadTwitchExtensionHelper()
@@ -545,7 +592,7 @@ function ExtensionPanelAppContent(props: {
         setHelperError(
           error instanceof Error && error.message.trim()
             ? error.message
-            : "Unable to load the Twitch extension helper."
+            : t("notices.helperLoadFailed")
         );
       });
 
@@ -562,7 +609,7 @@ function ExtensionPanelAppContent(props: {
     const helper = getTwitchExtensionHelper();
     if (!helper) {
       setHelperState("error");
-      setHelperError("The Twitch extension helper is unavailable.");
+      setHelperError(t("notices.helperUnavailable"));
       return;
     }
 
@@ -600,21 +647,15 @@ function ExtensionPanelAppContent(props: {
 
     const loadBootstrap = async (attempt = 0) => {
       try {
-        const data = await fetchExtensionJson<PanelBootstrapResponse>(
-          auth.token,
-          "/api/extension/bootstrap",
-          props.apiBaseUrl
-        );
+        const data = await refreshBootstrapState({
+          token: auth.token,
+          silent: true,
+          throwOnError: true,
+        });
 
-        if (cancelled) {
+        if (cancelled || !data) {
           return;
         }
-
-        startTransition(() => {
-          setBootstrap(data);
-          setBootstrapError(null);
-          setConnectionMessage(null);
-        });
       } catch (error) {
         if (cancelled) {
           return;
@@ -623,7 +664,9 @@ function ExtensionPanelAppContent(props: {
         if (isRetriableExtensionError(error)) {
           const retryDelayMs = getRetryDelayMs(attempt, 1500, 30000);
           setConnectionMessage(
-            `Panel is still connecting. Retrying in ${formatRetryDelay(retryDelayMs)}.`
+            t("notices.connectingRetry", {
+              delay: formatRetryDelay(retryDelayMs),
+            })
           );
           retryTimeout = window.setTimeout(() => {
             void loadBootstrap(attempt + 1);
@@ -631,7 +674,9 @@ function ExtensionPanelAppContent(props: {
           return;
         }
 
-        setBootstrapError(getErrorText(error, "Unable to load panel state."));
+        setBootstrapError(
+          getErrorText(error, t("notices.panelStateLoadFailed"))
+        );
       }
     };
 
@@ -671,6 +716,45 @@ function ExtensionPanelAppContent(props: {
     await setLocale(nextLocale);
   }
 
+  async function refreshBootstrapState(input?: {
+    token?: string;
+    silent?: boolean;
+    throwOnError?: boolean;
+  }) {
+    const token = input?.token ?? auth?.token;
+    if (!token) {
+      return null;
+    }
+
+    try {
+      const data = await fetchExtensionJson<PanelBootstrapResponse>(
+        token,
+        "/api/extension/bootstrap",
+        props.apiBaseUrl
+      );
+
+      startTransition(() => {
+        setBootstrap(data);
+        setBootstrapError(null);
+        setConnectionMessage(null);
+      });
+
+      return data;
+    } catch (error) {
+      if (input?.throwOnError) {
+        throw error;
+      }
+
+      if (!input?.silent) {
+        setBootstrapError(
+          getErrorText(error, t("notices.panelStateLoadFailed"))
+        );
+      }
+
+      return null;
+    }
+  }
+
   function showTransientNotice(
     tone: TransientPanelNotice["tone"],
     message: string
@@ -703,17 +787,9 @@ function ExtensionPanelAppContent(props: {
         areChannelRequestsOpen(bootstrap?.channel ?? {}) !==
         areChannelRequestsOpen(data.channel)
       ) {
-        const refreshedBootstrap =
-          await fetchExtensionJson<PanelBootstrapResponse>(
-            token,
-            "/api/extension/bootstrap",
-            props.apiBaseUrl
-          );
-
-        startTransition(() => {
-          setBootstrap(refreshedBootstrap);
-          setBootstrapError(null);
-          setConnectionMessage(null);
+        await refreshBootstrapState({
+          token,
+          silent: input?.silent,
         });
 
         return data;
@@ -752,12 +828,88 @@ function ExtensionPanelAppContent(props: {
     } catch (error) {
       if (!input?.silent) {
         setBootstrapError(
-          getErrorText(error, "Unable to refresh panel state.")
+          getErrorText(error, t("notices.panelStateRefreshFailed"))
         );
       }
       return null;
     }
   }
+
+  async function handlePanelPubSubRefresh(reason: PlaylistStreamNotifyReason) {
+    const refreshedBootstrap = await refreshBootstrapState({
+      token: auth?.token,
+      silent: true,
+    });
+
+    if (!refreshedBootstrap) {
+      return;
+    }
+
+    if (
+      shouldRefreshPanelSearchFromPubSub(reason) &&
+      canRunPanelSearch(debouncedSearchQuery.trim(), searchFilters)
+    ) {
+      await runSearch(debouncedSearchQuery, searchFilters);
+    }
+  }
+
+  useEffect(() => {
+    if (helperState !== "ready" || !auth?.token) {
+      return;
+    }
+
+    const helper = getTwitchExtensionHelper();
+    if (!helper?.listen || !helper.unlisten) {
+      return;
+    }
+
+    const handlePubSubMessage = (
+      target: string,
+      contentType: string,
+      message: string
+    ) => {
+      if (target !== "broadcast") {
+        return;
+      }
+
+      const parsed = parseExtensionPanelPubSubMessage({
+        contentType,
+        message,
+      });
+      if (!parsed) {
+        return;
+      }
+
+      if (draggingItemId) {
+        setPendingPubSubReason(parsed.reason);
+        return;
+      }
+
+      void handlePanelPubSubRefresh(parsed.reason);
+    };
+
+    helper.listen("broadcast", handlePubSubMessage);
+
+    return () => {
+      helper.unlisten?.("broadcast", handlePubSubMessage);
+    };
+  }, [
+    auth?.token,
+    debouncedSearchQuery,
+    draggingItemId,
+    helperState,
+    searchFilters,
+  ]);
+
+  useEffect(() => {
+    if (!pendingPubSubReason || draggingItemId) {
+      return;
+    }
+
+    const reason = pendingPubSubReason;
+    setPendingPubSubReason(null);
+    void handlePanelPubSubRefresh(reason);
+  }, [draggingItemId, pendingPubSubReason]);
 
   useEffect(() => {
     if (!auth?.token || !bootstrap) {
@@ -803,7 +955,9 @@ function ExtensionPanelAppContent(props: {
       retryAttempt += 1;
       const retryDelayMs = getRetryDelayMs(retryAttempt, 3000, 60000);
       setConnectionMessage(
-        `Connection interrupted. Retrying in ${formatRetryDelay(retryDelayMs)}.`
+        t("notices.connectionInterruptedRetry", {
+          delay: formatRetryDelay(retryDelayMs),
+        })
       );
       scheduleNextRefresh(retryDelayMs);
     };
@@ -829,7 +983,39 @@ function ExtensionPanelAppContent(props: {
     };
   }, [auth?.token, bootstrap, draggingItemId, props.apiBaseUrl]);
 
-  async function runSearch(query: string) {
+  function updateSearchFilters(
+    updater: (current: PanelSearchFilters) => PanelSearchFilters
+  ) {
+    setSearchFiltersOverride((currentOverride) => {
+      const next = updater(currentOverride ?? defaultSearchFilters);
+      return arePanelSearchFiltersEqual(next, defaultSearchFilters)
+        ? null
+        : next;
+    });
+  }
+
+  function toggleSearchFilterPath(path: PanelSearchPath) {
+    updateSearchFilters((current) => {
+      const nextParts = current.parts.includes(path)
+        ? current.parts.filter((value) => value !== path)
+        : [...current.parts, path];
+
+      return {
+        ...current,
+        parts: nextParts,
+        partsMatchMode: nextParts.length > 1 ? current.partsMatchMode : "any",
+      };
+    });
+  }
+
+  function resetSearchFilters() {
+    setSearchFiltersOverride(null);
+  }
+
+  async function runSearch(
+    query: string,
+    filters: PanelSearchFilters = searchFilters
+  ) {
     if (searchTabBlockedByRequestsOff) {
       setSearchResults(null);
       setSearchError(null);
@@ -844,7 +1030,16 @@ function ExtensionPanelAppContent(props: {
     const requestId = latestSearchRequestRef.current + 1;
     latestSearchRequestRef.current = requestId;
     const normalizedQuery = query.trim();
-    if (normalizedQuery.length < 3) {
+    if (normalizedQuery.length > 0 && normalizedQuery.length < 3) {
+      startTransition(() => {
+        setSearchResults(null);
+      });
+      setSearchError(null);
+      setSearching(false);
+      return;
+    }
+
+    if (!canRunPanelSearch(normalizedQuery, filters)) {
       startTransition(() => {
         setSearchResults(null);
       });
@@ -858,10 +1053,21 @@ function ExtensionPanelAppContent(props: {
 
     try {
       const params = new URLSearchParams({
-        query: normalizedQuery,
         page: "1",
         pageSize: "10",
       });
+      if (normalizedQuery.length >= 3) {
+        params.set("query", normalizedQuery);
+      }
+      if (filters.favoritesOnly) {
+        params.set("favoritesOnly", "true");
+      }
+      for (const part of filters.parts) {
+        params.append("parts", part);
+      }
+      if (filters.parts.length > 0) {
+        params.set("partsMatchMode", filters.partsMatchMode);
+      }
       const results = await fetchExtensionJson<PanelSearchResponse>(
         auth.token,
         `/api/extension/search?${params.toString()}`,
@@ -880,7 +1086,7 @@ function ExtensionPanelAppContent(props: {
         return;
       }
 
-      setSearchError(getErrorText(error, "Unable to search songs."));
+      setSearchError(getErrorText(error, t("search.searchFailed")));
     } finally {
       if (latestSearchRequestRef.current === requestId) {
         setSearching(false);
@@ -893,8 +1099,8 @@ function ExtensionPanelAppContent(props: {
       return;
     }
 
-    void runSearch(debouncedSearchQuery);
-  }, [auth?.token, debouncedSearchQuery, props.apiBaseUrl]);
+    void runSearch(debouncedSearchQuery, searchFilters);
+  }, [auth?.token, debouncedSearchQuery, props.apiBaseUrl, searchFilters]);
 
   async function handleSearchSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -904,7 +1110,7 @@ function ExtensionPanelAppContent(props: {
     }
 
     const query = searchQuery.trim();
-    if (query.length < 3 || !auth?.token) {
+    if (!auth?.token) {
       return;
     }
 
@@ -913,7 +1119,7 @@ function ExtensionPanelAppContent(props: {
       return;
     }
 
-    void runSearch(query);
+    void runSearch(query, searchFilters);
   }
 
   async function handleSubmitRequest(input: PanelViewerRequestSubmitInput) {
@@ -962,7 +1168,7 @@ function ExtensionPanelAppContent(props: {
       showTransientNotice(
         "success",
         result.message ??
-          (isEditingRequest ? "Request updated." : "Request added.")
+          (isEditingRequest ? t("requests.updated") : t("requests.added"))
       );
       await refreshPanelState({
         token: auth.token,
@@ -978,7 +1184,7 @@ function ExtensionPanelAppContent(props: {
       });
       showTransientNotice(
         "danger",
-        getErrorText(error, "Unable to update request.")
+        getErrorText(error, t("notices.updateRequestFailed"))
       );
     } finally {
       setPendingAction(null);
@@ -1018,7 +1224,7 @@ function ExtensionPanelAppContent(props: {
         }
       );
 
-      showTransientNotice("success", result.message ?? "Request removed.");
+      showTransientNotice("success", result.message ?? t("requests.removed"));
       setConfirmingRemoveItemId(null);
       setExpandedActionItemId((current) =>
         current === itemId ? null : current
@@ -1036,7 +1242,7 @@ function ExtensionPanelAppContent(props: {
       });
       showTransientNotice(
         "danger",
-        getErrorText(error, "Unable to remove request.")
+        getErrorText(error, t("notices.removeRequestFailed"))
       );
     } finally {
       setPendingAction(null);
@@ -1099,7 +1305,7 @@ function ExtensionPanelAppContent(props: {
       });
       showTransientNotice(
         "danger",
-        getErrorText(error, "Unable to update the playlist.")
+        getErrorText(error, t("notices.updatePlaylistFailed"))
       );
     } finally {
       setPendingAction(null);
@@ -1112,7 +1318,7 @@ function ExtensionPanelAppContent(props: {
     const source = getString(item, "source");
 
     if (!songId || !title || !source) {
-      showTransientNotice("danger", "That song is unavailable right now.");
+      showTransientNotice("danger", t("search.unavailable"));
       return;
     }
 
@@ -1553,7 +1759,7 @@ function ExtensionPanelAppContent(props: {
                           disabled={
                             searching ||
                             !auth?.token ||
-                            searchQuery.trim().length < 3
+                            !canRunPanelSearch(searchQuery, searchFilters)
                           }
                         >
                           {searching ? (
@@ -1563,6 +1769,25 @@ function ExtensionPanelAppContent(props: {
                           )}
                         </Button>
                       </form>
+                      <PanelSearchFiltersBar
+                        filters={searchFilters}
+                        defaultFilters={defaultSearchFilters}
+                        onFavoritesOnlyChange={(favoritesOnly) => {
+                          updateSearchFilters((current) => ({
+                            ...current,
+                            favoritesOnly,
+                          }));
+                        }}
+                        onPathToggle={toggleSearchFilterPath}
+                        onMatchModeChange={(partsMatchMode) => {
+                          updateSearchFilters((current) => ({
+                            ...current,
+                            partsMatchMode,
+                          }));
+                        }}
+                        onReset={resetSearchFilters}
+                        showReset={searchFiltersChangedFromDefaults}
+                      />
 
                       {searchError ? (
                         <p className="mt-2 text-[11px] text-(--danger)">
@@ -1600,6 +1825,48 @@ function ExtensionPanelAppContent(props: {
                       {searchResults.items.map((item, index) => {
                         const songId = getString(item, "id");
                         const managerActionKey = `${songId ?? "unknown"}:manualAdd`;
+                        const managerIsOwner =
+                          viewerProfile?.login?.trim().toLowerCase() ===
+                          bootstrap?.channel?.login?.trim().toLowerCase();
+                        const managerManualAddVipTokenCost = managerIsOwner
+                          ? 0
+                          : getRequestVipTokenPlan({
+                              requestKind: "regular",
+                              song: {
+                                durationText:
+                                  getString(item, "durationText") ?? undefined,
+                              },
+                              requestedPaths: [],
+                              thresholds: vipTokenDurationThresholds,
+                              settings: {
+                                requestPathModifierVipTokenCost:
+                                  bootstrap?.settings
+                                    .requestPathModifierVipTokenCost ?? 0,
+                                requestPathModifierVipTokenCosts: bootstrap
+                                  ?.settings
+                                  .requestPathModifierVipTokenCosts ?? {
+                                  guitar: 0,
+                                  lead: 0,
+                                  rhythm: 0,
+                                  bass: 0,
+                                },
+                                requestPathModifierUsesVipPriority:
+                                  bootstrap?.settings
+                                    .requestPathModifierUsesVipPriority ?? true,
+                              },
+                            }).totalVipTokenCost;
+                        const managerAvailableVipTokenCount =
+                          viewerProfile?.vipTokensAvailable ?? 0;
+                        const managerHasInsufficientVipTokens =
+                          managerManualAddVipTokenCost >
+                          managerAvailableVipTokenCount;
+                        const managerManualAddCostLabel =
+                          getPanelManagerVipTokenStatusLabel({
+                            requiredVipTokenCost: managerManualAddVipTokenCost,
+                            availableVipTokenCount:
+                              managerAvailableVipTokenCount,
+                            t,
+                          });
 
                         return (
                           <div
@@ -1616,14 +1883,20 @@ function ExtensionPanelAppContent(props: {
                                 </p>
                               </div>
                               {showManagerSearchActions ? (
-                                <div className="flex shrink-0 items-center gap-1">
+                                <div className="grid shrink-0 justify-items-end gap-1 text-right">
                                   <Button
                                     size="sm"
                                     variant="outline"
                                     className="h-7 rounded-none px-2 text-[11px] shadow-none"
                                     disabled={
                                       !songId ||
-                                      pendingAction === managerActionKey
+                                      pendingAction === managerActionKey ||
+                                      managerHasInsufficientVipTokens
+                                    }
+                                    title={
+                                      managerHasInsufficientVipTokens
+                                        ? managerManualAddCostLabel || undefined
+                                        : undefined
                                     }
                                     onClick={() => {
                                       void handleManagerManualAdd(item);
@@ -1635,6 +1908,11 @@ function ExtensionPanelAppContent(props: {
                                         ? t("buttons.edit")
                                         : t("buttons.add")}
                                   </Button>
+                                  {managerManualAddCostLabel ? (
+                                    <p className="text-[10px] leading-3.5 text-(--muted)">
+                                      {managerManualAddCostLabel}
+                                    </p>
+                                  ) : null}
                                 </div>
                               ) : showViewerSearchActions ? (
                                 <PanelSearchSongActions
@@ -1671,6 +1949,15 @@ function ExtensionPanelAppContent(props: {
                                     bootstrap?.settings
                                       .requestPathModifierVipTokenCost ?? 0
                                   }
+                                  requestPathModifierVipTokenCosts={
+                                    bootstrap?.settings
+                                      ?.requestPathModifierVipTokenCosts ?? {
+                                      guitar: 0,
+                                      lead: 0,
+                                      rhythm: 0,
+                                      bass: 0,
+                                    }
+                                  }
                                   requestPathModifierUsesVipPriority={
                                     bootstrap?.settings
                                       .requestPathModifierUsesVipPriority ??
@@ -1689,7 +1976,10 @@ function ExtensionPanelAppContent(props: {
                         );
                       })}
                     </div>
-                  ) : debouncedSearchQuery.trim().length >= 3 && !searching ? (
+                  ) : canRunPanelSearch(
+                      debouncedSearchQuery.trim(),
+                      searchFilters
+                    ) && !searching ? (
                     <div className="border-t border-(--border) px-3 py-2 text-[11px] text-(--muted)">
                       {t("search.noResults")}
                     </div>
@@ -1734,6 +2024,12 @@ export function ExtensionPanelModeratorPreview() {
   const [activeTab, setActiveTab] = useState<"playlist" | "search">("playlist");
   const [searchQuery, setSearchQuery] = useState("");
   const [debouncedSearchQuery, setDebouncedSearchQuery] = useState("");
+  const [searchFilters, setSearchFilters] = useState<PanelSearchFilters>(() =>
+    createPanelSearchFilters({
+      parts: ["lead", "bass"],
+      partsMatchMode: "any",
+    })
+  );
   const [searchResults, setSearchResults] =
     useState<PanelSearchResponse | null>(null);
   const [searchError, setSearchError] = useState<string | null>(null);
@@ -1741,6 +2037,14 @@ export function ExtensionPanelModeratorPreview() {
   const latestTransientNoticeIdRef = useRef(0);
   const latestSearchRequestRef = useRef(0);
   const removeConfirmRef = useRef<HTMLDivElement | null>(null);
+  const defaultSearchFilters = useMemo(
+    () =>
+      createPanelSearchFilters({
+        parts: ["lead", "bass"],
+        partsMatchMode: "any",
+      }),
+    []
+  );
 
   const activeRequests = getDemoViewerActiveRequests(
     playlist,
@@ -1750,6 +2054,7 @@ export function ExtensionPanelModeratorPreview() {
   const activeRequestLimit = mockModeratorViewerProfile.activeRequestLimit;
   const currentPlaylistItemId = playlist.currentItemId;
   const queueCount = playlist.items.length;
+  const previewChannelSlug = "jimmy-pants";
   const showPlaylistPositions = false;
   const showPickOrderBadges = false;
   const footerPlaylistHref = toExtensionAppUrl("/jimmy-pants");
@@ -1775,6 +2080,10 @@ export function ExtensionPanelModeratorPreview() {
     editingRequestItemId
   );
   const isEditingRequest = editingRequest != null;
+  const searchFiltersChangedFromDefaults = !arePanelSearchFiltersEqual(
+    searchFilters,
+    defaultSearchFilters
+  );
 
   useEffect(() => {
     const timeout = window.setTimeout(() => {
@@ -2053,19 +2362,69 @@ export function ExtensionPanelModeratorPreview() {
     }
   }
 
-  async function runPreviewSearch(query: string) {
+  function toggleSearchFilterPath(path: PanelSearchPath) {
+    setSearchFilters((current) => {
+      const nextParts = current.parts.includes(path)
+        ? current.parts.filter((value) => value !== path)
+        : [...current.parts, path];
+
+      return {
+        ...current,
+        parts: nextParts,
+        partsMatchMode: nextParts.length > 1 ? current.partsMatchMode : "any",
+      };
+    });
+  }
+
+  function resetSearchFilters() {
+    setSearchFilters(defaultSearchFilters);
+  }
+
+  async function runPreviewSearch(
+    query: string,
+    filters: PanelSearchFilters = searchFilters
+  ) {
     const requestId = latestSearchRequestRef.current + 1;
     latestSearchRequestRef.current = requestId;
+    const normalizedQuery = query.trim();
+    if (normalizedQuery.length > 0 && normalizedQuery.length < 3) {
+      startTransition(() => {
+        setSearchResults(null);
+      });
+      setSearchError(null);
+      setSearching(false);
+      return;
+    }
+
+    if (!canRunPanelSearch(normalizedQuery, filters)) {
+      startTransition(() => {
+        setSearchResults(null);
+      });
+      setSearchError(null);
+      setSearching(false);
+      return;
+    }
+
     setSearching(true);
     setSearchError(null);
 
     try {
       const params = new URLSearchParams({
+        channelSlug: previewChannelSlug,
         page: "1",
         pageSize: "35",
       });
-      if (query.trim()) {
-        params.set("query", query.trim());
+      if (normalizedQuery.length >= 3) {
+        params.set("query", normalizedQuery);
+      }
+      if (filters.favoritesOnly) {
+        params.set("favoritesOnly", "true");
+      }
+      for (const part of filters.parts) {
+        params.append("parts", part);
+      }
+      if (filters.parts.length > 0) {
+        params.set("partsMatchMode", filters.partsMatchMode);
       }
 
       const response = await fetch(`/api/search?${params.toString()}`);
@@ -2074,7 +2433,7 @@ export function ExtensionPanelModeratorPreview() {
         .catch(() => null)) as PreviewCatalogSearchResponse | null;
 
       if (!response.ok) {
-        throw new Error(payload?.error ?? "Unable to search songs.");
+        throw new Error(payload?.error ?? t("search.searchFailed"));
       }
 
       if (latestSearchRequestRef.current !== requestId) {
@@ -2098,7 +2457,7 @@ export function ExtensionPanelModeratorPreview() {
         return;
       }
 
-      setSearchError(getErrorText(error, "Unable to search songs."));
+      setSearchError(getErrorText(error, t("search.searchFailed")));
     } finally {
       if (latestSearchRequestRef.current === requestId) {
         setSearching(false);
@@ -2107,8 +2466,8 @@ export function ExtensionPanelModeratorPreview() {
   }
 
   useEffect(() => {
-    void runPreviewSearch(debouncedSearchQuery);
-  }, [debouncedSearchQuery]);
+    void runPreviewSearch(debouncedSearchQuery, searchFilters);
+  }, [debouncedSearchQuery, searchFilters]);
 
   async function handleSearchSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -2118,7 +2477,7 @@ export function ExtensionPanelModeratorPreview() {
       return;
     }
 
-    void runPreviewSearch(searchQuery);
+    void runPreviewSearch(searchQuery, searchFilters);
   }
 
   async function handleSubmitRequest(input: PanelViewerRequestSubmitInput) {
@@ -2136,12 +2495,12 @@ export function ExtensionPanelModeratorPreview() {
           : null;
 
     if (("songId" in input || input.requestMode === "random") && !song) {
-      showTransientMessage("danger", "That song is unavailable right now.");
+      showTransientMessage("danger", t("search.unavailable"));
       return;
     }
 
     if (input.requestMode === "choice" && !normalizedQuery) {
-      showTransientMessage("danger", "Type an artist or song first.");
+      showTransientMessage("danger", t("search.typeArtistOrSong"));
       return;
     }
 
@@ -2194,7 +2553,7 @@ export function ExtensionPanelModeratorPreview() {
 
     showTransientMessage(
       "success",
-      isEditingRequest ? "Request updated." : "Request added."
+      isEditingRequest ? t("requests.updated") : t("requests.added")
     );
     setPendingAction(null);
   }
@@ -2487,7 +2846,10 @@ export function ExtensionPanelModeratorPreview() {
                     type="submit"
                     size="sm"
                     className="h-8 rounded-none px-2 shadow-none"
-                    disabled={searching}
+                    disabled={
+                      searching ||
+                      !canRunPanelSearch(searchQuery, searchFilters)
+                    }
                   >
                     {searching ? (
                       <LoaderCircle className="h-4 w-4 animate-spin" />
@@ -2496,6 +2858,25 @@ export function ExtensionPanelModeratorPreview() {
                     )}
                   </Button>
                 </form>
+                <PanelSearchFiltersBar
+                  filters={searchFilters}
+                  defaultFilters={defaultSearchFilters}
+                  onFavoritesOnlyChange={(favoritesOnly) => {
+                    setSearchFilters((current) => ({
+                      ...current,
+                      favoritesOnly,
+                    }));
+                  }}
+                  onPathToggle={toggleSearchFilterPath}
+                  onMatchModeChange={(partsMatchMode) => {
+                    setSearchFilters((current) => ({
+                      ...current,
+                      partsMatchMode,
+                    }));
+                  }}
+                  onReset={resetSearchFilters}
+                  showReset={searchFiltersChangedFromDefaults}
+                />
 
                 {searchError ? (
                   <p className="mt-2 text-[11px] text-(--danger)">
@@ -2557,6 +2938,12 @@ export function ExtensionPanelModeratorPreview() {
                               allowRequestPathModifiers
                               allowedRequestPaths={["lead", "rhythm", "bass"]}
                               requestPathModifierVipTokenCost={1}
+                              requestPathModifierVipTokenCosts={{
+                                guitar: 0,
+                                lead: 1,
+                                rhythm: 1,
+                                bass: 1,
+                              }}
                               requestPathModifierUsesVipPriority
                               vipTokenDurationThresholds={
                                 vipTokenDurationThresholds
@@ -2570,7 +2957,10 @@ export function ExtensionPanelModeratorPreview() {
                       );
                     })}
                   </div>
-                ) : !searching ? (
+                ) : canRunPanelSearch(
+                    debouncedSearchQuery.trim(),
+                    searchFilters
+                  ) && !searching ? (
                   <div className="border-t border-(--border) px-3 py-2 text-[11px] text-(--muted)">
                     {t("search.noResults")}
                   </div>
@@ -2945,6 +3335,11 @@ function PanelPlaylistRow(props: {
                         {t("vip.balance", {
                           count: getPanelStoredVipTokenCost(props.item),
                         })}
+                      </span>
+                    ) : null}
+                    {itemHasLyrics ? (
+                      <span className="inline-flex h-5 items-center border border-(--border-strong) bg-(--panel-soft) px-1.5 text-[9px] leading-none font-medium uppercase tracking-[0.12em] text-(--muted)">
+                        {t("queue.lyrics")}
                       </span>
                     ) : null}
                   </div>
@@ -3929,9 +4324,208 @@ function getStringArray(input: Record<string, unknown>, key: string) {
     : null;
 }
 
+function normalizePanelSearchPaths(
+  paths: Array<string | null | undefined> | null | undefined
+) {
+  const normalized = new Set<PanelSearchPath>();
+
+  for (const path of paths ?? []) {
+    const normalizedPath = String(path ?? "")
+      .trim()
+      .toLowerCase();
+    if (pathOptions.includes(normalizedPath as PanelSearchPath)) {
+      normalized.add(normalizedPath as PanelSearchPath);
+    }
+  }
+
+  return pathOptions.filter((path) => normalized.has(path));
+}
+
+function createPanelSearchFilters(input?: {
+  favoritesOnly?: boolean;
+  parts?: Array<string | null | undefined> | null;
+  partsMatchMode?: PanelSearchFilters["partsMatchMode"];
+}): PanelSearchFilters {
+  return {
+    favoritesOnly: input?.favoritesOnly ?? false,
+    parts: normalizePanelSearchPaths(input?.parts),
+    partsMatchMode: input?.partsMatchMode === "all" ? "all" : "any",
+  };
+}
+
+function haveSameSelectedValues(left: string[], right: string[]) {
+  if (left.length !== right.length) {
+    return false;
+  }
+
+  const normalizedLeft = [...left].sort();
+  const normalizedRight = [...right].sort();
+
+  return normalizedLeft.every(
+    (value, index) => value === normalizedRight[index]
+  );
+}
+
+function arePanelSearchFiltersEqual(
+  left: PanelSearchFilters,
+  right: PanelSearchFilters
+) {
+  return (
+    left.favoritesOnly === right.favoritesOnly &&
+    left.partsMatchMode === right.partsMatchMode &&
+    haveSameSelectedValues(left.parts, right.parts)
+  );
+}
+
+function canRunPanelSearch(query: string, filters: PanelSearchFilters) {
+  const normalizedQuery = query.trim();
+  return (
+    normalizedQuery.length >= 3 ||
+    (normalizedQuery.length === 0 &&
+      (filters.favoritesOnly || filters.parts.length > 0))
+  );
+}
+
+function formatPanelSearchPathList(paths: string[]) {
+  return normalizePanelSearchPaths(paths)
+    .map((path) => formatPathLabel(path))
+    .join(", ");
+}
+
+function getPanelSearchPathTone(path: PanelSearchPath) {
+  switch (path) {
+    case "lead":
+      return "border-emerald-700/50 bg-emerald-950 text-emerald-100";
+    case "rhythm":
+      return "border-sky-700/50 bg-sky-950 text-sky-100";
+    case "bass":
+      return "border-orange-700/50 bg-orange-950 text-orange-100";
+    default:
+      return "border-(--border-strong) bg-(--panel) text-(--text)";
+  }
+}
+
+function PanelSearchFiltersBar(props: {
+  filters: PanelSearchFilters;
+  defaultFilters: PanelSearchFilters;
+  onFavoritesOnlyChange: (favoritesOnly: boolean) => void;
+  onPathToggle: (path: PanelSearchPath) => void;
+  onMatchModeChange: (
+    partsMatchMode: PanelSearchFilters["partsMatchMode"]
+  ) => void;
+  onReset: () => void;
+  showReset: boolean;
+}) {
+  const { t } = useLocaleTranslation("extension");
+  const defaultSummary =
+    props.defaultFilters.parts.length > 0
+      ? t("search.defaultPathsSummary", {
+          paths: formatPanelSearchPathList(props.defaultFilters.parts),
+          mode:
+            props.defaultFilters.partsMatchMode === "all"
+              ? t("search.matchAll")
+              : t("search.matchAny"),
+        })
+      : null;
+
+  return (
+    <div className="mt-2 border border-(--border) bg-(--panel-soft) px-2 py-2">
+      <div className="flex items-center justify-between gap-2">
+        <span className="text-[10px] font-semibold uppercase tracking-[0.16em] text-(--muted)">
+          {t("search.filtersLabel")}
+        </span>
+        {props.showReset ? (
+          <button
+            type="button"
+            className="inline-flex items-center gap-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-(--muted) transition hover:text-(--text)"
+            onClick={props.onReset}
+          >
+            <Undo2 className="h-3 w-3" />
+            <span>{t("search.resetFilters")}</span>
+          </button>
+        ) : null}
+      </div>
+      {defaultSummary ? (
+        <p className="mt-1 text-[10px] leading-4 text-(--muted)">
+          {defaultSummary}
+        </p>
+      ) : null}
+      <div className="mt-2 flex flex-wrap gap-1.5">
+        <Button
+          type="button"
+          size="sm"
+          variant={props.filters.favoritesOnly ? "secondary" : "outline"}
+          className={cn(
+            "h-7 rounded-none px-2 text-[10px] shadow-none",
+            props.filters.favoritesOnly
+              ? "border-rose-700/50 bg-rose-950 text-rose-100 hover:bg-rose-900"
+              : "text-(--muted)"
+          )}
+          onClick={() =>
+            props.onFavoritesOnlyChange(!props.filters.favoritesOnly)
+          }
+        >
+          <Heart
+            className={cn(
+              "h-3 w-3",
+              props.filters.favoritesOnly ? "fill-current" : ""
+            )}
+          />
+          <span>{t("search.favoritesOnly")}</span>
+        </Button>
+        {pathOptions.map((path) => {
+          const selected = props.filters.parts.includes(path);
+
+          return (
+            <button
+              key={path}
+              type="button"
+              className={cn(
+                "inline-flex h-7 items-center justify-center border px-2 text-[10px] font-semibold uppercase tracking-[0.14em] transition",
+                selected
+                  ? getPanelSearchPathTone(path)
+                  : "border-(--border-strong) bg-(--panel) text-(--muted) hover:border-(--brand) hover:text-(--text)"
+              )}
+              onClick={() => props.onPathToggle(path)}
+            >
+              {formatPathLabel(path)}
+            </button>
+          );
+        })}
+      </div>
+      {props.filters.parts.length > 1 ? (
+        <div className="mt-2 flex gap-1.5">
+          <Button
+            type="button"
+            size="sm"
+            variant={
+              props.filters.partsMatchMode === "any" ? "secondary" : "outline"
+            }
+            className="h-7 rounded-none px-2 text-[10px] shadow-none"
+            onClick={() => props.onMatchModeChange("any")}
+          >
+            {t("search.matchAny")}
+          </Button>
+          <Button
+            type="button"
+            size="sm"
+            variant={
+              props.filters.partsMatchMode === "all" ? "secondary" : "outline"
+            }
+            className="h-7 rounded-none px-2 text-[10px] shadow-none"
+            onClick={() => props.onMatchModeChange("all")}
+          >
+            {t("search.matchAll")}
+          </Button>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 function getPanelStoredVipTokenCost(item: Record<string, unknown>) {
   const vipTokenCost = getNumber(item, "vipTokenCost");
-  if (vipTokenCost != null && vipTokenCost > 0) {
+  if (vipTokenCost != null && vipTokenCost >= 0) {
     return Math.trunc(vipTokenCost);
   }
 
@@ -3958,6 +4552,12 @@ function PanelSearchSongActions(props: {
   allowRequestPathModifiers: boolean;
   allowedRequestPaths: string[];
   requestPathModifierVipTokenCost: number;
+  requestPathModifierVipTokenCosts: {
+    guitar: number;
+    lead: number;
+    rhythm: number;
+    bass: number;
+  };
   requestPathModifierUsesVipPriority: boolean;
   vipTokenDurationThresholds: VipTokenDurationThreshold[];
   onSubmit: (input: PanelViewerRequestSubmitInput) => void;
@@ -4012,7 +4612,10 @@ function PanelSearchSongActions(props: {
     requestedPaths: selectedRequestedPaths,
     thresholds: props.vipTokenDurationThresholds,
     settings: {
+      allowRequestPathModifiers: props.allowRequestPathModifiers,
+      allowedRequestPathsJson: JSON.stringify(props.allowedRequestPaths),
       requestPathModifierVipTokenCost: props.requestPathModifierVipTokenCost,
+      requestPathModifierVipTokenCosts: props.requestPathModifierVipTokenCosts,
       requestPathModifierUsesVipPriority:
         props.requestPathModifierUsesVipPriority,
     },
@@ -4025,7 +4628,10 @@ function PanelSearchSongActions(props: {
     requestedPaths: selectedRequestedPaths,
     thresholds: props.vipTokenDurationThresholds,
     settings: {
+      allowRequestPathModifiers: props.allowRequestPathModifiers,
+      allowedRequestPathsJson: JSON.stringify(props.allowedRequestPaths),
       requestPathModifierVipTokenCost: props.requestPathModifierVipTokenCost,
+      requestPathModifierVipTokenCosts: props.requestPathModifierVipTokenCosts,
       requestPathModifierUsesVipPriority:
         props.requestPathModifierUsesVipPriority,
     },
@@ -4056,20 +4662,14 @@ function PanelSearchSongActions(props: {
     0,
     vipPlan.totalVipTokenCost - editingVipTokenCost
   );
-
   const regularDisabledReason = !songId
     ? t("search.unavailable")
     : !props.canRequest
       ? (props.requestUnavailableReason ?? t("requests.noPermission"))
-      : regularPlan.regularRequestRequiresVip &&
-          regularPlan.totalVipTokenCost > 0
-        ? t("requests.requestRequiresVip", {
-            count: formatVipTokenCostLabel(regularPlan.totalVipTokenCost),
-          })
-        : regularPlan.totalVipTokenCost > 0 &&
-            props.viewerVipTokenCount < regularAdditionalCost
-          ? t("vip.insufficient")
-          : null;
+      : regularPlan.totalVipTokenCost > 0 &&
+          props.viewerVipTokenCount < regularAdditionalCost
+        ? t("vip.insufficient")
+        : null;
   const vipDisabledReason = !songId
     ? t("search.unavailable")
     : !props.canVipRequest
@@ -4079,24 +4679,23 @@ function PanelSearchSongActions(props: {
       : props.viewerVipTokenCount < vipAdditionalCost
         ? t("vip.insufficient")
         : null;
-  const helperText =
-    regularDisabledReason ||
-    vipDisabledReason ||
-    (selectedRequestedPath && regularPlan.requestedPathVipTokenCost > 0
-      ? props.requestPathModifierUsesVipPriority
-        ? t("requests.pathRequiresVip", {
-            path: formatPathLabel(selectedRequestedPath),
-            count: formatVipTokenCostLabel(
-              regularPlan.requestedPathVipTokenCost
-            ),
-          })
-        : t("requests.pathCostsVipTokens", {
-            path: formatPathLabel(selectedRequestedPath),
-            count: formatVipTokenCostLabel(
-              regularPlan.requestedPathVipTokenCost
-            ),
-          })
-      : null);
+  const helperText = regularDisabledReason || vipDisabledReason;
+  const regularCostCaption = getPanelRequestCostCaption({
+    requestKind: "regular",
+    totalVipTokenCost: regularPlan.totalVipTokenCost,
+    matchedDurationThreshold: regularPlan.matchedDurationThreshold,
+    requestedPath: selectedRequestedPath,
+    requestedPathVipTokenCost: regularPlan.requestedPathVipTokenCost,
+    t,
+  });
+  const vipCostCaption = getPanelRequestCostCaption({
+    requestKind: "vip",
+    totalVipTokenCost: vipPlan.totalVipTokenCost || 1,
+    matchedDurationThreshold: vipPlan.matchedDurationThreshold,
+    requestedPath: selectedRequestedPath,
+    requestedPathVipTokenCost: vipPlan.requestedPathVipTokenCost,
+    t,
+  });
 
   return (
     <div className="grid gap-2">
@@ -4129,77 +4728,71 @@ function PanelSearchSongActions(props: {
           </Select>
         </div>
       ) : null}
-      <div className="flex shrink-0 items-center gap-1">
-        <Button
-          size="sm"
-          variant="outline"
-          className="h-7 rounded-none px-2 text-[11px] shadow-none"
-          disabled={!!regularDisabledReason || regularPending}
-          title={regularDisabledReason ?? undefined}
-          onClick={() => {
-            if (!songId) {
-              return;
-            }
+      <div className="grid shrink-0 grid-cols-2 gap-1">
+        <div className="grid gap-1">
+          <Button
+            size="sm"
+            variant="outline"
+            className="h-7 rounded-none px-2 text-[11px] shadow-none"
+            disabled={!!regularDisabledReason || regularPending}
+            title={regularDisabledReason ?? undefined}
+            onClick={() => {
+              if (!songId) {
+                return;
+              }
 
-            props.onSubmit({
-              songId,
-              requestKind: "regular",
-              requestedPath: selectedRequestedPath,
-              vipTokenCost: regularPlan.totalVipTokenCost || undefined,
-            });
-          }}
-        >
-          {regularPending
-            ? props.editingRequest
-              ? t("buttons.editing")
-              : t("buttons.adding")
-            : props.editingRequest
-              ? regularPlan.totalVipTokenCost > 0
-                ? t("buttons.editWithCost", {
-                    count: regularPlan.totalVipTokenCost,
-                  })
-                : t("buttons.edit")
-              : regularPlan.totalVipTokenCost > 0
-                ? t("buttons.addWithCost", {
-                    count: regularPlan.totalVipTokenCost,
-                  })
+              props.onSubmit({
+                songId,
+                requestKind: "regular",
+                requestedPath: selectedRequestedPath,
+                vipTokenCost: regularPlan.totalVipTokenCost || undefined,
+              });
+            }}
+          >
+            {regularPending
+              ? props.editingRequest
+                ? t("buttons.editing")
+                : t("buttons.adding")
+              : props.editingRequest
+                ? t("buttons.edit")
                 : t("buttons.add")}
-        </Button>
-        <Button
-          size="sm"
-          variant="outline"
-          className="h-7 rounded-none px-2 text-[11px] shadow-none"
-          disabled={!!vipDisabledReason || vipPending}
-          title={vipDisabledReason ?? undefined}
-          onClick={() => {
-            if (!songId) {
-              return;
-            }
+          </Button>
+          <p className="min-h-4 text-center text-[10px] leading-4 text-(--muted)">
+            {regularCostCaption}
+          </p>
+        </div>
+        <div className="grid gap-1">
+          <Button
+            size="sm"
+            variant="outline"
+            className="h-7 rounded-none px-2 text-[11px] shadow-none"
+            disabled={!!vipDisabledReason || vipPending}
+            title={vipDisabledReason ?? undefined}
+            onClick={() => {
+              if (!songId) {
+                return;
+              }
 
-            props.onSubmit({
-              songId,
-              requestKind: "vip",
-              requestedPath: selectedRequestedPath,
-              vipTokenCost: vipPlan.totalVipTokenCost || 1,
-            });
-          }}
-        >
-          {vipPending
-            ? props.editingRequest
-              ? t("buttons.editing")
-              : t("buttons.adding")
-            : props.editingRequest
-              ? vipPlan.totalVipTokenCost > 1
-                ? t("buttons.editVipWithCost", {
-                    count: vipPlan.totalVipTokenCost,
-                  })
-                : t("buttons.editVip")
-              : vipPlan.totalVipTokenCost > 1
-                ? t("buttons.vipWithCost", {
-                    count: vipPlan.totalVipTokenCost,
-                  })
+              props.onSubmit({
+                songId,
+                requestKind: "vip",
+                requestedPath: selectedRequestedPath,
+                vipTokenCost: vipPlan.totalVipTokenCost || 1,
+              });
+            }}
+          >
+            {vipPending
+              ? props.editingRequest
+                ? t("buttons.editing")
+                : t("buttons.adding")
+              : props.editingRequest
+                ? t("buttons.editVip")
                 : t("buttons.vip")}
-        </Button>
+          </Button>
+          <p className="min-h-4 text-center text-[10px] leading-4 text-(--muted)">
+            {vipCostCaption}
+          </p>
+        </div>
       </div>
       {helperText ? (
         <p className="text-[11px] leading-4 text-(--muted)">{helperText}</p>
@@ -4222,6 +4815,70 @@ function formatSongLabel(item: Record<string, unknown>, t: TFunction) {
   const artist = getString(item, "songArtist");
   const title = getString(item, "songTitle") ?? t("playlistItem.unknownSong");
   return artist ? `${artist} - ${title}` : title;
+}
+
+function getPanelRequestCostCaption(input: {
+  requestKind: "regular" | "vip";
+  totalVipTokenCost: number;
+  matchedDurationThreshold?: { minimumDurationMinutes: number } | null;
+  requestedPath?: RequestPathOption;
+  requestedPathVipTokenCost: number;
+  t: TFunction;
+}) {
+  if (input.totalVipTokenCost <= 0) {
+    return "";
+  }
+
+  const reasons: string[] = [];
+
+  if (input.matchedDurationThreshold) {
+    reasons.push(
+      input.t("requests.durationShort", {
+        minutes: formatVipDurationThresholdMinutes(
+          input.matchedDurationThreshold.minimumDurationMinutes
+        ),
+      })
+    );
+  }
+
+  if (input.requestedPath && input.requestedPathVipTokenCost > 0) {
+    reasons.push(formatPathLabel(input.requestedPath));
+  }
+
+  if (reasons.length === 0) {
+    if (input.requestKind === "vip" && input.totalVipTokenCost === 1) {
+      return "";
+    }
+
+    return formatVipTokenCostLabel(input.totalVipTokenCost);
+  }
+
+  return input.t("requests.costSummary", {
+    reasons: reasons.join(" + "),
+    count: formatVipTokenCostLabel(input.totalVipTokenCost),
+  });
+}
+
+function getPanelManagerVipTokenStatusLabel(input: {
+  requiredVipTokenCost: number;
+  availableVipTokenCount: number;
+  t: TFunction;
+}) {
+  if (input.requiredVipTokenCost <= 0) {
+    return "";
+  }
+
+  const count = formatVipTokenCount(input.availableVipTokenCount);
+
+  return input.availableVipTokenCount < input.requiredVipTokenCost
+    ? input.t("requests.insufficientWithBalance", {
+        cost: formatVipTokenCostLabel(input.requiredVipTokenCost),
+        count,
+      })
+    : input.t("requests.costWithBalance", {
+        cost: formatVipTokenCostLabel(input.requiredVipTokenCost),
+        count,
+      });
 }
 
 function formatRequesterLine(item: Record<string, unknown>, t: TFunction) {

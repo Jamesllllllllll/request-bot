@@ -108,7 +108,6 @@ import {
   formatVipTokenCount,
   hasRedeemableVipToken,
   normalizeVipTokenCount,
-  subtractVipTokenRedemption,
 } from "~/lib/vip-tokens";
 
 export type PlaylistItem = {
@@ -140,6 +139,7 @@ export type PlaylistItem = {
   vipTokenCost?: number | null;
   pickNumber?: number | null;
   createdAt: number;
+  editedAt?: number | null;
   position: number;
   regularPosition?: number | null;
   status: string;
@@ -273,6 +273,7 @@ const playlistItemTransition = {
 export type PlaylistManagementSurfaceData = {
   channel: {
     slug: string;
+    login?: string;
     displayName: string;
     isLive: boolean;
     botReadyState?: string | null;
@@ -281,7 +282,15 @@ export type PlaylistManagementSurfaceData = {
     botChannelEnabled?: boolean;
     requestsEnabled?: boolean;
     canManageBlacklist?: boolean;
+    canViewVipTokens?: boolean;
+    canManageVipTokens?: boolean;
     requestPathModifierVipTokenCost?: number;
+    requestPathModifierVipTokenCosts?: {
+      guitar: number;
+      lead: number;
+      rhythm: number;
+      bass: number;
+    };
     requestPathModifierUsesVipPriority?: boolean;
     showPickOrderBadges?: boolean;
     vipTokenDurationThresholdsJson?: string | null;
@@ -582,6 +591,22 @@ export function PlaylistManagementSurface(
             ...item,
             position: index + 1,
           })),
+          vipTokens:
+            action === "deleteItem" && removedItem
+              ? updateVipTokenBalanceForLogin({
+                  vipTokens: previous.vipTokens,
+                  requesterLogin: removedItem.requestedByLogin,
+                  delta: -getManagedStoredVipTokenCost({
+                    requestKind: removedItem.requestKind,
+                    vipTokenCost: removedItem.vipTokenCost,
+                    requesterLogin: removedItem.requestedByLogin,
+                    channelLogin:
+                      previous.channel.login?.trim() ||
+                      previous.channel.slug?.trim() ||
+                      "",
+                  }),
+                })
+              : previous.vipTokens,
           playedSongs:
             action === "markPlayed" && removedItem
               ? [
@@ -623,6 +648,32 @@ export function PlaylistManagementSurface(
           previous.items.find((item) => item.id === itemId) ?? null;
 
         if (targetItem) {
+          const channelLogin =
+            previous.channel.login?.trim() ||
+            previous.channel.slug?.trim() ||
+            "";
+          const currentVipTokenCost = getManagedStoredVipTokenCost({
+            requestKind: targetItem.requestKind,
+            vipTokenCost: targetItem.vipTokenCost,
+            requesterLogin: targetItem.requestedByLogin,
+            channelLogin,
+          });
+          const nextVipTokenCost = getManagedPlaylistRequestVipTokenCost({
+            requestKind: body.requestKind,
+            durationText: targetItem.songDurationText,
+            requestedQuery: targetItem.requestedQuery,
+            thresholds: vipTokenDurationThresholds,
+            requesterLogin: targetItem.requestedByLogin,
+            channelLogin,
+            requestPathModifierVipTokenCost:
+              previous.settings?.requestPathModifierVipTokenCost ?? 0,
+            requestPathModifierVipTokenCosts:
+              previous.settings?.requestPathModifierVipTokenCosts,
+            requestPathModifierUsesVipPriority:
+              previous.settings?.requestPathModifierUsesVipPriority ?? true,
+          });
+          const vipTokenDelta = nextVipTokenCost - currentVipTokenCost;
+
           queryClient.setQueryData(playlistQueryKey, {
             ...previous,
             items: getReorderedItemsAfterRequestKindChange(
@@ -634,13 +685,14 @@ export function PlaylistManagementSurface(
                 ? {
                     ...item,
                     requestKind: body.requestKind,
+                    vipTokenCost: nextVipTokenCost,
                   }
                 : item
             ),
             vipTokens: updateVipTokenBalancesAfterRequestKindChange({
               vipTokens: previous.vipTokens,
               requesterLogin: targetItem.requestedByLogin,
-              requestKind: body.requestKind,
+              delta: vipTokenDelta,
             }),
           });
         }
@@ -743,6 +795,9 @@ export function PlaylistManagementSurface(
 
   const vipTokens = playlistData?.vipTokens ?? [];
   const requestsEnabled = playlistData?.settings?.requestsEnabled ?? true;
+  const managedChannel = playlistData?.channel ?? null;
+  const managedChannelLogin =
+    managedChannel?.login?.trim() || managedChannel?.slug?.trim() || "";
   const canEndSession =
     items.length > 0 || playedSongs.length > 0 || requestsEnabled;
   const resetSessionTooltip = t(
@@ -772,11 +827,14 @@ export function PlaylistManagementSurface(
   const vipTokenBalancesByLogin = new Map(
     vipTokens.map((token) => [token.login.toLowerCase(), token.availableCount])
   );
-  const managedChannel = playlistData?.channel ?? null;
   const requestsOpen = managedChannel
     ? areChannelRequestsOpen(managedChannel)
     : false;
   const accessRole = playlistData?.accessRole ?? "owner";
+  const canUseManualVipTokenBalances =
+    !!playlistData?.settings?.canViewVipTokens ||
+    !!playlistData?.settings?.canManageVipTokens ||
+    accessRole === "owner";
   const botChannelEnabled = !!playlistData?.settings?.botChannelEnabled;
   const canManageBlacklist = !!playlistData?.settings?.canManageBlacklist;
   const isDeletingItem = (itemId: string) =>
@@ -983,6 +1041,38 @@ export function PlaylistManagementSurface(
                     song.authorId != null &&
                     blacklistedCharterIds.has(song.authorId);
                   const displaySongParts = getPlaylistDisplayParts(song.parts);
+                  const manualAddVipTokenCost =
+                    getManagedPlaylistRequestVipTokenCost({
+                      requestKind: "regular",
+                      durationText: song.durationText,
+                      thresholds: vipTokenDurationThresholds,
+                      requesterLogin:
+                        manualRequesterLogin.trim() || managedChannelLogin,
+                      channelLogin: managedChannelLogin,
+                      requestPathModifierVipTokenCost:
+                        playlistQuery.data?.settings
+                          ?.requestPathModifierVipTokenCost ?? 0,
+                      requestPathModifierVipTokenCosts:
+                        playlistQuery.data?.settings
+                          ?.requestPathModifierVipTokenCosts,
+                      requestPathModifierUsesVipPriority:
+                        playlistQuery.data?.settings
+                          ?.requestPathModifierUsesVipPriority ?? true,
+                    });
+                  const manualAddAvailableVipTokenCount =
+                    manualAddVipTokenCost > 0 && canUseManualVipTokenBalances
+                      ? (vipTokenBalancesByLogin.get(
+                          (manualRequesterLogin.trim() || "").toLowerCase()
+                        ) ?? 0)
+                      : null;
+                  const manualAddHasInsufficientVipTokens =
+                    manualAddAvailableVipTokenCount != null &&
+                    manualAddVipTokenCost > manualAddAvailableVipTokenCount;
+                  const manualAddCostLabel = getManagedVipTokenStatusLabel({
+                    requiredVipTokenCost: manualAddVipTokenCost,
+                    availableVipTokenCount: manualAddAvailableVipTokenCount,
+                    t,
+                  });
 
                   return (
                     <div
@@ -1035,7 +1125,7 @@ export function PlaylistManagementSurface(
                             : t("management.manual.noPathInfo")}
                         </p>
                       </div>
-                      <div className="dashboard-playlist__manual-add flex items-center justify-end self-start">
+                      <div className="dashboard-playlist__manual-add grid justify-items-end gap-1 self-start text-right">
                         <Button
                           size="sm"
                           className="h-8 px-2.5 text-[11px]"
@@ -1077,17 +1167,26 @@ export function PlaylistManagementSurface(
                             })
                           }
                           disabled={
-                            !requestsOpen || isManualAddPending(song.id)
+                            !requestsOpen ||
+                            isManualAddPending(song.id) ||
+                            manualAddHasInsufficientVipTokens
                           }
                           title={
-                            requestsOpen
-                              ? undefined
-                              : t("page.requestsLiveOnly")
+                            !requestsOpen
+                              ? t("page.requestsLiveOnly")
+                              : manualAddHasInsufficientVipTokens
+                                ? manualAddCostLabel || undefined
+                                : undefined
                           }
                         >
                           <Plus className="h-4 w-4" />
                           {t("management.manual.addButton")}
                         </Button>
+                        {manualAddCostLabel ? (
+                          <p className="text-[11px] leading-4 text-(--muted)">
+                            {manualAddCostLabel}
+                          </p>
+                        ) : null}
                       </div>
                     </div>
                   );
@@ -1135,8 +1234,12 @@ export function PlaylistManagementSurface(
             blacklistedSongGroupIds={blacklistedSongGroupIds}
             blacklistedCharterIds={blacklistedCharterIds}
             vipTokenBalancesByLogin={vipTokenBalancesByLogin}
+            channelLogin={managedChannelLogin}
             requestPathModifierVipTokenCost={
               playlistQuery.data?.settings?.requestPathModifierVipTokenCost ?? 0
+            }
+            requestPathModifierVipTokenCosts={
+              playlistQuery.data?.settings?.requestPathModifierVipTokenCosts
             }
             requestPathModifierUsesVipPriority={
               playlistQuery.data?.settings
@@ -1224,6 +1327,19 @@ export function PlaylistManagementSurface(
                 songId: candidate.sourceId,
                 songTitle: candidate.title,
                 artistName: candidate.artist ?? undefined,
+              });
+            }}
+            onUnblacklistCandidateSong={(candidate) => {
+              if (candidate.sourceId == null) {
+                setPlaylistActionError(
+                  t("management.blacklistErrors.missingVersionVersionId")
+                );
+                return;
+              }
+
+              moderationMutation.mutate({
+                action: "removeBlacklistedSong",
+                songId: candidate.sourceId,
               });
             }}
             onBlacklistSongGroup={(item) => {
@@ -1318,9 +1434,13 @@ export function PlaylistManagementSurface(
               blacklistedSongGroupIds={blacklistedSongGroupIds}
               blacklistedCharterIds={blacklistedCharterIds}
               vipTokenBalancesByLogin={vipTokenBalancesByLogin}
+              channelLogin={managedChannelLogin}
               requestPathModifierVipTokenCost={
                 playlistQuery.data?.settings?.requestPathModifierVipTokenCost ??
                 0
+              }
+              requestPathModifierVipTokenCosts={
+                playlistQuery.data?.settings?.requestPathModifierVipTokenCosts
               }
               requestPathModifierUsesVipPriority={
                 playlistQuery.data?.settings
@@ -1409,6 +1529,19 @@ export function PlaylistManagementSurface(
                   songId: candidate.sourceId,
                   songTitle: candidate.title,
                   artistName: candidate.artist ?? undefined,
+                });
+              }}
+              onUnblacklistCandidateSong={(candidate) => {
+                if (candidate.sourceId == null) {
+                  setPlaylistActionError(
+                    t("management.blacklistErrors.missingVersionVersionId")
+                  );
+                  return;
+                }
+
+                moderationMutation.mutate({
+                  action: "removeBlacklistedSong",
+                  songId: candidate.sourceId,
                 });
               }}
               onBlacklistSongGroup={(item) => {
@@ -1703,7 +1836,14 @@ function CurrentPlaylistRows(props: {
   blacklistedSongGroupIds: Set<number>;
   blacklistedCharterIds: Set<number>;
   vipTokenBalancesByLogin: Map<string, number>;
+  channelLogin: string;
   requestPathModifierVipTokenCost: number;
+  requestPathModifierVipTokenCosts?: {
+    guitar: number;
+    lead: number;
+    rhythm: number;
+    bass: number;
+  };
   requestPathModifierUsesVipPriority: boolean;
   vipTokenDurationThresholds: VipTokenDurationThreshold[];
   isDeletingItem: (itemId: string) => boolean;
@@ -1730,6 +1870,7 @@ function CurrentPlaylistRows(props: {
   onChangeRequestKind: (itemId: string, requestKind: "regular" | "vip") => void;
   onBlacklistSong: (item: PlaylistItem) => void;
   onBlacklistCandidateSong: (candidate: PlaylistCandidate) => void;
+  onUnblacklistCandidateSong: (candidate: PlaylistCandidate) => void;
   onBlacklistSongGroup: (item: PlaylistItem) => void;
   onBlacklistArtist: (item: PlaylistItem) => void;
   onBlacklistCharter: (candidate: PlaylistCandidate) => void;
@@ -1795,8 +1936,12 @@ function CurrentPlaylistRows(props: {
                   ) ?? 0)
                 : 0
             }
+            channelLogin={props.channelLogin}
             requestPathModifierVipTokenCost={
               props.requestPathModifierVipTokenCost
+            }
+            requestPathModifierVipTokenCosts={
+              props.requestPathModifierVipTokenCosts
             }
             requestPathModifierUsesVipPriority={
               props.requestPathModifierUsesVipPriority
@@ -1821,6 +1966,7 @@ function CurrentPlaylistRows(props: {
             }
             onBlacklistSong={() => props.onBlacklistSong(item)}
             onBlacklistCandidateSong={props.onBlacklistCandidateSong}
+            onUnblacklistCandidateSong={props.onUnblacklistCandidateSong}
             onBlacklistSongGroup={() => props.onBlacklistSongGroup(item)}
             onBlacklistArtist={() => props.onBlacklistArtist(item)}
             onBlacklistCharter={props.onBlacklistCharter}
@@ -1852,12 +1998,149 @@ function getStoredVipTokenCost(input: {
   if (
     typeof input.vipTokenCost === "number" &&
     Number.isFinite(input.vipTokenCost) &&
-    input.vipTokenCost > 0
+    input.vipTokenCost >= 0
   ) {
     return Math.trunc(input.vipTokenCost);
   }
 
   return input.requestKind === "vip" ? 1 : 0;
+}
+
+function isOwnerPlaylistRequesterLogin(input: {
+  requesterLogin?: string | null;
+  channelLogin?: string | null;
+}) {
+  const normalizedRequester = input.requesterLogin?.trim().toLowerCase();
+  const normalizedOwner = input.channelLogin?.trim().toLowerCase();
+
+  return !!normalizedRequester && !!normalizedOwner
+    ? normalizedRequester === normalizedOwner
+    : false;
+}
+
+function getManagedStoredVipTokenCost(input: {
+  requestKind?: "regular" | "vip" | null;
+  vipTokenCost?: number | null;
+  requesterLogin?: string | null;
+  channelLogin?: string | null;
+}) {
+  if (
+    isOwnerPlaylistRequesterLogin({
+      requesterLogin: input.requesterLogin,
+      channelLogin: input.channelLogin,
+    })
+  ) {
+    return 0;
+  }
+
+  return getStoredVipTokenCost(input);
+}
+
+function getManagedPlaylistRequestVipTokenCost(input: {
+  requestKind: "regular" | "vip";
+  durationText?: string | null;
+  requestedQuery?: string | null;
+  thresholds: VipTokenDurationThreshold[];
+  requesterLogin?: string | null;
+  channelLogin?: string | null;
+  requestPathModifierVipTokenCost: number;
+  requestPathModifierVipTokenCosts?: {
+    guitar: number;
+    lead: number;
+    rhythm: number;
+    bass: number;
+  };
+  requestPathModifierUsesVipPriority: boolean;
+}) {
+  if (
+    isOwnerPlaylistRequesterLogin({
+      requesterLogin: input.requesterLogin,
+      channelLogin: input.channelLogin,
+    })
+  ) {
+    return 0;
+  }
+
+  return getRequestVipTokenPlan({
+    requestKind: input.requestKind,
+    song: {
+      durationText: input.durationText,
+    },
+    requestedPaths: getStoredRequestedPaths({
+      requestedQuery: input.requestedQuery,
+    }),
+    thresholds: input.thresholds,
+    settings: {
+      requestPathModifierVipTokenCost: input.requestPathModifierVipTokenCost,
+      requestPathModifierVipTokenCosts: input.requestPathModifierVipTokenCosts,
+      requestPathModifierUsesVipPriority:
+        input.requestPathModifierUsesVipPriority,
+    },
+  }).totalVipTokenCost;
+}
+
+function getManagedVipTokenStatusLabel(input: {
+  requiredVipTokenCost: number;
+  availableVipTokenCount?: number | null;
+  t: TFunction;
+}) {
+  if (input.requiredVipTokenCost <= 0) {
+    return "";
+  }
+
+  if (
+    input.availableVipTokenCount != null &&
+    Number.isFinite(input.availableVipTokenCount)
+  ) {
+    const count = formatVipTokenCount(input.availableVipTokenCount);
+    const cost = input.t("viewerSummary.vipTokensLabel", {
+      count: input.requiredVipTokenCost,
+      countText: formatVipTokenCount(input.requiredVipTokenCost),
+    });
+
+    return input.availableVipTokenCount < input.requiredVipTokenCost
+      ? input.t("manageActions.insufficientWithBalance", {
+          cost,
+          count,
+        })
+      : input.t("manageActions.costWithBalance", {
+          cost,
+          count,
+        });
+  }
+
+  return input.t("viewerSummary.vipTokensLabel", {
+    count: input.requiredVipTokenCost,
+    countText: formatVipTokenCount(input.requiredVipTokenCost),
+  });
+}
+
+function updateVipTokenBalanceForLogin(input: {
+  vipTokens: VipTokenBalance[];
+  requesterLogin?: string | null;
+  delta: number;
+}) {
+  if (!input.requesterLogin || input.delta === 0) {
+    return input.vipTokens;
+  }
+
+  const normalizedLogin = input.requesterLogin.trim().toLowerCase();
+
+  return input.vipTokens.map((token) => {
+    if (token.login.toLowerCase() !== normalizedLogin) {
+      return token;
+    }
+
+    const nextAvailableCount =
+      input.delta > 0
+        ? normalizeVipTokenCount(token.availableCount - input.delta)
+        : normalizeVipTokenCount(token.availableCount + Math.abs(input.delta));
+
+    return {
+      ...token,
+      availableCount: nextAvailableCount,
+    };
+  });
 }
 
 function PlaylistManagementActions(props: {
@@ -2034,27 +2317,9 @@ function getReorderedItemsAfterReturnToQueue(items: PlaylistItem[]) {
 function updateVipTokenBalancesAfterRequestKindChange(input: {
   vipTokens: VipTokenBalance[];
   requesterLogin?: string;
-  requestKind: "regular" | "vip";
+  delta: number;
 }) {
-  if (!input.requesterLogin) {
-    return input.vipTokens;
-  }
-
-  const normalizedLogin = input.requesterLogin.toLowerCase();
-
-  return input.vipTokens.map((token) => {
-    if (token.login.toLowerCase() !== normalizedLogin) {
-      return token;
-    }
-
-    return {
-      ...token,
-      availableCount:
-        input.requestKind === "vip"
-          ? subtractVipTokenRedemption(token.availableCount)
-          : normalizeVipTokenCount(token.availableCount + 1),
-    };
-  });
+  return updateVipTokenBalanceForLogin(input);
 }
 
 function orderPlaylistItems(items: PlaylistItem[], orderedItemIds: string[]) {
@@ -2186,7 +2451,14 @@ function PlaylistQueueItem(props: {
   isBlacklistSongGroupPending: boolean;
   isBlacklistCharterPending: boolean;
   availableVipTokenCount: number;
+  channelLogin: string;
   requestPathModifierVipTokenCost: number;
+  requestPathModifierVipTokenCosts?: {
+    guitar: number;
+    lead: number;
+    rhythm: number;
+    bass: number;
+  };
   requestPathModifierUsesVipPriority: boolean;
   vipTokenDurationThresholds: VipTokenDurationThreshold[];
   blacklistedSongIds: Set<number>;
@@ -2204,6 +2476,7 @@ function PlaylistQueueItem(props: {
   onChangeRequestKind: (requestKind: "regular" | "vip") => void;
   onBlacklistSong: () => void;
   onBlacklistCandidateSong: (candidate: PlaylistCandidate) => void;
+  onUnblacklistCandidateSong: (candidate: PlaylistCandidate) => void;
   onBlacklistSongGroup: () => void;
   onBlacklistArtist: () => void;
   onBlacklistCharter: (candidate: PlaylistCandidate) => void;
@@ -2219,23 +2492,27 @@ function PlaylistQueueItem(props: {
   const hasRequester = requesterLogin.length > 0;
   const hasCurrentItem = props.currentItemId != null;
   const requesterLabel = getRequesterLabel(props.item) ?? requesterLogin;
-  const requestedPaths = getStoredRequestedPaths(props.item);
-  const storedVipTokenCost = getStoredVipTokenCost(props.item);
+  const storedVipTokenCost = getManagedStoredVipTokenCost({
+    requestKind: props.item.requestKind,
+    vipTokenCost: props.item.vipTokenCost,
+    requesterLogin,
+    channelLogin: props.channelLogin,
+  });
+  const nextVipTokenCost = getManagedPlaylistRequestVipTokenCost({
+    requestKind: "vip",
+    durationText: props.item.songDurationText,
+    requestedQuery: props.item.requestedQuery,
+    thresholds: props.vipTokenDurationThresholds,
+    requesterLogin,
+    channelLogin: props.channelLogin,
+    requestPathModifierVipTokenCost: props.requestPathModifierVipTokenCost,
+    requestPathModifierVipTokenCosts: props.requestPathModifierVipTokenCosts,
+    requestPathModifierUsesVipPriority:
+      props.requestPathModifierUsesVipPriority,
+  });
   const requiredVipTokenCount = Math.max(
     0,
-    getRequestVipTokenPlan({
-      requestKind: "vip",
-      song: {
-        durationText: props.item.songDurationText,
-      },
-      requestedPaths,
-      thresholds: props.vipTokenDurationThresholds,
-      settings: {
-        requestPathModifierVipTokenCost: props.requestPathModifierVipTokenCost,
-        requestPathModifierUsesVipPriority:
-          props.requestPathModifierUsesVipPriority,
-      },
-    }).totalVipTokenCost - storedVipTokenCost
+    nextVipTokenCost - storedVipTokenCost
   );
   const canShowMakeVipButton = !isCurrentItem && !isVipRequest && hasRequester;
   const canUpgradeToVip =
@@ -2243,6 +2520,10 @@ function PlaylistQueueItem(props: {
     hasRedeemableVipToken(props.availableVipTokenCount, requiredVipTokenCount);
   const showDisabledMakeVipButton =
     canShowMakeVipButton && requiredVipTokenCount > 0 && !canUpgradeToVip;
+  const makeVipLabel =
+    requiredVipTokenCount > 0
+      ? `${t("management.item.makeVip")} (${requiredVipTokenCount})`
+      : t("management.item.makeVip");
   const makeVipDisabledTooltip = showDisabledMakeVipButton
     ? t("management.item.makeVipDisabledTooltip", {
         requiredCount: requiredVipTokenCount,
@@ -2260,12 +2541,25 @@ function PlaylistQueueItem(props: {
       : null;
   const resolvedCandidates = getResolvedPlaylistCandidates(props.item);
   const hasMultipleVersions = resolvedCandidates.length > 1;
+  const primaryCandidate = resolvedCandidates[0];
+  const displayArtist = primaryCandidate?.artist ?? props.item.songArtist;
+  const displayAlbum = primaryCandidate?.album ?? props.item.songAlbum;
+  const displayYear = primaryCandidate?.year;
+  const titleLine = displayArtist
+    ? `${props.item.songTitle} - ${displayArtist}`
+    : props.item.songTitle;
+  const albumLine = [
+    displayAlbum,
+    displayYear != null ? String(displayYear) : null,
+  ]
+    .filter((value): value is string => Boolean(value))
+    .join(" · ");
   const tuningValues = resolvedCandidates.some((candidate) => candidate.tuning)
     ? resolvedCandidates.map((candidate) => candidate.tuning)
     : [props.item.songTuning];
   const compactTuning = formatCompactTuningSummary(tuningValues);
   const itemDurationText =
-    resolvedCandidates[0]?.durationText ?? props.item.songDurationText;
+    primaryCandidate?.durationText ?? props.item.songDurationText;
   const compactTuningTitle =
     compactTuning && tuningValues.length > 0
       ? (() => {
@@ -2276,10 +2570,16 @@ function PlaylistQueueItem(props: {
         })()
       : undefined;
   const singleVersionDownloadUrl =
-    !hasMultipleVersions && resolvedCandidates[0]?.sourceUrl
-      ? resolvedCandidates[0].sourceUrl
+    !hasMultipleVersions && primaryCandidate?.sourceUrl
+      ? primaryCandidate.sourceUrl
       : null;
   const itemHasLyrics = playlistDisplayItemHasLyrics(props.item);
+  const createdAgoLabel = formatTimeAgo(t, props.item.createdAt);
+  const editedTimestamp = props.item.editedAt ?? null;
+  const editedAgoLabel =
+    editedTimestamp != null && editedTimestamp > props.item.createdAt
+      ? t("row.edited", { time: formatTimeAgo(t, editedTimestamp) })
+      : null;
 
   useEffect(() => {
     const element = itemRef.current;
@@ -2464,10 +2764,17 @@ function PlaylistQueueItem(props: {
                 {props.item.position}
               </span>
               <div className="min-w-0 flex flex-1 gap-3">
-                <p className="break-words text-lg font-semibold leading-tight text-(--text)">
-                  {props.item.songTitle}
-                </p>
-                <div className="flex flex-wrap items-center gap-2">
+                <div className="min-w-0 flex-1">
+                  <p className="break-words text-lg font-semibold leading-tight text-(--text)">
+                    {titleLine}
+                  </p>
+                  {albumLine ? (
+                    <p className="mt-1 break-words text-sm text-(--brand-deep)">
+                      {albumLine}
+                    </p>
+                  ) : null}
+                </div>
+                <div className="flex flex-wrap items-center gap-2 self-start">
                   {isVipRequest ? (
                     <Badge className="border-violet-400/35 bg-violet-500/15 text-violet-100 hover:bg-violet-500/15">
                       {t("management.item.vipBadge")}
@@ -2478,11 +2785,11 @@ function PlaylistQueueItem(props: {
                       {getRequestedPathLabel(props.item)}
                     </Badge>
                   ) : null}
-                  {(isVipRequest && getStoredVipTokenCost(props.item) > 1) ||
-                  (!isVipRequest && getStoredVipTokenCost(props.item) > 0) ? (
+                  {(isVipRequest && storedVipTokenCost > 1) ||
+                  (!isVipRequest && storedVipTokenCost > 0) ? (
                     <Badge variant="outline">
                       {t("management.item.vipTokens", {
-                        count: getStoredVipTokenCost(props.item),
+                        count: storedVipTokenCost,
                       })}
                     </Badge>
                   ) : null}
@@ -2502,14 +2809,6 @@ function PlaylistQueueItem(props: {
                     >
                       {t("management.item.warningBadge")}
                     </StatusPill>
-                  ) : null}
-                  {props.isBlacklistedSong ? (
-                    <Badge
-                      variant="outline"
-                      className="border-rose-400/40 bg-rose-500/10 text-rose-200"
-                    >
-                      {t("management.item.versionBlacklisted")}
-                    </Badge>
                   ) : null}
                   {props.isBlacklistedSongGroup ? (
                     <Badge
@@ -2576,11 +2875,13 @@ function PlaylistQueueItem(props: {
                 ) : null}
                 <p className="inline-flex items-center gap-1.5 text-sm text-(--muted)">
                   <Clock3 className="h-3.5 w-3.5" />
-                  <span>
-                    {t("management.item.added", {
-                      time: formatTimeAgo(t, props.item.createdAt),
-                    })}
-                  </span>
+                  <span>{createdAgoLabel}</span>
+                  {editedAgoLabel ? (
+                    <>
+                      <span aria-hidden="true">·</span>
+                      <span>{editedAgoLabel}</span>
+                    </>
+                  ) : null}
                 </p>
               </div>
               {props.item.requestedQuery &&
@@ -2625,7 +2926,7 @@ function PlaylistQueueItem(props: {
                           className="pointer-events-none h-8 max-w-[9rem] flex-none px-2.5 text-[11px]"
                           disabled
                         >
-                          {t("management.item.makeVip")}
+                          {makeVipLabel}
                         </Button>
                       </span>
                     </TooltipTrigger>
@@ -2645,7 +2946,7 @@ function PlaylistQueueItem(props: {
                 >
                   {props.isChangeRequestKindPending
                     ? t("management.item.saving")
-                    : t("management.item.makeVip")}
+                    : makeVipLabel}
                 </Button>
               ) : null}
               {isCurrentItem ? (
@@ -2766,6 +3067,9 @@ function PlaylistQueueItem(props: {
                     blacklistedCharterIds={props.blacklistedCharterIds}
                     isBlacklistSongPending={props.isBlacklistSongPending}
                     onBlacklistCandidateSong={props.onBlacklistCandidateSong}
+                    onUnblacklistCandidateSong={
+                      props.onUnblacklistCandidateSong
+                    }
                   />
                 </div>
               </motion.div>
@@ -3100,9 +3404,36 @@ function PlaylistVersionsTable(props: {
   blacklistedCharterIds: Set<number>;
   isBlacklistSongPending: boolean;
   onBlacklistCandidateSong: (candidate: PlaylistCandidate) => void;
+  onUnblacklistCandidateSong: (candidate: PlaylistCandidate) => void;
 }) {
   const { t } = useLocaleTranslation("playlist");
   const { locale } = useAppLocale();
+  const sortedCandidates = useMemo(
+    () =>
+      props.candidates
+        .map((candidate, index) => {
+          const isBlacklistedCandidateSong =
+            candidate.sourceId != null &&
+            props.blacklistedSongIds.has(candidate.sourceId);
+          const isBlacklistedCharter =
+            candidate.authorId != null &&
+            props.blacklistedCharterIds.has(candidate.authorId);
+
+          return {
+            candidate,
+            index,
+            isBlacklistedCandidateSong,
+            isBlacklistedCharter,
+            isBlocked: isBlacklistedCandidateSong || isBlacklistedCharter,
+          };
+        })
+        .sort(
+          (left, right) =>
+            Number(left.isBlocked) - Number(right.isBlocked) ||
+            left.index - right.index
+        ),
+    [props.blacklistedCharterIds, props.blacklistedSongIds, props.candidates]
+  );
 
   return (
     <div className="overflow-x-auto border border-(--border)">
@@ -3130,131 +3461,163 @@ function PlaylistVersionsTable(props: {
           </tr>
         </thead>
         <tbody>
-          {props.candidates.map((candidate, index) => {
-            const isBlacklistedCandidateSong =
-              candidate.sourceId != null &&
-              props.blacklistedSongIds.has(candidate.sourceId);
-            const isBlacklistedCharter =
-              candidate.authorId != null &&
-              props.blacklistedCharterIds.has(candidate.authorId);
-            const displayParts = getPlaylistDisplayParts(candidate.parts);
-            const hasLyrics = playlistDisplayCandidateHasLyrics(candidate);
+          {sortedCandidates.map(
+            (
+              {
+                candidate,
+                index,
+                isBlacklistedCandidateSong,
+                isBlacklistedCharter,
+                isBlocked,
+              },
+              sortedIndex
+            ) => {
+              const displayParts = getPlaylistDisplayParts(candidate.parts);
+              const hasLyrics = playlistDisplayCandidateHasLyrics(candidate);
 
-            return (
-              <tr
-                key={`${props.itemId}-${candidate.id}-${index}`}
-                className={`border-b border-(--border) align-top ${
-                  index % 2 === 0 ? "bg-(--panel)" : "bg-(--panel-soft)"
-                } ${isBlacklistedCharter ? "opacity-55" : ""}`}
-              >
-                <td className="px-4 py-3">
-                  <div className="grid gap-0.5">
-                    <p className="font-medium text-(--text)">
-                      {candidate.title}
-                      {candidate.album ? ` · ${candidate.album}` : ""}
-                    </p>
-                    <p className="text-xs text-(--muted)">
-                      {candidate.artist ??
-                        t("management.versionsTable.unknownArtist")}
-                    </p>
-                    {candidate.creator ? (
+              return (
+                <tr
+                  key={`${props.itemId}-${candidate.id}-${index}`}
+                  className={`border-b border-(--border) align-top ${
+                    sortedIndex % 2 === 0 ? "bg-(--panel)" : "bg-(--panel-soft)"
+                  } ${isBlocked ? "opacity-55" : ""}`}
+                >
+                  <td className="px-4 py-3">
+                    <div className="grid gap-0.5">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <p className="font-medium text-(--text)">
+                          {candidate.title}
+                          {candidate.album ? ` · ${candidate.album}` : ""}
+                        </p>
+                        {isBlacklistedCandidateSong ? (
+                          <span className="inline-flex items-center border border-rose-400/40 bg-rose-500/10 px-2 py-[3px] text-[10px] font-semibold uppercase tracking-[0.14em] text-rose-200">
+                            {t("management.versionsTable.blacklisted")}
+                          </span>
+                        ) : null}
+                      </div>
                       <p className="text-xs text-(--muted)">
-                        <span className="text-(--brand-deep)">
-                          {t("management.versionsTable.chartedBy")}
-                        </span>{" "}
-                        {candidate.creator}
-                        {isBlacklistedCharter
-                          ? ` · ${t("management.versionsTable.charterBlacklisted")}`
-                          : ""}
+                        {candidate.artist ??
+                          t("management.versionsTable.unknownArtist")}
                       </p>
-                    ) : null}
-                  </div>
-                </td>
-                <td className="px-4 py-3 text-(--muted)">
-                  {candidate.tuning ?? t("management.versionsTable.unknown")}
-                </td>
-                <td className="px-4 py-3">
-                  <div className="flex flex-wrap gap-1">
-                    {displayParts.map((part) => (
-                      <span
-                        key={`${candidate.id}-${part}`}
-                        className={getPlaylistPathBadgeClass(part)}
-                        title={formatPathLabel(part)}
-                      >
-                        {getPathAbbreviation(part)}
-                      </span>
-                    ))}
-                    {hasLyrics ? (
-                      <span className="inline-flex h-6 items-center justify-center border border-(--border-strong) bg-(--panel) px-1.5 text-[10px] font-semibold uppercase tracking-[0.08em] text-(--muted)">
-                        {t("management.versionsTable.lyrics")}
-                      </span>
-                    ) : null}
-                    {displayParts.length === 0 && !hasLyrics ? (
-                      <span className="text-xs text-(--muted)">
-                        {t("management.versionsTable.unknown")}
-                      </span>
-                    ) : null}
-                  </div>
-                </td>
-                <td className="px-4 py-3 text-(--muted)">
-                  {candidate.sourceUpdatedAt
-                    ? formatLocaleDate(locale, candidate.sourceUpdatedAt, {
-                        dateStyle: "medium",
-                      })
-                    : t("management.versionsTable.unknown")}
-                </td>
-                <td className="px-4 py-3 text-(--muted)">
-                  {candidate.downloads != null
-                    ? formatNumber(locale, candidate.downloads)
-                    : t("management.versionsTable.unknown")}
-                </td>
-                <td className="px-4 py-3">
-                  <div className="flex flex-wrap gap-1.5">
-                    {candidate.sourceUrl ? (
-                      <Button
-                        type="button"
-                        size="sm"
-                        variant="outline"
-                        asChild
-                        className="h-7 px-2 text-[11px]"
-                      >
-                        <a
-                          href={candidate.sourceUrl}
-                          target="_blank"
-                          rel="noreferrer"
-                          className="no-underline"
+                      {candidate.creator ? (
+                        <p className="text-xs text-(--muted)">
+                          <span className="text-(--brand-deep)">
+                            {t("management.versionsTable.chartedBy")}
+                          </span>{" "}
+                          {candidate.creator}
+                          {isBlacklistedCharter
+                            ? ` · ${t("management.versionsTable.charterBlacklisted")}`
+                            : ""}
+                        </p>
+                      ) : null}
+                    </div>
+                  </td>
+                  <td className="px-4 py-3 text-(--muted)">
+                    {candidate.tuning ?? t("management.versionsTable.unknown")}
+                  </td>
+                  <td className="px-4 py-3">
+                    <div className="flex flex-wrap gap-1">
+                      {displayParts.map((part) => (
+                        <span
+                          key={`${candidate.id}-${part}`}
+                          className={getPlaylistPathBadgeClass(part)}
+                          title={formatPathLabel(part)}
                         >
-                          <Download className="h-3.5 w-3.5" />
-                          {t("management.versionsTable.download")}
-                        </a>
-                      </Button>
-                    ) : null}
-                    {props.canManageBlacklist ? (
-                      <Button
-                        type="button"
-                        size="sm"
-                        variant="secondary"
-                        className="h-7 px-2 text-[11px]"
-                        disabled={
-                          isBlacklistedCandidateSong ||
-                          candidate.sourceId == null ||
-                          props.isBlacklistSongPending
-                        }
-                        onClick={() =>
-                          props.onBlacklistCandidateSong(candidate)
-                        }
-                      >
-                        <Ban className="h-3.5 w-3.5" />
-                        {isBlacklistedCandidateSong
-                          ? t("management.versionsTable.blacklisted")
-                          : t("management.versionsTable.blacklist")}
-                      </Button>
-                    ) : null}
-                  </div>
-                </td>
-              </tr>
-            );
-          })}
+                          {getPathAbbreviation(part)}
+                        </span>
+                      ))}
+                      {hasLyrics ? (
+                        <span className="inline-flex h-6 items-center justify-center border border-(--border-strong) bg-(--panel) px-1.5 text-[10px] font-semibold uppercase tracking-[0.08em] text-(--muted)">
+                          {t("management.versionsTable.lyrics")}
+                        </span>
+                      ) : null}
+                      {displayParts.length === 0 && !hasLyrics ? (
+                        <span className="text-xs text-(--muted)">
+                          {t("management.versionsTable.unknown")}
+                        </span>
+                      ) : null}
+                    </div>
+                  </td>
+                  <td className="px-4 py-3 text-(--muted)">
+                    {candidate.sourceUpdatedAt
+                      ? formatLocaleDate(locale, candidate.sourceUpdatedAt, {
+                          dateStyle: "medium",
+                        })
+                      : t("management.versionsTable.unknown")}
+                  </td>
+                  <td className="px-4 py-3 text-(--muted)">
+                    {candidate.downloads != null
+                      ? formatNumber(locale, candidate.downloads)
+                      : t("management.versionsTable.unknown")}
+                  </td>
+                  <td className="px-4 py-3">
+                    <div className="flex flex-wrap gap-1.5">
+                      {candidate.sourceUrl ? (
+                        isBlocked ? (
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="outline"
+                            className="h-7 px-2 text-[11px]"
+                            disabled
+                            title={t("management.versionsTable.blacklisted")}
+                          >
+                            <Download className="h-3.5 w-3.5" />
+                            {t("management.versionsTable.download")}
+                          </Button>
+                        ) : (
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="outline"
+                            asChild
+                            className="h-7 px-2 text-[11px]"
+                          >
+                            <a
+                              href={candidate.sourceUrl}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="no-underline"
+                            >
+                              <Download className="h-3.5 w-3.5" />
+                              {t("management.versionsTable.download")}
+                            </a>
+                          </Button>
+                        )
+                      ) : null}
+                      {props.canManageBlacklist ? (
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant={
+                            isBlacklistedCandidateSong ? "outline" : "secondary"
+                          }
+                          className="h-7 px-2 text-[11px]"
+                          disabled={
+                            candidate.sourceId == null ||
+                            props.isBlacklistSongPending
+                          }
+                          onClick={() => {
+                            if (isBlacklistedCandidateSong) {
+                              props.onUnblacklistCandidateSong(candidate);
+                              return;
+                            }
+
+                            props.onBlacklistCandidateSong(candidate);
+                          }}
+                        >
+                          <Ban className="h-3.5 w-3.5" />
+                          {isBlacklistedCandidateSong
+                            ? t("management.versionsTable.unblacklist")
+                            : t("management.versionsTable.blacklist")}
+                        </Button>
+                      ) : null}
+                    </div>
+                  </td>
+                </tr>
+              );
+            }
+          )}
         </tbody>
       </table>
     </div>
@@ -3352,7 +3715,14 @@ export function PlaylistQueueItemPreview() {
       isBlacklistSongGroupPending={false}
       isBlacklistCharterPending={false}
       availableVipTokenCount={3}
+      channelLogin="jimmy_pants_"
       requestPathModifierVipTokenCost={1}
+      requestPathModifierVipTokenCosts={{
+        guitar: 0,
+        lead: 1,
+        rhythm: 1,
+        bass: 1,
+      }}
       requestPathModifierUsesVipPriority
       vipTokenDurationThresholds={[]}
       blacklistedSongIds={blacklistedSongIds}
@@ -3398,6 +3768,18 @@ export function PlaylistQueueItemPreview() {
 
         const sourceId = candidate.sourceId;
         setBlacklistedSongIds((current) => new Set([...current, sourceId]));
+      }}
+      onUnblacklistCandidateSong={(candidate) => {
+        if (candidate.sourceId == null) {
+          return;
+        }
+
+        const sourceId = candidate.sourceId;
+        setBlacklistedSongIds((current) => {
+          const next = new Set(current);
+          next.delete(sourceId);
+          return next;
+        });
       }}
       onBlacklistSongGroup={() => setIsBlacklistedSongGroup(true)}
       onBlacklistArtist={() => setIsBlacklistedArtist(true)}

@@ -1,7 +1,10 @@
+"use client";
+
 import { ChevronLeft, ChevronRight, MoreHorizontal } from "lucide-react";
 import * as React from "react";
 
 import { type ButtonProps, buttonVariants } from "~/components/ui/button";
+import { useLocaleTranslation } from "~/lib/i18n/client";
 import { cn } from "~/lib/utils";
 
 const Pagination = ({ className, ...props }: React.ComponentProps<"nav">) => (
@@ -63,48 +66,60 @@ PaginationLink.displayName = "PaginationLink";
 const PaginationPrevious = ({
   className,
   ...props
-}: React.ComponentProps<typeof PaginationLink>) => (
-  <PaginationLink
-    aria-label="Go to previous page"
-    size="sm"
-    className={cn("gap-1 px-3 text-xs", className)}
-    {...props}
-  >
-    <ChevronLeft className="h-3.5 w-3.5" />
-    <span>Previous</span>
-  </PaginationLink>
-);
+}: React.ComponentProps<typeof PaginationLink>) => {
+  const { t } = useLocaleTranslation();
+
+  return (
+    <PaginationLink
+      aria-label={t("pagination.goToPreviousPage")}
+      size="sm"
+      className={cn("gap-1 px-3 text-xs", className)}
+      {...props}
+    >
+      <ChevronLeft className="h-3.5 w-3.5" />
+      <span>{t("pagination.previous")}</span>
+    </PaginationLink>
+  );
+};
 PaginationPrevious.displayName = "PaginationPrevious";
 
 const PaginationNext = ({
   className,
   ...props
-}: React.ComponentProps<typeof PaginationLink>) => (
-  <PaginationLink
-    aria-label="Go to next page"
-    size="sm"
-    className={cn("gap-1 px-3 text-xs", className)}
-    {...props}
-  >
-    <span>Next</span>
-    <ChevronRight className="h-3.5 w-3.5" />
-  </PaginationLink>
-);
+}: React.ComponentProps<typeof PaginationLink>) => {
+  const { t } = useLocaleTranslation();
+
+  return (
+    <PaginationLink
+      aria-label={t("pagination.goToNextPage")}
+      size="sm"
+      className={cn("gap-1 px-3 text-xs", className)}
+      {...props}
+    >
+      <span>{t("pagination.next")}</span>
+      <ChevronRight className="h-3.5 w-3.5" />
+    </PaginationLink>
+  );
+};
 PaginationNext.displayName = "PaginationNext";
 
 const PaginationEllipsis = ({
   className,
   ...props
-}: React.ComponentProps<"span">) => (
-  <span
-    aria-hidden
-    className={cn("flex h-9 w-9 items-center justify-center", className)}
-    {...props}
-  >
-    <MoreHorizontal className="h-3.5 w-3.5" />
-    <span className="sr-only">More pages</span>
-  </span>
-);
+}: React.ComponentProps<"span">) => {
+  const { t } = useLocaleTranslation();
+
+  return (
+    <span
+      aria-hidden
+      className={cn("flex h-9 w-9 items-center justify-center", className)}
+      {...props}
+    >
+      <MoreHorizontal className="h-3.5 w-3.5" />
+      <span className="sr-only">{t("pagination.morePages")}</span>
+    </span>
+  );
+};
 PaginationEllipsis.displayName = "PaginationEllipsis";
 
 export {

@@ -8,6 +8,7 @@ export type SongSearchResult = {
   album?: string;
   creator?: string;
   tuning?: string;
+  tuningIds?: number[];
   parts?: string[];
   durationText?: string;
   durationSeconds?: number;

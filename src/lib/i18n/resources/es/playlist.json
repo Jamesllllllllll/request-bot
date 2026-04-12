@@ -2,7 +2,10 @@
   "page": {
     "title": "Playlist de {channel}",
     "loading": "Cargando playlist...",
+    "loadFailed": "No se pudo cargar la playlist.",
     "empty": "Esta playlist está vacía ahora mismo.",
+    "notFoundTitle": "Este usuario no existe.",
+    "notFoundDescription": "No encontramos una página de solicitudes para @{channel}.",
     "viewerStateFailed": "No se pudo cargar el estado de solicitudes del espectador.",
     "viewerToolsFailed": "No se pudieron cargar las herramientas de solicitud del espectador.",
     "requestsLiveOnly": "Podrás añadir solicitudes cuando el stream esté en vivo."
@@ -85,7 +88,7 @@
     "turnRequestsOn": "Activar solicitudes",
     "turnRequestsOff": "Desactivar solicitudes",
     "online": "Stream en vivo",
-    "offline": "Stream sin conexión",
+    "offline": "Stream sin conexion",
     "vipBalance": "Tienes {countText} token{count, plural, one {} other {s}} VIP",
     "vipTokens": "Tokens VIP"
   },
@@ -113,7 +116,7 @@
     "requestCount": "{count, plural, one {# solicitud} other {# solicitudes}}",
     "byArtist": " de {artist}",
     "requestedBy": "Solicitada por {requester}",
-    "page": "Página {page}",
+    "page": "Pagina {page}",
     "unknownRequester": "Desconocido"
   },
   "rules": {
@@ -215,6 +218,11 @@
     "requiresVipTokens": "Requiere {count}.",
     "pathRequiresVip": "{path} requiere {count}.",
     "pathCostsVipTokens": "{path} cuesta {count}.",
+    "free": "Gratis",
+    "vipShort": "VIP",
+    "durationShort": "{minutes}+ min",
+    "costSummary": "{reasons}: {count}",
+    "copyCommandCostNotice": "!sr cuesta {regularCount}. !vip cuesta {vipCount}.",
     "addCost": "Añadir ({count})",
     "editCost": "Editar ({count})",
     "updateExisting": "Actualiza tu solicitud existente.",
@@ -250,7 +258,9 @@
     "reconnectMessage": "Vuelve a conectar Twitch para buscar espectadores que están ahora mismo en el chat.",
     "reconnect": "Reconectar",
     "searching": "Buscando espectadores actuales...",
-    "noMatches": "Ningún espectador actual coincide con ese usuario."
+    "noMatches": "Ningún espectador actual coincide con ese usuario.",
+    "costWithBalance": "{cost} · {count} disponibles",
+    "insufficientWithBalance": "Necesita {cost} · {count} disponibles"
   },
   "row": {
     "viewer": "espectador",
@@ -272,6 +282,7 @@
     }
   },
   "management": {
+    "blacklistPanelTitle": "Listas negras del canal",
     "states": {
       "searchFailed": "La búsqueda falló.",
       "playlistUpdateFailed": "La playlist no se pudo actualizar.",
@@ -392,6 +403,7 @@
       "songBlacklisted": "Canción en blacklist",
       "artistBlacklisted": "Artista en blacklist",
       "requestedBy": "Pedido por {requester}",
+      "lyrics": "Letras",
       "vipTokens": "{count} tokens VIP",
       "added": "Añadida {time}",
       "requestedText": "Texto pedido: {query}",
@@ -409,7 +421,7 @@
       "openActionsAria": "Abrir acciones para {title}",
       "removing": "Quitando...",
       "removeFromPlaylist": "Quitar de la playlist",
-      "blacklist": "Blacklist",
+      "blacklist": "Lista negra",
       "blacklistTitle": "Acciones de blacklist",
       "back": "Volver",
       "description": "Elige si quieres bloquear la versión en cola, todas las versiones de esta canción, el artista o un charter.",
@@ -440,10 +452,12 @@
       "unknownArtist": "Artista desconocido",
       "chartedBy": "Creada por",
       "charterBlacklisted": "Charter en blacklist",
+      "lyrics": "Letras",
       "unknown": "Desconocido",
       "download": "Descargar",
       "blacklisted": "En blacklist",
-      "blacklist": "Bloquear"
+      "blacklist": "Bloquear",
+      "unblacklist": "Quitar de blacklist"
     },
     "preview": {
       "removed": "La fila de demo se ha quitado de la playlist.",

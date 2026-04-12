@@ -25,7 +25,7 @@
     "hideFilters": "Ocultar filtros",
     "title": "Título",
     "artist": "Artista",
-    "album": "Álbum",
+    "album": "Album",
     "creator": "Creador",
     "tuning": "Afinación",
     "path": "Parte",
@@ -36,7 +36,7 @@
     "matchAll": "Coincide con todas"
   },
   "columns": {
-    "song": "Canción",
+    "song": "Cancion",
     "paths": "Partes",
     "stats": "Detalles",
     "actions": "Acciones"

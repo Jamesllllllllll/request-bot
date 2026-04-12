@@ -15,7 +15,7 @@ if (!latestMigration) {
   throw new Error("No SQL migrations found in ./drizzle");
 }
 
-const nextContent = `export const LATEST_MIGRATION_NAME = ${JSON.stringify(latestMigration)};\n`;
+const nextContent = `// biome-ignore format: generated file must stay single-line for sync checks\nexport const LATEST_MIGRATION_NAME = ${JSON.stringify(latestMigration)};\n`;
 
 if (checkMode) {
   let currentContent = null;

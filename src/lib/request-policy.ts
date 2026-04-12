@@ -5,10 +5,26 @@ import {
   type BlacklistedSongVersion,
   getBlacklistReasonCodes,
 } from "./channel-blacklist";
+import { normalizePathOptions } from "./channel-options";
 import type { SongSearchResult } from "./song-search/types";
-import { formatVipTokenCostLabel } from "./vip-token-duration-thresholds";
+import { getTuningIdsFromSong, parseStoredTuningIds } from "./tunings";
+import {
+  formatVipDurationThresholdMinutes,
+  formatVipTokenCostLabel,
+  parseVipTokenDurationThresholds,
+} from "./vip-token-duration-thresholds";
+import { formatVipTokenCount } from "./vip-tokens";
 
 type Translate = (key: string, options?: Record<string, unknown>) => string;
+
+function getLocalizedVipTokenCostLabel(count: number, translate?: Translate) {
+  return translate
+    ? translate("labels.vipTokenCount", {
+        count,
+        countText: formatVipTokenCount(count),
+      })
+    : formatVipTokenCostLabel(count);
+}
 
 export const requestPathModifierOptions = [
   "guitar",
@@ -24,18 +40,52 @@ export const legacyRequestPathModifierOptions = [
 
 export type RequestPathModifierOption =
   (typeof requestPathModifierOptions)[number];
+export type RequestPathModifierVipTokenCosts = Record<
+  RequestPathModifierOption,
+  number
+>;
+
+export interface RequestPathModifierVipTokenCostColumns {
+  requestPathModifierGuitarVipTokenCost?: number | null;
+  requestPathModifierLeadVipTokenCost?: number | null;
+  requestPathModifierRhythmVipTokenCost?: number | null;
+  requestPathModifierBassVipTokenCost?: number | null;
+}
+
+type RequestPathModifierVipTokenCostSettings = Pick<
+  ChannelRequestSettings,
+  | "allowRequestPathModifiers"
+  | "allowedRequestPathsJson"
+  | "requestPathModifierVipTokenCost"
+> &
+  RequestPathModifierVipTokenCostColumns & {
+    requestPathModifierVipTokenCosts?:
+      | Partial<Record<string, unknown>>
+      | null
+      | undefined;
+  };
+
+type RequestPathModifierVipPrioritySettings = Pick<
+  RequestPathModifierVipTokenCostSettings,
+  | "requestPathModifierVipTokenCost"
+  | "requestPathModifierGuitarVipTokenCost"
+  | "requestPathModifierLeadVipTokenCost"
+  | "requestPathModifierRhythmVipTokenCost"
+  | "requestPathModifierBassVipTokenCost"
+  | "requestPathModifierVipTokenCosts"
+> & {
+  requestPathModifierUsesVipPriority?: boolean | null;
+};
 
 function normalize(value: string | undefined | null) {
   return (value ?? "").trim().toLowerCase();
 }
 
-function getNormalizedSongTunings(tuning: string | undefined | null) {
-  const normalized = tuning
-    ?.split("|")
-    .map((entry) => normalize(entry))
-    .filter(Boolean);
-
-  return normalized && normalized.length > 0 ? normalized : [];
+function getNormalizedSongTunings(input: {
+  tuning?: string | undefined | null;
+  tuningIds?: Array<number | null | undefined> | null | undefined;
+}) {
+  return getTuningIdsFromSong(input).map((entry) => normalize(String(entry)));
 }
 
 export interface ChannelRequestSettings {
@@ -68,6 +118,10 @@ export interface ChannelRequestSettings {
   allowRequestPathModifiers: boolean;
   allowedRequestPathsJson?: string | null;
   requestPathModifierVipTokenCost?: number | null;
+  requestPathModifierGuitarVipTokenCost?: number | null;
+  requestPathModifierLeadVipTokenCost?: number | null;
+  requestPathModifierRhythmVipTokenCost?: number | null;
+  requestPathModifierBassVipTokenCost?: number | null;
   requestPathModifierUsesVipPriority?: boolean | null;
   vipTokenDurationThresholdsJson?: string | null;
   commandPrefix: string;
@@ -93,6 +147,12 @@ export function getRequiredPathsMatchMode(
   value: string | null | undefined
 ): "any" | "all" {
   return value === "all" ? "all" : "any";
+}
+
+export function getRequiredPathsSetting(
+  settings: Pick<ChannelRequestSettings, "requiredPathsJson">
+) {
+  return normalizePathOptions(getArraySetting(settings.requiredPathsJson));
 }
 
 export function normalizeRequestPathModifier(
@@ -154,26 +214,168 @@ export function normalizeRequestPathModifierVipTokenCost(
   return Math.max(0, Math.trunc(value));
 }
 
-export function getRequiredVipTokenCostForRequestedPaths(input: {
-  requestedPaths: string[];
+export function createEmptyRequestPathModifierVipTokenCosts(): RequestPathModifierVipTokenCosts {
+  return {
+    guitar: 0,
+    lead: 0,
+    rhythm: 0,
+    bass: 0,
+  };
+}
+
+export function normalizeRequestPathModifierVipTokenCosts(
+  value: Partial<Record<string, unknown>> | null | undefined
+): RequestPathModifierVipTokenCosts {
+  const normalized = createEmptyRequestPathModifierVipTokenCosts();
+
+  for (const path of requestPathModifierOptions) {
+    normalized[path] = normalizeRequestPathModifierVipTokenCost(
+      value?.[path] as number | null | undefined
+    );
+  }
+
+  return normalized;
+}
+
+function hasExplicitRequestPathModifierVipTokenCostColumns(
+  settings: RequestPathModifierVipTokenCostColumns
+) {
+  return (
+    settings.requestPathModifierGuitarVipTokenCost != null ||
+    settings.requestPathModifierLeadVipTokenCost != null ||
+    settings.requestPathModifierRhythmVipTokenCost != null ||
+    settings.requestPathModifierBassVipTokenCost != null
+  );
+}
+
+function getRequestPathModifierVipTokenCostsFromColumns(
+  settings: RequestPathModifierVipTokenCostColumns
+) {
+  return {
+    guitar: normalizeRequestPathModifierVipTokenCost(
+      settings.requestPathModifierGuitarVipTokenCost
+    ),
+    lead: normalizeRequestPathModifierVipTokenCost(
+      settings.requestPathModifierLeadVipTokenCost
+    ),
+    rhythm: normalizeRequestPathModifierVipTokenCost(
+      settings.requestPathModifierRhythmVipTokenCost
+    ),
+    bass: normalizeRequestPathModifierVipTokenCost(
+      settings.requestPathModifierBassVipTokenCost
+    ),
+  } satisfies RequestPathModifierVipTokenCosts;
+}
+
+export function getRequestPathModifierVipTokenCostsSetting(
   settings: Pick<
-    ChannelRequestSettings,
-    | "allowRequestPathModifiers"
-    | "allowedRequestPathsJson"
+    RequestPathModifierVipTokenCostSettings,
     | "requestPathModifierVipTokenCost"
+    | "requestPathModifierGuitarVipTokenCost"
+    | "requestPathModifierLeadVipTokenCost"
+    | "requestPathModifierRhythmVipTokenCost"
+    | "requestPathModifierBassVipTokenCost"
+    | "requestPathModifierVipTokenCosts"
+  >
+) {
+  if (settings.requestPathModifierVipTokenCosts != null) {
+    return normalizeRequestPathModifierVipTokenCosts(
+      settings.requestPathModifierVipTokenCosts
+    );
+  }
+
+  if (hasExplicitRequestPathModifierVipTokenCostColumns(settings)) {
+    return getRequestPathModifierVipTokenCostsFromColumns(settings);
+  }
+
+  const legacyCost = normalizeRequestPathModifierVipTokenCost(
+    settings.requestPathModifierVipTokenCost
+  );
+
+  return {
+    guitar: legacyCost,
+    lead: legacyCost,
+    rhythm: legacyCost,
+    bass: legacyCost,
+  } satisfies RequestPathModifierVipTokenCosts;
+}
+
+export type RequestPathVipTokenCostDetail = {
+  path: RequestPathModifierOption;
+  cost: number;
+};
+
+export function getAllowedRequestPathVipTokenCostDetails(input: {
+  allowedRequestPaths: string[];
+  settings: Pick<
+    RequestPathModifierVipTokenCostSettings,
+    | "requestPathModifierVipTokenCost"
+    | "requestPathModifierGuitarVipTokenCost"
+    | "requestPathModifierLeadVipTokenCost"
+    | "requestPathModifierRhythmVipTokenCost"
+    | "requestPathModifierBassVipTokenCost"
+    | "requestPathModifierVipTokenCosts"
   >;
+}) {
+  const pathCosts = getRequestPathModifierVipTokenCostsSetting(input.settings);
+
+  return normalizeAllowedRequestPaths(input.allowedRequestPaths).map(
+    (path) => ({
+      path,
+      cost: pathCosts[path],
+    })
+  );
+}
+
+export function hasPaidEnabledRequestPathModifiers(input: {
+  allowedRequestPaths: string[];
+  settings: Pick<
+    RequestPathModifierVipPrioritySettings,
+    | "requestPathModifierVipTokenCost"
+    | "requestPathModifierGuitarVipTokenCost"
+    | "requestPathModifierLeadVipTokenCost"
+    | "requestPathModifierRhythmVipTokenCost"
+    | "requestPathModifierBassVipTokenCost"
+    | "requestPathModifierVipTokenCosts"
+  >;
+}) {
+  return getAllowedRequestPathVipTokenCostDetails(input).some(
+    (detail) => detail.cost > 0
+  );
+}
+
+export function getRequestPathModifierUsesVipPrioritySetting(_input: {
+  allowedRequestPaths: string[];
+  settings: RequestPathModifierVipPrioritySettings;
+}) {
+  return false;
+}
+
+export function getRequiredVipTokenCostDetailsForRequestedPaths(input: {
+  requestedPaths: string[];
+  settings: RequestPathModifierVipTokenCostSettings;
 }) {
   const allowedRequestPaths = getAllowedRequestPathsSetting(input.settings);
   const matchedRequestedPaths = normalizeAllowedRequestPaths(
     input.requestedPaths
   ).filter((path) => allowedRequestPaths.includes(path));
+  const pathCosts = getRequestPathModifierVipTokenCostsSetting(input.settings);
 
-  if (matchedRequestedPaths.length === 0) {
-    return 0;
-  }
+  return matchedRequestedPaths
+    .map((path) => ({
+      path,
+      cost: pathCosts[path],
+    }))
+    .filter((entry) => entry.cost > 0);
+}
 
-  return normalizeRequestPathModifierVipTokenCost(
-    input.settings.requestPathModifierVipTokenCost
+export function getRequiredVipTokenCostForRequestedPaths(input: {
+  requestedPaths: string[];
+  settings: RequestPathModifierVipTokenCostSettings;
+}) {
+  return getRequiredVipTokenCostDetailsForRequestedPaths(input).reduce(
+    (total, entry) => total + entry.cost,
+    0
   );
 }
 
@@ -295,7 +497,9 @@ export function isSongAllowed(input: {
   requester: RequesterContext;
   allowBlacklistOverride?: boolean;
 }) {
-  const allowedTunings = getArraySetting(input.settings.allowedTuningsJson);
+  const allowedTuningIds = parseStoredTuningIds(
+    input.settings.allowedTuningsJson
+  );
   const setlistArtistIds = input.setlistArtists
     .map((entry) => entry.artistId)
     .filter((entry): entry is number => entry != null);
@@ -312,10 +516,13 @@ export function isSongAllowed(input: {
     };
   }
 
-  if (allowedTunings.length > 0) {
-    const songTunings = getNormalizedSongTunings(input.song.tuning);
+  if (allowedTuningIds.length > 0) {
+    const songTunings = getNormalizedSongTunings({
+      tuning: input.song.tuning,
+      tuningIds: input.song.tuningIds,
+    });
     const normalizedAllowedTunings = new Set(
-      allowedTunings.map((entry) => normalize(entry))
+      allowedTuningIds.map((entry) => normalize(String(entry)))
     );
     const allowed =
       songTunings.length > 0 &&
@@ -402,7 +609,7 @@ export function getMissingRequiredPaths(input: {
     "requiredPathsJson" | "requiredPathsMatchMode"
   >;
 }) {
-  const requiredPaths = getArraySetting(input.settings.requiredPathsJson);
+  const requiredPaths = getRequiredPathsSetting(input.settings);
   if (requiredPaths.length === 0) {
     return [];
   }
@@ -432,7 +639,7 @@ export function getRequiredPathsWarning(input: {
     "requiredPathsJson" | "requiredPathsMatchMode"
   >;
 }) {
-  const requiredPaths = getArraySetting(input.settings.requiredPathsJson);
+  const requiredPaths = getRequiredPathsSetting(input.settings);
   if (requiredPaths.length === 0) {
     return null;
   }
@@ -498,9 +705,6 @@ export function formatLocalizedPathLabel(path: string, translate?: Translate) {
       return translate?.("paths.rhythm") ?? "Rhythm";
     case "bass":
       return translate?.("paths.bass") ?? "Bass";
-    case "voice":
-    case "vocals":
-      return translate?.("paths.lyrics") ?? "Lyrics";
     default:
       return path.trim();
   }
@@ -518,6 +722,31 @@ export function formatRequestPathModifierTokens(paths: string[]) {
     .join(", ");
 }
 
+export function formatRequestPathModifierVipTokenCostSummary(input: {
+  allowedRequestPaths: string[];
+  settings: Pick<
+    RequestPathModifierVipTokenCostSettings,
+    | "requestPathModifierVipTokenCost"
+    | "requestPathModifierGuitarVipTokenCost"
+    | "requestPathModifierLeadVipTokenCost"
+    | "requestPathModifierRhythmVipTokenCost"
+    | "requestPathModifierBassVipTokenCost"
+    | "requestPathModifierVipTokenCosts"
+  >;
+  translate?: Translate;
+}) {
+  return getAllowedRequestPathVipTokenCostDetails(input)
+    .map(
+      ({ path, cost }) =>
+        `*${path} = ${
+          cost > 0
+            ? getLocalizedVipTokenCostLabel(cost, input.translate)
+            : "free"
+        }`
+    )
+    .join(", ");
+}
+
 export function buildHowMessage(input: {
   commandPrefix: string;
   appUrl: string;
@@ -525,6 +754,16 @@ export function buildHowMessage(input: {
   allowRequestPathModifiers?: boolean;
   allowedRequestPaths?: string[];
   requestPathModifierVipTokenCost?: number | null;
+  requestPathModifierGuitarVipTokenCost?: number | null;
+  requestPathModifierLeadVipTokenCost?: number | null;
+  requestPathModifierRhythmVipTokenCost?: number | null;
+  requestPathModifierBassVipTokenCost?: number | null;
+  requestPathModifierVipTokenCosts?:
+    | Partial<Record<string, unknown>>
+    | null
+    | undefined;
+  requestPathModifierUsesVipPriority?: boolean | null;
+  vipTokenDurationThresholdsJson?: string | null;
   translate?: Translate;
 }) {
   const normalized = normalizeCommandPrefix(input.commandPrefix);
@@ -544,26 +783,84 @@ export function buildHowMessage(input: {
     input.translate?.("commands.how.commands", {
       commandPrefix: normalized,
     }) ??
-      `Commands: ${normalized}sr artist - song; ${normalized}sr artist *random; ${normalized}sr artist *choice; ${normalized}vip; ${normalized}vip artist - song; ${normalized}vip artist - song *2; ${normalized}edit #2 artist - song; ${normalized}remove reg|vip|all; ${normalized}position.`,
+      `Commands: ${normalized}sr artist - song; ${normalized}sr artist *random; ${normalized}sr artist *choice; ${normalized}vip; ${normalized}vip artist - song; ${normalized}edit #2 artist - song; ${normalized}remove reg|vip|all; ${normalized}position.`,
+    input.translate?.("commands.how.vipBase", {
+      commandPrefix: normalized,
+    }) ?? `VIP requests: ${normalized}vip adds 1 VIP token and plays next.`,
   ];
-  if (allowedRequestPaths.length > 0) {
-    const requiredVipTokenCost = normalizeRequestPathModifierVipTokenCost(
-      input.requestPathModifierVipTokenCost
-    );
-    const modifiers = formatRequestPathModifierTokens(allowedRequestPaths);
+  const vipTokenDurationThresholds = parseVipTokenDurationThresholds(
+    input.vipTokenDurationThresholdsJson
+  );
+
+  for (const threshold of vipTokenDurationThresholds) {
     parts.push(
-      requiredVipTokenCost > 0
-        ? (input.translate?.("commands.how.partRequestsVip", {
-            commandPrefix: normalized,
-            countText: formatVipTokenCostLabel(requiredVipTokenCost),
-            modifiers,
-          }) ??
-            `Part requests: add ${modifiers} to ${normalized}sr, ${normalized}vip, or ${normalized}edit. They require ${formatVipTokenCostLabel(requiredVipTokenCost)}.`)
-        : (input.translate?.("commands.how.partRequests", {
+      input.translate?.("commands.how.durationThreshold", {
+        minutes: formatVipDurationThresholdMinutes(
+          threshold.minimumDurationMinutes
+        ),
+        countText: getLocalizedVipTokenCostLabel(
+          threshold.tokenCost,
+          input.translate
+        ),
+      }) ??
+        `Long songs: over ${formatVipDurationThresholdMinutes(
+          threshold.minimumDurationMinutes
+        )} minutes add ${formatVipTokenCostLabel(threshold.tokenCost)}.`
+    );
+  }
+
+  if (allowedRequestPaths.length > 0) {
+    const pathModifierSettings = {
+      requestPathModifierVipTokenCost: input.requestPathModifierVipTokenCost,
+      requestPathModifierGuitarVipTokenCost:
+        input.requestPathModifierGuitarVipTokenCost,
+      requestPathModifierLeadVipTokenCost:
+        input.requestPathModifierLeadVipTokenCost,
+      requestPathModifierRhythmVipTokenCost:
+        input.requestPathModifierRhythmVipTokenCost,
+      requestPathModifierBassVipTokenCost:
+        input.requestPathModifierBassVipTokenCost,
+      requestPathModifierVipTokenCosts: input.requestPathModifierVipTokenCosts,
+    };
+    const pathCostDetails = getAllowedRequestPathVipTokenCostDetails({
+      allowedRequestPaths,
+      settings: pathModifierSettings,
+    });
+    const paidPathCostDetails = pathCostDetails.filter(
+      (detail) => detail.cost > 0
+    );
+    const uniquePathCosts = new Set(
+      pathCostDetails.map((detail) => detail.cost)
+    );
+    const uniformPaidPathCost =
+      uniquePathCosts.size === 1 &&
+      paidPathCostDetails.length === pathCostDetails.length
+        ? (pathCostDetails[0]?.cost ?? 0)
+        : null;
+    const modifiers = formatRequestPathModifierTokens(allowedRequestPaths);
+    const costSummary = formatRequestPathModifierVipTokenCostSummary({
+      allowedRequestPaths,
+      settings: pathModifierSettings,
+      translate: input.translate,
+    });
+    parts.push(
+      paidPathCostDetails.length === 0
+        ? (input.translate?.("commands.how.partRequests", {
             commandPrefix: normalized,
             modifiers,
           }) ??
             `Part requests: add ${modifiers} to ${normalized}sr, ${normalized}vip, or ${normalized}edit.`)
+        : uniformPaidPathCost != null
+          ? (input.translate?.("commands.how.partRequestsVip", {
+              commandPrefix: normalized,
+              countText: getLocalizedVipTokenCostLabel(
+                uniformPaidPathCost,
+                input.translate
+              ),
+              modifiers,
+            }) ??
+            `Part requests: add ${modifiers} to ${normalized}sr, ${normalized}vip, or ${normalized}edit. They add ${formatVipTokenCostLabel(uniformPaidPathCost)}. VIP adds 1 more.`)
+          : `Part requests: add ${modifiers} to ${normalized}sr, ${normalized}vip, or ${normalized}edit. Costs: ${costSummary}. VIP adds 1 more.`
     );
   }
 

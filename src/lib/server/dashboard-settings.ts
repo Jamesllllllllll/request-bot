@@ -7,6 +7,7 @@ import {
   createAuditLog,
   getActiveBroadcasterAuthorizationForChannel,
   getBotAuthorization,
+  getCatalogSearchFilterOptions,
   getDashboardState,
   updateSettings,
 } from "~/lib/db/repositories";
@@ -14,9 +15,12 @@ import type { AppEnv } from "~/lib/env";
 import { defaultLocale, normalizeLocale } from "~/lib/i18n/locales";
 import {
   getAllowedRequestPathsSetting,
-  getArraySetting,
+  getRequestPathModifierVipTokenCostsSetting,
   getRequiredPathsMatchMode,
+  getRequiredPathsSetting,
 } from "~/lib/request-policy";
+import type { TuningOption } from "~/lib/tunings";
+import { parseStoredTuningIds } from "~/lib/tunings";
 import { getTwitchUser } from "~/lib/twitch/api";
 import {
   getChannelPointRewardEligibility,
@@ -31,7 +35,7 @@ export type DashboardSettingsFormData = Omit<
   SettingsInputData,
   "allowedTunings" | "requiredPaths"
 > & {
-  allowedTunings: string[];
+  allowedTunings: number[];
   requiredPaths: string[];
 };
 
@@ -67,6 +71,7 @@ export type DashboardSettingsData = {
     botReadyState: string;
   };
   settings: DashboardSettingsFormData | null;
+  tuningOptions: TuningOption[];
   ownedOfficialDlcImport: {
     count: number;
     importedAt: number | null;
@@ -85,10 +90,15 @@ export const getDashboardSettings = createServerFn({ method: "GET" }).handler(
   async () => {
     const runtimeEnv = env as AppEnv;
     const state = await requireDashboardState(runtimeEnv);
-    const [botAuthorization, broadcasterAuthorization] = await Promise.all([
-      getBotAuthorization(runtimeEnv),
-      getActiveBroadcasterAuthorizationForChannel(runtimeEnv, state.channel.id),
-    ]);
+    const [botAuthorization, broadcasterAuthorization, filterOptions] =
+      await Promise.all([
+        getBotAuthorization(runtimeEnv),
+        getActiveBroadcasterAuthorizationForChannel(
+          runtimeEnv,
+          state.channel.id
+        ),
+        getCatalogSearchFilterOptions(runtimeEnv),
+      ]);
     let channelPointRewardsEligibility = unknownChannelPointRewardEligibility;
 
     if (broadcasterAuthorization) {
@@ -113,14 +123,18 @@ export const getDashboardSettings = createServerFn({ method: "GET" }).handler(
       settings: state.settings
         ? {
             ...state.settings,
-            allowedTunings: getArraySetting(state.settings.allowedTuningsJson),
-            requiredPaths: getArraySetting(state.settings.requiredPathsJson),
+            allowedTunings: parseStoredTuningIds(
+              state.settings.allowedTuningsJson
+            ),
+            requiredPaths: getRequiredPathsSetting(state.settings),
             requiredPathsMatchMode: getRequiredPathsMatchMode(
               state.settings.requiredPathsMatchMode
             ),
             allowedRequestPaths: getAllowedRequestPathsSetting(state.settings),
             allowRequestPathModifiers:
               getAllowedRequestPathsSetting(state.settings).length > 0,
+            requestPathModifierVipTokenCosts:
+              getRequestPathModifierVipTokenCostsSetting(state.settings),
             defaultLocale:
               normalizeLocale(state.settings.defaultLocale) ?? defaultLocale,
             cheerMinimumTokenPercent: normalizeCheerMinimumTokenPercent(
@@ -132,6 +146,7 @@ export const getDashboardSettings = createServerFn({ method: "GET" }).handler(
             ),
           }
         : null,
+      tuningOptions: filterOptions.tunings,
       ownedOfficialDlcImport: state.ownedOfficialDlcImport,
       channelPointRewardsEligibility,
       playedSongs: state.playedSongs,

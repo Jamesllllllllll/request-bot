@@ -1,0 +1,45 @@
+{
+  "meta": {
+    "title": "Startseite"
+  },
+  "hero": {
+    "eyebrow": "Playlist-Verwaltung für Rocksmith-Streamer",
+    "title": "Suchen Sie nach Songs oder verwalten Sie Ihren Kanal."
+  },
+  "actions": {
+    "findSong": "Song zum Anfordern finden",
+    "searchSongs": "Songs suchen",
+    "manageChannel": "Kanal verwalten",
+    "openSettings": "Einstellungen öffnen"
+  },
+  "about": {
+    "eyebrow": "Was ist RockList.Live?",
+    "body": "RockList.Live hilft Rocksmith-Streamern, Anfragen entgegenzunehmen und ihre Playlists zu verwalten."
+  },
+  "features": {
+    "surfaceRequestsTitle": "Anfragen auf jeder Oberfläche",
+    "surfaceRequestsBody": "Zuschauer fügen Songs auf der Playlist-Seite, im Chat oder über die Twitch-Panel-Erweiterung hinzu.",
+    "moderationTitle": "Moderatorunterstützung",
+    "moderationBody": "Moderatoren können Anfragen verwalten, während der Stream live ist.",
+    "queueTitle": "Warteschlange in Bewegung halten",
+    "queueBody": "Bearbeiten, sortieren und verfolgen Sie Anfragen.",
+    "rulesTitle": "Legen Sie die Regeln fest",
+    "rulesBody": "Kontrollieren Sie Blacklists, Setlists, Moderation und Anfrageeinstellungen für Ihren Kanal."
+  },
+  "live": {
+    "eyebrow": "Jetzt live",
+    "title": "Aktuelle Streamer",
+    "showLive": "Live zeigen",
+    "showDemo": "Demo anzeigen",
+    "demoOnly": "Die hier gezeigten Streamer dienen nur zu Demozwecken.",
+    "activeCount": "{count} aktiv",
+    "empty": "Es sind noch keine Streamer mit aktivem Bot aktiv.",
+    "previewAlt": "{displayName} Livestream-Vorschau",
+    "status": "Live",
+    "nowPlaying": "Jetzt spielen",
+    "upNext": "Als nächstes",
+    "nextRequest": "Nächste Anfrage",
+    "openPlaylist": "Playlist öffnen",
+    "watchOnTwitch": "Auf Twitch ansehen"
+  }
+}

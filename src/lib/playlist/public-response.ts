@@ -1,3 +1,4 @@
+import type { RequestPathModifierVipTokenCosts } from "~/lib/request-policy";
 import type { RequesterChatBadge } from "~/lib/twitch/chat-badges";
 
 export type PlaylistClientChannel = {
@@ -30,6 +31,7 @@ export type PublicPlaylistSettings = {
   allowRequestPathModifiers: boolean;
   allowedRequestPaths: string[];
   requestPathModifierVipTokenCost: number;
+  requestPathModifierVipTokenCosts: RequestPathModifierVipTokenCosts;
   requestPathModifierUsesVipPriority: boolean;
   requiredPathsJson: string;
   vipTokenDurationThresholdsJson: string;
@@ -62,6 +64,7 @@ export function toPublicPlaylistSettings(
     allowRequestPathModifiers: settings.allowRequestPathModifiers,
     allowedRequestPaths: settings.allowedRequestPaths,
     requestPathModifierVipTokenCost: settings.requestPathModifierVipTokenCost,
+    requestPathModifierVipTokenCosts: settings.requestPathModifierVipTokenCosts,
     requestPathModifierUsesVipPriority:
       settings.requestPathModifierUsesVipPriority,
     requiredPathsJson: settings.requiredPathsJson,

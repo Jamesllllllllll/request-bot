@@ -37,9 +37,9 @@ import {
   formatPathLabel,
   getActiveRequestLimit,
   getAllowedRequestPathsSetting,
-  getArraySetting,
   getRateLimitWindow,
   getRequiredPathsMatchMode,
+  getRequiredPathsSetting,
   getRequiredPathsWarning,
   isRequesterAllowed,
   isSongAllowed,
@@ -52,8 +52,10 @@ import {
   getStoredRequestedPaths,
   normalizeRequestedPath,
   type RequestPathOption,
+  type RequestVipTokenPlanReason,
   requestedPathsMatch,
 } from "~/lib/requested-paths";
+import { parseStoredTuningIds } from "~/lib/tunings";
 import { getBroadcasterSubscriptions, TwitchApiError } from "~/lib/twitch/api";
 import type { RequesterChatBadge } from "~/lib/twitch/chat-badges";
 import { createId, getErrorMessage } from "~/lib/utils";
@@ -63,6 +65,7 @@ import {
   isVipRequestCooldownEnabled,
 } from "~/lib/vip-request-cooldowns";
 import {
+  formatVipDurationThresholdMinutes,
   formatVipTokenCostLabel,
   parseVipTokenDurationThresholds,
 } from "~/lib/vip-token-duration-thresholds";
@@ -554,12 +557,10 @@ function buildViewerCatalogSearchInput(input: {
     sortBy: "relevance" as const,
     sortDirection: "desc" as const,
     restrictToOfficial: !!input.context.state.settings.onlyOfficialDlc,
-    allowedTuningsFilter: getArraySetting(
+    allowedTuningsFilter: parseStoredTuningIds(
       input.context.state.settings.allowedTuningsJson
     ),
-    requiredPartsFilter: getArraySetting(
-      input.context.state.settings.requiredPathsJson
-    ),
+    requiredPartsFilter: getRequiredPathsSetting(input.context.state.settings),
     requiredPartsFilterMatchMode: getRequiredPathsMatchMode(
       input.context.state.settings.requiredPathsMatchMode
     ),
@@ -1004,10 +1005,6 @@ async function submitViewerRequest(
     thresholds: vipTokenDurationThresholds,
     settings: context.state.settings,
   });
-  const requiredRequestVipTokenCost = Math.max(
-    requestVipTokenPlan.requiredSongVipTokenCost,
-    requestVipTokenPlan.requestedPathVipTokenCost
-  );
   const nextVipTokenCost = requestVipTokenPlan.totalVipTokenCost;
 
   const existingActiveCount = await countActiveRequestsForUser(env, {
@@ -1288,28 +1285,6 @@ async function submitViewerRequest(
     }
   }
 
-  if (
-    mutation.requestKind !== "vip" &&
-    requestVipTokenPlan.regularRequestRequiresVip
-  ) {
-    await createViewerRequestLog(env, {
-      context,
-      rawMessage,
-      normalizedQuery,
-      song,
-      outcome: "rejected",
-      outcomeReason:
-        requestVipTokenPlan.requestedPathVipTokenCost > 0
-          ? "vip_token_required_by_requested_path"
-          : "vip_token_required_by_duration",
-    });
-
-    throw new ViewerRequestError(
-      409,
-      `This request requires ${formatVipTokenCostLabel(requiredRequestVipTokenCost)}. Use a VIP request instead.`
-    );
-  }
-
   const cooldownSourceItemId = context.vipRequestCooldown?.sourceItemId ?? null;
   const canBypassVipRequestCooldown =
     cooldownSourceItemId != null &&
@@ -1368,6 +1343,7 @@ async function submitViewerRequest(
         requestedVipTokenCost: nextVipTokenCost,
         additionalVipTokenCost: vipTokenDelta,
         availableVipTokens: context.vipTokensAvailable,
+        reasons: requestVipTokenPlan.vipTokenReasons,
       })
     );
   }
@@ -1405,9 +1381,22 @@ async function submitViewerRequest(
       song,
       settings: context.state.settings,
     });
-    warningMessage = requiredPathsWarning ?? undefined;
     if (requiredPathsWarning) {
-      warningCode = "missing_required_paths";
+      if (editingSameResolvedRequest) {
+        warningMessage = requiredPathsWarning;
+        warningCode = "missing_required_paths";
+      } else {
+        await createViewerRequestLog(env, {
+          context,
+          rawMessage,
+          normalizedQuery,
+          song,
+          outcome: "rejected",
+          outcomeReason: "missing_required_paths",
+        });
+
+        throw new ViewerRequestError(409, requiredPathsWarning);
+      }
     }
   }
 
@@ -1490,6 +1479,7 @@ async function submitViewerRequest(
         requestedVipTokenCost: nextVipTokenCost,
         additionalVipTokenCost: vipTokenDelta,
         availableVipTokens: context.vipTokensAvailable,
+        reasons: requestVipTokenPlan.vipTokenReasons,
       })
     );
   };
@@ -1587,7 +1577,7 @@ async function submitViewerRequest(
 
     return {
       ok: true,
-      message:
+      message: [
         requestMode === "choice"
           ? formatViewerChoiceRequest({
               requestedText: specialRequestText,
@@ -1611,7 +1601,7 @@ async function submitViewerRequest(
               : `Updated your request to "${formatCatalogRequestTarget(
                   song as CatalogSong,
                   requestedPaths
-                )}".`
+                )}"${getVipTokenCostMessageSuffix(nextVipTokenCost)}.`
             : mutation.requestKind === "vip"
               ? existingMatchingRequest.status === "current"
                 ? `Your request "${formatCatalogRequestTarget(
@@ -1625,7 +1615,13 @@ async function submitViewerRequest(
               : `Your request "${formatCatalogRequestTarget(
                   song as CatalogSong,
                   requestedPaths
-                )}" is now a regular request again.`,
+                )}" is now a regular request again${getVipTokenCostMessageSuffix(
+                  nextVipTokenCost
+                )}.`,
+        getVipTokenDeltaMessage(vipTokenDelta),
+      ]
+        .filter(Boolean)
+        .join(" "),
     };
   }
 
@@ -1691,13 +1687,17 @@ async function submitViewerRequest(
           : `Edited your request to "${formatCatalogRequestTarget(
               song as CatalogSong,
               requestedPaths
-            )}".`;
+            )}"${getVipTokenCostMessageSuffix(nextVipTokenCost)}.`;
 
     return {
       ok: true,
-      message: warningMessage
-        ? `${baseMessage} ${warningMessage}`
-        : baseMessage,
+      message: [
+        baseMessage,
+        getVipTokenDeltaMessage(vipTokenDelta),
+        warningMessage,
+      ]
+        .filter(Boolean)
+        .join(" "),
     };
   }
 
@@ -1774,7 +1774,7 @@ async function submitViewerRequest(
         : `Added "${formatCatalogRequestTarget(
             song as CatalogSong,
             requestedPaths
-          )}" to the playlist.`;
+          )}" to the playlist${getVipTokenCostMessageSuffix(nextVipTokenCost)}.`;
 
   return {
     ok: true,
@@ -2000,7 +2000,7 @@ function getStoredVipTokenCost(input: {
   if (
     typeof input.vipTokenCost === "number" &&
     Number.isFinite(input.vipTokenCost) &&
-    input.vipTokenCost > 0
+    input.vipTokenCost >= 0
   ) {
     return Math.trunc(input.vipTokenCost);
   }
@@ -2009,11 +2009,40 @@ function getStoredVipTokenCost(input: {
 }
 
 function getVipTokenCostMessageSuffix(vipTokenCost?: number | null) {
-  if (vipTokenCost == null || vipTokenCost <= 1) {
+  if (vipTokenCost == null || vipTokenCost <= 0) {
     return "";
   }
 
   return ` for ${formatVipTokenCostLabel(vipTokenCost)}`;
+}
+
+function getVipTokenDeltaMessage(vipTokenDelta: number) {
+  if (vipTokenDelta > 0) {
+    return `Spent ${formatVipTokenCostLabel(vipTokenDelta)}.`;
+  }
+
+  if (vipTokenDelta < 0) {
+    return `Refunded ${formatVipTokenCostLabel(Math.abs(vipTokenDelta))}.`;
+  }
+
+  return "";
+}
+
+function getVipTokenReasonMessages(reasons: RequestVipTokenPlanReason[]) {
+  return reasons
+    .filter((reason) => reason.type !== "base_vip")
+    .map((reason) => {
+      switch (reason.type) {
+        case "duration":
+          return `Songs over ${formatVipDurationThresholdMinutes(reason.minimumDurationMinutes)} minutes cost ${formatVipTokenCostLabel(reason.cost)}.`;
+        case "requested_path":
+          return `${formatPathLabel(reason.path)} requests cost ${formatVipTokenCostLabel(reason.cost)}.`;
+        case "explicit_vip":
+          return `This VIP request is set to ${formatVipTokenCostLabel(reason.cost)}.`;
+      }
+
+      return "";
+    });
 }
 
 function getVipTokenShortageMessage(input: {
@@ -2021,13 +2050,16 @@ function getVipTokenShortageMessage(input: {
   requestedVipTokenCost: number;
   additionalVipTokenCost: number;
   availableVipTokens: number;
+  reasons: RequestVipTokenPlanReason[];
 }) {
+  const reasonText = getVipTokenReasonMessages(input.reasons).join(" ");
+
   if (input.additionalVipTokenCost > 0 && input.requestedVipTokenCost > 0) {
     if (input.requestedVipTokenCost === input.additionalVipTokenCost) {
-      return `You need ${formatVipTokenCostLabel(input.requestedVipTokenCost)} for this ${input.requestKind === "vip" ? "VIP request" : "request"}. You currently have ${input.availableVipTokens}.`;
+      return `You need ${formatVipTokenCostLabel(input.requestedVipTokenCost)} for this ${input.requestKind === "vip" ? "VIP request" : "request"}.${reasonText ? ` ${reasonText}` : ""} You currently have ${input.availableVipTokens}.`;
     }
 
-    return `You need ${formatVipTokenCostLabel(input.additionalVipTokenCost)} more for this change. You currently have ${input.availableVipTokens}.`;
+    return `You need ${formatVipTokenCostLabel(input.additionalVipTokenCost)} more for this change to ${formatVipTokenCostLabel(input.requestedVipTokenCost)}.${reasonText ? ` ${reasonText}` : ""} You currently have ${input.availableVipTokens}.`;
   }
 
   return "You do not have enough VIP tokens for this request.";

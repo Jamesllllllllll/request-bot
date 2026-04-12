@@ -1,0 +1,161 @@
+{
+  "page": {
+    "title": "Admin",
+    "description": "Verwalten Sie den gemeinsamen Bot-Zugriff und Offline-Testkontrollen.",
+    "noAccess": "Sie haben keinen Zugriff auf das Admin-Dashboard.",
+    "authNotice": "Vollständige Twitch-Authentifizierung als",
+    "botAccount": "Bot-Konto",
+    "botMismatch": "Verbunden als{connected}. Erwartet{expected}. Stellen Sie die Verbindung wieder her, um das Konto zu wechseln."
+  },
+  "states": {
+    "offlineTestingFailed": "Die Offline-Testeinstellung konnte nicht aktualisiert werden.",
+    "botUpdateFailed": "Bot-Konto konnte nicht aktualisiert werden.",
+    "chatSubscriptionCleanupFailed": "Chat-Abonnements konnten nicht bereinigt werden.",
+    "updated": "Aktualisiert."
+  },
+  "status": {
+    "connected": "Verbunden",
+    "needsAuth": "Benötigt Authentifizierung",
+    "enabled": "Aktiviert",
+    "disabled": "Deaktiviert"
+  },
+  "actions": {
+    "connectBot": "Mit {username} verbinden",
+    "reconnectBot": "Bot erneut verbinden",
+    "reconnecting": "Verbinde erneut...",
+    "cleanupCurrentCallback": "Aktuellen Rückruf bereinigen",
+    "cleaningUp": "Bereinige...",
+    "enable": "Aktivieren",
+    "enabling": "Aktivieren...",
+    "disable": "Deaktivieren",
+    "disabling": "Deaktivieren..."
+  },
+  "metrics": {
+    "requestIssues": {
+      "label": "Anforderungsausgaben insgesamt",
+      "description": "Blockierte, abgelehnte und fehlerhafte Ergebnisse in allen Anforderungsprotokollen."
+    },
+    "auditRows": {
+      "label": "Gesamtzahl der Prüfzeilen",
+      "description": "Aufgezeichnete Verwaltungs- und Kanalverwaltungsaktionen."
+    },
+    "botChatChannels": {
+      "label": "Bot-Chat-Kanäle",
+      "description": "Kanäle, die derzeit über ein Live-Bot-Chat-Abonnement verfügen."
+    },
+    "chatSubscriptions": {
+      "label": "Chat-Abonnements",
+      "description": "Mit dem Bot verbundene Live-Twitch-Chat-Abonnements."
+    },
+    "duplicateChatChannels": {
+      "label": "Doppelte Chatkanäle",
+      "description": "Kanäle, die derzeit mehr als ein Live-Chat-Abonnement haben."
+    }
+  },
+  "eventSub": {
+    "title": "Live-Bot-Abonnements",
+    "description": "Zeigt die aktuellen Twitch-Chat-Abonnements für das Bot-Konto an, sodass doppelte Abonnements leicht zu erkennen sind.",
+    "currentCallback": "Aktueller Rückruf:{callback}",
+    "currentBotUserId": "Aktuelle Bot-Benutzer-ID:{userId}",
+    "empty": "Es wurden keine Live-Bot-Chat-Abonnements gefunden.",
+    "duplicateWarning": "Für diesen Kanal ist mehr als ein Chat-Abonnement aktiv.",
+    "cleanupHelpCurrent": "Durch diese Bereinigung werden veraltete Abonnements nur für die aktuelle Rückruf-URL entfernt.",
+    "cleanupHelpOther": "Diese Zeile enthält nur andere Rückruf-URLs. Durch die Bereinigung des aktuellen Rückrufs werden sie nicht entfernt.",
+    "currentBotMatch": "Verwendet die aktuelle Bot-Benutzer-ID:{matchesCurrentBotUserId}",
+    "columns": {
+      "channel": "Kanal",
+      "chatSubscriptions": "Chat-Subs",
+      "totalSubscriptions": "Gesamtzahl der Subs",
+      "chatSubscriptionIds": "Chat-Abonnement-IDs",
+      "chatBotUserIds": "Chat-Bot-Benutzer-IDs",
+      "chatCallbacks": "Chat-Rückrufe",
+      "actions": "Aktionen"
+    }
+  },
+  "offlineTesting": {
+    "title": "Offline-Bot-Tests"
+  },
+  "prototype": {
+    "title": "Prototyp einer Playlist-Reihe",
+    "description": "Vorschau eines komprimierteren Playlist-Elements mit immer sichtbaren Songversionen.",
+    "cardTitle": "Komprimiertes Playlist-Element mit mehreren Versionen",
+    "cardDescription": "Diese Vorschau verwendet dieselbe Playlist-Element-Komponente wie die Live-Playlist-Seite, mit einem Demosong, der zwei Versionen hat."
+  },
+  "logs": {
+    "title": "Fordern Sie Protokolle an",
+    "description": "Neueste Anfrageversuche in allen Chat- und Zuschaueranfrageflüssen. In jeder Zeile werden die Anfrage, der Absender, das Ergebnis und alle aufgezeichneten Übereinstimmungen oder Gründe angezeigt.",
+    "loading": "Anforderungsprotokolle werden geladen...",
+    "empty": "Noch keine Anfrageprotokolle."
+  },
+  "audits": {
+    "title": "Audit-Aufzeichnungen",
+    "description": "Die neuesten für diesen Kanal aufgezeichneten Administrator- und Kanalverwaltungsaktionen. In jeder Zeile wird angezeigt, was sich geändert hat, wer sie ausgelöst hat und welche Schlüsselwerte gespeichert wurden.",
+    "loading": "Prüfdatensätze werden geladen...",
+    "empty": "Noch keine Audit-Aufzeichnungen."
+  },
+  "pagination": {
+    "show": "Anzeigen",
+    "previous": "Vorherige",
+    "next": "Nächste",
+    "updating": "Aktualisierung...",
+    "showingEmpty": "Es werden 0 Ergebnisse angezeigt",
+    "showingRange": "Zeige {start}-{end} von {total}"
+  },
+  "table": {
+    "loading": "Laden...",
+    "unknownTime": "Unbekannte Zeit",
+    "noExtraValues": "Es wurden keine zusätzlichen Werte erfasst.",
+    "none": "Keine",
+    "yes": "Ja",
+    "no": "Nr."
+  },
+  "requestLog": {
+    "columns": {
+      "time": "Zeit",
+      "request": "Anfrage",
+      "requester": "Anforderer",
+      "result": "Ergebnis",
+      "details": "Einzelheiten"
+    },
+    "query": "Abfrage:{query}",
+    "unknownUser": "Unbekannter Benutzer",
+    "matched": "Passend:{title}{artist}",
+    "reason": "Grund:{reason}",
+    "noMatchOrReason": "Es wurde weder eine Übereinstimmung noch ein Grund aufgezeichnet."
+  },
+  "auditLog": {
+    "columns": {
+      "time": "Zeit",
+      "action": "Aktion",
+      "entity": "Entität",
+      "actor": "Akteur",
+      "details": "Einzelheiten"
+    }
+  },
+  "labels": {
+    "accepted": "Akzeptiert",
+    "blocked": "Blockiert",
+    "error": "Fehler",
+    "system": "System",
+    "auto_grant_vip_tokens_cheer": "VIP-Tokens automatisch gewähren: Prost",
+    "auto_grant_vip_tokens_gift_recipient": "VIP-Tokens automatisch gewähren: Beschenkter Unterempfänger",
+    "auto_grant_vip_tokens_new_subscriber": "VIP-Tokens automatisch gewähren: neues kostenpflichtiges Abonnement",
+    "auto_grant_vip_tokens_raid": "VIP-Tokens automatisch gewähren: Raid",
+    "auto_grant_vip_tokens_shared_sub_renewal_message": "VIP-Tokens automatisch gewähren: Nachricht zur gemeinsamen Sub-Erneuerung",
+    "auto_grant_vip_tokens_streamelements_tip": "VIP-Token automatisch gewähren: StreamElements-Tipp",
+    "auto_grant_vip_tokens_sub_gifter": "VIP-Tokens automatisch gewähren: Beschenkter Sub-Geschenker",
+    "grantedTokenCount": "Tokens gewährt",
+    "minimumRaidViewerCount": "Mindestgröße des Raids",
+    "totalGiftedSubs": "Beschenkte Subs",
+    "twitchMessageId": "EventSub-Nachrichten-ID",
+    "vip_token": "VIP-Token"
+  },
+  "auditSources": {
+    "channelCheer": "Cheer",
+    "channelRaid": "Raid",
+    "channelSubscribe": "Kanal abonnieren",
+    "channelSubscriptionGift": "Begabter Sub",
+    "channelSubscriptionMessage": "Geteilte Abo-Erneuerungsnachricht",
+    "streamElementsTip": "StreamElements-Tipp"
+  }
+}

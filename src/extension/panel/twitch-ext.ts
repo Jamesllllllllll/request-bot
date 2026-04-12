@@ -8,6 +8,14 @@ export type TwitchExtensionAuth = {
 
 type TwitchExtensionHelper = {
   onAuthorized(callback: (auth: TwitchExtensionAuth) => void): void;
+  listen?(
+    target: string,
+    callback: (target: string, contentType: string, message: string) => void
+  ): void;
+  unlisten?(
+    target: string,
+    callback: (target: string, contentType: string, message: string) => void
+  ): void;
   actions: {
     requestIdShare(): void;
   };

@@ -37,6 +37,7 @@ describe("playlist management live gating", () => {
     vipTokens: [],
     blacklistArtists: [],
     blacklistCharters: [],
+    preferredCharters: [],
     blacklistSongs: [],
     blacklistSongGroups: [],
     setlistArtists: [],

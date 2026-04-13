@@ -47,6 +47,7 @@ export function ChannelRulesPanel(props: {
   canManageSetlist: boolean;
   artists: Array<{ artistId: number; artistName: string }>;
   charters: Array<{ charterId: number; charterName: string }>;
+  preferredCharters: Array<{ charterId: number; charterName: string }>;
   songs: Array<{
     songId: number;
     songTitle: string;
@@ -63,14 +64,20 @@ export function ChannelRulesPanel(props: {
   const queryClient = useQueryClient();
   const [artistQuery, setArtistQuery] = useState("");
   const [charterQuery, setCharterQuery] = useState("");
+  const [preferredCharterQuery, setPreferredCharterQuery] = useState("");
   const [songGroupQuery, setSongGroupQuery] = useState("");
   const [setlistQuery, setSetlistQuery] = useState("");
   const [debouncedArtistQuery, setDebouncedArtistQuery] = useState("");
   const [debouncedCharterQuery, setDebouncedCharterQuery] = useState("");
+  const [debouncedPreferredCharterQuery, setDebouncedPreferredCharterQuery] =
+    useState("");
   const [debouncedSongGroupQuery, setDebouncedSongGroupQuery] = useState("");
   const [debouncedSetlistQuery, setDebouncedSetlistQuery] = useState("");
   const [artistMatches, setArtistMatches] = useState<ArtistMatch[]>([]);
   const [charterMatches, setCharterMatches] = useState<CharterMatch[]>([]);
+  const [preferredCharterMatches, setPreferredCharterMatches] = useState<
+    CharterMatch[]
+  >([]);
   const [songGroupMatches, setSongGroupMatches] = useState<SongGroupMatch[]>(
     []
   );
@@ -81,12 +88,19 @@ export function ChannelRulesPanel(props: {
     const timeout = window.setTimeout(() => {
       setDebouncedArtistQuery(artistQuery.trim());
       setDebouncedCharterQuery(charterQuery.trim());
+      setDebouncedPreferredCharterQuery(preferredCharterQuery.trim());
       setDebouncedSongGroupQuery(songGroupQuery.trim());
       setDebouncedSetlistQuery(setlistQuery.trim());
     }, 350);
 
     return () => window.clearTimeout(timeout);
-  }, [artistQuery, charterQuery, setlistQuery, songGroupQuery]);
+  }, [
+    artistQuery,
+    charterQuery,
+    preferredCharterQuery,
+    setlistQuery,
+    songGroupQuery,
+  ]);
 
   const mutateRules = useMutation({
     mutationFn: async (body: Record<string, unknown>) => {
@@ -168,6 +182,9 @@ export function ChannelRulesPanel(props: {
       void runSearch("charter", debouncedCharterQuery, (payload) => {
         setCharterMatches(payload.charters ?? []);
       });
+      void runSearch("charter", debouncedPreferredCharterQuery, (payload) => {
+        setPreferredCharterMatches(payload.charters ?? []);
+      });
       void runSearch("song", debouncedSongGroupQuery, (payload) => {
         setSongGroupMatches(payload.songs ?? []);
       });
@@ -185,6 +202,7 @@ export function ChannelRulesPanel(props: {
   }, [
     debouncedArtistQuery,
     debouncedCharterQuery,
+    debouncedPreferredCharterQuery,
     debouncedSetlistQuery,
     debouncedSongGroupQuery,
     props.canManageBlacklist,
@@ -200,6 +218,10 @@ export function ChannelRulesPanel(props: {
     () => new Set(props.charters.map((item) => item.charterId)),
     [props.charters]
   );
+  const preferredCharterIds = useMemo(
+    () => new Set(props.preferredCharters.map((item) => item.charterId)),
+    [props.preferredCharters]
+  );
   const blacklistedSongGroupIds = useMemo(
     () => new Set(props.songGroups.map((item) => item.groupedProjectId)),
     [props.songGroups]
@@ -214,6 +236,9 @@ export function ChannelRulesPanel(props: {
   );
   const visibleCharterMatches = charterMatches.filter(
     (charter) => !blacklistedCharterIds.has(charter.charterId)
+  );
+  const visiblePreferredCharterMatches = preferredCharterMatches.filter(
+    (charter) => !preferredCharterIds.has(charter.charterId)
   );
   const visibleSongGroupMatches = songGroupMatches.filter(
     (song) => !blacklistedSongGroupIds.has(song.groupedProjectId)
@@ -234,6 +259,13 @@ export function ChannelRulesPanel(props: {
         compareText(left.charterName, right.charterName)
       ),
     [props.charters]
+  );
+  const sortedPreferredCharters = useMemo(
+    () =>
+      [...props.preferredCharters].sort((left, right) =>
+        compareText(left.charterName, right.charterName)
+      ),
+    [props.preferredCharters]
   );
   const sortedSongGroups = useMemo(
     () =>
@@ -272,6 +304,8 @@ export function ChannelRulesPanel(props: {
   );
   const showBlacklistedArtistsCard =
     props.canManageBlacklist || props.artists.length > 0;
+  const showPreferredChartersCard =
+    props.canManageBlacklist || props.preferredCharters.length > 0;
   const showBlacklistedChartersCard = props.canManageBlacklist;
   const showBlacklistedSongsCard =
     props.canManageBlacklist || props.songGroups.length > 0;
@@ -279,6 +313,7 @@ export function ChannelRulesPanel(props: {
   const showSetlistArtistsCard =
     props.canManageSetlist || props.setlistArtists.length > 0;
   const showBlacklistSection =
+    showPreferredChartersCard ||
     showBlacklistedArtistsCard ||
     showBlacklistedChartersCard ||
     showBlacklistedSongsCard ||
@@ -316,6 +351,40 @@ export function ChannelRulesPanel(props: {
         <div className="grid gap-6 md:grid-cols-2 2xl:grid-cols-4 max-[960px]:gap-0">
           {showBlacklistSection ? (
             <>
+              {showPreferredChartersCard ? (
+                <SearchManageCard
+                  title={t("rules.preferredCharters")}
+                  inputValue={preferredCharterQuery}
+                  onInputChange={setPreferredCharterQuery}
+                  placeholder={t("rules.searchCharters")}
+                  matches={visiblePreferredCharterMatches.map((charter) => ({
+                    key: `preferred-charter-match-${charter.charterId}`,
+                    label: charter.charterName,
+                    meta: t("rules.trackCount", { count: charter.trackCount }),
+                    onAdd: () =>
+                      mutateRules.mutate({
+                        action: "addPreferredCharter",
+                        charterId: charter.charterId,
+                        charterName: charter.charterName,
+                      }),
+                  }))}
+                  currentItems={sortedPreferredCharters.map((item) => ({
+                    key: `preferred-charter-current-${item.charterId}`,
+                    label: item.charterName,
+                    hoverDetail: t("rules.charterId", { id: item.charterId }),
+                    onRemove: () =>
+                      mutateRules.mutate({
+                        action: "removePreferredCharter",
+                        charterId: item.charterId,
+                      }),
+                  }))}
+                  isPending={mutateRules.isPending}
+                  emptyCurrentLabel={t("rules.noPreferredCharters")}
+                  canManage={props.canManageBlacklist}
+                  hideReadOnlyRemoveAction
+                />
+              ) : null}
+
               {showBlacklistedArtistsCard ? (
                 <SearchManageCard
                   title={t("rules.blacklistedArtists")}

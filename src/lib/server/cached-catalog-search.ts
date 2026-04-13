@@ -4,6 +4,7 @@ import {
   getChannelBlacklistByChannelId,
   getChannelById,
   getChannelBySlug,
+  getChannelPreferredChartersByChannelId,
   getChannelSearchVersionToken,
   getChannelSettingsByChannelId,
   searchCatalogSongs as searchCatalogSongsInDb,
@@ -174,18 +175,29 @@ async function resolveChannelSearchFilters(input: {
 }) {
   let blacklistFilterInput = {};
   let channelPolicyFilterInput = {};
+  let charterPreferenceFilterInput = {};
   let favoritesFilterInput = {};
   let hasBlacklistFilters = false;
 
   if (input.resolvedChannel) {
-    const [settings, blacklist] = await Promise.all([
+    const [settings, blacklist, preferredCharters] = await Promise.all([
       getChannelSettingsByChannelId(input.env, input.resolvedChannel.id),
       getChannelBlacklistByChannelId(input.env, input.resolvedChannel.id),
+      getChannelPreferredChartersByChannelId(
+        input.env,
+        input.resolvedChannel.id
+      ),
     ]);
 
     channelPolicyFilterInput = {
       restrictToOfficial: !!settings?.onlyOfficialDlc,
       allowedTuningsFilter: parseStoredTuningIds(settings?.allowedTuningsJson),
+    };
+    charterPreferenceFilterInput = {
+      preferredAuthorIds: preferredCharters.map((charter) => charter.charterId),
+      preferredCreatorNames: preferredCharters.map(
+        (charter) => charter.charterName
+      ),
     };
     favoritesFilterInput = input.normalizedSearch.favoritesOnly
       ? {
@@ -221,6 +233,7 @@ async function resolveChannelSearchFilters(input: {
   return {
     blacklistFilterInput,
     channelPolicyFilterInput,
+    charterPreferenceFilterInput,
     favoritesFilterInput,
     hasBlacklistFilters,
   };
@@ -236,6 +249,7 @@ async function runCatalogSearch(input: {
     ...input.normalizedSearch,
     ...filters.favoritesFilterInput,
     ...filters.channelPolicyFilterInput,
+    ...filters.charterPreferenceFilterInput,
     ...(input.normalizedSearch.showBlacklisted
       ? {}
       : filters.blacklistFilterInput),
@@ -252,6 +266,7 @@ async function runCatalogSearch(input: {
         ...input.normalizedSearch,
         ...filters.favoritesFilterInput,
         ...filters.channelPolicyFilterInput,
+        ...filters.charterPreferenceFilterInput,
         ...filters.blacklistFilterInput,
       })
     ).hiddenBlacklistedCount,

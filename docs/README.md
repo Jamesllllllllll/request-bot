@@ -11,6 +11,7 @@ This directory keeps the current project docs: setup, deployment, operations, te
 
 ## Product Notes
 
+- [catalog-grouping-and-charter-preferences.md](catalog-grouping-and-charter-preferences.md)
 - [request-modifier-vip-token-rules.md](request-modifier-vip-token-rules.md)
 - [stream-overlay.md](stream-overlay.md)
 

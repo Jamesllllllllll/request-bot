@@ -71,9 +71,11 @@ import {
   eventSubDeliveries,
   eventSubSubscriptions,
   type PlayedSongInsert,
+  type PreferredCharterInsert,
   playedSongs,
   playlistItems,
   playlists,
+  preferredCharters,
   type RequestLogInsert,
   requestLogs,
   type SetlistArtistInsert,
@@ -467,6 +469,7 @@ export async function getDashboardState(env: AppEnv, ownerUserId: string) {
     blacklistSongsRows,
     blacklistSongGroupRows,
     blacklistCharterRows,
+    preferredCharterRows,
     setlistArtistRows,
     vipTokenRows,
     playedRows,
@@ -524,6 +527,10 @@ export async function getDashboardState(env: AppEnv, ownerUserId: string) {
       where: eq(blacklistedCharters.channelId, channel.id),
       orderBy: [asc(blacklistedCharters.charterName)],
     }),
+    db.query.preferredCharters.findMany({
+      where: eq(preferredCharters.channelId, channel.id),
+      orderBy: [asc(preferredCharters.charterName)],
+    }),
     db.query.setlistArtists.findMany({
       where: eq(setlistArtists.channelId, channel.id),
       orderBy: [asc(setlistArtists.artistName)],
@@ -559,6 +566,7 @@ export async function getDashboardState(env: AppEnv, ownerUserId: string) {
     audits,
     blacklistArtists: blacklistArtistsRows,
     blacklistCharters: blacklistCharterRows,
+    preferredCharters: preferredCharterRows,
     blacklistSongs: blacklistSongsRows,
     blacklistSongGroups: blacklistSongGroupRows,
     setlistArtists: setlistArtistRows,
@@ -948,6 +956,16 @@ export async function getChannelBlacklistByChannelId(
     blacklistSongs: songRows,
     blacklistSongGroups: songGroupRows,
   };
+}
+
+export async function getChannelPreferredChartersByChannelId(
+  env: AppEnv,
+  channelId: string
+) {
+  return getDb(env).query.preferredCharters.findMany({
+    where: eq(preferredCharters.channelId, channelId),
+    orderBy: [asc(preferredCharters.charterName)],
+  });
 }
 
 export async function getChannelFavoritedChartSongIds(
@@ -1417,6 +1435,8 @@ export interface CatalogSearchInput {
   excludeArtistNames?: string[];
   excludeAuthorIds?: number[];
   excludeCreatorNames?: string[];
+  preferredAuthorIds?: number[];
+  preferredCreatorNames?: string[];
   page: number;
   pageSize: number;
   sortBy?:
@@ -1594,8 +1614,8 @@ function buildTokenMatchScore(
   return sql.join(
     tokens.map(
       (token) => sql`
-    CASE WHEN lower(coalesce(${column}, '')) LIKE ${`${token}%`} THEN ${prefixWeight} ELSE 0 END +
-    CASE WHEN lower(coalesce(${column}, '')) LIKE ${`%${token}%`} THEN ${containsWeight} ELSE 0 END
+    CASE WHEN lower(coalesce(${column}, '')) LIKE ${`${token}%`} THEN ${sql.raw(String(prefixWeight))} ELSE 0 END +
+    CASE WHEN lower(coalesce(${column}, '')) LIKE ${`%${token}%`} THEN ${sql.raw(String(containsWeight))} ELSE 0 END
   `
     ),
     sql` + `
@@ -1671,6 +1691,35 @@ function shouldRetryCatalogSearchWithoutFts(error: unknown) {
     message.includes("match ?") ||
     message.includes("fts")
   );
+}
+
+function getCatalogSearchErrorSummary(error: unknown) {
+  if (!(error instanceof Error)) {
+    return {
+      message: String(error),
+    };
+  }
+
+  const cause = (error as Error & { cause?: unknown }).cause;
+  const causeMessage =
+    cause instanceof Error
+      ? cause.message
+      : typeof cause === "string"
+        ? cause
+        : null;
+  const message = error.message.includes("Failed query:")
+    ? (causeMessage ?? "Database query failed.")
+    : error.message;
+
+  return {
+    name: error.name,
+    message,
+    ...(causeMessage && causeMessage !== message
+      ? {
+          cause: causeMessage,
+        }
+      : {}),
+  };
 }
 
 function buildMatchLike(
@@ -1770,14 +1819,14 @@ function buildSimpleFieldRelevance(
     ? sql.join(
         limitedTokens.map(
           (token) =>
-            sql`CASE WHEN ${buildCompactMatchLike(column, token)} THEN ${tokenWeight} ELSE 0 END`
+            sql`CASE WHEN ${buildCompactMatchLike(column, token)} THEN ${sql.raw(String(tokenWeight))} ELSE 0 END`
         ),
         sql` + `
       )
     : sql`0`;
 
   return sql`
-    CASE WHEN ${buildCompactMatchLike(column, query)} THEN ${exactWeight} ELSE 0 END +
+    CASE WHEN ${buildCompactMatchLike(column, query)} THEN ${sql.raw(String(exactWeight))} ELSE 0 END +
     ${tokenSql}
   `;
 }
@@ -1837,27 +1886,63 @@ export async function searchCatalogSongs(
   const field = input.field ?? "any";
   const ftsTerms = tokens.slice(0, 4);
   const ftsQuery = buildCatalogFtsQuery(ftsTerms);
+  const normalizedPreferredCreators = uniqueCompact(
+    (input.preferredCreatorNames ?? []).map((name) =>
+      normalizeSearchPhrase(name)
+    )
+  );
+  const preferredAuthorIds = [
+    ...new Set(input.preferredAuthorIds ?? []),
+  ].filter(
+    (authorId): authorId is number => Number.isInteger(authorId) && authorId > 0
+  );
+  const hasPreferredCharters =
+    preferredAuthorIds.length > 0 || normalizedPreferredCreators.length > 0;
+  const preferredAuthorCondition = preferredAuthorIds.length
+    ? sql`(${sql.join(
+        preferredAuthorIds.map(
+          (authorId) => sql`${catalogSongs.authorId} = ${authorId}`
+        ),
+        sql` OR `
+      )})`
+    : sql`0`;
+  const preferredCreatorCondition = normalizedPreferredCreators.length
+    ? sql`(${sql.join(
+        normalizedPreferredCreators.map(
+          (name) =>
+            sql`lower(coalesce(${catalogSongs.creatorName}, '')) = ${name}`
+        ),
+        sql` OR `
+      )})`
+    : sql`0`;
+  const preferredCharterSql = hasPreferredCharters
+    ? sql`CASE
+        WHEN ${preferredAuthorCondition} THEN 1
+        WHEN ${preferredCreatorCondition} THEN 1
+        ELSE 0
+      END`
+    : sql`0`;
 
   const orderSql = (() => {
     switch (input.sortBy) {
       case "artist":
-        return sql`catalog_songs.artist_name ${sql.raw(input.sortDirection === "desc" ? "DESC" : "ASC")}, catalog_songs.title ASC`;
+        return sql`catalog_songs.artist_name ${sql.raw(input.sortDirection === "desc" ? "DESC" : "ASC")}, isPreferredCharter DESC, catalog_songs.title ASC`;
       case "title":
-        return sql`catalog_songs.title ${sql.raw(input.sortDirection === "desc" ? "DESC" : "ASC")}, catalog_songs.artist_name ASC`;
+        return sql`catalog_songs.title ${sql.raw(input.sortDirection === "desc" ? "DESC" : "ASC")}, isPreferredCharter DESC, catalog_songs.artist_name ASC`;
       case "album":
-        return sql`catalog_songs.album_name ${sql.raw(input.sortDirection === "desc" ? "DESC" : "ASC")}, catalog_songs.artist_name ASC, catalog_songs.title ASC`;
+        return sql`catalog_songs.album_name ${sql.raw(input.sortDirection === "desc" ? "DESC" : "ASC")}, isPreferredCharter DESC, catalog_songs.artist_name ASC, catalog_songs.title ASC`;
       case "creator":
-        return sql`catalog_songs.creator_name ${sql.raw(input.sortDirection === "desc" ? "DESC" : "ASC")}, catalog_songs.artist_name ASC, catalog_songs.title ASC`;
+        return sql`catalog_songs.creator_name ${sql.raw(input.sortDirection === "desc" ? "DESC" : "ASC")}, isPreferredCharter DESC, catalog_songs.artist_name ASC, catalog_songs.title ASC`;
       case "tuning":
-        return sql`catalog_songs.tuning_summary ${sql.raw(input.sortDirection === "desc" ? "DESC" : "ASC")}, catalog_songs.artist_name ASC, catalog_songs.title ASC`;
+        return sql`catalog_songs.tuning_summary ${sql.raw(input.sortDirection === "desc" ? "DESC" : "ASC")}, isPreferredCharter DESC, catalog_songs.artist_name ASC, catalog_songs.title ASC`;
       case "duration":
-        return sql`catalog_songs.duration_seconds ${sql.raw(input.sortDirection === "desc" ? "DESC" : "ASC")}, catalog_songs.artist_name ASC, catalog_songs.title ASC`;
+        return sql`catalog_songs.duration_seconds ${sql.raw(input.sortDirection === "desc" ? "DESC" : "ASC")}, isPreferredCharter DESC, catalog_songs.artist_name ASC, catalog_songs.title ASC`;
       case "downloads":
-        return sql`catalog_songs.downloads ${sql.raw(input.sortDirection === "asc" ? "ASC" : "DESC")}, catalog_songs.artist_name ASC, catalog_songs.title ASC`;
+        return sql`catalog_songs.downloads ${sql.raw(input.sortDirection === "asc" ? "ASC" : "DESC")}, isPreferredCharter DESC, catalog_songs.artist_name ASC, catalog_songs.title ASC`;
       case "updated":
-        return sql`catalog_songs.source_updated_at ${sql.raw(input.sortDirection === "asc" ? "ASC" : "DESC")}, catalog_songs.source_song_id DESC`;
+        return sql`catalog_songs.source_updated_at ${sql.raw(input.sortDirection === "asc" ? "ASC" : "DESC")}, isPreferredCharter DESC, catalog_songs.source_song_id DESC`;
       default:
-        return sql`relevance DESC, catalog_songs.downloads DESC, catalog_songs.artist_name ASC, catalog_songs.title ASC`;
+        return sql`isPreferredCharter DESC, relevance DESC, catalog_songs.downloads DESC, catalog_songs.artist_name ASC, catalog_songs.title ASC`;
     }
   })();
 
@@ -2054,8 +2139,8 @@ export async function searchCatalogSongs(
           CASE WHEN lower(catalog_songs.artist_name) LIKE ${`%${normalizedArtistVariant}%`}
                     AND lower(catalog_songs.title) LIKE ${`%${normalizedTitleVariant}%`}
                THEN 85 ELSE 0 END +
-          CASE WHEN ${splitArtistPresence} >= ${Math.max(1, Math.min(artistVariantTokens.length, 2))}
-                    AND ${splitTitlePresence} >= ${Math.max(1, Math.min(titleVariantTokens.length, 2))}
+          CASE WHEN ${splitArtistPresence} >= ${sql.raw(String(Math.max(1, Math.min(artistVariantTokens.length, 2))))}
+                    AND ${splitTitlePresence} >= ${sql.raw(String(Math.max(1, Math.min(titleVariantTokens.length, 2))))}
                THEN 65 ELSE 0 END +
           CASE WHEN lower(catalog_songs.artist_name) LIKE ${`%${normalizedTitleVariant}%`}
                     AND lower(catalog_songs.title) LIKE ${`%${normalizedArtistVariant}%`}
@@ -2078,8 +2163,8 @@ export async function searchCatalogSongs(
   ) =>
     primaryVariant && primaryVariantPrefix
       ? sql`
-          CASE WHEN lower(coalesce(${column}, '')) = ${primaryVariant} THEN ${exactWeight} ELSE 0 END +
-          CASE WHEN lower(coalesce(${column}, '')) LIKE ${primaryVariantPrefix} THEN ${prefixWeight} ELSE 0 END
+          CASE WHEN lower(coalesce(${column}, '')) = ${primaryVariant} THEN ${sql.raw(String(exactWeight))} ELSE 0 END +
+          CASE WHEN lower(coalesce(${column}, '')) LIKE ${primaryVariantPrefix} THEN ${sql.raw(String(prefixWeight))} ELSE 0 END
         `
       : sql`0`;
 
@@ -2297,6 +2382,7 @@ export async function searchCatalogSongs(
       downloads: number;
       hasLyrics: number;
       source: string;
+      isPreferredCharter: number;
       relevance: number;
     }>(sql`
       WITH fts_matches AS (
@@ -2337,6 +2423,7 @@ export async function searchCatalogSongs(
         catalog_songs.downloads,
         catalog_songs.has_lyrics AS hasLyrics,
         catalog_songs.source,
+        (${preferredCharterSql}) AS isPreferredCharter,
         (${relevanceSql}) AS relevance
       FROM catalog_songs
       WHERE ${whereCondition}
@@ -2410,6 +2497,7 @@ export async function searchCatalogSongs(
         sourceUpdatedAt: row.sourceUpdatedAt ?? undefined,
         sourceId: row.sourceSongId,
         hasLyrics: !!row.hasLyrics,
+        isPreferredCharter: !!row.isPreferredCharter,
         downloads: row.downloads,
         source: row.source,
         sourceUrl: normalizeSongSourceUrl({
@@ -2435,7 +2523,7 @@ export async function searchCatalogSongs(
         query,
         field,
         ftsQuery,
-        error: error instanceof Error ? error.message : String(error),
+        error: getCatalogSearchErrorSummary(error),
       });
 
       try {
@@ -2452,7 +2540,7 @@ export async function searchCatalogSongs(
     console.warn("Catalog search retrying with simplified multi-token query", {
       query,
       field,
-      error: lastError instanceof Error ? lastError.message : String(lastError),
+      error: getCatalogSearchErrorSummary(lastError),
     });
 
     return runCatalogSongSearch(false, true);
@@ -3548,6 +3636,16 @@ export async function addBlacklistedCharter(
     .onConflictDoNothing();
 }
 
+export async function addPreferredCharter(
+  env: AppEnv,
+  input: Omit<PreferredCharterInsert, "createdAt">
+) {
+  await getDb(env)
+    .insert(preferredCharters)
+    .values(input)
+    .onConflictDoNothing();
+}
+
 export async function removeBlacklistedSong(
   env: AppEnv,
   channelId: string,
@@ -3589,6 +3687,21 @@ export async function removeBlacklistedCharter(
       and(
         eq(blacklistedCharters.channelId, channelId),
         eq(blacklistedCharters.charterId, charterId)
+      )
+    );
+}
+
+export async function removePreferredCharter(
+  env: AppEnv,
+  channelId: string,
+  charterId: number
+) {
+  await getDb(env)
+    .delete(preferredCharters)
+    .where(
+      and(
+        eq(preferredCharters.channelId, channelId),
+        eq(preferredCharters.charterId, charterId)
       )
     );
 }
@@ -4920,6 +5033,14 @@ export async function getChannelSearchVersionToken(
           0
         ) as blacklisted_charter_updated_at,
         coalesce(
+          (select count(*) from preferred_charters where channel_id = ?),
+          0
+        ) as preferred_charter_count,
+        coalesce(
+          (select max(created_at) from preferred_charters where channel_id = ?),
+          0
+        ) as preferred_charter_updated_at,
+        coalesce(
           (select count(*) from channel_favorite_charts where channel_id = ?),
           0
         ) as favorite_count,
@@ -4930,6 +5051,8 @@ export async function getChannelSearchVersionToken(
     `
   )
     .bind(
+      channelId,
+      channelId,
       channelId,
       channelId,
       channelId,
@@ -4952,6 +5075,8 @@ export async function getChannelSearchVersionToken(
     blacklisted_song_group_updated_at?: number;
     blacklisted_charter_count?: number;
     blacklisted_charter_updated_at?: number;
+    preferred_charter_count?: number;
+    preferred_charter_updated_at?: number;
     favorite_count?: number;
     favorite_updated_at?: number;
   } | null;
@@ -4967,6 +5092,8 @@ export async function getChannelSearchVersionToken(
       version?.blacklisted_song_group_updated_at ?? 0,
     blacklistedCharterCount: version?.blacklisted_charter_count ?? 0,
     blacklistedCharterUpdatedAt: version?.blacklisted_charter_updated_at ?? 0,
+    preferredCharterCount: version?.preferred_charter_count ?? 0,
+    preferredCharterUpdatedAt: version?.preferred_charter_updated_at ?? 0,
     favoriteCount: version?.favorite_count ?? 0,
     favoriteUpdatedAt: version?.favorite_updated_at ?? 0,
   });

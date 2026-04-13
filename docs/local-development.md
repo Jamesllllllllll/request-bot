@@ -69,6 +69,8 @@ The local app runs on:
 http://localhost:9000
 ```
 
+For this repo, treat `http://localhost:9000` as the default existing dev app. Before starting another server or changing ports, first confirm whether the app is already running there.
+
 ## Day-To-Day Commands
 
 - `npm run dev`
@@ -106,7 +108,15 @@ If you test the native channel point reward flow locally, use a Twitch Affiliate
 
 ## Tunnel Testing
 
-`localhost` is enough for basic OAuth testing. EventSub and Twitch panel hosted testing work better with a public HTTPS URL.
+`localhost` is enough for basic local browsing, but Twitch auth and callback testing work better through the existing public HTTPS tunnel:
+
+```text
+https://dev.itsaunix.systems
+```
+
+Use that tunnel first for sign-in and other auth-sensitive browser checks.
+
+EventSub and Twitch panel hosted testing also work better with a public HTTPS URL.
 
 Cloudflare Tunnel flow:
 
@@ -117,7 +127,7 @@ cloudflared tunnel route dns request-bot-dev dev.example.com
 cloudflared tunnel run <your-tunnel-id>
 ```
 
-Then set:
+If you need to recreate the tunnel yourself, then set:
 
 - `APP_URL=https://dev.example.com`
 - `VITE_ALLOWED_HOSTS=dev.example.com` if Vite blocks the hostname
@@ -129,6 +139,8 @@ Also register these Twitch redirect URIs:
 - `https://dev.example.com/auth/twitch/bot/callback`
 
 `ngrok http 9000` is the simpler alternative when you do not need a stable hostname.
+
+Do not start a second local dev server on another port unless `http://localhost:9000` and `https://dev.itsaunix.systems` are both unavailable or you intentionally need a separate instance.
 
 ## Cross-Environment Warning
 

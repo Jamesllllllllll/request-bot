@@ -10,6 +10,7 @@ import {
   addBlacklistedSong,
   addBlacklistedSongGroup,
   addBlockedUser,
+  addPreferredCharter,
   addSetlistArtist,
   createAuditLog,
   getVipTokenBalance,
@@ -19,6 +20,7 @@ import {
   removeBlacklistedSong,
   removeBlacklistedSongGroup,
   removeBlockedUser,
+  removePreferredCharter,
   removeSetlistArtist,
   revokeVipToken,
   setVipTokenAvailableCount,
@@ -47,6 +49,8 @@ function getModerationNotifyReason(
     case "removeBlacklistedArtist":
     case "addBlacklistedCharter":
     case "removeBlacklistedCharter":
+    case "addPreferredCharter":
+    case "removePreferredCharter":
     case "addBlacklistedSong":
     case "removeBlacklistedSong":
     case "addBlacklistedSongGroup":
@@ -158,6 +162,44 @@ export const Route = createFileRoute("/api/channel/$slug/moderation")({
               actorType,
               action: "remove_blacklisted_charter",
               entityType: "blacklisted_charter",
+              entityId: String(body.charterId),
+              payloadJson: JSON.stringify(body),
+            });
+            break;
+          case "addPreferredCharter":
+            if (!canManageChannelBlacklist(state)) {
+              return json({ error: "Forbidden" }, { status: 403 });
+            }
+            await addPreferredCharter(runtimeEnv, {
+              channelId: state.channel.id,
+              charterId: body.charterId,
+              charterName: body.charterName,
+            });
+            await createAuditLog(runtimeEnv, {
+              channelId: state.channel.id,
+              actorUserId: state.actorUserId,
+              actorType,
+              action: "add_preferred_charter",
+              entityType: "preferred_charter",
+              entityId: String(body.charterId),
+              payloadJson: JSON.stringify(body),
+            });
+            break;
+          case "removePreferredCharter":
+            if (!canManageChannelBlacklist(state)) {
+              return json({ error: "Forbidden" }, { status: 403 });
+            }
+            await removePreferredCharter(
+              runtimeEnv,
+              state.channel.id,
+              body.charterId
+            );
+            await createAuditLog(runtimeEnv, {
+              channelId: state.channel.id,
+              actorUserId: state.actorUserId,
+              actorType,
+              action: "remove_preferred_charter",
+              entityType: "preferred_charter",
               entityId: String(body.charterId),
               payloadJson: JSON.stringify(body),
             });

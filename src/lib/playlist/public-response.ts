@@ -194,6 +194,20 @@ export function toPublicBlacklistCharter(
   } satisfies PublicBlacklistCharter;
 }
 
+export type PublicPreferredCharter = {
+  charterId: number;
+  charterName: string;
+};
+
+export function toPublicPreferredCharter(
+  charter: PublicPreferredCharter & Record<string, unknown>
+) {
+  return {
+    charterId: charter.charterId,
+    charterName: charter.charterName,
+  } satisfies PublicPreferredCharter;
+}
+
 export type PublicBlacklistSong = {
   songId: number;
   songTitle: string;

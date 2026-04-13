@@ -8,6 +8,7 @@ import {
   createAuditLog,
   getCatalogSongsByIds,
   getChannelBlacklistByChannelId,
+  getChannelPreferredChartersByChannelId,
   getChannelSettingsByChannelId,
   getDashboardChannelAccess,
   getDashboardState,
@@ -130,6 +131,7 @@ export type PlaylistManagementState = {
   vipTokens: Array<Record<string, unknown>>;
   blacklistArtists: Array<{ artistId: number; artistName: string }>;
   blacklistCharters: Array<{ charterId: number; charterName: string }>;
+  preferredCharters: Array<{ charterId: number; charterName: string }>;
   blacklistSongs: Array<{
     songId: number;
     songTitle: string;
@@ -215,10 +217,10 @@ export async function loadPlaylistManagementStateForAccess(
     where: eq(setlistArtists.channelId, access.channel.id),
     orderBy: [asc(setlistArtists.artistName)],
   });
-  const blacklist = await getChannelBlacklistByChannelId(
-    runtimeEnv,
-    access.channel.id
-  );
+  const [blacklist, preferredCharters] = await Promise.all([
+    getChannelBlacklistByChannelId(runtimeEnv, access.channel.id),
+    getChannelPreferredChartersByChannelId(runtimeEnv, access.channel.id),
+  ]);
   if (!playlistState) {
     return null;
   }
@@ -233,6 +235,7 @@ export async function loadPlaylistManagementStateForAccess(
     vipTokens: vipTokenRows,
     blacklistArtists: blacklist.blacklistArtists,
     blacklistCharters: blacklist.blacklistCharters,
+    preferredCharters,
     blacklistSongs: blacklist.blacklistSongs,
     blacklistSongGroups: blacklist.blacklistSongGroups,
     setlistArtists: setlistRows,
@@ -287,6 +290,7 @@ export function getPlaylistManagementResponseBody(
     vipTokens: state.vipTokens,
     blacklistArtists: state.blacklistArtists,
     blacklistCharters: state.blacklistCharters,
+    preferredCharters: state.preferredCharters,
     blacklistSongs: state.blacklistSongs,
     blacklistSongGroups: state.blacklistSongGroups,
     setlistArtists: state.setlistArtists,

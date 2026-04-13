@@ -547,6 +547,21 @@ export const blacklistedCharters = sqliteTable(
   (table) => [primaryKey({ columns: [table.channelId, table.charterId] })]
 );
 
+export const preferredCharters = sqliteTable(
+  "preferred_charters",
+  {
+    channelId: text("channel_id")
+      .notNull()
+      .references(() => channels.id),
+    charterId: integer("charter_id").notNull(),
+    charterName: text("charter_name").notNull(),
+    createdAt: integer("created_at")
+      .notNull()
+      .default(sql`(unixepoch() * 1000)`),
+  },
+  (table) => [primaryKey({ columns: [table.channelId, table.charterId] })]
+);
+
 export const channelFavoriteCharts = sqliteTable(
   "channel_favorite_charts",
   {
@@ -978,6 +993,7 @@ export type BlacklistedSongInsert = typeof blacklistedSongs.$inferInsert;
 export type BlacklistedSongGroupInsert =
   typeof blacklistedSongGroups.$inferInsert;
 export type BlacklistedCharterInsert = typeof blacklistedCharters.$inferInsert;
+export type PreferredCharterInsert = typeof preferredCharters.$inferInsert;
 export type ChannelFavoriteChartInsert =
   typeof channelFavoriteCharts.$inferInsert;
 export type SetlistArtistInsert = typeof setlistArtists.$inferInsert;

@@ -5,6 +5,7 @@ export type PlaylistManagementDisplayCandidate = {
   id: string;
   groupedProjectId?: number;
   authorId?: number;
+  isPreferredCharter?: boolean;
   title: string;
   artist?: string;
   album?: string;
@@ -115,9 +116,28 @@ export function getResolvedPlaylistCandidates(
         }),
       }))
       .sort((left, right) => {
+        if (!!left.isPreferredCharter !== !!right.isPreferredCharter) {
+          return (
+            Number(!!right.isPreferredCharter) -
+            Number(!!left.isPreferredCharter)
+          );
+        }
+
         const leftUpdatedAt = left.sourceUpdatedAt ?? -1;
         const rightUpdatedAt = right.sourceUpdatedAt ?? -1;
-        return rightUpdatedAt - leftUpdatedAt;
+        if (leftUpdatedAt !== rightUpdatedAt) {
+          return rightUpdatedAt - leftUpdatedAt;
+        }
+
+        const leftDownloads = left.downloads ?? -1;
+        const rightDownloads = right.downloads ?? -1;
+        if (leftDownloads !== rightDownloads) {
+          return rightDownloads - leftDownloads;
+        }
+
+        const leftSourceId = left.sourceId ?? -1;
+        const rightSourceId = right.sourceId ?? -1;
+        return rightSourceId - leftSourceId;
       });
   }
 

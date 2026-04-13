@@ -128,6 +128,7 @@
     },
     "blacklistedArtists": "Blacklisted artists",
     "blacklistedCharters": "Blacklisted charters",
+    "preferredCharters": "Preferred charters",
     "blacklistedSongs": "Blacklisted songs",
     "blacklistedVersions": "Blacklisted versions",
     "setlistArtists": "Setlist artists",
@@ -146,6 +147,7 @@
     "versionId": "Version ID {id}",
     "noBlacklistedArtists": "No blacklisted artists.",
     "noBlacklistedCharters": "No blacklisted charters.",
+    "noPreferredCharters": "No preferred charters.",
     "noBlacklistedSongs": "No blacklisted songs.",
     "noBlacklistedVersions": "No blacklisted versions.",
     "noSetlistArtists": "No setlist artists."
@@ -455,12 +457,15 @@
       "unknownArtist": "Unknown artist",
       "chartedBy": "Charted by",
       "charterBlacklisted": "Charter blacklisted",
+      "preferred": "Preferred",
       "lyrics": "Lyrics",
       "unknown": "Unknown",
       "download": "Download",
       "blacklisted": "Blacklisted",
       "blacklist": "Blacklist",
-      "unblacklist": "Un-blacklist"
+      "unblacklist": "Un-blacklist",
+      "prefer": "Prefer",
+      "unprefer": "Unprefer"
     },
     "preview": {
       "removed": "The demo row is removed from the playlist.",

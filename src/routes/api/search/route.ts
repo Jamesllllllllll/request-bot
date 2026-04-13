@@ -6,7 +6,7 @@ import { consumeSearchRateLimit } from "~/lib/db/repositories";
 import { assertDatabaseSchemaCurrent } from "~/lib/db/schema-version";
 import type { AppEnv } from "~/lib/env";
 import { performCachedCatalogSearch } from "~/lib/server/cached-catalog-search";
-import { getErrorMessage, json, sha256 } from "~/lib/utils";
+import { json, sha256 } from "~/lib/utils";
 import { searchInputSchema } from "~/lib/validation";
 
 async function getSearchIdentity(request: Request, runtimeEnv: AppEnv) {
@@ -119,13 +119,21 @@ export const Route = createFileRoute("/api/search")({
             },
           });
         } catch (error) {
+          console.error("Search request failed", {
+            query: normalizedInput.query ?? "",
+            channelSlug: normalizedInput.channelSlug ?? null,
+            error:
+              error instanceof Error
+                ? error.message.includes("Failed query:")
+                  ? "Database query failed."
+                  : error.message
+                : String(error),
+          });
+
           return json(
             {
               error: "search_failed",
-              message: getErrorMessage(
-                error,
-                "Search failed. Try again in a moment."
-              ),
+              message: "Search failed. Try again in a moment.",
             },
             { status: 500 }
           );

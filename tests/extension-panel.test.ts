@@ -7,6 +7,7 @@ vi.mock("~/lib/db/repositories", () => ({
   getCatalogSearchVersionToken: vi.fn(),
   getChannelBlacklistByChannelId: vi.fn(),
   getChannelByTwitchChannelId: vi.fn(),
+  getChannelPreferredChartersByChannelId: vi.fn(),
   getChannelSearchVersionToken: vi.fn(),
   getChannelSettingsByChannelId: vi.fn(),
   getExtensionPanelPlaylistByChannelId: vi.fn(),
@@ -41,6 +42,7 @@ import {
   getCatalogSearchVersionToken,
   getChannelBlacklistByChannelId,
   getChannelByTwitchChannelId,
+  getChannelPreferredChartersByChannelId,
   getChannelSearchVersionToken,
   getChannelSettingsByChannelId,
   getExtensionPanelPlaylistByChannelId,
@@ -159,6 +161,9 @@ describe("extension panel service", () => {
         { groupedProjectId: 4, songTitle: "Blocked Group" },
       ],
     } as never);
+    vi.mocked(getChannelPreferredChartersByChannelId).mockResolvedValue(
+      [] as never
+    );
     vi.mocked(getChannelSearchVersionToken).mockResolvedValue(
       "channel-v1" as never
     );

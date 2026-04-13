@@ -20,7 +20,7 @@ import {
 } from "lucide-react";
 import { type ComponentType, useEffect, useState } from "react";
 import { LanguagePicker } from "~/components/language-picker";
-import { TranslationHelpButton } from "~/components/translation-help-button";
+import { SiteFooter } from "~/components/site-footer";
 import { Button } from "~/components/ui/button";
 import {
   Tooltip,
@@ -161,7 +161,7 @@ function AppShell() {
 
   return (
     <div className="app-shell mx-auto flex min-h-screen w-full max-w-[1480px] flex-col [container-type:inline-size] min-[961px]:px-6 min-[961px]:py-6 max-[960px]:p-0">
-      <header className="surface-grid surface-noise mb-6 border border-(--border) bg-(--panel) px-4 py-3 shadow-none backdrop-blur-xl min-[961px]:px-6 min-[961px]:py-4 max-[960px]:mb-0 max-[960px]:border-x-0 max-[960px]:shadow-none max-[720px]:px-[0.875rem] max-[720px]:py-3">
+      <header className="surface-grid surface-noise mb-6 border border-(--border) bg-(--panel) px-4 py-3 shadow-none backdrop-blur-xl min-[961px]:px-6 min-[961px]:py-4 max-[960px]:mb-0 max-[960px]:border-x-0 max-[960px]:shadow-none max-[720px]:px-3 max-[720px]:py-3">
         <div className="flex flex-wrap items-center justify-between gap-4">
           <div className="min-w-0 flex items-center gap-4">
             <Link to="/" className="group flex items-center gap-4 no-underline">
@@ -178,7 +178,6 @@ function AppShell() {
 
           <div className="flex min-w-0 flex-1 flex-wrap items-center justify-end gap-3 max-[960px]:flex-[0_1_auto] max-[960px]:justify-start">
             <LanguagePicker />
-            <TranslationHelpButton compactOnMobile />
             <nav className="flex max-w-full flex-wrap items-center gap-1 border border-(--border) bg-(--panel-soft) p-0 text-sm max-[960px]:w-auto max-[960px]:self-start max-[960px]:gap-[0.35rem]">
               <NavLink
                 to="/search"
@@ -278,7 +277,7 @@ function AppShell() {
           </div>
         </div>
         {viewer && needsTwitchReconnect ? (
-          <div className="border-t border-(--border) px-4 py-4 md:px-6">
+          <div className="border-t border-(--border) px-4 py-4 md:px-6 max-[720px]:px-3">
             <div className="flex flex-wrap items-center justify-between gap-3 border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-100">
               <div className="flex min-w-0 items-start gap-3">
                 <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
@@ -296,6 +295,7 @@ function AppShell() {
       <main className="app-shell__main min-w-0 flex-1 max-[960px]:border-t max-[960px]:border-(--border)">
         <Outlet />
       </main>
+      <SiteFooter />
     </div>
   );
 }

@@ -3,6 +3,7 @@ export type SongSearchResult = {
   groupedProjectId?: number;
   artistId?: number;
   authorId?: number;
+  isPreferredCharter?: boolean;
   title: string;
   artist?: string;
   album?: string;

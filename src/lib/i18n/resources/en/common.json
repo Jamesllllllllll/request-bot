@@ -34,5 +34,22 @@
   },
   "dialog": {
     "close": "Close"
+  },
+  "footer": {
+    "openSource": "{brand} is Open Source",
+    "repository": "GitHub",
+    "poweredBy": "Powered by",
+    "changelog": "Changelog",
+    "changelogTitle": "What's new in {brand}",
+    "changelogDescription": "Recent releases, written for humans.",
+    "changelogEnglishNote": "Release notes are currently available in English.",
+    "majorUpdate": "Major update",
+    "patchRelease": "Patch release",
+    "groups": {
+      "added": "New",
+      "changed": "Improved",
+      "fixed": "Fixed",
+      "removed": "Removed"
+    }
   }
 }

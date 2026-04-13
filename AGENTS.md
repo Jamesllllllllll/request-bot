@@ -7,6 +7,13 @@
 - Write UI copy in present tense.
 - If a beta or testing action is intentionally exposed in the UI, keep the copy short and action-oriented without internal implementation details.
 
+## Runtime And Browser Checks
+
+- For this repo, assume the app is normally already running at `http://localhost:9000`.
+- Before starting another dev server, first check the existing app at `http://localhost:9000`.
+- For auth-sensitive browser flows, use `https://dev.itsaunix.systems` first because Twitch login and callback flows depend on the public HTTPS tunnel.
+- Do not start a second local dev server on another port unless `http://localhost:9000` and `https://dev.itsaunix.systems` are both unavailable or the user explicitly asks for a separate server.
+
 ## Shipping Workflow
 
 - Never commit directly to `main`.

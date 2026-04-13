@@ -34,5 +34,22 @@
   },
   "dialog": {
     "close": "Cerrar"
+  },
+  "footer": {
+    "openSource": "{brand} es de código abierto",
+    "repository": "GitHub",
+    "poweredBy": "Impulsado por",
+    "changelog": "Novedades",
+    "changelogTitle": "Novedades de {brand}",
+    "changelogDescription": "Lanzamientos recientes, escritos para personas.",
+    "changelogEnglishNote": "Las notas de la versión están disponibles por ahora solo en inglés.",
+    "majorUpdate": "Actualización importante",
+    "patchRelease": "Versión de parche",
+    "groups": {
+      "added": "Nuevo",
+      "changed": "Mejorado",
+      "fixed": "Corregido",
+      "removed": "Eliminado"
+    }
   }
 }

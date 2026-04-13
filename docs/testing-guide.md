@@ -50,6 +50,15 @@ Manual verification still matters for:
 - tunnel and public callback behavior
 - hosted Twitch panel behavior
 
+## Browser Runtime
+
+Use these endpoints in this order for browser checks:
+
+1. `http://localhost:9000`
+2. `https://dev.itsaunix.systems` for Twitch auth, callback, and other public HTTPS flows
+
+Do not start another dev server on a different port unless both endpoints are unavailable or you intentionally need a separate instance for debugging.
+
 ## Current High-Value Coverage Areas
 
 - request parsing and request-policy rules

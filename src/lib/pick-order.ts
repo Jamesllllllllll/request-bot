@@ -117,14 +117,14 @@ export function formatPickOrdinal(locale: AppLocale, pickNumber: number) {
 export function getPickBadgeAppearance(pickNumber: number) {
   if (pickNumber === 1) {
     return {
-      background: "#16a34a",
+      background: "#22c55e",
       color: "#052e16",
     };
   }
 
   if (pickNumber === 2) {
     return {
-      background: "#eab308",
+      background: "#facc15",
       color: "#422006",
     };
   }

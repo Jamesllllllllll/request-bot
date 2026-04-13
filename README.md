@@ -72,6 +72,7 @@ Run extra commands only when the change needs them:
 - [docs/local-development.md](docs/local-development.md)
 - [docs/deployment-workflow.md](docs/deployment-workflow.md)
 - [docs/bot-operations.md](docs/bot-operations.md)
+- [docs/catalog-grouping-and-charter-preferences.md](docs/catalog-grouping-and-charter-preferences.md)
 - [docs/request-modifier-vip-token-rules.md](docs/request-modifier-vip-token-rules.md)
 - [docs/stream-overlay.md](docs/stream-overlay.md)
 - [docs/testing-guide.md](docs/testing-guide.md)

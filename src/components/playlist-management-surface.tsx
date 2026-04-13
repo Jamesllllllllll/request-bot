@@ -23,6 +23,7 @@ import {
   Clock3,
   Download,
   GripVertical,
+  Heart,
   type LucideIcon,
   MoreHorizontal,
   Plus,
@@ -35,6 +36,7 @@ import { AnimatePresence, motion } from "motion/react";
 import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import { BlacklistPanel } from "~/components/blacklist-panel";
 import { DashboardPageHeader } from "~/components/dashboard-page-header";
+import { FavoriteToggleButton } from "~/components/favorite-toggle-button";
 import { PickOrderBadge } from "~/components/pick-order-badge";
 import { RequesterChatBadges } from "~/components/requester-chat-badges";
 import { StatusToggleBadge } from "~/components/status-toggle-badge";
@@ -72,7 +74,6 @@ import {
 } from "~/lib/i18n/format";
 import { getPickNumbersForQueuedItems } from "~/lib/pick-order";
 import {
-  formatPlaylistItemSummaryLine,
   getPlaylistDisplayParts,
   getResolvedPlaylistCandidates,
   playlistDisplayCandidateHasLyrics,
@@ -99,7 +100,7 @@ import {
   getUniqueTunings,
 } from "~/lib/tuning-summary";
 import type { RequesterChatBadge } from "~/lib/twitch/chat-badges";
-import { getErrorMessage } from "~/lib/utils";
+import { cn, getErrorMessage } from "~/lib/utils";
 import {
   parseVipTokenDurationThresholds,
   type VipTokenDurationThreshold,
@@ -150,6 +151,7 @@ export type PlaylistCandidate = {
   id: string;
   groupedProjectId?: number;
   authorId?: number;
+  isPreferredCharter?: boolean;
   title: string;
   artist?: string;
   album?: string;
@@ -299,6 +301,7 @@ export type PlaylistManagementSurfaceData = {
   playedSongs: PlayedSong[];
   blacklistArtists: Array<{ artistId: number; artistName: string }>;
   blacklistCharters: Array<{ charterId: number; charterName: string }>;
+  preferredCharters: Array<{ charterId: number; charterName: string }>;
   blacklistSongs: Array<{
     songId: number;
     songTitle: string;
@@ -329,6 +332,10 @@ export type PlaylistManagementSurfaceProps = {
   showManualAdd?: boolean;
   embedCurrentPlaylist?: boolean;
   currentPlaylistTitle?: string | null;
+  canManageFavorites?: boolean;
+  isSongFavorited?: (songId: string) => boolean;
+  favoritePendingSongId?: string | null;
+  onToggleFavorite?: (songId: string, favorited: boolean) => void;
 };
 
 function formatTimeAgo(t: TFunction, timestamp: number) {
@@ -812,6 +819,7 @@ export function PlaylistManagementSurface(
   );
   const blacklistArtists = playlistData?.blacklistArtists ?? [];
   const blacklistCharters = playlistData?.blacklistCharters ?? [];
+  const preferredCharters = playlistData?.preferredCharters ?? [];
   const blacklistSongs = playlistData?.blacklistSongs ?? [];
   const blacklistSongGroups = playlistData?.blacklistSongGroups ?? [];
   const blacklistedArtistIds = new Set(
@@ -823,6 +831,9 @@ export function PlaylistManagementSurface(
   );
   const blacklistedCharterIds = new Set(
     blacklistCharters.map((item) => item.charterId)
+  );
+  const preferredCharterIds = new Set(
+    preferredCharters.map((item) => item.charterId)
   );
   const vipTokenBalancesByLogin = new Map(
     vipTokens.map((token) => [token.login.toLowerCase(), token.availableCount])
@@ -1198,7 +1209,7 @@ export function PlaylistManagementSurface(
       ) : null}
 
       {props.embedCurrentPlaylist ? (
-        <section className="grid max-[960px]:px-4">
+        <section className="grid max-[960px]:px-3">
           <div className="flex flex-wrap items-start justify-between gap-4 mb-3">
             {props.currentPlaylistTitle ? (
               <h2 className="text-4xl font-semibold text-(--text)">
@@ -1233,6 +1244,11 @@ export function PlaylistManagementSurface(
             blacklistedSongIds={blacklistedSongIds}
             blacklistedSongGroupIds={blacklistedSongGroupIds}
             blacklistedCharterIds={blacklistedCharterIds}
+            preferredCharterIds={preferredCharterIds}
+            canManageFavorites={props.canManageFavorites}
+            isSongFavorited={props.isSongFavorited}
+            favoritePendingSongId={props.favoritePendingSongId}
+            onToggleFavorite={props.onToggleFavorite}
             vipTokenBalancesByLogin={vipTokenBalancesByLogin}
             channelLogin={managedChannelLogin}
             requestPathModifierVipTokenCost={
@@ -1390,6 +1406,35 @@ export function PlaylistManagementSurface(
                   t("management.blacklistErrors.unknownCharter"),
               });
             }}
+            onPreferCharter={(candidate) => {
+              if (candidate.authorId == null) {
+                setPlaylistActionError(
+                  t("management.blacklistErrors.missingVersionCharterId")
+                );
+                return;
+              }
+
+              moderationMutation.mutate({
+                action: "addPreferredCharter",
+                charterId: candidate.authorId,
+                charterName:
+                  candidate.creator ??
+                  t("management.blacklistErrors.unknownCharter"),
+              });
+            }}
+            onUnpreferCharter={(candidate) => {
+              if (candidate.authorId == null) {
+                setPlaylistActionError(
+                  t("management.blacklistErrors.missingVersionCharterId")
+                );
+                return;
+              }
+
+              moderationMutation.mutate({
+                action: "removePreferredCharter",
+                charterId: candidate.authorId,
+              });
+            }}
             isBlacklistArtistPending={moderationMutation.isPending}
             isBlacklistSongPending={moderationMutation.isPending}
             isBlacklistSongGroupPending={moderationMutation.isPending}
@@ -1433,6 +1478,11 @@ export function PlaylistManagementSurface(
               blacklistedSongIds={blacklistedSongIds}
               blacklistedSongGroupIds={blacklistedSongGroupIds}
               blacklistedCharterIds={blacklistedCharterIds}
+              preferredCharterIds={preferredCharterIds}
+              canManageFavorites={props.canManageFavorites}
+              isSongFavorited={props.isSongFavorited}
+              favoritePendingSongId={props.favoritePendingSongId}
+              onToggleFavorite={props.onToggleFavorite}
               vipTokenBalancesByLogin={vipTokenBalancesByLogin}
               channelLogin={managedChannelLogin}
               requestPathModifierVipTokenCost={
@@ -1590,6 +1640,35 @@ export function PlaylistManagementSurface(
                   charterName:
                     candidate.creator ??
                     t("management.blacklistErrors.unknownCharter"),
+                });
+              }}
+              onPreferCharter={(candidate) => {
+                if (candidate.authorId == null) {
+                  setPlaylistActionError(
+                    t("management.blacklistErrors.missingVersionCharterId")
+                  );
+                  return;
+                }
+
+                moderationMutation.mutate({
+                  action: "addPreferredCharter",
+                  charterId: candidate.authorId,
+                  charterName:
+                    candidate.creator ??
+                    t("management.blacklistErrors.unknownCharter"),
+                });
+              }}
+              onUnpreferCharter={(candidate) => {
+                if (candidate.authorId == null) {
+                  setPlaylistActionError(
+                    t("management.blacklistErrors.missingVersionCharterId")
+                  );
+                  return;
+                }
+
+                moderationMutation.mutate({
+                  action: "removePreferredCharter",
+                  charterId: candidate.authorId,
                 });
               }}
               isBlacklistArtistPending={moderationMutation.isPending}
@@ -1835,6 +1914,11 @@ function CurrentPlaylistRows(props: {
   blacklistedSongIds: Set<number>;
   blacklistedSongGroupIds: Set<number>;
   blacklistedCharterIds: Set<number>;
+  preferredCharterIds: Set<number>;
+  canManageFavorites?: boolean;
+  isSongFavorited?: (songId: string) => boolean;
+  favoritePendingSongId?: string | null;
+  onToggleFavorite?: (songId: string, favorited: boolean) => void;
   vipTokenBalancesByLogin: Map<string, number>;
   channelLogin: string;
   requestPathModifierVipTokenCost: number;
@@ -1874,6 +1958,8 @@ function CurrentPlaylistRows(props: {
   onBlacklistSongGroup: (item: PlaylistItem) => void;
   onBlacklistArtist: (item: PlaylistItem) => void;
   onBlacklistCharter: (candidate: PlaylistCandidate) => void;
+  onPreferCharter: (candidate: PlaylistCandidate) => void;
+  onUnpreferCharter: (candidate: PlaylistCandidate) => void;
 }) {
   const { t } = useLocaleTranslation("playlist");
   const reorderableItemIds = props.items
@@ -1888,90 +1974,114 @@ function CurrentPlaylistRows(props: {
         </div>
       ) : null}
       <AnimatePresence initial={false} mode="popLayout">
-        {props.items.map((item, index) => (
-          <PlaylistQueueItem
-            key={item.id}
-            item={item}
-            index={index}
-            draggingItemId={props.draggingItemId}
-            dropTargetState={props.dropTargetState}
-            currentItemId={props.currentItemId}
-            showPickOrderBadges={props.showPickOrderBadges}
-            isDeletingItem={props.isDeletingItem(item.id)}
-            isSetCurrentPending={props.isRowPending("setCurrent", item.id)}
-            isReturnToQueuePending={props.isRowPending(
-              "returnToQueue",
-              item.id
-            )}
-            isMarkPlayedPending={props.isRowPending("markPlayed", item.id)}
-            isChangeRequestKindPending={props.isRowPending(
-              "changeRequestKind",
-              item.id
-            )}
-            isReorderPending={props.isReorderPending}
-            useTouchReorderControls={props.useTouchReorderControls}
-            reorderableIndex={reorderableItemIds.indexOf(item.id)}
-            reorderableCount={reorderableItemIds.length}
-            canManageBlacklist={props.canManageBlacklist}
-            isBlacklistedArtist={
-              item.songArtistId != null &&
-              props.blacklistedArtistIds.has(item.songArtistId)
-            }
-            isBlacklistedSong={
-              item.songCatalogSourceId != null &&
-              props.blacklistedSongIds.has(item.songCatalogSourceId)
-            }
-            isBlacklistedSongGroup={
-              item.songGroupedProjectId != null &&
-              props.blacklistedSongGroupIds.has(item.songGroupedProjectId)
-            }
-            isBlacklistArtistPending={props.isBlacklistArtistPending}
-            isBlacklistSongPending={props.isBlacklistSongPending}
-            isBlacklistSongGroupPending={props.isBlacklistSongGroupPending}
-            isBlacklistCharterPending={props.isBlacklistCharterPending}
-            availableVipTokenCount={
-              item.requestedByLogin
-                ? (props.vipTokenBalancesByLogin.get(
-                    item.requestedByLogin.toLowerCase()
-                  ) ?? 0)
-                : 0
-            }
-            channelLogin={props.channelLogin}
-            requestPathModifierVipTokenCost={
-              props.requestPathModifierVipTokenCost
-            }
-            requestPathModifierVipTokenCosts={
-              props.requestPathModifierVipTokenCosts
-            }
-            requestPathModifierUsesVipPriority={
-              props.requestPathModifierUsesVipPriority
-            }
-            vipTokenDurationThresholds={props.vipTokenDurationThresholds}
-            blacklistedCharterIds={props.blacklistedCharterIds}
-            blacklistedSongIds={props.blacklistedSongIds}
-            onDragStart={props.onDragStart}
-            onDragEnd={props.onDragEnd}
-            onDragHover={props.onDragHover}
-            onDragLeave={() => {
-              props.onDragLeaveForItem(item.id);
-            }}
-            onReorder={props.onReorder}
-            onMoveItem={(moveAction) => props.onMoveItem(item.id, moveAction)}
-            onSetCurrent={() => props.onSetCurrent(item.id)}
-            onReturnToQueue={() => props.onReturnToQueue(item.id)}
-            onMarkPlayed={() => props.onMarkPlayed(item.id)}
-            onDelete={() => props.onDelete(item)}
-            onChangeRequestKind={(requestKind) =>
-              props.onChangeRequestKind(item.id, requestKind)
-            }
-            onBlacklistSong={() => props.onBlacklistSong(item)}
-            onBlacklistCandidateSong={props.onBlacklistCandidateSong}
-            onUnblacklistCandidateSong={props.onUnblacklistCandidateSong}
-            onBlacklistSongGroup={() => props.onBlacklistSongGroup(item)}
-            onBlacklistArtist={() => props.onBlacklistArtist(item)}
-            onBlacklistCharter={props.onBlacklistCharter}
-          />
-        ))}
+        {props.items.map((item, index) => {
+          const favoriteSongId = item.songId ?? null;
+          const isFavorited =
+            favoriteSongId != null
+              ? (props.isSongFavorited?.(favoriteSongId) ?? false)
+              : false;
+          const onToggleFavorite =
+            favoriteSongId != null && props.onToggleFavorite
+              ? () => props.onToggleFavorite?.(favoriteSongId, !isFavorited)
+              : undefined;
+
+          return (
+            <PlaylistQueueItem
+              key={item.id}
+              item={item}
+              index={index}
+              draggingItemId={props.draggingItemId}
+              dropTargetState={props.dropTargetState}
+              currentItemId={props.currentItemId}
+              showPickOrderBadges={props.showPickOrderBadges}
+              isDeletingItem={props.isDeletingItem(item.id)}
+              isSetCurrentPending={props.isRowPending("setCurrent", item.id)}
+              isReturnToQueuePending={props.isRowPending(
+                "returnToQueue",
+                item.id
+              )}
+              isMarkPlayedPending={props.isRowPending("markPlayed", item.id)}
+              isChangeRequestKindPending={props.isRowPending(
+                "changeRequestKind",
+                item.id
+              )}
+              isReorderPending={props.isReorderPending}
+              useTouchReorderControls={props.useTouchReorderControls}
+              reorderableIndex={reorderableItemIds.indexOf(item.id)}
+              reorderableCount={reorderableItemIds.length}
+              canManageBlacklist={props.canManageBlacklist}
+              isBlacklistedArtist={
+                item.songArtistId != null &&
+                props.blacklistedArtistIds.has(item.songArtistId)
+              }
+              isBlacklistedSong={
+                item.songCatalogSourceId != null &&
+                props.blacklistedSongIds.has(item.songCatalogSourceId)
+              }
+              isBlacklistedSongGroup={
+                item.songGroupedProjectId != null &&
+                props.blacklistedSongGroupIds.has(item.songGroupedProjectId)
+              }
+              isBlacklistArtistPending={props.isBlacklistArtistPending}
+              isBlacklistSongPending={props.isBlacklistSongPending}
+              isBlacklistSongGroupPending={props.isBlacklistSongGroupPending}
+              isBlacklistCharterPending={props.isBlacklistCharterPending}
+              availableVipTokenCount={
+                item.requestedByLogin
+                  ? (props.vipTokenBalancesByLogin.get(
+                      item.requestedByLogin.toLowerCase()
+                    ) ?? 0)
+                  : 0
+              }
+              channelLogin={props.channelLogin}
+              requestPathModifierVipTokenCost={
+                props.requestPathModifierVipTokenCost
+              }
+              requestPathModifierVipTokenCosts={
+                props.requestPathModifierVipTokenCosts
+              }
+              requestPathModifierUsesVipPriority={
+                props.requestPathModifierUsesVipPriority
+              }
+              vipTokenDurationThresholds={props.vipTokenDurationThresholds}
+              blacklistedCharterIds={props.blacklistedCharterIds}
+              preferredCharterIds={props.preferredCharterIds}
+              blacklistedSongIds={props.blacklistedSongIds}
+              canManageFavorites={
+                !!props.canManageFavorites && favoriteSongId != null
+              }
+              isFavorited={isFavorited}
+              favoritePending={
+                favoriteSongId != null &&
+                props.favoritePendingSongId === favoriteSongId
+              }
+              onToggleFavorite={onToggleFavorite}
+              onDragStart={props.onDragStart}
+              onDragEnd={props.onDragEnd}
+              onDragHover={props.onDragHover}
+              onDragLeave={() => {
+                props.onDragLeaveForItem(item.id);
+              }}
+              onReorder={props.onReorder}
+              onMoveItem={(moveAction) => props.onMoveItem(item.id, moveAction)}
+              onSetCurrent={() => props.onSetCurrent(item.id)}
+              onReturnToQueue={() => props.onReturnToQueue(item.id)}
+              onMarkPlayed={() => props.onMarkPlayed(item.id)}
+              onDelete={() => props.onDelete(item)}
+              onChangeRequestKind={(requestKind) =>
+                props.onChangeRequestKind(item.id, requestKind)
+              }
+              onBlacklistSong={() => props.onBlacklistSong(item)}
+              onBlacklistCandidateSong={props.onBlacklistCandidateSong}
+              onUnblacklistCandidateSong={props.onUnblacklistCandidateSong}
+              onBlacklistSongGroup={() => props.onBlacklistSongGroup(item)}
+              onBlacklistArtist={() => props.onBlacklistArtist(item)}
+              onBlacklistCharter={props.onBlacklistCharter}
+              onPreferCharter={props.onPreferCharter}
+              onUnpreferCharter={props.onUnpreferCharter}
+            />
+          );
+        })}
       </AnimatePresence>
       {props.items.length === 0 ? (
         <p className="px-4 text-sm leading-7 text-(--muted)">
@@ -2463,6 +2573,11 @@ function PlaylistQueueItem(props: {
   vipTokenDurationThresholds: VipTokenDurationThreshold[];
   blacklistedSongIds: Set<number>;
   blacklistedCharterIds: Set<number>;
+  preferredCharterIds: Set<number>;
+  canManageFavorites?: boolean;
+  isFavorited?: boolean;
+  favoritePending?: boolean;
+  onToggleFavorite?: () => void;
   onDragStart: (itemId: string) => void;
   onDragEnd: () => void;
   onDragHover: (targetItemId: string, edge: Edge) => void;
@@ -2480,6 +2595,8 @@ function PlaylistQueueItem(props: {
   onBlacklistSongGroup: () => void;
   onBlacklistArtist: () => void;
   onBlacklistCharter: (candidate: PlaylistCandidate) => void;
+  onPreferCharter: (candidate: PlaylistCandidate) => void;
+  onUnpreferCharter: (candidate: PlaylistCandidate) => void;
 }) {
   const { t } = useLocaleTranslation("playlist");
   const itemRef = useRef<HTMLDivElement | null>(null);
@@ -2574,6 +2691,8 @@ function PlaylistQueueItem(props: {
       ? primaryCandidate.sourceUrl
       : null;
   const itemHasLyrics = playlistDisplayItemHasLyrics(props.item);
+  const queueItemBadgeClass =
+    "h-8 px-2.5 text-[10px] leading-none uppercase tracking-[0.14em]";
   const createdAgoLabel = formatTimeAgo(t, props.item.createdAt);
   const editedTimestamp = props.item.editedAt ?? null;
   const editedAgoLabel =
@@ -2765,9 +2884,20 @@ function PlaylistQueueItem(props: {
               </span>
               <div className="min-w-0 flex flex-1 gap-3">
                 <div className="min-w-0 flex-1">
-                  <p className="break-words text-lg font-semibold leading-tight text-(--text)">
-                    {titleLine}
-                  </p>
+                  <div className="flex flex-wrap items-start gap-2">
+                    <p className="break-words text-lg font-semibold leading-tight text-(--text)">
+                      {titleLine}
+                    </p>
+                    {props.canManageFavorites && props.item.songId ? (
+                      <FavoriteToggleButton
+                        favorited={!!props.isFavorited}
+                        pending={props.favoritePending}
+                        onToggle={props.onToggleFavorite}
+                        className="mt-[-1px] h-7 w-7"
+                        iconClassName="h-3.5 w-3.5"
+                      />
+                    ) : null}
+                  </div>
                   {albumLine ? (
                     <p className="mt-1 break-words text-sm text-(--brand-deep)">
                       {albumLine}
@@ -2776,18 +2906,23 @@ function PlaylistQueueItem(props: {
                 </div>
                 <div className="flex flex-wrap items-center gap-2 self-start">
                   {isVipRequest ? (
-                    <Badge className="border-violet-400/35 bg-violet-500/15 text-violet-100 hover:bg-violet-500/15">
+                    <Badge
+                      className={cn(
+                        queueItemBadgeClass,
+                        "border-violet-400/35 bg-violet-500/15 text-violet-100 hover:bg-violet-500/15"
+                      )}
+                    >
                       {t("management.item.vipBadge")}
                     </Badge>
                   ) : null}
                   {getRequestedPathLabel(props.item) ? (
-                    <Badge variant="outline">
+                    <Badge variant="outline" className={queueItemBadgeClass}>
                       {getRequestedPathLabel(props.item)}
                     </Badge>
                   ) : null}
                   {(isVipRequest && storedVipTokenCost > 1) ||
                   (!isVipRequest && storedVipTokenCost > 0) ? (
-                    <Badge variant="outline">
+                    <Badge variant="outline" className={queueItemBadgeClass}>
                       {t("management.item.vipTokens", {
                         count: storedVipTokenCost,
                       })}
@@ -2795,10 +2930,18 @@ function PlaylistQueueItem(props: {
                   ) : null}
                   {props.showPickOrderBadges &&
                   props.item.pickNumber != null ? (
-                    <PickOrderBadge pickNumber={props.item.pickNumber} />
+                    <PickOrderBadge
+                      pickNumber={props.item.pickNumber}
+                      className={queueItemBadgeClass}
+                    />
                   ) : null}
                   {isCurrentItem ? (
-                    <Badge className="border-emerald-400/35 bg-emerald-500/15 text-emerald-200 hover:bg-emerald-500/15">
+                    <Badge
+                      className={cn(
+                        queueItemBadgeClass,
+                        "border-emerald-400/35 bg-emerald-500/15 text-emerald-200 hover:bg-emerald-500/15"
+                      )}
+                    >
                       {t("management.item.playingBadge")}
                     </Badge>
                   ) : null}
@@ -2831,13 +2974,6 @@ function PlaylistQueueItem(props: {
             </motion.div>
 
             <motion.div layout="position" className="grid gap-1.5">
-              <p className="break-words text-sm text-(--brand-deep)">
-                {formatPlaylistItemSummaryLine(props.item, {
-                  hasMultipleVersions,
-                  chartedByLabel: t("management.versionsTable.chartedBy"),
-                  unknownArtistLabel: t("management.manual.unknownArtist"),
-                })}
-              </p>
               {itemDurationText || compactTuning || itemHasLyrics ? (
                 <p className="flex flex-wrap items-center gap-x-1.5 gap-y-1 text-sm text-(--muted)">
                   {itemDurationText ? (
@@ -2901,7 +3037,39 @@ function PlaylistQueueItem(props: {
           </motion.div>
 
           <div className="grid gap-3 justify-items-end md:min-w-[12rem] md:content-between">
-            <div className="dashboard-playlist__item-actions flex w-full max-w-full flex-nowrap items-center justify-end gap-2 md:w-auto">
+            <div className="dashboard-playlist__item-actions flex w-full max-w-full flex-wrap items-center justify-end gap-2 md:w-auto md:flex-nowrap">
+              {hasMultipleVersions ? (
+                <Button
+                  type="button"
+                  size="sm"
+                  variant={showVersions ? "secondary" : "outline"}
+                  className="h-8 px-2.5 text-[11px] md:hidden"
+                  aria-expanded={showVersions}
+                  onClick={() => setShowVersions((current) => !current)}
+                >
+                  {t("management.item.versionsCount", {
+                    count: resolvedCandidates.length,
+                  })}
+                </Button>
+              ) : singleVersionDownloadUrl ? (
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  asChild
+                  className="h-8 px-2.5 text-[11px] md:hidden"
+                >
+                  <a
+                    href={singleVersionDownloadUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="no-underline"
+                  >
+                    <Download className="h-3.5 w-3.5" />
+                    {t("management.item.downloadFromCf")}
+                  </a>
+                </Button>
+              ) : null}
               {isVipRequest && hasRequester && !isCurrentItem ? (
                 <Button
                   size="sm"
@@ -3016,7 +3184,7 @@ function PlaylistQueueItem(props: {
                 type="button"
                 size="sm"
                 variant={showVersions ? "secondary" : "outline"}
-                className="h-8 w-fit justify-self-end px-2.5 text-[11px]"
+                className="hidden h-8 w-fit justify-self-end px-2.5 text-[11px] md:inline-flex"
                 aria-expanded={showVersions}
                 onClick={() => setShowVersions((current) => !current)}
               >
@@ -3030,7 +3198,7 @@ function PlaylistQueueItem(props: {
                 size="sm"
                 variant="outline"
                 asChild
-                className="h-8 w-fit justify-self-end px-2.5 text-[11px]"
+                className="hidden h-8 w-fit justify-self-end px-2.5 text-[11px] md:inline-flex"
               >
                 <a
                   href={singleVersionDownloadUrl}
@@ -3065,11 +3233,14 @@ function PlaylistQueueItem(props: {
                     canManageBlacklist={props.canManageBlacklist}
                     blacklistedSongIds={props.blacklistedSongIds}
                     blacklistedCharterIds={props.blacklistedCharterIds}
+                    preferredCharterIds={props.preferredCharterIds}
                     isBlacklistSongPending={props.isBlacklistSongPending}
                     onBlacklistCandidateSong={props.onBlacklistCandidateSong}
                     onUnblacklistCandidateSong={
                       props.onUnblacklistCandidateSong
                     }
+                    onPreferCharter={props.onPreferCharter}
+                    onUnpreferCharter={props.onUnpreferCharter}
                   />
                 </div>
               </motion.div>
@@ -3402,9 +3573,12 @@ function PlaylistVersionsTable(props: {
   canManageBlacklist: boolean;
   blacklistedSongIds: Set<number>;
   blacklistedCharterIds: Set<number>;
+  preferredCharterIds: Set<number>;
   isBlacklistSongPending: boolean;
   onBlacklistCandidateSong: (candidate: PlaylistCandidate) => void;
   onUnblacklistCandidateSong: (candidate: PlaylistCandidate) => void;
+  onPreferCharter: (candidate: PlaylistCandidate) => void;
+  onUnpreferCharter: (candidate: PlaylistCandidate) => void;
 }) {
   const { t } = useLocaleTranslation("playlist");
   const { locale } = useAppLocale();
@@ -3424,21 +3598,32 @@ function PlaylistVersionsTable(props: {
             index,
             isBlacklistedCandidateSong,
             isBlacklistedCharter,
+            isPreferredCharter:
+              (candidate.authorId != null &&
+                props.preferredCharterIds.has(candidate.authorId)) ||
+              !!candidate.isPreferredCharter,
             isBlocked: isBlacklistedCandidateSong || isBlacklistedCharter,
           };
         })
         .sort(
           (left, right) =>
             Number(left.isBlocked) - Number(right.isBlocked) ||
+            Number(right.isPreferredCharter) -
+              Number(left.isPreferredCharter) ||
             left.index - right.index
         ),
-    [props.blacklistedCharterIds, props.blacklistedSongIds, props.candidates]
+    [
+      props.blacklistedCharterIds,
+      props.blacklistedSongIds,
+      props.candidates,
+      props.preferredCharterIds,
+    ]
   );
 
   return (
-    <div className="overflow-x-auto border border-(--border)">
-      <table className="min-w-full border-collapse text-left text-sm">
-        <thead className="bg-(--panel)">
+    <div className="dashboard-playlist__versions-wrap overflow-x-auto border border-(--border)">
+      <table className="dashboard-playlist__versions-table min-w-full border-collapse text-left text-sm">
+        <thead className="dashboard-playlist__versions-head bg-(--panel)">
           <tr className="border-b border-(--border)">
             <th className="px-4 py-2 text-[13px] font-semibold text-(--muted)">
               {t("management.versionsTable.songAlbum")}
@@ -3460,7 +3645,7 @@ function PlaylistVersionsTable(props: {
             </th>
           </tr>
         </thead>
-        <tbody>
+        <tbody className="dashboard-playlist__versions-body">
           {sortedCandidates.map(
             (
               {
@@ -3468,6 +3653,7 @@ function PlaylistVersionsTable(props: {
                 index,
                 isBlacklistedCandidateSong,
                 isBlacklistedCharter,
+                isPreferredCharter,
                 isBlocked,
               },
               sortedIndex
@@ -3478,44 +3664,32 @@ function PlaylistVersionsTable(props: {
               return (
                 <tr
                   key={`${props.itemId}-${candidate.id}-${index}`}
-                  className={`border-b border-(--border) align-top ${
+                  className={`dashboard-playlist__versions-row border-b border-(--border) align-top ${
                     sortedIndex % 2 === 0 ? "bg-(--panel)" : "bg-(--panel-soft)"
                   } ${isBlocked ? "opacity-55" : ""}`}
                 >
-                  <td className="px-4 py-3">
+                  <td className="dashboard-playlist__versions-song-cell dashboard-playlist__versions-cell px-4 py-3">
                     <div className="grid gap-0.5">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <p className="font-medium text-(--text)">
-                          {candidate.title}
-                          {candidate.album ? ` · ${candidate.album}` : ""}
-                        </p>
-                        {isBlacklistedCandidateSong ? (
-                          <span className="inline-flex items-center border border-rose-400/40 bg-rose-500/10 px-2 py-[3px] text-[10px] font-semibold uppercase tracking-[0.14em] text-rose-200">
-                            {t("management.versionsTable.blacklisted")}
-                          </span>
-                        ) : null}
-                      </div>
+                      <p className="font-medium text-(--text)">
+                        {candidate.title}
+                        {candidate.album ? ` · ${candidate.album}` : ""}
+                      </p>
                       <p className="text-xs text-(--muted)">
                         {candidate.artist ??
                           t("management.versionsTable.unknownArtist")}
                       </p>
-                      {candidate.creator ? (
-                        <p className="text-xs text-(--muted)">
-                          <span className="text-(--brand-deep)">
-                            {t("management.versionsTable.chartedBy")}
-                          </span>{" "}
-                          {candidate.creator}
-                          {isBlacklistedCharter
-                            ? ` · ${t("management.versionsTable.charterBlacklisted")}`
-                            : ""}
-                        </p>
-                      ) : null}
                     </div>
                   </td>
-                  <td className="px-4 py-3 text-(--muted)">
+                  <td
+                    className="dashboard-playlist__versions-cell px-4 py-3 text-(--muted)"
+                    data-label={t("management.versionsTable.tunings")}
+                  >
                     {candidate.tuning ?? t("management.versionsTable.unknown")}
                   </td>
-                  <td className="px-4 py-3">
+                  <td
+                    className="dashboard-playlist__versions-cell px-4 py-3"
+                    data-label={t("management.versionsTable.paths")}
+                  >
                     <div className="flex flex-wrap gap-1">
                       {displayParts.map((part) => (
                         <span
@@ -3538,79 +3712,178 @@ function PlaylistVersionsTable(props: {
                       ) : null}
                     </div>
                   </td>
-                  <td className="px-4 py-3 text-(--muted)">
+                  <td
+                    className="dashboard-playlist__versions-cell px-4 py-3 text-(--muted)"
+                    data-label={t("management.versionsTable.updated")}
+                  >
                     {candidate.sourceUpdatedAt
                       ? formatLocaleDate(locale, candidate.sourceUpdatedAt, {
                           dateStyle: "medium",
                         })
                       : t("management.versionsTable.unknown")}
                   </td>
-                  <td className="px-4 py-3 text-(--muted)">
+                  <td
+                    className="dashboard-playlist__versions-cell px-4 py-3 text-(--muted)"
+                    data-label={t("management.versionsTable.downloads")}
+                  >
                     {candidate.downloads != null
                       ? formatNumber(locale, candidate.downloads)
                       : t("management.versionsTable.unknown")}
                   </td>
-                  <td className="px-4 py-3">
-                    <div className="flex flex-wrap gap-1.5">
-                      {candidate.sourceUrl ? (
-                        isBlocked ? (
-                          <Button
-                            type="button"
-                            size="sm"
-                            variant="outline"
-                            className="h-7 px-2 text-[11px]"
-                            disabled
-                            title={t("management.versionsTable.blacklisted")}
-                          >
-                            <Download className="h-3.5 w-3.5" />
-                            {t("management.versionsTable.download")}
-                          </Button>
-                        ) : (
-                          <Button
-                            type="button"
-                            size="sm"
-                            variant="outline"
-                            asChild
-                            className="h-7 px-2 text-[11px]"
-                          >
-                            <a
-                              href={candidate.sourceUrl}
-                              target="_blank"
-                              rel="noreferrer"
-                              className="no-underline"
+                  <td
+                    className="dashboard-playlist__versions-actions-cell dashboard-playlist__versions-cell px-4 py-3"
+                    data-label={t("management.versionsTable.actions")}
+                  >
+                    <div className="dashboard-playlist__versions-actions grid gap-2">
+                      <div className="dashboard-playlist__versions-download flex flex-wrap gap-1.5">
+                        {candidate.sourceUrl ? (
+                          isBlocked ? (
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant="outline"
+                              className="h-7 px-2 text-[11px]"
+                              disabled
+                              title={t("management.versionsTable.blacklisted")}
                             >
                               <Download className="h-3.5 w-3.5" />
                               {t("management.versionsTable.download")}
-                            </a>
-                          </Button>
-                        )
-                      ) : null}
-                      {props.canManageBlacklist ? (
-                        <Button
-                          type="button"
-                          size="sm"
-                          variant={
-                            isBlacklistedCandidateSong ? "outline" : "secondary"
-                          }
-                          className="h-7 px-2 text-[11px]"
-                          disabled={
-                            candidate.sourceId == null ||
-                            props.isBlacklistSongPending
-                          }
-                          onClick={() => {
-                            if (isBlacklistedCandidateSong) {
-                              props.onUnblacklistCandidateSong(candidate);
-                              return;
-                            }
+                            </Button>
+                          ) : (
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant="outline"
+                              asChild
+                              className="h-7 px-2 text-[11px]"
+                            >
+                              <a
+                                href={candidate.sourceUrl}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="no-underline"
+                              >
+                                <Download className="h-3.5 w-3.5" />
+                                {t("management.versionsTable.download")}
+                              </a>
+                            </Button>
+                          )
+                        ) : null}
+                      </div>
+                      {candidate.creator || props.canManageBlacklist ? (
+                        <TooltipProvider>
+                          <div className="dashboard-playlist__versions-charter flex flex-wrap items-center gap-1.5">
+                            {candidate.creator ? (
+                              <span
+                                className={`text-xs ${
+                                  isBlacklistedCharter
+                                    ? "text-rose-300"
+                                    : "text-(--muted)"
+                                }`}
+                                title={
+                                  isBlacklistedCharter
+                                    ? t(
+                                        "management.versionsTable.charterBlacklisted"
+                                      )
+                                    : undefined
+                                }
+                              >
+                                {candidate.creator}
+                              </span>
+                            ) : null}
+                            {props.canManageBlacklist ? (
+                              <Tooltip>
+                                <TooltipTrigger asChild>
+                                  <span className="inline-flex">
+                                    <Button
+                                      type="button"
+                                      size="sm"
+                                      variant={
+                                        isPreferredCharter
+                                          ? "outline"
+                                          : "secondary"
+                                      }
+                                      className="h-7 w-7 px-0"
+                                      disabled={candidate.authorId == null}
+                                      aria-label={
+                                        isPreferredCharter
+                                          ? t(
+                                              "management.versionsTable.unprefer"
+                                            )
+                                          : t("management.versionsTable.prefer")
+                                      }
+                                      onClick={() => {
+                                        if (isPreferredCharter) {
+                                          props.onUnpreferCharter(candidate);
+                                          return;
+                                        }
 
-                            props.onBlacklistCandidateSong(candidate);
-                          }}
-                        >
-                          <Ban className="h-3.5 w-3.5" />
-                          {isBlacklistedCandidateSong
-                            ? t("management.versionsTable.unblacklist")
-                            : t("management.versionsTable.blacklist")}
-                        </Button>
+                                        props.onPreferCharter(candidate);
+                                      }}
+                                    >
+                                      <Heart className="h-3.5 w-3.5" />
+                                    </Button>
+                                  </span>
+                                </TooltipTrigger>
+                                <TooltipContent>
+                                  {isPreferredCharter
+                                    ? t("management.versionsTable.unprefer")
+                                    : t("management.versionsTable.prefer")}
+                                </TooltipContent>
+                              </Tooltip>
+                            ) : null}
+                            {props.canManageBlacklist ? (
+                              <Tooltip>
+                                <TooltipTrigger asChild>
+                                  <span className="inline-flex">
+                                    <Button
+                                      type="button"
+                                      size="sm"
+                                      variant={
+                                        isBlacklistedCandidateSong
+                                          ? "outline"
+                                          : "secondary"
+                                      }
+                                      className="h-7 w-7 px-0"
+                                      disabled={
+                                        candidate.sourceId == null ||
+                                        props.isBlacklistSongPending
+                                      }
+                                      aria-label={
+                                        isBlacklistedCandidateSong
+                                          ? t(
+                                              "management.versionsTable.unblacklist"
+                                            )
+                                          : t(
+                                              "management.versionsTable.blacklist"
+                                            )
+                                      }
+                                      onClick={() => {
+                                        if (isBlacklistedCandidateSong) {
+                                          props.onUnblacklistCandidateSong(
+                                            candidate
+                                          );
+                                          return;
+                                        }
+
+                                        props.onBlacklistCandidateSong(
+                                          candidate
+                                        );
+                                      }}
+                                    >
+                                      <Ban className="h-3.5 w-3.5" />
+                                    </Button>
+                                  </span>
+                                </TooltipTrigger>
+                                <TooltipContent>
+                                  {isBlacklistedCandidateSong
+                                    ? t("management.versionsTable.unblacklist")
+                                    : t("management.versionsTable.blacklist")}
+                                </TooltipContent>
+                              </Tooltip>
+                            ) : null}
+                          </div>
+                        </TooltipProvider>
                       ) : null}
                     </div>
                   </td>
@@ -3662,6 +3935,9 @@ export function PlaylistQueueItemPreview() {
   const [blacklistedCharterIds, setBlacklistedCharterIds] = useState<
     Set<number>
   >(new Set());
+  const [preferredCharterIds, setPreferredCharterIds] = useState<Set<number>>(
+    new Set()
+  );
 
   if (removed) {
     return (
@@ -3727,6 +4003,7 @@ export function PlaylistQueueItemPreview() {
       vipTokenDurationThresholds={[]}
       blacklistedSongIds={blacklistedSongIds}
       blacklistedCharterIds={blacklistedCharterIds}
+      preferredCharterIds={preferredCharterIds}
       onDragStart={() => {}}
       onDragEnd={() => {}}
       onDragHover={() => {}}
@@ -3790,6 +4067,26 @@ export function PlaylistQueueItemPreview() {
 
         const authorId = candidate.authorId;
         setBlacklistedCharterIds((current) => new Set([...current, authorId]));
+      }}
+      onPreferCharter={(candidate) => {
+        if (candidate.authorId == null) {
+          return;
+        }
+
+        const authorId = candidate.authorId;
+        setPreferredCharterIds((current) => new Set([...current, authorId]));
+      }}
+      onUnpreferCharter={(candidate) => {
+        if (candidate.authorId == null) {
+          return;
+        }
+
+        const authorId = candidate.authorId;
+        setPreferredCharterIds((current) => {
+          const next = new Set(current);
+          next.delete(authorId);
+          return next;
+        });
       }}
     />
   );

@@ -12,6 +12,7 @@ import {
   getCatalogSongById,
   getChannelBlacklistByChannelId,
   getChannelBySlug,
+  getChannelPreferredChartersByChannelId,
   getChannelSettingsByChannelId,
   getPlaylistByChannelId,
   getUserById,
@@ -22,8 +23,14 @@ import {
   parseAuthorizationScopes,
   searchCatalogSongs,
 } from "~/lib/db/repositories";
-import { requestLogs, setlistArtists } from "~/lib/db/schema";
+import { catalogSongs, requestLogs, setlistArtists } from "~/lib/db/schema";
 import type { AppEnv } from "~/lib/env";
+import {
+  buildPlaylistCandidateMatchesFromCatalogSongs,
+  buildPlaylistCandidateMatchesJson,
+  getPreferredCharterSets,
+  normalizeArtistNameForCandidateGrouping,
+} from "~/lib/playlist/candidate-matches";
 import type { PlaylistMutationResult } from "~/lib/playlist/types";
 import {
   ADD_REQUESTS_WHEN_LIVE_MESSAGE,
@@ -132,6 +139,9 @@ type ViewerChannelState = {
   >;
   playlist: NonNullable<Awaited<ReturnType<typeof getPlaylistByChannelId>>>;
   blacklist: Awaited<ReturnType<typeof getChannelBlacklistByChannelId>>;
+  preferredCharters: Awaited<
+    ReturnType<typeof getChannelPreferredChartersByChannelId>
+  >;
   setlist: Array<{ artistId?: number | null; artistName: string }>;
 };
 
@@ -358,6 +368,7 @@ async function loadViewerRequestContext(
     settings,
     playlist,
     blacklist,
+    preferredCharters,
     setlist,
     blocked,
     subscription,
@@ -367,6 +378,7 @@ async function loadViewerRequestContext(
     getChannelSettingsByChannelId(env, channel.id),
     getPlaylistByChannelId(env, channel.id),
     getChannelBlacklistByChannelId(env, channel.id),
+    getChannelPreferredChartersByChannelId(env, channel.id),
     getDb(env).query.setlistArtists.findMany({
       where: eq(setlistArtists.channelId, channel.id),
     }),
@@ -423,6 +435,7 @@ async function loadViewerRequestContext(
       settings,
       playlist,
       blacklist,
+      preferredCharters,
       setlist,
     },
     requester,
@@ -572,6 +585,12 @@ function buildViewerCatalogSearchInput(input: {
     restrictToOfficial: !!input.context.state.settings.onlyOfficialDlc,
     allowedTuningsFilter: parseStoredTuningIds(
       input.context.state.settings.allowedTuningsJson
+    ),
+    preferredAuthorIds: input.context.state.preferredCharters.map(
+      (charter) => charter.charterId
+    ),
+    preferredCreatorNames: input.context.state.preferredCharters.map(
+      (charter) => charter.charterName
     ),
     requiredPartsFilter: getRequiredPathsSetting(input.context.state.settings),
     requiredPartsFilterMatchMode: getRequiredPathsMatchMode(
@@ -1045,6 +1064,14 @@ async function submitViewerRequest(
     settings: context.state.settings,
   });
   const nextVipTokenCost = requestVipTokenPlan.totalVipTokenCost;
+  const candidateMatchesJson =
+    requestMode === "catalog" && song
+      ? await buildViewerCandidateMatchesJson({
+          env,
+          channelId: context.state.channel.id,
+          song,
+        })
+      : undefined;
 
   const existingActiveCount = await countActiveRequestsForUser(env, {
     channelId: context.state.channel.id,
@@ -1570,6 +1597,7 @@ async function submitViewerRequest(
             requestedQuery: buildRequestedPathQuery(requestedPaths),
             warningCode,
             warningMessage,
+            candidateMatchesJson,
           }),
         });
       } else {
@@ -1682,6 +1710,7 @@ async function submitViewerRequest(
                 requestedQuery: buildRequestedPathQuery(requestedPaths),
                 warningCode,
                 warningMessage,
+                candidateMatchesJson,
               }),
       });
     } catch (error) {
@@ -1769,6 +1798,7 @@ async function submitViewerRequest(
               requestedQuery: buildRequestedPathQuery(requestedPaths),
               warningCode,
               warningMessage,
+              candidateMatchesJson,
             }),
     });
   } catch (error) {
@@ -1967,6 +1997,86 @@ function buildViewerQuery(
   return `id:${song.id}`;
 }
 
+async function buildViewerCandidateMatchesJson(input: {
+  env: AppEnv;
+  channelId: string;
+  song: NonNullable<Awaited<ReturnType<typeof getCatalogSongById>>>;
+}) {
+  const db = getDb(input.env);
+  const groupedProjectId = input.song.groupedProjectId ?? undefined;
+  const catalogSongColumns = {
+    id: true,
+    groupedProjectId: true,
+    authorId: true,
+    title: true,
+    artistName: true,
+    albumName: true,
+    creatorName: true,
+    tuningSummary: true,
+    partsJson: true,
+    hasLyrics: true,
+    durationText: true,
+    year: true,
+    sourceUpdatedAt: true,
+    downloads: true,
+    source: true,
+    sourceSongId: true,
+  } as const;
+
+  let candidateSongs =
+    groupedProjectId != null
+      ? await db.query.catalogSongs.findMany({
+          where: eq(catalogSongs.groupedProjectId, groupedProjectId),
+          columns: catalogSongColumns,
+          orderBy: [
+            desc(catalogSongs.sourceUpdatedAt),
+            desc(catalogSongs.downloads),
+            desc(catalogSongs.sourceSongId),
+          ],
+        })
+      : [];
+
+  if (candidateSongs.length <= 1) {
+    const titleMatches = await db.query.catalogSongs.findMany({
+      where: eq(catalogSongs.title, input.song.title),
+      columns: catalogSongColumns,
+      orderBy: [
+        desc(catalogSongs.sourceUpdatedAt),
+        desc(catalogSongs.downloads),
+        desc(catalogSongs.sourceSongId),
+      ],
+    });
+
+    const selectedArtistKey = normalizeArtistNameForCandidateGrouping(
+      input.song.artist
+    );
+
+    candidateSongs = titleMatches.filter(
+      (song) =>
+        normalizeArtistNameForCandidateGrouping(song.artistName) ===
+        selectedArtistKey
+    );
+  }
+
+  if (candidateSongs.length <= 1) {
+    return undefined;
+  }
+
+  const preferredCharters = await getChannelPreferredChartersByChannelId(
+    input.env,
+    input.channelId
+  );
+  const preferredCharterSets = getPreferredCharterSets(preferredCharters);
+
+  return buildPlaylistCandidateMatchesJson(
+    buildPlaylistCandidateMatchesFromCatalogSongs({
+      songs: candidateSongs,
+      preferredCharterIds: preferredCharterSets.ids,
+      preferredCharterNames: preferredCharterSets.names,
+    })
+  );
+}
+
 function buildViewerRawMessage(input: {
   source: ViewerRequestSource;
   replaceExisting: boolean;
@@ -1992,6 +2102,7 @@ function buildViewerSongPayload(input: {
   requestedQuery?: string | null;
   warningCode?: string | null;
   warningMessage?: string | null;
+  candidateMatchesJson?: string;
 }): ViewerSongPayload {
   return {
     id: input.song.id,
@@ -2010,6 +2121,7 @@ function buildViewerSongPayload(input: {
     requestedQuery: input.requestedQuery ?? undefined,
     warningCode: input.warningCode ?? undefined,
     warningMessage: input.warningMessage ?? undefined,
+    candidateMatchesJson: input.candidateMatchesJson,
   };
 }
 

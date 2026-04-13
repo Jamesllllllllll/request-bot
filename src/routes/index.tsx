@@ -418,47 +418,51 @@ function CompactLiveChannelCard(props: { channel: HomeLiveChannel }) {
       : channel.playlistHref;
 
   return (
-    <div className="border border-(--border) bg-(--panel-muted) p-5">
-      {channel.streamThumbnailUrl ? (
-        <div className="mb-5 overflow-hidden border border-(--border)">
-          <img
-            src={channel.streamThumbnailUrl
-              .replace("640x360", "480x270")
-              .replace("{width}", "480")
-              .replace("{height}", "270")}
-            alt={t("live.previewAlt", { displayName: channel.displayName })}
-            className="block aspect-video w-full object-cover"
-            loading="lazy"
-            decoding="async"
-          />
-        </div>
-      ) : null}
-      <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0">
-          <p className="truncate text-2xl font-semibold text-(--text)">
-            {channel.displayName}
-          </p>
-          {channel.streamTitle ? (
-            <p className="mt-3 line-clamp-2 text-sm leading-6 text-(--muted)">
-              {channel.streamTitle}
+    <div className="flex h-full flex-col border border-(--border) bg-(--panel-muted) p-5">
+      <div className="flex-1">
+        {channel.streamThumbnailUrl ? (
+          <div className="mb-5 overflow-hidden border border-(--border)">
+            <img
+              src={channel.streamThumbnailUrl
+                .replace("640x360", "480x270")
+                .replace("{width}", "480")
+                .replace("{height}", "270")}
+              alt={t("live.previewAlt", { displayName: channel.displayName })}
+              className="block aspect-video w-full object-cover"
+              loading="lazy"
+              decoding="async"
+            />
+          </div>
+        ) : null}
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <p className="truncate text-2xl font-semibold text-(--text)">
+              {channel.displayName}
             </p>
-          ) : null}
+            {channel.streamTitle ? (
+              <p className="mt-3 line-clamp-2 text-sm leading-6 text-(--muted)">
+                {channel.streamTitle}
+              </p>
+            ) : null}
+          </div>
+          <Radio className="mt-1 h-4 w-4 shrink-0 text-(--accent-strong)" />
         </div>
-        <Radio className="mt-1 h-4 w-4 shrink-0 text-(--accent-strong)" />
+        {channel.currentItem || channel.nextItem ? (
+          <div className="mt-5 grid gap-2 border border-(--border) bg-(--panel) p-4">
+            <QueueSnippet
+              icon={channel.currentItem ? Radio : ListMusic}
+              label={t(
+                channel.currentItem ? "live.nowPlaying" : "live.nextRequest"
+              )}
+              title={
+                channel.currentItem?.title ?? channel.nextItem?.title ?? ""
+              }
+              artist={channel.currentItem?.artist ?? channel.nextItem?.artist}
+            />
+          </div>
+        ) : null}
       </div>
-      {channel.currentItem || channel.nextItem ? (
-        <div className="mt-5 grid gap-2 border border-(--border) bg-(--panel) p-4">
-          <QueueSnippet
-            icon={channel.currentItem ? Radio : ListMusic}
-            label={t(
-              channel.currentItem ? "live.nowPlaying" : "live.nextRequest"
-            )}
-            title={channel.currentItem?.title ?? channel.nextItem?.title ?? ""}
-            artist={channel.currentItem?.artist ?? channel.nextItem?.artist}
-          />
-        </div>
-      ) : null}
-      <div className="mt-5 flex flex-wrap gap-4">
+      <div className="mt-5 flex flex-wrap items-end gap-4">
         {playlistHref ? (
           channel.playlistExternal ? (
             <Button asChild variant="default" size="sm">

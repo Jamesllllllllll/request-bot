@@ -7,6 +7,7 @@ import { getDb } from "~/lib/db/client";
 import {
   getChannelBlacklistByChannelId,
   getChannelBySlug,
+  getChannelPreferredChartersByChannelId,
   getChannelSettingsByChannelId,
   getPlaylistByChannelId,
   getSessionPlayedSongsByChannelId,
@@ -22,6 +23,7 @@ import {
   toPublicPlayedSong,
   toPublicPlaylistItem,
   toPublicPlaylistSettings,
+  toPublicPreferredCharter,
   toPublicSetlistArtist,
 } from "~/lib/playlist/public-response";
 import {
@@ -58,21 +60,28 @@ export const Route = createFileRoute("/api/channel/$slug/playlist")({
               : sessionUserId
                 ? "viewer"
                 : "anonymous";
-          const [playlist, playedRows, blacklist, settings, setlistRows] =
-            await Promise.all([
-              getPlaylistByChannelId(runtimeEnv, channel.id),
-              getSessionPlayedSongsByChannelId(runtimeEnv, {
-                channelId: channel.id,
-                limit: 500,
-                order: "desc",
-              }),
-              getChannelBlacklistByChannelId(runtimeEnv, channel.id),
-              getChannelSettingsByChannelId(runtimeEnv, channel.id),
-              getDb(runtimeEnv).query.setlistArtists.findMany({
-                where: eq(setlistArtists.channelId, channel.id),
-                orderBy: [asc(setlistArtists.artistName)],
-              }),
-            ]);
+          const [
+            playlist,
+            playedRows,
+            blacklist,
+            preferredCharters,
+            settings,
+            setlistRows,
+          ] = await Promise.all([
+            getPlaylistByChannelId(runtimeEnv, channel.id),
+            getSessionPlayedSongsByChannelId(runtimeEnv, {
+              channelId: channel.id,
+              limit: 500,
+              order: "desc",
+            }),
+            getChannelBlacklistByChannelId(runtimeEnv, channel.id),
+            getChannelPreferredChartersByChannelId(runtimeEnv, channel.id),
+            getChannelSettingsByChannelId(runtimeEnv, channel.id),
+            getDb(runtimeEnv).query.setlistArtists.findMany({
+              where: eq(setlistArtists.channelId, channel.id),
+              orderBy: [asc(setlistArtists.artistName)],
+            }),
+          ]);
           const allowedRequestPaths = getAllowedRequestPathsSetting(
             settings ?? {
               allowRequestPathModifiers: false,
@@ -143,6 +152,7 @@ export const Route = createFileRoute("/api/channel/$slug/playlist")({
             blacklistCharters: blacklist.blacklistCharters.map(
               toPublicBlacklistCharter
             ),
+            preferredCharters: preferredCharters.map(toPublicPreferredCharter),
             blacklistSongs: blacklist.blacklistSongs.map(toPublicBlacklistSong),
             blacklistSongGroups: blacklist.blacklistSongGroups.map(
               toPublicBlacklistSongGroup

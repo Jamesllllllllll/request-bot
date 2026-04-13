@@ -128,6 +128,7 @@
     },
     "blacklistedArtists": "Auf der schwarzen Liste stehende Künstler",
     "blacklistedCharters": "Charter auf der schwarzen Liste",
+    "preferredCharters": "Bevorzugte Charter",
     "blacklistedSongs": "Auf der schwarzen Liste stehende Songs",
     "blacklistedVersions": "Versionen auf der schwarzen Liste",
     "setlistArtists": "Setlist-Künstler",
@@ -146,6 +147,7 @@
     "versionId": "Versions-ID{id}",
     "noBlacklistedArtists": "Keine Künstler auf der schwarzen Liste.",
     "noBlacklistedCharters": "Keine Charter auf der schwarzen Liste.",
+    "noPreferredCharters": "Keine bevorzugten Charter.",
     "noBlacklistedSongs": "Keine Songs auf der schwarzen Liste.",
     "noBlacklistedVersions": "Keine Versionen auf der schwarzen Liste.",
     "noSetlistArtists": "Keine Setlist-Künstler."
@@ -455,12 +457,15 @@
       "unknownArtist": "Unbekannter Künstler",
       "chartedBy": "Gezeichnet von",
       "charterBlacklisted": "Charter auf die schwarze Liste gesetzt",
+      "preferred": "Bevorzugt",
       "lyrics": "Text",
       "unknown": "Unbekannt",
       "download": "Herunterladen",
       "blacklisted": "Auf der schwarzen Liste",
       "blacklist": "Schwarze Liste",
-      "unblacklist": "Von der schwarzen Liste entfernen"
+      "unblacklist": "Von der schwarzen Liste entfernen",
+      "prefer": "Bevorzugen",
+      "unprefer": "Nicht mehr bevorzugen"
     },
     "preview": {
       "removed": "Die Demozeile wird aus der Playlist entfernt.",

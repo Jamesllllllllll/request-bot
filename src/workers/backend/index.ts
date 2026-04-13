@@ -1,5 +1,5 @@
 import { withMonitor, withSentry } from "@sentry/cloudflare";
-import { and, asc, eq, inArray } from "drizzle-orm";
+import { and, asc, desc, eq, inArray } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/d1";
 import {
   clearVipRequestCooldownBySourceItem,
@@ -8,6 +8,7 @@ import {
   getActiveBroadcasterAuthorizationForChannel,
   getBotAuthorization,
   getChannelBlacklistByChannelId,
+  getChannelPreferredChartersByChannelId,
   getSessionPlayedSongsByChannelId,
   upsertVipRequestCooldown,
 } from "~/lib/db/repositories";
@@ -25,6 +26,13 @@ import {
 import { assertDatabaseSchemaCurrent } from "~/lib/db/schema-version";
 import type { AppEnv, BackendEnv } from "~/lib/env";
 import { hasValidInternalApiSecret } from "~/lib/internal-api";
+import {
+  buildPlaylistCandidateMatchesFromCatalogSongs,
+  buildPlaylistCandidateMatchesJson,
+  getPreferredCharterSets,
+  normalizeArtistNameForCandidateGrouping,
+  type PlaylistCandidateMatch,
+} from "~/lib/playlist/candidate-matches";
 import {
   getCompactedRegularPositionAssignments,
   getNextRegularPosition,
@@ -105,22 +113,6 @@ interface PlaylistStreamClient {
 
 type MutationPayload = Record<string, unknown>;
 
-type PlaylistCandidate = {
-  id: string;
-  groupedProjectId?: number;
-  authorId?: number;
-  title: string;
-  artist?: string;
-  album?: string;
-  creator?: string;
-  tuning?: string;
-  parts?: string[];
-  durationText?: string;
-  downloads?: number;
-  sourceUrl?: string;
-  sourceId?: number;
-};
-
 function getMutationTraceId(payload: MutationPayload) {
   return typeof payload.traceId === "string" && payload.traceId.length > 0
     ? payload.traceId
@@ -177,6 +169,113 @@ function toRegularPositionMap(
   assignments: Array<{ id: string; regularPosition: number }>
 ) {
   return new Map(assignments.map((item) => [item.id, item.regularPosition]));
+}
+
+async function buildManualAddCandidateMatchesJson(input: {
+  env: BackendEnv;
+  channelId: string;
+  song: ManualAddInput["song"];
+}) {
+  const db = getDb(input.env);
+  const selectedSong = await db.query.catalogSongs.findFirst({
+    where: eq(schema.catalogSongs.id, input.song.id),
+    columns: {
+      id: true,
+      groupedProjectId: true,
+      authorId: true,
+      title: true,
+      artistName: true,
+      albumName: true,
+      creatorName: true,
+      tuningSummary: true,
+      partsJson: true,
+      hasLyrics: true,
+      durationText: true,
+      year: true,
+      sourceUpdatedAt: true,
+      downloads: true,
+      source: true,
+      sourceSongId: true,
+    },
+  });
+
+  if (!selectedSong) {
+    return input.song.candidateMatchesJson;
+  }
+
+  const groupedProjectId =
+    input.song.groupedProjectId ?? selectedSong.groupedProjectId ?? undefined;
+  const catalogSongColumns = {
+    id: true,
+    groupedProjectId: true,
+    authorId: true,
+    title: true,
+    artistName: true,
+    albumName: true,
+    creatorName: true,
+    tuningSummary: true,
+    partsJson: true,
+    hasLyrics: true,
+    durationText: true,
+    year: true,
+    sourceUpdatedAt: true,
+    downloads: true,
+    source: true,
+    sourceSongId: true,
+  } as const;
+
+  let candidateSongs =
+    groupedProjectId != null
+      ? await db.query.catalogSongs.findMany({
+          where: eq(schema.catalogSongs.groupedProjectId, groupedProjectId),
+          columns: catalogSongColumns,
+          orderBy: [
+            desc(schema.catalogSongs.sourceUpdatedAt),
+            desc(schema.catalogSongs.downloads),
+            desc(schema.catalogSongs.sourceSongId),
+          ],
+        })
+      : [];
+
+  if (candidateSongs.length <= 1) {
+    const titleMatches = await db.query.catalogSongs.findMany({
+      where: eq(schema.catalogSongs.title, selectedSong.title),
+      columns: catalogSongColumns,
+      orderBy: [
+        desc(schema.catalogSongs.sourceUpdatedAt),
+        desc(schema.catalogSongs.downloads),
+        desc(schema.catalogSongs.sourceSongId),
+      ],
+    });
+
+    const selectedArtistKey = normalizeArtistNameForCandidateGrouping(
+      selectedSong.artistName
+    );
+
+    candidateSongs = titleMatches.filter(
+      (song) =>
+        normalizeArtistNameForCandidateGrouping(song.artistName) ===
+        selectedArtistKey
+    );
+  }
+
+  if (candidateSongs.length <= 1) {
+    return input.song.candidateMatchesJson;
+  }
+
+  const preferredCharters = await getChannelPreferredChartersByChannelId(
+    input.env as unknown as AppEnv,
+    input.channelId
+  );
+  const preferredCharterSets = getPreferredCharterSets(preferredCharters);
+
+  return buildPlaylistCandidateMatchesJson(
+    buildPlaylistCandidateMatchesFromCatalogSongs({
+      songs: candidateSongs,
+      preferredCharterIds: preferredCharterSets.ids,
+      preferredCharterNames: preferredCharterSets.names,
+    })
+  );
 }
 
 class D1PlaylistCoordinator implements PlaylistCoordinator {
@@ -853,6 +952,12 @@ class D1PlaylistCoordinator implements PlaylistCoordinator {
       title: input.song.title,
     });
 
+    const candidateMatchesJson = await buildManualAddCandidateMatchesJson({
+      env: this.env,
+      channelId: input.channelId,
+      song: input.song,
+    });
+
     return this.addRequest({
       channelId: input.channelId,
       requestedByTwitchUserId: requester?.id ?? channel.twitchChannelId,
@@ -860,7 +965,10 @@ class D1PlaylistCoordinator implements PlaylistCoordinator {
       requestedByDisplayName: requester?.display_name ?? channel.displayName,
       requestKind: "regular",
       vipTokenCost: input.vipTokenCost ?? 0,
-      song: input.song,
+      song: {
+        ...input.song,
+        candidateMatchesJson,
+      },
     });
   }
 
@@ -1547,11 +1655,11 @@ class D1PlaylistCoordinator implements PlaylistCoordinator {
       throw new Error("Channel settings not found");
     }
 
-    let candidates: PlaylistCandidate[] = [];
+    let candidates: PlaylistCandidateMatch[] = [];
     try {
       const parsed = JSON.parse(item.candidateMatchesJson ?? "[]") as unknown;
       if (Array.isArray(parsed)) {
-        candidates = parsed as PlaylistCandidate[];
+        candidates = parsed as PlaylistCandidateMatch[];
       }
     } catch {
       candidates = [];

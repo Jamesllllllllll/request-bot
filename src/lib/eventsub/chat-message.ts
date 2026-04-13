@@ -19,6 +19,10 @@ import {
 } from "~/lib/db/repositories";
 import type { AppEnv } from "~/lib/env";
 import { getServerTranslation } from "~/lib/i18n/server";
+import {
+  buildPlaylistCandidateMatchesFromSongSearchResults,
+  buildPlaylistCandidateMatchesJson,
+} from "~/lib/playlist/candidate-matches";
 import type { PlaylistMutationResult } from "~/lib/playlist/types";
 import {
   parseRequestModifiers,
@@ -307,33 +311,6 @@ function mention(login: string) {
 
 function formatSongForReply(song: { artist?: string; title: string }) {
   return song.artist ? `${song.artist} - ${song.title}` : song.title;
-}
-
-function buildCandidateMatchesJson(results: SongSearchResult[]) {
-  if (results.length <= 1) {
-    return undefined;
-  }
-
-  return JSON.stringify(
-    results.slice(0, 5).map((result) => ({
-      id: result.id,
-      groupedProjectId: result.groupedProjectId,
-      authorId: result.authorId,
-      title: result.title,
-      artist: result.artist,
-      album: result.album,
-      creator: result.creator,
-      tuning: result.tuning,
-      parts: result.parts ?? [],
-      hasLyrics: result.hasLyrics,
-      durationText: result.durationText,
-      year: result.year,
-      sourceUpdatedAt: result.sourceUpdatedAt,
-      downloads: result.downloads,
-      sourceUrl: result.sourceUrl,
-      sourceId: result.sourceId,
-    }))
-  );
 }
 
 function getRequesterMatchingActiveItem(input: {
@@ -1989,7 +1966,11 @@ export async function processEventSubChatMessage(input: {
         page: 1,
         pageSize: 5,
       });
-      candidateMatchesJson = buildCandidateMatchesJson(search.results);
+      candidateMatchesJson = buildPlaylistCandidateMatchesJson(
+        buildPlaylistCandidateMatchesFromSongSearchResults(
+          search.results.slice(0, 5)
+        )
+      );
       for (const result of search.results) {
         const effectiveSongAllowance = getSongAllowance({
           song: result,

@@ -1,155 +1,145 @@
 # Changelog
 
-All notable changes to this project will be documented in this file.
+All notable changes to this project are documented here.
+
+## [0.5.0] - 2026-04-13
+
+### Added
+- Channels can mark preferred charters so trusted chart versions rise to the top when viewers search and when streamers review versions on the playlist.
+- The site footer now links to the open-source project, credits CustomsForge, and opens a readable in-app changelog dialog.
+
+### Changed
+- Playlist search and queue management are more mobile-friendly, with cleaner pagination, tighter action layouts, and better button alignment on smaller screens.
+- Request buttons and modifier controls are clearer, with stronger VIP cost cues, simpler path selection, and better request cost feedback for viewers and managers.
+- Search and playlist flows now keep alternate chart versions together more reliably, even when upstream grouping data is missing.
+- Documentation now explains the current catalog grouping and charter preference behavior.
+
+### Fixed
+- Full-text search falls back cleanly when D1 rejects oversized MATCH queries, and the UI now shows friendly error messages instead of raw SQL details.
+- Manual adds, viewer adds, and chart version switching now surface sibling chart versions more consistently in the playlist manager.
 
 ## [0.4.4] - 2026-04-12
 
 ### Changed
-- The local push gate now runs lint before typecheck and tests, and the staged-file formatter now includes JSON files under `src`, `tests`, and `scripts`.
+- Local verification now catches formatting problems earlier, including JSON and translation files.
 
 ### Fixed
-- Locale JSON files and other staged JSON edits now get caught by the pre-commit formatter instead of slipping through to CI.
-- Branch pushes now fail locally when Biome formatting is out of date, which prevents another CI-only formatting failure.
+- Formatting mistakes now fail before CI instead of only showing up after a push.
 
 ## [0.4.3] - 2026-04-12
 
 ### Changed
-- The contributor and agent instructions now require versioned changelog entries for shipped work and make the release bump rules explicit.
+- Release notes and contributor guidance now follow clearer versioning rules.
 
 ### Fixed
-- Historical local filesystem path examples are scrubbed from the test fixture and rewritten Git history.
+- Old local file path examples were removed from the repo history and test data.
 
 ## [0.4.2] - 2026-04-12
 
 ### Changed
-- The shipping workflow now stages the full worktree before commit, keeps the standalone Twitch panel package as a local-only upload step, and documents the current release checks more clearly.
+- Release and deployment steps are clearer and more consistent.
 
 ### Fixed
-- CI no longer builds the standalone Twitch panel artifact, which keeps GitHub checks aligned with the normal app verification path.
-- The dashboard no longer exposes the unused `/dashboard/panel-preview` route or related preview copy.
+- CI no longer builds the standalone Twitch panel package when it is not needed.
+- The unused dashboard panel preview route and preview copy were removed.
 
 ## [0.4.1] - 2026-04-12
 
 ### Fixed
-- CI now builds the standalone Twitch panel artifact with the configured production app URL from GitHub repo configuration instead of a hardcoded domain.
+- The Twitch panel CI build now uses the configured live app URL instead of a hardcoded domain.
 
 ## [0.4.0] - 2026-04-12
 
 ### Added
-- Random favorite requests on the web and Twitch panel, plus lyrics metadata and richer public played-history coverage. (#79, #80, #81, #82)
-- German locale support and a full translation sweep across the web app, Twitch panel, and bot replies. (#82)
+- Random favorite requests are available on the web and Twitch panel, and played history is more complete.
+- German support was added, and translations were expanded across the website, Twitch panel, and bot replies.
 
 ### Changed
-- Channel settings now use a sidebar-tab layout with a shared save flow, clearer moderation sections, integrated overlay editing, and more consistent field grouping. (#70, #82)
-- VIP token pricing now uses one additive model across chat, web, and panel for duration rules, request modifiers, manager adds, and refunds. (#82)
-- Channel search now uses versioned shared caching, normalized tuning IDs, and aligned tuning filters across settings, search, and displayed results. (#66, #78, #82)
-- Public and admin playlist views now show richer song metadata, smoother pagination, stronger VIP styling, sorted public rules lists, and clearer version-level blacklist handling. (#73, #78, #82)
+- Channel settings now use sidebar tabs with a shared save flow, clearer moderation sections, and integrated overlay editing.
+- VIP token costs now behave the same way across chat, web, and panel, including duration rules, request modifiers, manager adds, and refunds.
+- Search is faster and more consistent thanks to shared caching, better tuning handling, and aligned filters across settings, search, and results.
+- Public and admin playlist views are clearer, with richer song details, smoother pagination, stronger VIP styling, and better blacklist handling.
 
 ### Fixed
-- Twitch auth and token handling now follow the latest security remediation pass. (#71)
-- Viewer and moderator request surfaces now show correct VIP-token costs and insufficient-balance states before submit. (#67, #82)
-- Documentation now reflects the current app flow, current deploy workflow, and the active docs set instead of older feature plans. (#82)
+- Twitch auth and token handling are more reliable.
+- Viewer and moderator request screens now show VIP token costs and low-balance states more clearly before submit.
+- Documentation better matches the current app and deployment flow.
 
 ## [0.3.1] - 2026-04-01
 
 ### Added
-- Owner-controlled channel language for bot replies, with Twitch panel fallback to the channel default when a viewer has no linked or local language preference.
-- A non-English translation feedback prompt in the website header and account settings.
+- Channels can choose the bot reply language, and the Twitch panel falls back to the channel language when a viewer has no saved preference.
+- The site now includes a translation feedback prompt in the header and account settings.
 
 ### Changed
-- Twitch panel and public VIP-token help now share localized VIP automation copy and locale-aware amount formatting.
-- More support-event and StreamElements bot replies now respect the channel's configured bot language instead of always replying in English.
+- VIP token help now uses more consistent localized wording across the public site and Twitch panel.
+- More bot replies now follow the channel's selected language.
 
 ### Fixed
-- Website language changes now apply immediately again instead of briefly reverting or waiting for the background locale save to finish.
+- Website language changes apply immediately again.
 
 ## [0.3.0] - 2026-04-01
 
 ### Added
-- RockList.Live branding updates across the app and docs, plus clearer deployment/domain guidance for the public site and Twitch panel.
-- Twitch panel extension refinements for moderator workflows, tester access, request actions, and closer parity with the web playlist manager.
-- Expanded VIP token automation, including StreamElements tip rewards, shared resub-message rewards, raid rewards, relay URL setup, clearer public messaging, and richer dashboard configuration.
-- Public playlist header controls for live status, request status, manager request toggling, VIP token balance/help, and tighter custom-request flows.
-- Multi-version playlist-management helpers and tests to support richer version tables, download actions, and moderation controls across web and panel surfaces.
-- Website internationalization scaffolding and locale support for the main app.
+- RockList.Live branding was rolled out across the app, with clearer deployment and domain guidance for the site and Twitch panel.
+- The Twitch panel was refined for moderator workflows, tester access, and closer parity with the website.
+- VIP token automation expanded to cover support events such as tips, resubs, and raids, with clearer dashboard controls and public messaging.
+- The public playlist header gained clearer live status, request status, manager controls, and VIP token help.
+- Website localization support was introduced for the main app.
 
 ### Changed
-- Dashboard settings were reorganized with clearer heading hierarchy, collapsible filter sections, compact VIP automation cards, improved notices, and cleaner owner/moderator controls.
-- Playlist management rows were redesigned for desktop and mobile, including better action grouping, version-table presentation, compact metadata, and touch-friendly reorder controls.
-- Public search now behaves more like a filtered catalog by default, with compact applied-filter summaries, better preferred-path messaging, and clearer request warnings.
-- Public playlist and moderator surfaces now align more closely with the Twitch panel, including request actions, blacklist flows, and version-aware song management.
-- Sentry handling was tightened so local development disables runtime capture cleanly, while production tracing now includes Twitch chat reply timing spans.
+- Dashboard settings, playlist rows, and search were reorganized to be easier to scan on desktop and mobile.
+- Public playlist and moderation tools now feel more consistent with the Twitch panel.
+- Production error reporting is cleaner, while local development stays quieter.
 
 ### Fixed
-- Catalog search now falls back cleanly when FTS `MATCH` fails instead of returning a server error for some artist searches.
-- Artist-based custom requests now use artist search correctly, including multi-word artist names such as `Bruno Mars`.
-- Search validation once again allows filtered browsing with no text query, so playlist pages load their filtered song catalog on first open.
-- Multi-tuning request checks no longer reject songs incorrectly when all listed tunings are allowed, and several playlist/search filter edge cases now respect the current channel settings more reliably.
-- The local max playlist size default is now consistent at `50`, avoiding local resets back to the older `250` default.
+- Search falls back more reliably when some full-text searches fail.
+- Artist-based custom requests handle multi-word artist names correctly.
+- Filtered browsing loads properly even with no text query.
+- Tuning and playlist filter edge cases now follow channel settings more reliably.
 
 ## [0.2.0] - 2026-03-27
 
 ### Added
-- Signed-in viewer request flows on public channel pages, including add, VIP add, edit, and remove actions with shared request-policy enforcement.
-- Twitch panel extension MVP with playlist viewing, linked-viewer request actions, VIP token balance, and compact playlist moderation controls for channel owners and moderators.
-- Extension JWT verification, extension API routes, and standalone panel build support.
-- Panel Local Test and beta-rollout documentation for self-hosted deployments and Twitch setup.
+- Signed-in viewers can add, VIP, edit, and remove requests directly from public channel pages.
+- The Twitch panel extension MVP added playlist viewing, linked-viewer request actions, VIP token balance, and compact moderation controls.
+- The panel gained the backend support needed for hosted Twitch use.
 
 ### Changed
-- Public playlist rows now show clearer request timing and viewer-owned request highlighting.
-- Public channel request UI is more compact and focused on direct request actions.
-- Homepage live-stream cards now show stream titles for both featured and secondary live channels.
-- Deployment and setup docs now cover Twitch extension client configuration, extension secrets, and production/custom-domain routing for the panel.
+- Public playlist rows now show clearer request timing and stronger highlighting for a viewer's own requests.
+- Public request controls are more compact and focused.
+- Home page live-stream cards now show stream titles.
 
 ## [0.1.2] - 2026-03-26
 
 ### Added
-- Whole-song blacklist groups alongside exact version blacklists, with moderation controls for artists, charters, songs, and specific versions.
-- Home page demo cards that can show Rocksmith-tagged Twitch streams with `Open playlist` and `Watch on Twitch` actions.
+- Whole-song blacklists were added alongside exact version blacklists, with moderation controls for artists, charters, songs, and specific versions.
+- The home page gained demo live-channel cards with direct playlist and Twitch links.
 
 ### Changed
-- Playlist manager blacklist actions now identify the queued version more clearly and distinguish queued-version blocking from whole-song blocking.
-- Public and dashboard blacklist displays now separate songs from versions, and request filtering respects both types of blacklist.
-- The README now summarizes the current app surfaces and contributor workflow more clearly.
+- Blacklist handling is clearer in the playlist manager, and public/dashboard blacklist displays separate whole songs from specific versions.
+- Search and request filtering now respect both whole-song and exact-version blacklists.
 
 ## [0.1.1] - 2026-03-22
 
 ### Added
-- Shared bot reconnect controls for admins, including the ability to replace the connected bot account safely.
-- VIP token management from both chat commands and the dashboard, with Twitch user lookup, chatter-aware search, and an editable token table in the app.
-- Automatic VIP token rewards for Twitch-native support events, including gifted subs, gifted-sub recipients, and cheers with configurable conversion rules.
-- Public playlist messaging that shows viewers how they can earn VIP tokens when a channel has support-based VIP rewards enabled.
-- Public played-history search.
-- Charter blacklisting, including exact charter matching and clearer handling when only some song versions are blocked.
-- Richer sample catalog metadata for artists, charters, tunings, and future filtering work.
-- Production-ready Sentry scaffolding for the Cloudflare app and backend workers, with DSN-based opt-in for local development and Cloudflare-managed secrets for deployed environments.
-- GitHub issue templates, a pull request template, and a repository `CODE_OF_CONDUCT.md`.
+- Admins can reconnect the shared bot safely and replace the connected bot account when needed.
+- VIP token management works from both chat commands and the dashboard, with Twitch user lookup and editable balances.
+- VIP token rewards can be granted automatically for cheers, gifted subs, and related Twitch events.
+- The public playlist now explains how viewers can earn VIP tokens when a channel enables support-based rewards.
+- Public played-history search and charter blacklisting were added.
 
 ### Changed
-- Bot replies now use Twitch's bot-badge-compatible reply path, and the app prompts broadcasters to reconnect Twitch if required permissions are missing.
-- Broadcaster login now requests the Twitch permissions needed for chatter-aware moderation and bot-badged replies.
-- Broadcaster login now also requests the Twitch permissions needed for gifted-sub and cheer-based VIP token automation.
-- The app header and settings pages now surface Twitch reauthorization more clearly when a reconnect is required.
-- VIP token balances now support fractional values, including partial token grants and clearer balance handling when a viewer has less than one full VIP token remaining.
-- Existing requests can now be converted between regular and VIP from chat and from the playlist manager without creating duplicate playlist entries.
-- Local-development guidance now strongly separates production bot/broadcaster usage from local testing and explains the risks of cross-environment chat handling.
-- The moderation dashboard now supports faster Twitch username search with debouncing, in-chat prioritization, and clearer saved-state feedback for VIP tokens.
-- Search results now show newer song versions first, and public search includes a dedicated `!edit` copy command.
-- Public playlist, dashboard playlist, search, and home-page experiences have been refined for mobile screens and easier browsing.
-- Blacklist and setlist management now use exact IDs instead of loose text matching, improving moderation accuracy.
-- Public search now behaves more like a browsable catalog and shows clearer demo-database guidance.
-- Simplified catalog song source URLs to always derive the Ignition download link from the song source ID instead of storing `source_url` in the database.
-- Added a migration to remove the redundant `catalog_songs.source_url` column and updated the sample catalog seed to match the new schema.
-- Tightened schema version checks so the app only accepts migrations that are actually present in the repo.
-- Expanded deployment and environment documentation for Sentry configuration in local development and production.
+- Bot replies now use Twitch's bot-badge-friendly reply path, and the app highlights missing reconnect permissions more clearly.
+- Broadcaster login now requests the permissions needed for chatter lookup and support-based VIP automation.
+- VIP balances now support fractional amounts.
+- Existing requests can switch between regular and VIP without creating duplicates.
+- Search, playlist, mobile layouts, and blacklist accuracy were refined across the app.
 
 ### Fixed
-- Duplicate EventSub deliveries for `!addvip` no longer grant multiple VIP tokens or queue duplicate bot replies.
-- Duplicate EventSub deliveries for cheers and gifted-sub automation no longer double-grant VIP tokens.
-- Twitch reply handling now distinguishes between accepted API requests and messages that Twitch actually sent to chat.
-- Bot/account status screens now show the real connected bot identity instead of only the configured bot name.
-- VIP request upgrade and downgrade replies now clearly state when a token was used or refunded, and dashboard-triggered request kind changes follow the same token logic and bot reply flow as chat commands.
-- Production deployment config regeneration now stays in sync after remote migrations.
+- Duplicate Twitch events no longer double-grant VIP tokens or send duplicate bot replies.
+- Bot status screens now show the real connected bot identity.
+- VIP upgrade and downgrade replies now explain token use and refunds more clearly.
 
 ## [0.1.0] - 2026-03-18
 

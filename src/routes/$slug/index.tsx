@@ -6,6 +6,7 @@ import { AnimatePresence, motion } from "motion/react";
 import { useEffect, useMemo, useState } from "react";
 import { ChannelCommunityPanel } from "~/components/channel-community-panel";
 import { ChannelRulesPanel } from "~/components/channel-rules-panel";
+import { FavoriteToggleButton } from "~/components/favorite-toggle-button";
 import { PickOrderBadge } from "~/components/pick-order-badge";
 import {
   PlaylistManagementSurface,
@@ -229,6 +230,7 @@ type PublicChannelPageData = {
   playedSongs?: PlayedSongRow[];
   blacklistArtists?: Array<{ artistId: number; artistName: string }>;
   blacklistCharters?: Array<{ charterId: number; charterName: string }>;
+  preferredCharters?: Array<{ charterId: number; charterName: string }>;
   blacklistSongs?: Array<{
     songId: number;
     songTitle: string;
@@ -302,6 +304,7 @@ type PlaylistStreamPayload = {
   playedSongs?: PlayedSongRow[];
   blacklistArtists?: PublicChannelPageData["blacklistArtists"];
   blacklistCharters?: PublicChannelPageData["blacklistCharters"];
+  preferredCharters?: PublicChannelPageData["preferredCharters"];
   blacklistSongs?: PublicChannelPageData["blacklistSongs"];
   blacklistSongGroups?: PublicChannelPageData["blacklistSongGroups"];
   setlistArtists?: PublicChannelPageData["setlistArtists"];
@@ -375,6 +378,8 @@ function mergeStreamPlaylistData(
       payload.blacklistArtists ?? current?.blacklistArtists ?? [],
     blacklistCharters:
       payload.blacklistCharters ?? current?.blacklistCharters ?? [],
+    preferredCharters:
+      payload.preferredCharters ?? current?.preferredCharters ?? [],
     blacklistSongs: payload.blacklistSongs ?? current?.blacklistSongs ?? [],
     blacklistSongGroups:
       payload.blacklistSongGroups ?? current?.blacklistSongGroups ?? [],
@@ -1706,6 +1711,15 @@ function PublicChannelPage() {
               showManualAdd={false}
               embedCurrentPlaylist
               currentPlaylistTitle={null}
+              canManageFavorites={canManageFavorites}
+              isSongFavorited={isChartFavorited}
+              favoritePendingSongId={pendingFavoriteState?.songId ?? null}
+              onToggleFavorite={(songId, favorited) =>
+                favoriteSongMutation.mutate({
+                  songId,
+                  favorited,
+                })
+              }
             />
           </div>
         ) : (
@@ -1925,6 +1939,24 @@ function PublicChannelPage() {
                 />
               )
             }
+            renderTitleAccessory={
+              canManageFavorites
+                ? ({ song }: SearchSongActionRenderArgs) => (
+                    <FavoriteToggleButton
+                      favorited={isChartFavorited(song.id)}
+                      pending={pendingFavoriteState?.songId === song.id}
+                      onToggle={() =>
+                        favoriteSongMutation.mutate({
+                          songId: song.id,
+                          favorited: !isChartFavorited(song.id),
+                        })
+                      }
+                      className="mt-[-2px] h-7 w-7"
+                      iconClassName="h-3.5 w-3.5"
+                    />
+                  )
+                : undefined
+            }
             renderActions={
               canManagePlaylist
                 ? ({ song, resultState }: SearchSongActionRenderArgs) => (
@@ -1966,15 +1998,6 @@ function PublicChannelPage() {
                           requesterTwitchUserId: requester.id,
                           requesterDisplayName: requester.displayName,
                           requestedPath,
-                        })
-                      }
-                      canManageFavorites={canManageFavorites}
-                      isFavorited={isChartFavorited(song.id)}
-                      favoritePending={pendingFavoriteState?.songId === song.id}
-                      onToggleFavorite={() =>
-                        favoriteSongMutation.mutate({
-                          songId: song.id,
-                          favorited: !isChartFavorited(song.id),
                         })
                       }
                     />
@@ -2094,6 +2117,7 @@ function PublicChannelPage() {
           canManageSetlist={canManageSetlist}
           artists={data?.blacklistArtists ?? []}
           charters={data?.blacklistCharters ?? []}
+          preferredCharters={data?.preferredCharters ?? []}
           songs={data?.blacklistSongs ?? []}
           songGroups={data?.blacklistSongGroups ?? []}
           setlistArtists={data?.setlistArtists ?? []}
@@ -2782,7 +2806,6 @@ function useRequestedPathSelection(input: {
 }
 
 function RequestModifierChips(props: {
-  label?: string;
   availableRequestedPaths: RequestPathOption[];
   selectedRequestedPath?: RequestPathOption;
   disabled?: boolean;
@@ -2793,48 +2816,59 @@ function RequestModifierChips(props: {
   }
 
   return (
-    <div className="grid gap-1.5">
-      {props.label ? (
-        <Label className="text-[11px] font-semibold uppercase tracking-[0.12em] text-(--muted)">
-          {props.label}
-        </Label>
-      ) : null}
-      <div className="flex flex-wrap gap-1.5">
-        {props.availableRequestedPaths.map((path) => {
-          const selected = props.selectedRequestedPath === path;
+    <div className="flex flex-wrap gap-x-3 gap-y-1.5">
+      {props.availableRequestedPaths.map((path) => {
+        const selected = props.selectedRequestedPath === path;
 
-          return (
-            <button
-              key={path}
-              type="button"
-              className={cn(
-                "inline-flex h-7 items-center gap-2 border px-2.5 text-[10px] font-semibold tracking-[0.08em] shadow-none transition-colors",
-                selected
-                  ? "border-(--text) bg-(--panel) text-(--text)"
-                  : "border-(--border) bg-(--panel-soft) text-(--muted) opacity-70 hover:text-(--text) hover:opacity-100",
-                props.disabled ? "cursor-not-allowed opacity-45" : ""
-              )}
-              aria-pressed={selected}
+        return (
+          <button
+            key={path}
+            type="button"
+            className={cn(
+              "inline-flex items-center gap-2 rounded-[3px] px-0.5 py-1 text-[11px] font-medium transition-colors",
+              selected ? "text-(--text)" : "text-(--muted) hover:text-(--text)",
+              props.disabled ? "cursor-not-allowed opacity-45" : ""
+            )}
+            aria-pressed={selected}
+            disabled={props.disabled}
+            onClick={() => props.onToggle(path)}
+          >
+            <Checkbox
+              checked={selected}
               disabled={props.disabled}
-              onClick={() => props.onToggle(path)}
-            >
-              <span
-                aria-hidden="true"
-                className={cn(
-                  "flex h-3.5 w-3.5 shrink-0 items-center justify-center border transition-colors",
-                  selected
-                    ? "border-(--text) bg-(--text) text-(--panel)"
-                    : "border-(--border-strong) bg-transparent text-transparent"
-                )}
-              >
-                <Check className="h-2.5 w-2.5" />
-              </span>
-              {formatPathLabel(path)}
-            </button>
-          );
-        })}
-      </div>
+              className={cn(
+                "pointer-events-none h-4 w-4 rounded-[3px] border-(--border-strong) bg-transparent text-(--panel) transition-opacity data-[state=checked]:border-(--text) data-[state=checked]:bg-(--text) data-[state=checked]:text-(--panel)",
+                selected ? "opacity-100" : "opacity-80"
+              )}
+            />
+            {formatPathLabel(path)}
+          </button>
+        );
+      })}
     </div>
+  );
+}
+
+function VipTokenCoinBadge(props: { count: number; className?: string }) {
+  if (!Number.isFinite(props.count) || props.count <= 0) {
+    return null;
+  }
+
+  const showCount = props.count > 1;
+
+  return (
+    <span
+      aria-hidden="true"
+      className={cn(
+        "relative inline-flex h-4.5 w-4.5 shrink-0",
+        props.className
+      )}
+    >
+      <span className="absolute inset-0 translate-x-[1.5px] translate-y-[1px] rotate-[18deg] rounded-full border border-amber-900/30 bg-amber-700/70" />
+      <span className="relative inline-flex h-full w-full items-center justify-center rounded-full border border-amber-300/70 bg-gradient-to-br from-[#ffe082] via-[#f7c948] to-[#d89b1d] text-[8px] font-black leading-none text-[#5c3b00] shadow-[inset_0_1px_0_rgba(255,255,255,0.45)]">
+        {showCount ? props.count : null}
+      </span>
+    </span>
   );
 }
 
@@ -2939,66 +2973,91 @@ function PublicSearchSongActions(
           ),
         })
       : "";
+  const regularTokenCount = regularRequestPlan.totalVipTokenCost;
+  const vipTokenCount = vipRequestPlan.totalVipTokenCost || 1;
 
   return (
     <div className="grid w-full gap-2">
-      <RequestModifierChips
-        availableRequestedPaths={availableRequestedPaths}
-        selectedRequestedPath={selectedRequestedPath}
-        disabled={isDisabled}
-        onToggle={toggleRequestedPath}
-      />
-      <div className="flex flex-wrap justify-end gap-1.5">
+      <div className="grid w-full grid-cols-3 gap-1.5">
         <Button
           type="button"
           size="sm"
           variant="outline"
-          className="h-8 min-w-[3.25rem] px-2.5 text-[10px] tracking-[0.12em] shadow-none"
+          className={cn(
+            "h-8 min-w-0 w-full rounded-[3px] border px-2.5 text-[10px] font-semibold tracking-[0.08em] shadow-none transition-colors",
+            copiedType === "sr"
+              ? "border-sky-300 bg-sky-400/20 text-sky-50"
+              : "border-sky-500/40 bg-sky-500/12 text-sky-100 hover:bg-sky-500/18"
+          )}
           disabled={isDisabled}
           onClick={() => void copyCommand("sr")}
         >
-          {copiedType === "sr" ? <Check className="h-3.5 w-3.5" /> : "SR"}
-        </Button>
-        <Button
-          type="button"
-          size="sm"
-          variant="outline"
-          className="h-8 min-w-[3.75rem] px-2.5 text-[10px] tracking-[0.12em] shadow-none"
-          disabled={isDisabled}
-          onClick={() => void copyCommand("edit")}
-        >
-          {copiedType === "edit" ? (
+          {copiedType === "sr" ? (
             <Check className="h-3.5 w-3.5" />
           ) : (
-            t("viewerActions.edit")
+            <span className="inline-flex items-center justify-center gap-1.5">
+              <span>!sr</span>
+              <VipTokenCoinBadge count={regularTokenCount} />
+            </span>
           )}
         </Button>
         <Button
           type="button"
           size="sm"
           variant="outline"
-          className="h-8 min-w-[3.5rem] px-2.5 text-[10px] tracking-[0.12em] shadow-none"
+          className={cn(
+            "h-8 min-w-0 w-full rounded-[3px] border px-2.5 text-[10px] font-semibold tracking-[0.08em] shadow-none transition-colors",
+            copiedType === "edit"
+              ? "border-emerald-300 bg-emerald-400/20 text-emerald-50"
+              : "border-emerald-500/40 bg-emerald-500/12 text-emerald-100 hover:bg-emerald-500/18"
+          )}
+          disabled={isDisabled}
+          onClick={() => void copyCommand("edit")}
+        >
+          {copiedType === "edit" ? <Check className="h-3.5 w-3.5" /> : "!edit"}
+        </Button>
+        <Button
+          type="button"
+          size="sm"
+          variant="outline"
+          className={cn(
+            "h-8 min-w-0 w-full rounded-[3px] border px-2.5 text-[10px] font-semibold tracking-[0.08em] shadow-none transition-colors",
+            copiedType === "vip"
+              ? "border-amber-200 bg-amber-300/22 text-amber-50"
+              : "border-amber-400/45 bg-amber-400/14 text-amber-100 hover:bg-amber-400/20"
+          )}
           disabled={isDisabled}
           onClick={() => void copyCommand("vip")}
         >
           {copiedType === "vip" ? (
             <Check className="h-3.5 w-3.5" />
           ) : (
-            t("viewerActions.vipShort")
+            <span className="inline-flex items-center justify-center gap-1.5">
+              <span>!vip</span>
+              <VipTokenCoinBadge count={vipTokenCount} />
+            </span>
           )}
         </Button>
       </div>
+      <div className="flex justify-start min-[940px]:justify-end">
+        <RequestModifierChips
+          availableRequestedPaths={availableRequestedPaths}
+          selectedRequestedPath={selectedRequestedPath}
+          disabled={isDisabled}
+          onToggle={toggleRequestedPath}
+        />
+      </div>
       {copyCostNotice ? (
-        <p className="text-right text-[11px] leading-4 text-(--muted)">
+        <p className="justify-self-end text-right text-[11px] leading-4 font-medium text-(--brand-deep)">
           {copyCostNotice}
         </p>
       ) : regularCostCaption || vipCostCaption ? (
-        <p className="text-right text-[11px] leading-4 text-(--muted)">
+        <p className="justify-self-end text-right text-[11px] leading-4 font-medium text-(--brand-deep)">
           {regularCostCaption || vipCostCaption}
         </p>
       ) : null}
       {props.resultState.warning ? (
-        <p className="text-right text-xs text-(--muted)">
+        <p className="justify-self-end text-right text-xs text-(--muted)">
           {props.resultState.warning}
         </p>
       ) : null}
@@ -3180,6 +3239,8 @@ function ViewerSearchSongActions(
       : props.editingRequest
         ? t("viewerActions.edit")
         : t("viewerActions.add");
+  const regularTokenCount = regularRequestPlan.totalVipTokenCost;
+  const vipTokenCount = vipRequestPlan.totalVipTokenCost || 1;
 
   if (props.compact) {
     return (
@@ -3211,33 +3272,26 @@ function ViewerSearchSongActions(
 
   return (
     <div className="grid gap-2">
-      <RequestModifierChips
-        label={t("viewerActions.choosePath")}
-        availableRequestedPaths={availableRequestedPaths}
-        selectedRequestedPath={selectedRequestedPath}
-        disabled={props.mutationIsPending}
-        onToggle={toggleRequestedPath}
-      />
-      <div className="grid grid-cols-2 gap-2">
-        <div className="grid gap-1">
-          <Button
-            type="button"
-            className="w-full px-4 shadow-none"
-            onClick={() =>
-              props.onSubmit(
-                "regular",
-                regularRequestPlan.totalVipTokenCost || undefined,
-                selectedRequestedPath
-              )
-            }
-            disabled={!!regularDisabledReason || props.mutationIsPending}
-          >
-            {regularPending ? t("viewerActions.adding") : regularActionLabel}
-          </Button>
-          <p className="min-h-5 text-center text-[11px] leading-5 text-(--muted)">
-            {regularCostCaption}
-          </p>
-        </div>
+      <div className="grid grid-cols-1 gap-2 min-[430px]:grid-cols-2">
+        <Button
+          type="button"
+          className="w-full px-4 shadow-none"
+          onClick={() =>
+            props.onSubmit(
+              "regular",
+              regularRequestPlan.totalVipTokenCost || undefined,
+              selectedRequestedPath
+            )
+          }
+          disabled={!!regularDisabledReason || props.mutationIsPending}
+        >
+          <span className="inline-flex items-center justify-center gap-1.5">
+            <span>
+              {regularPending ? t("viewerActions.adding") : regularActionLabel}
+            </span>
+            <VipTokenCoinBadge count={regularTokenCount} />
+          </span>
+        </Button>
         <div className="grid gap-1">
           <Button
             type="button"
@@ -3252,17 +3306,39 @@ function ViewerSearchSongActions(
             }
             disabled={!!vipDisabledReason || props.mutationIsPending}
           >
-            {vipPending ? t("viewerActions.adding") : vipActionLabel}
+            <span className="inline-flex items-center justify-center gap-1.5">
+              <span>
+                {vipPending ? t("viewerActions.adding") : vipActionLabel}
+              </span>
+              <VipTokenCoinBadge count={vipTokenCount} />
+            </span>
           </Button>
-          <p className="min-h-5 text-center text-[11px] leading-5 text-(--muted)">
-            {vipCostCaption}
-          </p>
         </div>
       </div>
+      <div className="flex justify-start min-[940px]:justify-end">
+        <RequestModifierChips
+          availableRequestedPaths={availableRequestedPaths}
+          selectedRequestedPath={selectedRequestedPath}
+          disabled={props.mutationIsPending}
+          onToggle={toggleRequestedPath}
+        />
+      </div>
+      {regularCostCaption || vipCostCaption ? (
+        <div className="grid gap-1 justify-items-end text-[11px] leading-4 font-medium text-(--brand-deep)">
+          {regularCostCaption ? (
+            <p className="text-right">{regularCostCaption}</p>
+          ) : null}
+          {vipCostCaption && vipCostCaption !== regularCostCaption ? (
+            <p className="text-right">{vipCostCaption}</p>
+          ) : null}
+        </div>
+      ) : null}
       {helperText ? (
-        <p className="text-right text-xs text-(--muted)">{helperText}</p>
+        <p className="justify-self-end text-right text-xs text-(--muted)">
+          {helperText}
+        </p>
       ) : matchingRequest ? (
-        <p className="text-right text-xs text-(--muted)">
+        <p className="justify-self-end text-right text-xs text-(--muted)">
           {existingRequestText}
         </p>
       ) : null}
@@ -3687,11 +3763,7 @@ function ManageSearchSongActions(
     pendingAddSongId: string | null;
     mutationIsPending: boolean;
     onAdd: (requester: ViewerMatch, requestedPath?: RequestPathOption) => void;
-    canManageFavorites?: boolean;
-    isFavorited?: boolean;
-    favoritePending?: boolean;
     compact?: boolean;
-    onToggleFavorite?: () => void;
   } & RequestPathModifierPricingProps
 ) {
   const { t } = useLocaleTranslation("playlist");
@@ -3783,16 +3855,12 @@ function ManageSearchSongActions(
     (props.mutationIsPending && props.pendingAddSongId === props.song.id) ||
     !props.currentViewer?.login ||
     selfHasInsufficientVipTokens;
-  const favoriteButtonClass = props.compact
-    ? "h-7 w-7 shrink-0 px-0 shadow-none hover:bg-transparent"
-    : "h-8 w-8 shrink-0 px-0 shadow-none hover:bg-transparent";
-  const favoriteIconClass = props.compact ? "h-3.5 w-3.5" : "h-4 w-4";
   const actionButtonClass = props.compact
     ? "h-7 px-2.5 text-[10px] shadow-none"
-    : "h-9 w-full px-2.5 py-2 text-center text-[clamp(0.65rem,0.2vw+0.62rem,0.76rem)] leading-[1.1] whitespace-normal tracking-[0.08em] shadow-none";
+    : "h-9 w-full px-3 py-2 text-center text-[clamp(0.65rem,0.2vw+0.62rem,0.76rem)] leading-[1.1] whitespace-normal tracking-[0.08em] shadow-none";
   const actionGroupClass = props.compact
     ? "flex min-w-0 items-center justify-end gap-1.5"
-    : "grid min-w-0 flex-1 grid-cols-2 gap-2 max-[860px]:w-36 max-[860px]:grid-cols-1 max-[720px]:w-[clamp(5.75rem,27vw,7.75rem)]";
+    : "grid min-w-0 flex-1 grid-cols-2 gap-2 max-[520px]:grid-cols-1";
 
   return (
     <div
@@ -3801,60 +3869,14 @@ function ManageSearchSongActions(
         props.compact ? "flex items-center justify-end gap-1.5" : "grid gap-2"
       )}
     >
-      {!props.compact ? (
-        <RequestModifierChips
-          label={t("viewerActions.choosePath")}
-          availableRequestedPaths={availableRequestedPaths}
-          selectedRequestedPath={selectedRequestedPath}
-          disabled={props.mutationIsPending}
-          onToggle={toggleRequestedPath}
-        />
-      ) : null}
       <div
         className={cn(
           "flex w-full min-w-0 items-start justify-end gap-2",
-          props.compact ? "w-auto gap-1.5" : ""
+          props.compact
+            ? "w-auto gap-1.5"
+            : "max-[940px]:flex-col max-[940px]:items-stretch"
         )}
       >
-        {props.canManageFavorites ? (
-          <Button
-            type="button"
-            size="icon"
-            variant="ghost"
-            className={cn(
-              favoriteButtonClass,
-              props.isFavorited
-                ? "text-rose-300 hover:text-rose-200"
-                : "text-(--muted) hover:text-(--text)"
-            )}
-            aria-label={t(
-              props.isFavorited
-                ? "favorites.unfavoriteAria"
-                : "favorites.favoriteAria"
-            )}
-            aria-pressed={props.isFavorited}
-            title={t(
-              props.isFavorited
-                ? "favorites.unfavoriteAria"
-                : "favorites.favoriteAria"
-            )}
-            onClick={(event) => {
-              event.preventDefault();
-              event.stopPropagation();
-              props.onToggleFavorite?.();
-            }}
-            disabled={props.favoritePending || !props.onToggleFavorite}
-          >
-            <Heart
-              className={cn(
-                favoriteIconClass,
-                props.isFavorited
-                  ? "fill-current text-rose-300"
-                  : "text-(--muted)"
-              )}
-            />
-          </Button>
-        ) : null}
         <div className={actionGroupClass}>
           <Button
             type="button"
@@ -4027,8 +4049,18 @@ function ManageSearchSongActions(
           </Popover>
         </div>
       </div>
+      {!props.compact ? (
+        <div className="flex justify-start min-[940px]:justify-end">
+          <RequestModifierChips
+            availableRequestedPaths={availableRequestedPaths}
+            selectedRequestedPath={selectedRequestedPath}
+            disabled={props.mutationIsPending}
+            onToggle={toggleRequestedPath}
+          />
+        </div>
+      ) : null}
       {selfRequestCostLabel ? (
-        <p className="text-right text-[11px] leading-4 text-(--muted)">
+        <p className="justify-self-end text-right text-[11px] leading-4 font-medium text-(--brand-deep)">
           {selfRequestCostLabel}
         </p>
       ) : null}

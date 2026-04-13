@@ -241,4 +241,98 @@ describe("searchCatalogSongs", () => {
       `lower(trim(coalesce("catalog_songs"."tuning_summary", ''))) IN`
     );
   });
+
+  it("prioritizes preferred charters in ranking and exposes the flag in results", async () => {
+    const capturedSql: unknown[] = [];
+    const dbAll = vi.fn().mockImplementation((query) => {
+      capturedSql.push(query);
+
+      if (capturedSql.length === 1) {
+        return Promise.resolve([{ count: 2 }]);
+      }
+
+      return Promise.resolve([
+        {
+          id: "song-preferred",
+          sourceSongId: 321,
+          groupedProjectId: 11,
+          artistId: 77,
+          authorId: 42,
+          title: "Preferred Song",
+          artistName: "Artist",
+          albumName: "Album",
+          creatorName: "FavCharter",
+          tuningSummary: "E Standard",
+          partsJson: '["lead"]',
+          durationText: "3:30",
+          durationSeconds: 210,
+          year: 2025,
+          sourceUpdatedAt: 2,
+          downloads: 100,
+          hasLyrics: 1,
+          source: "library",
+          isPreferredCharter: 1,
+          relevance: 90,
+        },
+        {
+          id: "song-neutral",
+          sourceSongId: 322,
+          groupedProjectId: 12,
+          artistId: 78,
+          authorId: 99,
+          title: "Neutral Song",
+          artistName: "Artist",
+          albumName: "Album",
+          creatorName: "OtherCharter",
+          tuningSummary: "E Standard",
+          partsJson: '["lead"]',
+          durationText: "3:45",
+          durationSeconds: 225,
+          year: 2025,
+          sourceUpdatedAt: 1,
+          downloads: 50,
+          hasLyrics: 0,
+          source: "library",
+          isPreferredCharter: 0,
+          relevance: 90,
+        },
+      ]);
+    });
+
+    vi.mocked(getDb).mockReturnValue({
+      all: dbAll,
+    } as never);
+
+    await expect(
+      searchCatalogSongs(env, {
+        query: "song",
+        preferredAuthorIds: [42],
+        preferredCreatorNames: ["FavCharter"],
+        page: 1,
+        pageSize: 2,
+        sortBy: "relevance",
+        sortDirection: "desc",
+      })
+    ).resolves.toMatchObject({
+      total: 2,
+      results: [
+        {
+          id: "song-preferred",
+          isPreferredCharter: true,
+        },
+        {
+          id: "song-neutral",
+          isPreferredCharter: false,
+        },
+      ],
+    });
+
+    const dialect = new SQLiteAsyncDialect();
+    const rowsQuery = dialect.sqlToQuery(capturedSql[1] as never);
+
+    expect(rowsQuery.sql).toContain("AS isPreferredCharter");
+    expect(rowsQuery.sql).toMatch(
+      /ORDER BY isPreferredCharter DESC,\s*relevance DESC/i
+    );
+  });
 });

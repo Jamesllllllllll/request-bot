@@ -22,6 +22,7 @@ vi.mock("~/lib/db/repositories", () => ({
   getCatalogSongById: vi.fn(),
   getChannelBlacklistByChannelId: vi.fn(),
   getChannelBySlug: vi.fn(),
+  getChannelPreferredChartersByChannelId: vi.fn(),
   getChannelSettingsByChannelId: vi.fn(),
   getVipRequestCooldown: vi.fn(),
   getPlaylistByChannelId: vi.fn(),
@@ -59,6 +60,7 @@ import {
   getCatalogSongById,
   getChannelBlacklistByChannelId,
   getChannelBySlug,
+  getChannelPreferredChartersByChannelId,
   getChannelSettingsByChannelId,
   getPlaylistByChannelId,
   getUserById,
@@ -79,9 +81,13 @@ import { getBroadcasterSubscriptions } from "~/lib/twitch/api";
 function createDbState(input?: {
   setlist?: Array<{ artistId?: number | null; artistName: string }>;
   recentLogs?: Array<Record<string, unknown>>;
+  catalogSongs?: Array<Record<string, unknown>>;
 }) {
   return {
     query: {
+      catalogSongs: {
+        findMany: vi.fn().mockResolvedValue(input?.catalogSongs ?? []),
+      },
       setlistArtists: {
         findMany: vi.fn().mockResolvedValue(input?.setlist ?? []),
       },
@@ -197,6 +203,7 @@ describe("viewer request service", () => {
       blacklistSongs: [],
       blacklistSongGroups: [],
     });
+    vi.mocked(getChannelPreferredChartersByChannelId).mockResolvedValue([]);
     vi.mocked(getVipTokenBalance).mockResolvedValue({
       availableCount: 2,
     } as never);
@@ -435,6 +442,102 @@ describe("viewer request service", () => {
         matchedSongId: "song-1",
       })
     );
+  });
+
+  it("includes grouped sibling versions in catalog request payloads", async () => {
+    vi.mocked(getChannelPreferredChartersByChannelId).mockResolvedValue([
+      {
+        charterId: 9205,
+        charterName: "Mekanizm",
+      },
+    ] as never);
+    vi.mocked(getCatalogSongById).mockResolvedValue({
+      ...baseSong,
+      id: "song-mayo-1",
+      groupedProjectId: undefined,
+      title: "Mayonaise",
+      artist: "The Smashing Pumpkins",
+      creator: "Shinyditto12",
+      sourceId: 99001,
+      sourceUrl: "https://ignition4.customsforge.com/cdlc/99001",
+    } as never);
+    vi.mocked(getDb).mockReturnValue(
+      createDbState({
+        catalogSongs: [
+          {
+            id: "song-mayo-1",
+            groupedProjectId: null,
+            authorId: 42,
+            title: "Mayonaise",
+            artistName: "The Smashing Pumpkins",
+            albumName: "Siamese Dream",
+            creatorName: "Shinyditto12",
+            tuningSummary: "E Standard",
+            partsJson: '["lead","rhythm"]',
+            hasLyrics: 1,
+            durationText: "5:17",
+            year: 1993,
+            sourceUpdatedAt: 1700000000000,
+            downloads: 200,
+            source: "library",
+            sourceUrl: "https://ignition4.customsforge.com/cdlc/99001",
+            sourceSongId: 99001,
+          },
+          {
+            id: "song-mayo-2",
+            groupedProjectId: null,
+            authorId: 9205,
+            title: "Mayonaise",
+            artistName: "Smashing Pumpkins",
+            albumName: "Siamese Dream",
+            creatorName: "Mekanizm",
+            tuningSummary: "E Standard",
+            partsJson: '["lead","bass"]',
+            hasLyrics: 1,
+            durationText: "5:17",
+            year: 1993,
+            sourceUpdatedAt: 1600000000000,
+            downloads: 100,
+            source: "library",
+            sourceUrl: "https://ignition4.customsforge.com/cdlc/99002",
+            sourceSongId: 99002,
+          },
+        ],
+      }) as never
+    );
+
+    await expect(
+      performViewerRequestMutation({
+        env,
+        request,
+        slug: "streamer",
+        mutation: {
+          action: "submit",
+          songId: "song-mayo-1",
+          requestKind: "regular",
+          replaceExisting: false,
+        },
+      })
+    ).resolves.toEqual({
+      ok: true,
+      message: 'Added "The Smashing Pumpkins - Mayonaise" to the playlist.',
+    });
+
+    const body = JSON.parse(
+      String(vi.mocked(callBackend).mock.calls[0]?.[2]?.body)
+    ) as {
+      song?: { candidateMatchesJson?: string };
+    };
+
+    const candidates = JSON.parse(
+      body.song?.candidateMatchesJson ?? "[]"
+    ) as Array<{ id: string; isPreferredCharter?: boolean }>;
+
+    expect(candidates.map((candidate) => candidate.id)).toEqual([
+      "song-mayo-2",
+      "song-mayo-1",
+    ]);
+    expect(candidates[0]?.isPreferredCharter).toBe(true);
   });
 
   it("uses artist search for random custom requests", async () => {

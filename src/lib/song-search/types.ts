@@ -1,5 +1,9 @@
 export type SongSearchResult = {
   id: string;
+  groupKey?: string;
+  groupingSource?: "groupedProjectId" | "fallback" | "both";
+  versionCount?: number;
+  groupedProjectIds?: number[];
   groupedProjectId?: number;
   artistId?: number;
   authorId?: number;

@@ -2,6 +2,7 @@ import {
   type ChannelBlacklist,
   getBlacklistReasonCodes,
 } from "~/lib/channel-blacklist";
+import { buildSongGroups } from "~/lib/song-grouping";
 import type { SongSearchResult } from "~/lib/song-search/types";
 
 export type FavoritedChart = SongSearchResult & {
@@ -9,67 +10,45 @@ export type FavoritedChart = SongSearchResult & {
 };
 
 export type RolledUpFavoriteSong = FavoritedChart & {
+  groupKey: string;
+  groupingSource: "groupedProjectId" | "fallback" | "both";
   chartCount: number;
   latestFavoritedAt: number;
 };
-
-export function buildFavoriteGroupKey(
-  song: Pick<FavoritedChart, "groupedProjectId" | "artist" | "title">
-) {
-  if (song.groupedProjectId != null) {
-    return `group:${song.groupedProjectId}`;
-  }
-
-  const normalizedArtist = (song.artist ?? "").trim().toLowerCase();
-  const normalizedTitle = song.title.trim().toLowerCase();
-  return `song:${normalizedArtist}|${normalizedTitle}`;
-}
 
 export function rollupFavoriteCharts(
   charts: FavoritedChart[],
   blacklist: ChannelBlacklist
 ) {
-  const groups = new Map<
-    string,
-    {
-      representative: FavoritedChart;
-      chartCount: number;
-      latestFavoritedAt: number;
-    }
-  >();
+  const chartsById = new Map(charts.map((chart) => [chart.id, chart]));
 
-  for (const chart of charts) {
-    const key = buildFavoriteGroupKey(chart);
-    const current = groups.get(key);
+  return buildSongGroups(charts)
+    .map((group) => {
+      const groupCharts = group.songs
+        .map((song) => chartsById.get(song.id))
+        .filter((chart): chart is FavoritedChart => Boolean(chart));
 
-    if (!current) {
-      groups.set(key, {
-        representative: chart,
-        chartCount: 1,
-        latestFavoritedAt: chart.favoritedAt,
-      });
-      continue;
-    }
+      if (groupCharts.length === 0) {
+        return null;
+      }
 
-    current.chartCount += 1;
-    current.latestFavoritedAt = Math.max(
-      current.latestFavoritedAt,
-      chart.favoritedAt
-    );
+      const representative = groupCharts.reduce((best, candidate) =>
+        isBetterFavoriteRepresentative(candidate, best, blacklist)
+          ? candidate
+          : best
+      );
 
-    if (
-      isBetterFavoriteRepresentative(chart, current.representative, blacklist)
-    ) {
-      current.representative = chart;
-    }
-  }
-
-  return [...groups.values()]
-    .map(({ representative, chartCount, latestFavoritedAt }) => ({
-      ...representative,
-      chartCount,
-      latestFavoritedAt,
-    }))
+      return {
+        ...representative,
+        groupKey: group.groupKey,
+        groupingSource: group.groupingSource,
+        chartCount: groupCharts.length,
+        latestFavoritedAt: Math.max(
+          ...groupCharts.map((chart) => chart.favoritedAt)
+        ),
+      } satisfies RolledUpFavoriteSong;
+    })
+    .filter((group): group is RolledUpFavoriteSong => Boolean(group))
     .sort((left, right) => {
       if (right.latestFavoritedAt !== left.latestFavoritedAt) {
         return right.latestFavoritedAt - left.latestFavoritedAt;

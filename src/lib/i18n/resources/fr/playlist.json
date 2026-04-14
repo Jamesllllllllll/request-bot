@@ -359,6 +359,37 @@
       }
     },
     "currentTitle": "Playlist actuelle",
+    "tabs": {
+      "queue": "File",
+      "groupedSongs": "Morceaux groupes"
+    },
+    "groupedSongs": {
+      "title": "Morceaux groupes",
+      "description": "Examinez les morceaux avec plusieurs versions que les demandeurs et le streamer traitent comme un seul morceau.",
+      "searchPlaceholder": "Filtrer les morceaux groupes",
+      "count": "{count, plural, one {# morceau groupe} other {# morceaux groupes}}",
+      "showing": "{start}-{end} sur {total}",
+      "previous": "Precedent",
+      "next": "Suivant",
+      "filters": {
+        "all": "Tous les groupes",
+        "fallback": "Regroupement de l'app",
+        "groupedProjectId": "Regroupement du projet",
+        "both": "Les deux"
+      },
+      "loading": "Chargement des morceaux groupes...",
+      "empty": "Aucun morceau groupe trouve.",
+      "showVersions": "Afficher les versions",
+      "projectIds": "IDs de projet : {ids}",
+      "groupingSource": {
+        "groupedProjectId": "Groupe CustomsForge",
+        "fallback": "Regroupement de l'app",
+        "both": "Les deux"
+      },
+      "states": {
+        "loadFailed": "Impossible de charger les morceaux groupes."
+      }
+    },
     "blacklistErrors": {
       "missingRequestVersionId": "Cette demande n'a pas d'ID de version a blacklister.",
       "missingVersionVersionId": "Cette version n'a pas d'ID de version a blacklister.",

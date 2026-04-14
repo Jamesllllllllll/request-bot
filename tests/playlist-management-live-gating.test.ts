@@ -54,7 +54,7 @@ describe("playlist management live gating", () => {
       action: "manualAdd",
       songId: "song-1",
       requesterLogin: "viewer_one",
-      title: "Cherub Rock",
+      title: "Signal Bloom",
       source: "library",
     });
 
@@ -88,7 +88,7 @@ describe("playlist management live gating", () => {
         action: "manualAdd",
         songId: "song-1",
         requesterLogin: "viewer_one",
-        title: "Cherub Rock",
+        title: "Signal Bloom",
         source: "library",
       }
     );

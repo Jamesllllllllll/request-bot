@@ -11,7 +11,14 @@
     "offlineTestingFailed": "Offline testing setting could not be updated.",
     "botUpdateFailed": "Bot account could not be updated.",
     "chatSubscriptionCleanupFailed": "Chat subscriptions could not be cleaned up.",
+    "groupedSongsLoadFailed": "Grouped songs could not be loaded.",
     "updated": "Updated."
+  },
+  "tabs": {
+    "overview": "Overview",
+    "subscriptions": "Subscriptions",
+    "activity": "Activity",
+    "groupedSongs": "Grouped songs"
   },
   "status": {
     "connected": "Connected",

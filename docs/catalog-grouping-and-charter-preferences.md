@@ -10,7 +10,7 @@ When `grouped_project_id` is present on catalog rows, the app treats those chart
 - song-group blacklists
 - channel-scoped version handling in requests and management tools
 
-Some catalog rows are not grouped upstream even though they are effectively alternate charts of the same song. In that case, RockList.Live uses a fallback grouping rule when it builds the version list for a playlist item:
+Some catalog rows are not grouped upstream even though they are effectively alternate charts of the same song. In that case, RockList.Live uses a fallback grouping rule across grouped search results, request handling, and playlist version lists:
 
 - same title
 - same normalized artist name
@@ -21,9 +21,9 @@ Artist normalization is intentionally conservative. It currently:
 - lowercases the name
 - strips a leading `The `
 
-That fallback is used when a viewer or manager adds a song and the app needs to preserve alternate chart versions on the resulting playlist item. It helps cases like `The Smashing Pumpkins` and `Smashing Pumpkins` when the upstream catalog does not provide a shared `grouped_project_id`.
+That fallback keeps requester and streamer views aligned even when the upstream catalog does not provide a shared `grouped_project_id`.
 
-Search results still render chart-level rows. The app does not persist a separate internal canonical grouping table yet, so fallback grouping is computed at request and add time rather than stored as new catalog metadata.
+The app does not persist a separate internal canonical grouping table yet, so fallback grouping is computed from the catalog data rather than stored as new catalog metadata.
 
 ## Preferred Charters
 
@@ -47,4 +47,4 @@ Today, the app uses two layers:
 1. upstream catalog grouping from CustomsForge when it exists
 2. request-time fallback grouping for same-title and normalized-artist matches when upstream grouping is missing
 
-That gives the streamer a fuller version list when requests are added, while keeping search and moderation behavior predictable.
+That keeps search results, request handling, and playlist version selection consistent while preserving a fuller version list for streamers and moderators.

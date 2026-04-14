@@ -101,7 +101,7 @@ echo "<SENTRY_DSN>" | npx wrangler secret put SENTRY_DSN --config wrangler.aux.j
 
 ## Remote Database Setup
 
-Initialize the remote D1 database and the bundled sample catalog:
+Initialize the remote D1 database:
 
 ```bash
 npm run db:bootstrap:remote

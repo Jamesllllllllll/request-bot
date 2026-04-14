@@ -764,8 +764,8 @@ describe("extension panel service", () => {
       results: [
         {
           id: "song-1",
-          title: "Cherub Rock",
-          artist: "Smashing Pumpkins",
+          title: "Signal Bloom",
+          artist: "Example Band",
         },
       ],
       total: 1,
@@ -788,8 +788,8 @@ describe("extension panel service", () => {
       items: [
         {
           id: "song-1",
-          title: "Cherub Rock",
-          artist: "Smashing Pumpkins",
+          title: "Signal Bloom",
+          artist: "Example Band",
         },
       ],
       total: 1,

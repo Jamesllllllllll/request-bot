@@ -260,9 +260,9 @@ export function OverlaySettingsPanel(props: {
     () => [
       {
         id: "sample-current",
-        songTitle: "Cherub Rock",
-        songArtist: "Smashing Pumpkins",
-        songAlbum: "Siamese Dream",
+        songTitle: "Sample Song One",
+        songArtist: "Example Artist",
+        songAlbum: "Example Album",
         songCreator: "Ubisoft",
         songTuning: "E Standard",
         songDurationText: "4:58",
@@ -275,9 +275,9 @@ export function OverlaySettingsPanel(props: {
       },
       {
         id: "sample-vip",
-        songTitle: "Wonderwall",
-        songArtist: "Oasis",
-        songAlbum: "(What's the Story) Morning Glory?",
+        songTitle: "Sample Song Two",
+        songArtist: "Example Duo",
+        songAlbum: "Late Night Sessions",
         songCreator: "Custom Charter",
         songTuning: "E Standard",
         songDurationText: "4:19",
@@ -290,9 +290,9 @@ export function OverlaySettingsPanel(props: {
       },
       {
         id: "sample-third",
-        songTitle: "Cellophane",
-        songArtist: "King Gizzard & the Lizard Wizard",
-        songAlbum: "I'm in Your Mind Fuzz",
+        songTitle: "Sample Song Three",
+        songArtist: "Example Collective",
+        songAlbum: "Signals At Dawn",
         songCreator: "Custom Charter",
         songTuning: "C# Standard",
         songDurationText: "3:16",

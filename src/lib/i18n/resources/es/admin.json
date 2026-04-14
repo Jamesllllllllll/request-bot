@@ -11,7 +11,14 @@
     "offlineTestingFailed": "No se pudo actualizar la prueba sin conexión.",
     "botUpdateFailed": "No se pudo actualizar la cuenta del bot.",
     "chatSubscriptionCleanupFailed": "No se pudieron limpiar las suscripciones de chat.",
+    "groupedSongsLoadFailed": "No se pudieron cargar las canciones agrupadas.",
     "updated": "Actualizado."
+  },
+  "tabs": {
+    "overview": "Resumen",
+    "subscriptions": "Suscripciones",
+    "activity": "Actividad",
+    "groupedSongs": "Canciones agrupadas"
   },
   "status": {
     "connected": "Conectado",

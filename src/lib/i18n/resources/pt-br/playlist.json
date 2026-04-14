@@ -359,6 +359,37 @@
       }
     },
     "currentTitle": "Playlist atual",
+    "tabs": {
+      "queue": "Fila",
+      "groupedSongs": "Musicas agrupadas"
+    },
+    "groupedSongs": {
+      "title": "Musicas agrupadas",
+      "description": "Revise musicas com varias versoes que os viewers e o streamer tratam como a mesma musica.",
+      "searchPlaceholder": "Filtrar musicas agrupadas",
+      "count": "{count, plural, one {# musica agrupada} other {# musicas agrupadas}}",
+      "showing": "Mostrando {start}-{end} de {total}",
+      "previous": "Anterior",
+      "next": "Proximo",
+      "filters": {
+        "all": "Todos os grupos",
+        "fallback": "Agrupamento do app",
+        "groupedProjectId": "Agrupamento do projeto",
+        "both": "Ambos"
+      },
+      "loading": "Carregando musicas agrupadas...",
+      "empty": "Nenhuma musica agrupada encontrada.",
+      "showVersions": "Mostrar versoes",
+      "projectIds": "IDs do projeto: {ids}",
+      "groupingSource": {
+        "groupedProjectId": "Grupo do CustomsForge",
+        "fallback": "Agrupamento do app",
+        "both": "Ambos"
+      },
+      "states": {
+        "loadFailed": "Nao foi possivel carregar as musicas agrupadas."
+      }
+    },
     "blacklistErrors": {
       "missingRequestVersionId": "Este pedido nao tem um ID de versao para bloquear.",
       "missingVersionVersionId": "Esta versao nao tem um ID de versao para bloquear.",

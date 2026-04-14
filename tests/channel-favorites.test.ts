@@ -86,4 +86,42 @@ describe("rollupFavoriteCharts", () => {
       artist: "Foo Fighters",
     });
   });
+
+  it("keeps one favorite group when groupedProjectId and fallback grouping overlap", () => {
+    const results = rollupFavoriteCharts(
+      [
+        {
+          id: "chart-project",
+          favoritedAt: 1_000,
+          groupedProjectId: 77,
+          sourceId: 101,
+          title: "Velvet Static",
+          artist: "The Example Band",
+          source: "custom",
+        },
+        {
+          id: "chart-fallback",
+          favoritedAt: 2_000,
+          sourceId: 202,
+          title: "Velvet Static",
+          artist: "Example Band",
+          source: "custom",
+        },
+      ],
+      {
+        artists: [],
+        charters: [],
+        songs: [],
+        songGroups: [],
+      }
+    );
+
+    expect(results).toHaveLength(1);
+    expect(results[0]).toMatchObject({
+      id: "chart-fallback",
+      chartCount: 2,
+      latestFavoritedAt: 2_000,
+      groupingSource: "both",
+    });
+  });
 });

@@ -3,8 +3,19 @@ import { and, asc, desc, eq, gt, inArray, sql } from "drizzle-orm";
 import { rollupFavoriteCharts } from "~/lib/channel-favorites";
 import type { AppEnv } from "~/lib/env";
 import { toPublicOverlaySettings } from "~/lib/overlay/public-settings";
+import {
+  buildPlaylistCandidateMatchesFromCatalogSongs,
+  getPreferredCharterSets,
+  type PlaylistCandidateMatch,
+} from "~/lib/playlist/candidate-matches";
 import { filterPlayedSongsSinceReset } from "~/lib/playlist/session";
 import { DEFAULT_MAX_QUEUE_SIZE } from "~/lib/settings-defaults";
+import {
+  buildSongGroups,
+  getSongFallbackGroupKey,
+  type SongGroupingSource,
+} from "~/lib/song-grouping";
+import { getUniqueTunings } from "~/lib/tuning-summary";
 import {
   allKnownTuningIds,
   compareTuningIds,
@@ -968,6 +979,296 @@ export async function getChannelPreferredChartersByChannelId(
   });
 }
 
+const catalogSongGroupingColumns = {
+  id: true,
+  groupedProjectId: true,
+  artistId: true,
+  authorId: true,
+  title: true,
+  artistName: true,
+  albumName: true,
+  creatorName: true,
+  tuningSummary: true,
+  leadTuningId: true,
+  leadTuningName: true,
+  rhythmTuningId: true,
+  rhythmTuningName: true,
+  bassTuningId: true,
+  bassTuningName: true,
+  altLeadTuningId: true,
+  altRhythmTuningId: true,
+  altBassTuningId: true,
+  bonusLeadTuningId: true,
+  bonusRhythmTuningId: true,
+  bonusBassTuningId: true,
+  partsJson: true,
+  durationText: true,
+  durationSeconds: true,
+  year: true,
+  sourceUpdatedAt: true,
+  downloads: true,
+  hasLyrics: true,
+  source: true,
+  sourceSongId: true,
+} as const;
+
+type CatalogSongGroupingRow = {
+  id: string;
+  groupedProjectId: number | null;
+  artistId: number | null;
+  authorId: number | null;
+  title: string;
+  artistName: string | null;
+  albumName: string | null;
+  creatorName: string | null;
+  tuningSummary: string | null;
+  leadTuningId: number | null;
+  leadTuningName: string | null;
+  rhythmTuningId: number | null;
+  rhythmTuningName: string | null;
+  bassTuningId: number | null;
+  bassTuningName: string | null;
+  altLeadTuningId: number | null;
+  altRhythmTuningId: number | null;
+  altBassTuningId: number | null;
+  bonusLeadTuningId: number | null;
+  bonusRhythmTuningId: number | null;
+  bonusBassTuningId: number | null;
+  partsJson: string | null;
+  durationText: string | null;
+  durationSeconds: number | null;
+  year: number | null;
+  sourceUpdatedAt: number | null;
+  downloads: number | null;
+  hasLyrics: boolean | number | null;
+  source: string;
+  sourceSongId: number | null;
+};
+
+type SongGroupMemberFallbackKey = {
+  titleKey: string;
+  artistKey: string;
+};
+
+const normalizedSongTitleSql = sql`trim(lower(coalesce(${catalogSongs.title}, '')))`;
+const normalizedSongArtistSql = sql`
+  CASE
+    WHEN trim(lower(coalesce(${catalogSongs.artistName}, ''))) LIKE 'the %'
+      THEN substr(trim(lower(coalesce(${catalogSongs.artistName}, ''))), 5)
+    ELSE trim(lower(coalesce(${catalogSongs.artistName}, '')))
+  END
+`;
+
+function getCatalogSongGroupFallbackKeyParts(
+  song: Pick<CatalogSongGroupingRow, "artistName" | "title">
+): SongGroupMemberFallbackKey | null {
+  const fallbackKey = getSongFallbackGroupKey({
+    artist: song.artistName,
+    title: song.title,
+  });
+
+  if (!fallbackKey) {
+    return null;
+  }
+
+  const separatorIndex = fallbackKey.indexOf("|");
+  if (separatorIndex < 0) {
+    return null;
+  }
+
+  return {
+    artistKey: fallbackKey.slice(0, separatorIndex),
+    titleKey: fallbackKey.slice(separatorIndex + 1),
+  };
+}
+
+function buildCatalogSongFallbackWhereSql(
+  fallbackKeys: SongGroupMemberFallbackKey[]
+) {
+  if (fallbackKeys.length === 0) {
+    return null;
+  }
+
+  return sql`(${sql.join(
+    fallbackKeys.map(
+      (fallbackKey) =>
+        sql`(
+          ${normalizedSongTitleSql} = ${fallbackKey.titleKey}
+          AND ${normalizedSongArtistSql} = ${fallbackKey.artistKey}
+        )`
+    ),
+    sql` OR `
+  )})`;
+}
+
+function toCatalogSongGroupSummary(rows: CatalogSongGroupingRow[]) {
+  return buildSongGroups(
+    rows.map((row) => ({
+      id: row.id,
+      groupedProjectId: row.groupedProjectId,
+      title: row.title,
+      artist: row.artistName,
+    }))
+  );
+}
+
+async function getCatalogSongGroupRowsForSeedSongs(
+  env: AppEnv,
+  seedSongs: CatalogSongGroupingRow[]
+) {
+  const db = getDb(env);
+  if (seedSongs.length === 0) {
+    return [];
+  }
+
+  const songsById = new Map<string, CatalogSongGroupingRow>();
+  const queuedProjectIds: number[] = [];
+  const seenProjectIds = new Set<number>();
+  const queuedFallbackKeys: SongGroupMemberFallbackKey[] = [];
+  const seenFallbackKeys = new Set<string>();
+
+  const enqueueSong = (song: CatalogSongGroupingRow) => {
+    if (songsById.has(song.id)) {
+      return;
+    }
+
+    songsById.set(song.id, song);
+
+    if (
+      typeof song.groupedProjectId === "number" &&
+      Number.isInteger(song.groupedProjectId) &&
+      song.groupedProjectId > 0 &&
+      !seenProjectIds.has(song.groupedProjectId)
+    ) {
+      seenProjectIds.add(song.groupedProjectId);
+      queuedProjectIds.push(song.groupedProjectId);
+    }
+
+    const fallbackParts = getCatalogSongGroupFallbackKeyParts(song);
+    if (!fallbackParts) {
+      return;
+    }
+
+    const fallbackKey = `${fallbackParts.artistKey}|${fallbackParts.titleKey}`;
+    if (seenFallbackKeys.has(fallbackKey)) {
+      return;
+    }
+
+    seenFallbackKeys.add(fallbackKey);
+    queuedFallbackKeys.push(fallbackParts);
+  };
+
+  for (const seedSong of seedSongs) {
+    enqueueSong(seedSong);
+  }
+
+  while (queuedProjectIds.length > 0 || queuedFallbackKeys.length > 0) {
+    const projectIdBatch = queuedProjectIds.splice(0, 50);
+    if (projectIdBatch.length > 0) {
+      const groupedRows = (await db.query.catalogSongs.findMany({
+        where: inArray(catalogSongs.groupedProjectId, projectIdBatch),
+        columns: catalogSongGroupingColumns,
+      })) as CatalogSongGroupingRow[];
+
+      for (const row of groupedRows) {
+        enqueueSong(row);
+      }
+    }
+
+    const fallbackKeyBatch = queuedFallbackKeys.splice(0, 20);
+    const fallbackWhereSql = buildCatalogSongFallbackWhereSql(fallbackKeyBatch);
+    if (!fallbackWhereSql) {
+      continue;
+    }
+
+    const fallbackRows = unwrapD1Rows(
+      await db.all<CatalogSongGroupingRow>(sql`
+        SELECT
+          catalog_songs.id AS id,
+          catalog_songs.grouped_project_id AS groupedProjectId,
+          catalog_songs.artist_id AS artistId,
+          catalog_songs.author_id AS authorId,
+          catalog_songs.title AS title,
+          catalog_songs.artist_name AS artistName,
+          catalog_songs.album_name AS albumName,
+          catalog_songs.creator_name AS creatorName,
+          catalog_songs.tuning_summary AS tuningSummary,
+          catalog_songs.lead_tuning_id AS leadTuningId,
+          catalog_songs.lead_tuning_name AS leadTuningName,
+          catalog_songs.rhythm_tuning_id AS rhythmTuningId,
+          catalog_songs.rhythm_tuning_name AS rhythmTuningName,
+          catalog_songs.bass_tuning_id AS bassTuningId,
+          catalog_songs.bass_tuning_name AS bassTuningName,
+          catalog_songs.alt_lead_tuning_id AS altLeadTuningId,
+          catalog_songs.alt_rhythm_tuning_id AS altRhythmTuningId,
+          catalog_songs.alt_bass_tuning_id AS altBassTuningId,
+          catalog_songs.bonus_lead_tuning_id AS bonusLeadTuningId,
+          catalog_songs.bonus_rhythm_tuning_id AS bonusRhythmTuningId,
+          catalog_songs.bonus_bass_tuning_id AS bonusBassTuningId,
+          catalog_songs.parts_json AS partsJson,
+          catalog_songs.duration_text AS durationText,
+          catalog_songs.duration_seconds AS durationSeconds,
+          catalog_songs.year AS year,
+          catalog_songs.source_updated_at AS sourceUpdatedAt,
+          catalog_songs.downloads AS downloads,
+          catalog_songs.has_lyrics AS hasLyrics,
+          catalog_songs.source AS source,
+          catalog_songs.source_song_id AS sourceSongId
+        FROM catalog_songs
+        WHERE ${fallbackWhereSql}
+      `)
+    );
+
+    for (const row of fallbackRows) {
+      enqueueSong(row);
+    }
+  }
+
+  return [...songsById.values()];
+}
+
+export async function getCatalogSongGroupRowsForSongId(
+  env: AppEnv,
+  songId: string
+): Promise<CatalogSongGroupingRow[]> {
+  const seedSong = (await getDb(env).query.catalogSongs.findFirst({
+    where: eq(catalogSongs.id, songId),
+    columns: catalogSongGroupingColumns,
+  })) as CatalogSongGroupingRow | undefined;
+
+  if (!seedSong) {
+    return [];
+  }
+
+  return getCatalogSongGroupRowsForSeedSongs(env, [seedSong]);
+}
+
+export async function getCatalogSongGroupRowsForSongIds(
+  env: AppEnv,
+  songIds: string[]
+) {
+  const normalizedSongIds = [...new Set(songIds.filter(Boolean))];
+  if (normalizedSongIds.length === 0) {
+    return [];
+  }
+
+  const seedSongs: CatalogSongGroupingRow[] = [];
+  for (let start = 0; start < normalizedSongIds.length; start += 200) {
+    const batchIds = normalizedSongIds.slice(start, start + 200);
+    const batchRows = (await getDb(env).query.catalogSongs.findMany({
+      where: inArray(catalogSongs.id, batchIds),
+      columns: catalogSongGroupingColumns,
+    })) as CatalogSongGroupingRow[];
+    seedSongs.push(...batchRows);
+  }
+
+  return getCatalogSongGroupRowsForSeedSongs(env, seedSongs);
+}
+
+function getFavoriteRowGroupKeys(rows: CatalogSongGroupingRow[]) {
+  return toCatalogSongGroupSummary(rows).map((group) => group.groupKey);
+}
+
 export async function getChannelFavoritedChartSongIds(
   env: AppEnv,
   channelId: string
@@ -983,6 +1284,53 @@ export async function getChannelFavoritedChartSongIds(
   return rows.map((row) => row.catalogSongId);
 }
 
+export async function getChannelFavoritedSongGroupKeys(
+  env: AppEnv,
+  channelId: string
+) {
+  const rows = unwrapD1Rows(
+    await getDb(env).all<CatalogSongGroupingRow>(sql`
+      SELECT
+        catalog_songs.id AS id,
+        catalog_songs.grouped_project_id AS groupedProjectId,
+        catalog_songs.artist_id AS artistId,
+        catalog_songs.author_id AS authorId,
+        catalog_songs.title AS title,
+        catalog_songs.artist_name AS artistName,
+        catalog_songs.album_name AS albumName,
+        catalog_songs.creator_name AS creatorName,
+        catalog_songs.tuning_summary AS tuningSummary,
+        catalog_songs.lead_tuning_id AS leadTuningId,
+        catalog_songs.lead_tuning_name AS leadTuningName,
+        catalog_songs.rhythm_tuning_id AS rhythmTuningId,
+        catalog_songs.rhythm_tuning_name AS rhythmTuningName,
+        catalog_songs.bass_tuning_id AS bassTuningId,
+        catalog_songs.bass_tuning_name AS bassTuningName,
+        catalog_songs.alt_lead_tuning_id AS altLeadTuningId,
+        catalog_songs.alt_rhythm_tuning_id AS altRhythmTuningId,
+        catalog_songs.alt_bass_tuning_id AS altBassTuningId,
+        catalog_songs.bonus_lead_tuning_id AS bonusLeadTuningId,
+        catalog_songs.bonus_rhythm_tuning_id AS bonusRhythmTuningId,
+        catalog_songs.bonus_bass_tuning_id AS bonusBassTuningId,
+        catalog_songs.parts_json AS partsJson,
+        catalog_songs.duration_text AS durationText,
+        catalog_songs.duration_seconds AS durationSeconds,
+        catalog_songs.year AS year,
+        catalog_songs.source_updated_at AS sourceUpdatedAt,
+        catalog_songs.downloads AS downloads,
+        catalog_songs.has_lyrics AS hasLyrics,
+        catalog_songs.source AS source,
+        catalog_songs.source_song_id AS sourceSongId
+      FROM channel_favorite_charts
+      INNER JOIN catalog_songs
+        ON catalog_songs.id = channel_favorite_charts.catalog_song_id
+      WHERE channel_favorite_charts.channel_id = ${channelId}
+    `)
+  );
+
+  return getFavoriteRowGroupKeys(rows);
+}
+
 export async function setChannelFavoriteChart(
   env: AppEnv,
   input: {
@@ -991,14 +1339,26 @@ export async function setChannelFavoriteChart(
     favorited: boolean;
   }
 ) {
+  const groupedRows = await getCatalogSongGroupRowsForSongId(
+    env,
+    input.catalogSongId
+  );
+  const targetSongIds =
+    groupedRows.length > 0
+      ? groupedRows.map((row) => row.id)
+      : [input.catalogSongId];
+  const now = Date.now();
+
   if (input.favorited) {
     await getDb(env)
       .insert(channelFavoriteCharts)
-      .values({
-        channelId: input.channelId,
-        catalogSongId: input.catalogSongId,
-        createdAt: Date.now(),
-      })
+      .values(
+        targetSongIds.map((catalogSongId) => ({
+          channelId: input.channelId,
+          catalogSongId,
+          createdAt: now,
+        }))
+      )
       .onConflictDoNothing();
 
     return;
@@ -1009,7 +1369,7 @@ export async function setChannelFavoriteChart(
     .where(
       and(
         eq(channelFavoriteCharts.channelId, input.channelId),
-        eq(channelFavoriteCharts.catalogSongId, input.catalogSongId)
+        inArray(channelFavoriteCharts.catalogSongId, targetSongIds)
       )
     );
 }
@@ -1073,6 +1433,40 @@ export async function getChannelFavoriteSongsPage(
 
   const blacklist = await getChannelBlacklistByChannelId(env, input.channelId);
   const favoritedChartSongIds = unwrapD1Rows(rows).map((row) => row.id);
+  const favoritedGroupKeys = getFavoriteRowGroupKeys(
+    unwrapD1Rows(rows).map((row) => ({
+      id: row.id,
+      groupedProjectId: row.groupedProjectId,
+      artistId: row.artistId,
+      authorId: row.authorId,
+      title: row.title,
+      artistName: row.artistName,
+      albumName: row.albumName,
+      creatorName: row.creatorName,
+      tuningSummary: row.tuningSummary,
+      leadTuningId: null,
+      leadTuningName: null,
+      rhythmTuningId: null,
+      rhythmTuningName: null,
+      bassTuningId: null,
+      bassTuningName: null,
+      altLeadTuningId: null,
+      altRhythmTuningId: null,
+      altBassTuningId: null,
+      bonusLeadTuningId: null,
+      bonusRhythmTuningId: null,
+      bonusBassTuningId: null,
+      partsJson: row.partsJson,
+      durationText: row.durationText,
+      durationSeconds: row.durationSeconds,
+      year: row.year,
+      sourceUpdatedAt: row.sourceUpdatedAt,
+      downloads: row.downloads,
+      hasLyrics: null,
+      source: row.source,
+      sourceSongId: row.sourceSongId,
+    }))
+  );
   const rolledUpFavorites = rollupFavoriteCharts(
     unwrapD1Rows(rows).map((row) => ({
       id: row.id,
@@ -1117,6 +1511,7 @@ export async function getChannelFavoriteSongsPage(
   return {
     items,
     favoritedChartSongIds,
+    favoritedGroupKeys,
     total,
     page: input.page,
     limit: input.limit,
@@ -1856,6 +2251,564 @@ function buildSimpleAnyFieldRelevance(query: string, tokens: string[]) {
   `;
 }
 
+type CatalogSearchRow = {
+  id: string;
+  sourceSongId: number;
+  groupedProjectId: number | null;
+  artistId: number | null;
+  authorId: number | null;
+  title: string;
+  artistName: string;
+  albumName: string | null;
+  creatorName: string | null;
+  tuningSummary: string | null;
+  leadTuningId: number | null;
+  leadTuningName: string | null;
+  rhythmTuningId: number | null;
+  rhythmTuningName: string | null;
+  bassTuningId: number | null;
+  bassTuningName: string | null;
+  altLeadTuningId: number | null;
+  altRhythmTuningId: number | null;
+  altBassTuningId: number | null;
+  bonusLeadTuningId: number | null;
+  bonusRhythmTuningId: number | null;
+  bonusBassTuningId: number | null;
+  partsJson: string;
+  durationText: string | null;
+  durationSeconds: number | null;
+  year: number | null;
+  sourceUpdatedAt: number | null;
+  downloads: number;
+  hasLyrics: number;
+  source: string;
+  isPreferredCharter: number;
+  relevance: number;
+};
+
+function toCatalogSearchRowFromGroupingRow(input: {
+  row: CatalogSongGroupingRow;
+  preferredAuthorIds: number[];
+  preferredCreatorNames: string[];
+}) {
+  const normalizedCreatorName = normalizeSearchPhrase(
+    input.row.creatorName ?? ""
+  );
+
+  return {
+    id: input.row.id,
+    sourceSongId: input.row.sourceSongId ?? 0,
+    groupedProjectId: input.row.groupedProjectId,
+    artistId: input.row.artistId,
+    authorId: input.row.authorId,
+    title: input.row.title,
+    artistName: input.row.artistName ?? "",
+    albumName: input.row.albumName,
+    creatorName: input.row.creatorName,
+    tuningSummary: input.row.tuningSummary,
+    leadTuningId: input.row.leadTuningId,
+    leadTuningName: input.row.leadTuningName,
+    rhythmTuningId: input.row.rhythmTuningId,
+    rhythmTuningName: input.row.rhythmTuningName,
+    bassTuningId: input.row.bassTuningId,
+    bassTuningName: input.row.bassTuningName,
+    altLeadTuningId: input.row.altLeadTuningId,
+    altRhythmTuningId: input.row.altRhythmTuningId,
+    altBassTuningId: input.row.altBassTuningId,
+    bonusLeadTuningId: input.row.bonusLeadTuningId,
+    bonusRhythmTuningId: input.row.bonusRhythmTuningId,
+    bonusBassTuningId: input.row.bonusBassTuningId,
+    partsJson: input.row.partsJson ?? "[]",
+    durationText: input.row.durationText,
+    durationSeconds: input.row.durationSeconds,
+    year: input.row.year,
+    sourceUpdatedAt: input.row.sourceUpdatedAt,
+    downloads: input.row.downloads ?? 0,
+    hasLyrics: Number(Boolean(input.row.hasLyrics)),
+    source: input.row.source,
+    isPreferredCharter:
+      (input.row.authorId != null &&
+        input.preferredAuthorIds.includes(input.row.authorId)) ||
+      (normalizedCreatorName.length > 0 &&
+        input.preferredCreatorNames.includes(normalizedCreatorName))
+        ? 1
+        : 0,
+    relevance: 0,
+  } satisfies CatalogSearchRow;
+}
+
+function mapCatalogSearchRowToSong(row: CatalogSearchRow) {
+  const tuning = getTuningSummaryFromFields({
+    tuningSummary: row.tuningSummary
+      ? decodeHtmlEntities(row.tuningSummary)
+      : row.tuningSummary,
+    leadTuningId: row.leadTuningId,
+    leadTuningName: row.leadTuningName
+      ? decodeHtmlEntities(row.leadTuningName)
+      : row.leadTuningName,
+    rhythmTuningId: row.rhythmTuningId,
+    rhythmTuningName: row.rhythmTuningName
+      ? decodeHtmlEntities(row.rhythmTuningName)
+      : row.rhythmTuningName,
+    bassTuningId: row.bassTuningId,
+    bassTuningName: row.bassTuningName
+      ? decodeHtmlEntities(row.bassTuningName)
+      : row.bassTuningName,
+    altLeadTuningId: row.altLeadTuningId,
+    altRhythmTuningId: row.altRhythmTuningId,
+    altBassTuningId: row.altBassTuningId,
+    bonusLeadTuningId: row.bonusLeadTuningId,
+    bonusRhythmTuningId: row.bonusRhythmTuningId,
+    bonusBassTuningId: row.bonusBassTuningId,
+  });
+
+  return {
+    id: row.id,
+    groupedProjectId: row.groupedProjectId ?? undefined,
+    artistId: row.artistId ?? undefined,
+    authorId: row.authorId ?? undefined,
+    title: decodeHtmlEntities(row.title),
+    artist: decodeHtmlEntities(row.artistName),
+    album: row.albumName ? decodeHtmlEntities(row.albumName) : undefined,
+    creator: row.creatorName ? decodeHtmlEntities(row.creatorName) : undefined,
+    tuning,
+    tuningIds: getTuningIdsFromFields({
+      leadTuningId: row.leadTuningId,
+      rhythmTuningId: row.rhythmTuningId,
+      bassTuningId: row.bassTuningId,
+      altLeadTuningId: row.altLeadTuningId,
+      altRhythmTuningId: row.altRhythmTuningId,
+      altBassTuningId: row.altBassTuningId,
+      bonusLeadTuningId: row.bonusLeadTuningId,
+      bonusRhythmTuningId: row.bonusRhythmTuningId,
+      bonusBassTuningId: row.bonusBassTuningId,
+    }),
+    parts: parseJsonStringArray(row.partsJson),
+    durationText: row.durationText ?? undefined,
+    durationSeconds: row.durationSeconds ?? undefined,
+    year: row.year ?? undefined,
+    sourceUpdatedAt: row.sourceUpdatedAt ?? undefined,
+    sourceId: row.sourceSongId,
+    hasLyrics: !!row.hasLyrics,
+    isPreferredCharter: !!row.isPreferredCharter,
+    downloads: row.downloads,
+    source: row.source,
+    sourceUrl: normalizeSongSourceUrl({
+      source: row.source,
+      sourceId: row.sourceSongId,
+    }),
+    score: row.relevance,
+  };
+}
+
+function buildGroupedCatalogSearchResults(input: {
+  rows: CatalogSearchRow[];
+  favoriteChartSongIds?: Set<string>;
+  sortBy?: CatalogSearchInput["sortBy"];
+  sortDirection?: CatalogSearchInput["sortDirection"];
+  hiddenBlacklistedCount?: number;
+}) {
+  const rowsById = new Map(input.rows.map((row) => [row.id, row]));
+
+  const groupedResults = buildSongGroups(
+    input.rows.map((row) => ({
+      id: row.id,
+      groupedProjectId: row.groupedProjectId,
+      title: row.title,
+      artist: row.artistName,
+    }))
+  )
+    .map((group) => {
+      const groupRows = group.songs
+        .map((song) => rowsById.get(song.id))
+        .filter((row): row is CatalogSearchRow => Boolean(row));
+
+      if (groupRows.length === 0) {
+        return null;
+      }
+
+      if (
+        input.favoriteChartSongIds &&
+        !groupRows.some((row) => input.favoriteChartSongIds?.has(row.id))
+      ) {
+        return null;
+      }
+
+      const candidateMatches = buildPlaylistCandidateMatchesFromCatalogSongs({
+        songs: groupRows.map((row) => ({
+          id: row.id,
+          groupedProjectId: row.groupedProjectId,
+          authorId: row.authorId,
+          title: row.title,
+          artistName: row.artistName,
+          albumName: row.albumName,
+          creatorName: row.creatorName,
+          tuningSummary: getTuningSummaryFromFields({
+            tuningSummary: row.tuningSummary,
+            leadTuningId: row.leadTuningId,
+            leadTuningName: row.leadTuningName,
+            rhythmTuningId: row.rhythmTuningId,
+            rhythmTuningName: row.rhythmTuningName,
+            bassTuningId: row.bassTuningId,
+            bassTuningName: row.bassTuningName,
+            altLeadTuningId: row.altLeadTuningId,
+            altRhythmTuningId: row.altRhythmTuningId,
+            altBassTuningId: row.altBassTuningId,
+            bonusLeadTuningId: row.bonusLeadTuningId,
+            bonusRhythmTuningId: row.bonusRhythmTuningId,
+            bonusBassTuningId: row.bonusBassTuningId,
+          }),
+          partsJson: row.partsJson,
+          hasLyrics: row.hasLyrics,
+          durationText: row.durationText,
+          year: row.year,
+          sourceUpdatedAt: row.sourceUpdatedAt,
+          downloads: row.downloads,
+          source: row.source,
+          sourceSongId: row.sourceSongId,
+        })),
+      });
+      const representativeId = candidateMatches[0]?.id ?? groupRows[0]?.id;
+      const representativeRow =
+        groupRows.find((row) => row.id === representativeId) ?? groupRows[0];
+      const representativeSong = mapCatalogSearchRowToSong(representativeRow);
+      const tuningValues = getUniqueTunings(
+        groupRows.map((row) =>
+          getTuningSummaryFromFields({
+            tuningSummary: row.tuningSummary,
+            leadTuningId: row.leadTuningId,
+            leadTuningName: row.leadTuningName,
+            rhythmTuningId: row.rhythmTuningId,
+            rhythmTuningName: row.rhythmTuningName,
+            bassTuningId: row.bassTuningId,
+            bassTuningName: row.bassTuningName,
+            altLeadTuningId: row.altLeadTuningId,
+            altRhythmTuningId: row.altRhythmTuningId,
+            altBassTuningId: row.altBassTuningId,
+            bonusLeadTuningId: row.bonusLeadTuningId,
+            bonusRhythmTuningId: row.bonusRhythmTuningId,
+            bonusBassTuningId: row.bonusBassTuningId,
+          })
+        )
+      );
+      const tuningIds = [
+        ...new Set(
+          groupRows.flatMap((row) =>
+            getTuningIdsFromFields({
+              leadTuningId: row.leadTuningId,
+              rhythmTuningId: row.rhythmTuningId,
+              bassTuningId: row.bassTuningId,
+              altLeadTuningId: row.altLeadTuningId,
+              altRhythmTuningId: row.altRhythmTuningId,
+              altBassTuningId: row.altBassTuningId,
+              bonusLeadTuningId: row.bonusLeadTuningId,
+              bonusRhythmTuningId: row.bonusRhythmTuningId,
+              bonusBassTuningId: row.bonusBassTuningId,
+            })
+          )
+        ),
+      ].sort(compareTuningIds);
+      const parts = [
+        ...new Set(
+          groupRows.flatMap((row) => parseJsonStringArray(row.partsJson))
+        ),
+      ];
+      const maxDownloads = Math.max(...groupRows.map((row) => row.downloads));
+      const maxUpdatedAt = Math.max(
+        ...groupRows.map((row) => row.sourceUpdatedAt ?? -1)
+      );
+      const maxSourceId = Math.max(...groupRows.map((row) => row.sourceSongId));
+      const maxRelevance = Math.max(...groupRows.map((row) => row.relevance));
+      const hasPreferredCharter = groupRows.some(
+        (row) => !!row.isPreferredCharter
+      );
+
+      return {
+        ...representativeSong,
+        groupKey: group.groupKey,
+        groupingSource: group.groupingSource,
+        versionCount: groupRows.length,
+        groupedProjectIds: group.groupedProjectIds,
+        isPreferredCharter: hasPreferredCharter,
+        tuning: tuningValues.join(" | ") || representativeSong.tuning,
+        tuningIds,
+        parts,
+        hasLyrics: groupRows.some((row) => !!row.hasLyrics),
+        downloads: maxDownloads,
+        score: maxRelevance,
+        _sortArtist: representativeSong.artist ?? "",
+        _sortTitle: representativeSong.title,
+        _sortAlbum: representativeSong.album ?? "",
+        _sortCreator: representativeSong.creator ?? "",
+        _sortTuning: tuningValues.join(" | ") || "",
+        _sortDuration: representativeSong.durationSeconds ?? -1,
+        _sortUpdatedAt: maxUpdatedAt,
+        _sortDownloads: maxDownloads,
+        _sortSourceId: maxSourceId,
+      };
+    })
+    .filter((group): group is NonNullable<typeof group> => Boolean(group));
+
+  groupedResults.sort((left, right) => {
+    const compareText = (leftValue: string, rightValue: string) =>
+      leftValue.localeCompare(rightValue, undefined, {
+        sensitivity: "base",
+      });
+    const compareNumber = (leftValue: number, rightValue: number) =>
+      leftValue === rightValue ? 0 : leftValue < rightValue ? -1 : 1;
+
+    switch (input.sortBy) {
+      case "artist": {
+        const artistComparison = compareText(
+          left._sortArtist,
+          right._sortArtist
+        );
+        if (artistComparison !== 0) {
+          return input.sortDirection === "desc"
+            ? -artistComparison
+            : artistComparison;
+        }
+
+        if (left.isPreferredCharter !== right.isPreferredCharter) {
+          return (
+            Number(!!right.isPreferredCharter) -
+            Number(!!left.isPreferredCharter)
+          );
+        }
+
+        return compareText(left._sortTitle, right._sortTitle);
+      }
+      case "title": {
+        const titleComparison = compareText(left._sortTitle, right._sortTitle);
+        if (titleComparison !== 0) {
+          return input.sortDirection === "desc"
+            ? -titleComparison
+            : titleComparison;
+        }
+
+        if (left.isPreferredCharter !== right.isPreferredCharter) {
+          return (
+            Number(!!right.isPreferredCharter) -
+            Number(!!left.isPreferredCharter)
+          );
+        }
+
+        return compareText(left._sortArtist, right._sortArtist);
+      }
+      case "album": {
+        const albumComparison = compareText(left._sortAlbum, right._sortAlbum);
+        if (albumComparison !== 0) {
+          return input.sortDirection === "desc"
+            ? -albumComparison
+            : albumComparison;
+        }
+
+        if (left.isPreferredCharter !== right.isPreferredCharter) {
+          return (
+            Number(!!right.isPreferredCharter) -
+            Number(!!left.isPreferredCharter)
+          );
+        }
+
+        const artistComparison = compareText(
+          left._sortArtist,
+          right._sortArtist
+        );
+        if (artistComparison !== 0) {
+          return artistComparison;
+        }
+
+        return compareText(left._sortTitle, right._sortTitle);
+      }
+      case "creator": {
+        const creatorComparison = compareText(
+          left._sortCreator,
+          right._sortCreator
+        );
+        if (creatorComparison !== 0) {
+          return input.sortDirection === "desc"
+            ? -creatorComparison
+            : creatorComparison;
+        }
+
+        if (left.isPreferredCharter !== right.isPreferredCharter) {
+          return (
+            Number(!!right.isPreferredCharter) -
+            Number(!!left.isPreferredCharter)
+          );
+        }
+
+        const artistComparison = compareText(
+          left._sortArtist,
+          right._sortArtist
+        );
+        if (artistComparison !== 0) {
+          return artistComparison;
+        }
+
+        return compareText(left._sortTitle, right._sortTitle);
+      }
+      case "tuning": {
+        const tuningComparison = compareText(
+          left._sortTuning,
+          right._sortTuning
+        );
+        if (tuningComparison !== 0) {
+          return input.sortDirection === "desc"
+            ? -tuningComparison
+            : tuningComparison;
+        }
+
+        if (left.isPreferredCharter !== right.isPreferredCharter) {
+          return (
+            Number(!!right.isPreferredCharter) -
+            Number(!!left.isPreferredCharter)
+          );
+        }
+
+        const artistComparison = compareText(
+          left._sortArtist,
+          right._sortArtist
+        );
+        if (artistComparison !== 0) {
+          return artistComparison;
+        }
+
+        return compareText(left._sortTitle, right._sortTitle);
+      }
+      case "duration": {
+        const durationComparison = compareNumber(
+          left._sortDuration,
+          right._sortDuration
+        );
+        if (durationComparison !== 0) {
+          return input.sortDirection === "desc"
+            ? -durationComparison
+            : durationComparison;
+        }
+
+        if (left.isPreferredCharter !== right.isPreferredCharter) {
+          return (
+            Number(!!right.isPreferredCharter) -
+            Number(!!left.isPreferredCharter)
+          );
+        }
+
+        const artistComparison = compareText(
+          left._sortArtist,
+          right._sortArtist
+        );
+        if (artistComparison !== 0) {
+          return artistComparison;
+        }
+
+        return compareText(left._sortTitle, right._sortTitle);
+      }
+      case "downloads": {
+        const downloadsComparison = compareNumber(
+          left._sortDownloads,
+          right._sortDownloads
+        );
+        if (downloadsComparison !== 0) {
+          return input.sortDirection === "asc"
+            ? downloadsComparison
+            : -downloadsComparison;
+        }
+
+        if (left.isPreferredCharter !== right.isPreferredCharter) {
+          return (
+            Number(!!right.isPreferredCharter) -
+            Number(!!left.isPreferredCharter)
+          );
+        }
+
+        const artistComparison = compareText(
+          left._sortArtist,
+          right._sortArtist
+        );
+        if (artistComparison !== 0) {
+          return artistComparison;
+        }
+
+        return compareText(left._sortTitle, right._sortTitle);
+      }
+      case "updated": {
+        const updatedComparison = compareNumber(
+          left._sortUpdatedAt,
+          right._sortUpdatedAt
+        );
+        if (updatedComparison !== 0) {
+          return input.sortDirection === "asc"
+            ? updatedComparison
+            : -updatedComparison;
+        }
+
+        if (left.isPreferredCharter !== right.isPreferredCharter) {
+          return (
+            Number(!!right.isPreferredCharter) -
+            Number(!!left.isPreferredCharter)
+          );
+        }
+
+        return compareNumber(right._sortSourceId, left._sortSourceId);
+      }
+      default: {
+        if (left.isPreferredCharter !== right.isPreferredCharter) {
+          return (
+            Number(!!right.isPreferredCharter) -
+            Number(!!left.isPreferredCharter)
+          );
+        }
+
+        const scoreComparison = compareNumber(
+          left.score ?? -1,
+          right.score ?? -1
+        );
+        if (scoreComparison !== 0) {
+          return -scoreComparison;
+        }
+
+        const downloadsComparison = compareNumber(
+          left._sortDownloads,
+          right._sortDownloads
+        );
+        if (downloadsComparison !== 0) {
+          return -downloadsComparison;
+        }
+
+        const artistComparison = compareText(
+          left._sortArtist,
+          right._sortArtist
+        );
+        if (artistComparison !== 0) {
+          return artistComparison;
+        }
+
+        return compareText(left._sortTitle, right._sortTitle);
+      }
+    }
+  });
+
+  return {
+    results: groupedResults.map(
+      ({
+        _sortArtist,
+        _sortTitle,
+        _sortAlbum,
+        _sortCreator,
+        _sortTuning,
+        _sortDuration,
+        _sortUpdatedAt,
+        _sortDownloads,
+        _sortSourceId,
+        ...result
+      }) => result
+    ),
+    total: groupedResults.length,
+    hiddenBlacklistedCount: input.hiddenBlacklistedCount ?? 0,
+  };
+}
+
 export async function searchCatalogSongs(
   env: AppEnv,
   input: CatalogSearchInput
@@ -1923,29 +2876,6 @@ export async function searchCatalogSongs(
       END`
     : sql`0`;
 
-  const orderSql = (() => {
-    switch (input.sortBy) {
-      case "artist":
-        return sql`catalog_songs.artist_name ${sql.raw(input.sortDirection === "desc" ? "DESC" : "ASC")}, isPreferredCharter DESC, catalog_songs.title ASC`;
-      case "title":
-        return sql`catalog_songs.title ${sql.raw(input.sortDirection === "desc" ? "DESC" : "ASC")}, isPreferredCharter DESC, catalog_songs.artist_name ASC`;
-      case "album":
-        return sql`catalog_songs.album_name ${sql.raw(input.sortDirection === "desc" ? "DESC" : "ASC")}, isPreferredCharter DESC, catalog_songs.artist_name ASC, catalog_songs.title ASC`;
-      case "creator":
-        return sql`catalog_songs.creator_name ${sql.raw(input.sortDirection === "desc" ? "DESC" : "ASC")}, isPreferredCharter DESC, catalog_songs.artist_name ASC, catalog_songs.title ASC`;
-      case "tuning":
-        return sql`catalog_songs.tuning_summary ${sql.raw(input.sortDirection === "desc" ? "DESC" : "ASC")}, isPreferredCharter DESC, catalog_songs.artist_name ASC, catalog_songs.title ASC`;
-      case "duration":
-        return sql`catalog_songs.duration_seconds ${sql.raw(input.sortDirection === "desc" ? "DESC" : "ASC")}, isPreferredCharter DESC, catalog_songs.artist_name ASC, catalog_songs.title ASC`;
-      case "downloads":
-        return sql`catalog_songs.downloads ${sql.raw(input.sortDirection === "asc" ? "ASC" : "DESC")}, isPreferredCharter DESC, catalog_songs.artist_name ASC, catalog_songs.title ASC`;
-      case "updated":
-        return sql`catalog_songs.source_updated_at ${sql.raw(input.sortDirection === "asc" ? "ASC" : "DESC")}, isPreferredCharter DESC, catalog_songs.source_song_id DESC`;
-      default:
-        return sql`isPreferredCharter DESC, relevance DESC, catalog_songs.downloads DESC, catalog_songs.artist_name ASC, catalog_songs.title ASC`;
-    }
-  })();
-
   const advancedConditions = [
     input.title ? buildMatchLike(catalogSongs.title, input.title) : null,
     input.artist ? buildMatchLike(catalogSongs.artistName, input.artist) : null,
@@ -2012,14 +2942,6 @@ export async function searchCatalogSongs(
         )})`
     : null;
   const policyConditions = [
-    input.favoriteChannelId
-      ? sql`EXISTS (
-          SELECT 1
-          FROM channel_favorite_charts
-          WHERE channel_favorite_charts.channel_id = ${input.favoriteChannelId}
-            AND channel_favorite_charts.catalog_song_id = ${catalogSongs.id}
-        )`
-      : null,
     input.restrictToOfficial
       ? sql`${catalogSongs.source} = ${"official"}`
       : null,
@@ -2316,75 +3238,7 @@ export async function searchCatalogSongs(
                       `
       : sql`0`;
 
-    const totalResultPromise = db.all<{ count: number }>(sql`
-      WITH fts_matches AS (
-        ${
-          ftsEnabled
-            ? sql`SELECT rowid FROM catalog_song_fts WHERE catalog_song_fts MATCH ${ftsQuery}`
-            : sql`SELECT NULL AS rowid WHERE 0`
-        }
-      ),
-      matches AS (
-        SELECT
-          catalog_songs.id
-        FROM catalog_songs
-        WHERE ${whereCondition}
-      )
-      SELECT count(*) AS count FROM matches
-    `);
-    const unfilteredTotalResultPromise = hasBlacklistFilters
-      ? db.all<{ count: number }>(sql`
-          WITH fts_matches AS (
-            ${
-              ftsEnabled
-                ? sql`SELECT rowid FROM catalog_song_fts WHERE catalog_song_fts MATCH ${ftsQuery}`
-                : sql`SELECT NULL AS rowid WHERE 0`
-            }
-          ),
-          matches AS (
-            SELECT
-              catalog_songs.id
-            FROM catalog_songs
-            WHERE ${filteredBaseWhereCondition}
-          )
-          SELECT count(*) AS count FROM matches
-        `)
-      : Promise.resolve(null);
-
-    const rowsPromise = db.all<{
-      id: string;
-      sourceSongId: number;
-      groupedProjectId: number | null;
-      artistId: number | null;
-      authorId: number | null;
-      title: string;
-      artistName: string;
-      albumName: string | null;
-      creatorName: string | null;
-      tuningSummary: string | null;
-      leadTuningId: number | null;
-      leadTuningName: string | null;
-      rhythmTuningId: number | null;
-      rhythmTuningName: string | null;
-      bassTuningId: number | null;
-      bassTuningName: string | null;
-      altLeadTuningId: number | null;
-      altRhythmTuningId: number | null;
-      altBassTuningId: number | null;
-      bonusLeadTuningId: number | null;
-      bonusRhythmTuningId: number | null;
-      bonusBassTuningId: number | null;
-      partsJson: string;
-      durationText: string | null;
-      durationSeconds: number | null;
-      year: number | null;
-      sourceUpdatedAt: number | null;
-      downloads: number;
-      hasLyrics: number;
-      source: string;
-      isPreferredCharter: number;
-      relevance: number;
-    }>(sql`
+    const rowsPromise = db.all<CatalogSearchRow>(sql`
       WITH fts_matches AS (
         ${
           ftsEnabled
@@ -2393,12 +3247,12 @@ export async function searchCatalogSongs(
         }
       )
       SELECT
-          catalog_songs.id,
-          catalog_songs.source_song_id AS sourceSongId,
-          catalog_songs.grouped_project_id AS groupedProjectId,
-          catalog_songs.artist_id AS artistId,
-          catalog_songs.author_id AS authorId,
-          catalog_songs.title,
+        catalog_songs.id,
+        catalog_songs.source_song_id AS sourceSongId,
+        catalog_songs.grouped_project_id AS groupedProjectId,
+        catalog_songs.artist_id AS artistId,
+        catalog_songs.author_id AS authorId,
+        catalog_songs.title,
         catalog_songs.artist_name AS artistName,
         catalog_songs.album_name AS albumName,
         catalog_songs.creator_name AS creatorName,
@@ -2427,87 +3281,120 @@ export async function searchCatalogSongs(
         (${relevanceSql}) AS relevance
       FROM catalog_songs
       WHERE ${whereCondition}
-      ORDER BY ${orderSql}
-      LIMIT ${pageSize}
-      OFFSET ${offset}
     `);
-    const [totalResult, unfilteredTotalResult, rows] = await Promise.all([
-      totalResultPromise,
-      unfilteredTotalResultPromise,
+    const unfilteredRowsPromise = hasBlacklistFilters
+      ? db.all<CatalogSearchRow>(sql`
+          WITH fts_matches AS (
+            ${
+              ftsEnabled
+                ? sql`SELECT rowid FROM catalog_song_fts WHERE catalog_song_fts MATCH ${ftsQuery}`
+                : sql`SELECT NULL AS rowid WHERE 0`
+            }
+          )
+          SELECT
+            catalog_songs.id,
+            catalog_songs.source_song_id AS sourceSongId,
+            catalog_songs.grouped_project_id AS groupedProjectId,
+            catalog_songs.artist_id AS artistId,
+            catalog_songs.author_id AS authorId,
+            catalog_songs.title,
+            catalog_songs.artist_name AS artistName,
+            catalog_songs.album_name AS albumName,
+            catalog_songs.creator_name AS creatorName,
+            catalog_songs.tuning_summary AS tuningSummary,
+            catalog_songs.lead_tuning_id AS leadTuningId,
+            catalog_songs.lead_tuning_name AS leadTuningName,
+            catalog_songs.rhythm_tuning_id AS rhythmTuningId,
+            catalog_songs.rhythm_tuning_name AS rhythmTuningName,
+            catalog_songs.bass_tuning_id AS bassTuningId,
+            catalog_songs.bass_tuning_name AS bassTuningName,
+            catalog_songs.alt_lead_tuning_id AS altLeadTuningId,
+            catalog_songs.alt_rhythm_tuning_id AS altRhythmTuningId,
+            catalog_songs.alt_bass_tuning_id AS altBassTuningId,
+            catalog_songs.bonus_lead_tuning_id AS bonusLeadTuningId,
+            catalog_songs.bonus_rhythm_tuning_id AS bonusRhythmTuningId,
+            catalog_songs.bonus_bass_tuning_id AS bonusBassTuningId,
+            catalog_songs.parts_json AS partsJson,
+            catalog_songs.duration_text AS durationText,
+            catalog_songs.duration_seconds AS durationSeconds,
+            catalog_songs.year,
+            catalog_songs.source_updated_at AS sourceUpdatedAt,
+            catalog_songs.downloads,
+            catalog_songs.has_lyrics AS hasLyrics,
+            catalog_songs.source,
+            (${preferredCharterSql}) AS isPreferredCharter,
+            (${relevanceSql}) AS relevance
+          FROM catalog_songs
+          WHERE ${filteredBaseWhereCondition}
+        `)
+      : Promise.resolve(null);
+    const favoriteChartSongIdsPromise = input.favoriteChannelId
+      ? getChannelFavoritedChartSongIds(env, input.favoriteChannelId).then(
+          (songIds) => new Set(songIds)
+        )
+      : Promise.resolve(undefined);
+    const [rows, unfilteredRows, favoriteChartSongIds] = await Promise.all([
       rowsPromise,
+      unfilteredRowsPromise,
+      favoriteChartSongIdsPromise,
     ]);
-    const totalRows = unwrapD1Rows(totalResult);
-    const unfilteredTotalRows = unfilteredTotalResult
-      ? unwrapD1Rows(unfilteredTotalResult)
-      : [];
-    const resultRows = unwrapD1Rows(rows);
-    const visibleTotal = totalRows[0]?.count ?? 0;
-    const unfilteredTotal = unfilteredTotalRows[0]?.count ?? visibleTotal;
+    const expandSearchRowsToCanonicalGroups = async (
+      searchRows: CatalogSearchRow[]
+    ) => {
+      if (searchRows.length === 0) {
+        return searchRows;
+      }
+
+      const matchedRowsById = new Map(searchRows.map((row) => [row.id, row]));
+      const expandedRows = await getCatalogSongGroupRowsForSongIds(
+        env,
+        searchRows.map((row) => row.id)
+      );
+
+      return expandedRows.map((row) => {
+        const matchedRow = matchedRowsById.get(row.id);
+        if (matchedRow) {
+          return matchedRow;
+        }
+
+        return toCatalogSearchRowFromGroupingRow({
+          row,
+          preferredAuthorIds,
+          preferredCreatorNames: normalizedPreferredCreators,
+        });
+      });
+    };
+    const resultRows = await expandSearchRowsToCanonicalGroups(
+      unwrapD1Rows(rows)
+    );
+    const groupedVisibleResults = buildGroupedCatalogSearchResults({
+      rows: resultRows,
+      favoriteChartSongIds,
+      sortBy: input.sortBy,
+      sortDirection: input.sortDirection,
+    });
+    const unfilteredHiddenCount = unfilteredRows
+      ? Math.max(
+          0,
+          buildGroupedCatalogSearchResults({
+            rows: await expandSearchRowsToCanonicalGroups(
+              unwrapD1Rows(unfilteredRows)
+            ),
+            favoriteChartSongIds,
+            sortBy: input.sortBy,
+            sortDirection: input.sortDirection,
+          }).total - groupedVisibleResults.total
+        )
+      : 0;
+    const pagedResults = groupedVisibleResults.results.slice(
+      offset,
+      offset + pageSize
+    );
 
     return {
-      results: resultRows.map((row) => ({
-        id: row.id,
-        groupedProjectId: row.groupedProjectId ?? undefined,
-        artistId: row.artistId ?? undefined,
-        authorId: row.authorId ?? undefined,
-        title: decodeHtmlEntities(row.title),
-        artist: decodeHtmlEntities(row.artistName),
-        album: row.albumName ? decodeHtmlEntities(row.albumName) : undefined,
-        creator: row.creatorName
-          ? decodeHtmlEntities(row.creatorName)
-          : undefined,
-        tuning: getTuningSummaryFromFields({
-          tuningSummary: row.tuningSummary
-            ? decodeHtmlEntities(row.tuningSummary)
-            : row.tuningSummary,
-          leadTuningId: row.leadTuningId,
-          leadTuningName: row.leadTuningName
-            ? decodeHtmlEntities(row.leadTuningName)
-            : row.leadTuningName,
-          rhythmTuningId: row.rhythmTuningId,
-          rhythmTuningName: row.rhythmTuningName
-            ? decodeHtmlEntities(row.rhythmTuningName)
-            : row.rhythmTuningName,
-          bassTuningId: row.bassTuningId,
-          bassTuningName: row.bassTuningName
-            ? decodeHtmlEntities(row.bassTuningName)
-            : row.bassTuningName,
-          altLeadTuningId: row.altLeadTuningId,
-          altRhythmTuningId: row.altRhythmTuningId,
-          altBassTuningId: row.altBassTuningId,
-          bonusLeadTuningId: row.bonusLeadTuningId,
-          bonusRhythmTuningId: row.bonusRhythmTuningId,
-          bonusBassTuningId: row.bonusBassTuningId,
-        }),
-        tuningIds: getTuningIdsFromFields({
-          leadTuningId: row.leadTuningId,
-          rhythmTuningId: row.rhythmTuningId,
-          bassTuningId: row.bassTuningId,
-          altLeadTuningId: row.altLeadTuningId,
-          altRhythmTuningId: row.altRhythmTuningId,
-          altBassTuningId: row.altBassTuningId,
-          bonusLeadTuningId: row.bonusLeadTuningId,
-          bonusRhythmTuningId: row.bonusRhythmTuningId,
-          bonusBassTuningId: row.bonusBassTuningId,
-        }),
-        parts: parseJsonStringArray(row.partsJson),
-        durationText: row.durationText ?? undefined,
-        durationSeconds: row.durationSeconds ?? undefined,
-        year: row.year ?? undefined,
-        sourceUpdatedAt: row.sourceUpdatedAt ?? undefined,
-        sourceId: row.sourceSongId,
-        hasLyrics: !!row.hasLyrics,
-        isPreferredCharter: !!row.isPreferredCharter,
-        downloads: row.downloads,
-        source: row.source,
-        sourceUrl: normalizeSongSourceUrl({
-          source: row.source,
-          sourceId: row.sourceSongId,
-        }),
-        score: row.relevance,
-      })),
-      total: visibleTotal,
-      hiddenBlacklistedCount: Math.max(0, unfilteredTotal - visibleTotal),
+      results: pagedResults,
+      total: groupedVisibleResults.total,
+      hiddenBlacklistedCount: unfilteredHiddenCount,
       page,
       pageSize,
     };
@@ -2634,6 +3521,167 @@ export async function getCatalogSongById(env: AppEnv, songId: string) {
   }
 
   return toCatalogSongSearchResult(row);
+}
+
+export type CatalogGroupedSongReportRow = {
+  groupKey: string;
+  groupingSource: SongGroupingSource;
+  versionCount: number;
+  groupedProjectIds: number[];
+  title: string;
+  artist?: string;
+  tuning?: string;
+  latestUpdatedAt?: number;
+  downloads?: number;
+  versions: PlaylistCandidateMatch[];
+};
+
+export type CatalogGroupedSongReportGroupingSource =
+  | "groupedProjectId"
+  | "fallback"
+  | "both";
+
+export type CatalogGroupedSongReportFilter =
+  | "all"
+  | CatalogGroupedSongReportGroupingSource;
+
+export async function getCatalogGroupedSongsReportPage(
+  env: AppEnv,
+  input: {
+    channelId: string;
+    page: number;
+    pageSize: number;
+    query?: string;
+    groupingSource?: CatalogGroupedSongReportFilter;
+  }
+) {
+  const db = getDb(env);
+  const [catalogRows, preferredCharters] = await Promise.all([
+    db.query.catalogSongs.findMany({
+      columns: catalogSongGroupingColumns,
+      orderBy: [
+        asc(catalogSongs.title),
+        asc(catalogSongs.artistName),
+        desc(catalogSongs.sourceUpdatedAt),
+        desc(catalogSongs.sourceSongId),
+      ],
+    }) as Promise<CatalogSongGroupingRow[]>,
+    getChannelPreferredChartersByChannelId(env, input.channelId),
+  ]);
+
+  const preferredCharterSets = getPreferredCharterSets(preferredCharters);
+  const catalogRowsById = new Map(catalogRows.map((row) => [row.id, row]));
+  const normalizedQuery = normalizeSearchPhrase(input.query ?? "");
+  const groupingSourceFilter = input.groupingSource ?? "all";
+
+  const groupedRows = buildSongGroups(
+    catalogRows.map((row) => ({
+      id: row.id,
+      groupedProjectId: row.groupedProjectId,
+      title: row.title,
+      artist: row.artistName,
+    }))
+  )
+    .filter((group) => group.songs.length > 1)
+    .map((group) => {
+      const groupCatalogRows = group.songs
+        .map((song) => catalogRowsById.get(song.id))
+        .filter((row): row is CatalogSongGroupingRow => Boolean(row));
+
+      if (groupCatalogRows.length < 2) {
+        return null;
+      }
+
+      const versions = buildPlaylistCandidateMatchesFromCatalogSongs({
+        songs: groupCatalogRows,
+        preferredCharterIds: preferredCharterSets.ids,
+        preferredCharterNames: preferredCharterSets.names,
+      });
+      const representativeVersion = versions[0];
+      if (!representativeVersion) {
+        return null;
+      }
+
+      if (normalizedQuery) {
+        const matchesGroup = versions.some((version) =>
+          [
+            version.title,
+            version.artist,
+            version.album,
+            version.creator,
+            version.tuning,
+          ].some((value) =>
+            normalizeSearchPhrase(value ?? "").includes(normalizedQuery)
+          )
+        );
+
+        if (!matchesGroup) {
+          return null;
+        }
+      }
+
+      if (
+        groupingSourceFilter !== "all" &&
+        group.groupingSource !== groupingSourceFilter
+      ) {
+        return null;
+      }
+
+      const tuning = getUniqueTunings(
+        versions.map((version) => version.tuning)
+      ).join(" | ");
+      const latestUpdatedAt = Math.max(
+        ...groupCatalogRows.map((row) => row.sourceUpdatedAt ?? -1)
+      );
+      const maxDownloads = Math.max(
+        ...groupCatalogRows.map((row) => row.downloads ?? 0)
+      );
+
+      return {
+        groupKey: group.groupKey,
+        groupingSource: group.groupingSource,
+        versionCount: groupCatalogRows.length,
+        groupedProjectIds: group.groupedProjectIds,
+        title: representativeVersion.title,
+        artist: representativeVersion.artist,
+        tuning: tuning || undefined,
+        latestUpdatedAt: latestUpdatedAt >= 0 ? latestUpdatedAt : undefined,
+        downloads: maxDownloads > 0 ? maxDownloads : undefined,
+        versions,
+      } satisfies CatalogGroupedSongReportRow;
+    });
+
+  const filteredGroupedRows = groupedRows.filter(
+    (group): group is NonNullable<typeof group> => Boolean(group)
+  );
+
+  filteredGroupedRows.sort((left, right) => {
+    const artistComparison = (left.artist ?? "").localeCompare(
+      right.artist ?? "",
+      undefined,
+      { sensitivity: "base" }
+    );
+    if (artistComparison !== 0) {
+      return artistComparison;
+    }
+
+    return left.title.localeCompare(right.title, undefined, {
+      sensitivity: "base",
+    });
+  });
+
+  const page = Math.max(1, input.page);
+  const pageSize = Math.min(100, Math.max(1, input.pageSize));
+  const offset = (page - 1) * pageSize;
+  const items = filteredGroupedRows.slice(offset, offset + pageSize);
+
+  return {
+    items,
+    total: filteredGroupedRows.length,
+    page,
+    pageSize,
+    hasNextPage: offset + items.length < filteredGroupedRows.length,
+  };
 }
 
 export async function searchCatalogArtistsForBlacklist(

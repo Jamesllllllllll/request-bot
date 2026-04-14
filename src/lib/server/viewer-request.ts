@@ -10,6 +10,7 @@ import {
   createRequestLog,
   getActiveBroadcasterAuthorizationForChannel,
   getCatalogSongById,
+  getCatalogSongGroupRowsForSongId,
   getChannelBlacklistByChannelId,
   getChannelBySlug,
   getChannelPreferredChartersByChannelId,
@@ -23,13 +24,12 @@ import {
   parseAuthorizationScopes,
   searchCatalogSongs,
 } from "~/lib/db/repositories";
-import { catalogSongs, requestLogs, setlistArtists } from "~/lib/db/schema";
+import { requestLogs, setlistArtists } from "~/lib/db/schema";
 import type { AppEnv } from "~/lib/env";
 import {
   buildPlaylistCandidateMatchesFromCatalogSongs,
   buildPlaylistCandidateMatchesJson,
   getPreferredCharterSets,
-  normalizeArtistNameForCandidateGrouping,
 } from "~/lib/playlist/candidate-matches";
 import type { PlaylistMutationResult } from "~/lib/playlist/types";
 import {
@@ -2002,62 +2002,10 @@ async function buildViewerCandidateMatchesJson(input: {
   channelId: string;
   song: NonNullable<Awaited<ReturnType<typeof getCatalogSongById>>>;
 }) {
-  const db = getDb(input.env);
-  const groupedProjectId = input.song.groupedProjectId ?? undefined;
-  const catalogSongColumns = {
-    id: true,
-    groupedProjectId: true,
-    authorId: true,
-    title: true,
-    artistName: true,
-    albumName: true,
-    creatorName: true,
-    tuningSummary: true,
-    partsJson: true,
-    hasLyrics: true,
-    durationText: true,
-    year: true,
-    sourceUpdatedAt: true,
-    downloads: true,
-    source: true,
-    sourceSongId: true,
-  } as const;
-
-  let candidateSongs =
-    groupedProjectId != null
-      ? await db.query.catalogSongs.findMany({
-          where: eq(catalogSongs.groupedProjectId, groupedProjectId),
-          columns: catalogSongColumns,
-          orderBy: [
-            desc(catalogSongs.sourceUpdatedAt),
-            desc(catalogSongs.downloads),
-            desc(catalogSongs.sourceSongId),
-          ],
-        })
-      : [];
-
-  if (candidateSongs.length <= 1) {
-    const titleMatches = await db.query.catalogSongs.findMany({
-      where: eq(catalogSongs.title, input.song.title),
-      columns: catalogSongColumns,
-      orderBy: [
-        desc(catalogSongs.sourceUpdatedAt),
-        desc(catalogSongs.downloads),
-        desc(catalogSongs.sourceSongId),
-      ],
-    });
-
-    const selectedArtistKey = normalizeArtistNameForCandidateGrouping(
-      input.song.artist
-    );
-
-    candidateSongs = titleMatches.filter(
-      (song) =>
-        normalizeArtistNameForCandidateGrouping(song.artistName) ===
-        selectedArtistKey
-    );
-  }
-
+  const candidateSongs = await getCatalogSongGroupRowsForSongId(
+    input.env,
+    input.song.id
+  );
   if (candidateSongs.length <= 1) {
     return undefined;
   }

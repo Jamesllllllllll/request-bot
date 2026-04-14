@@ -359,6 +359,37 @@
       }
     },
     "currentTitle": "Playlist actual",
+    "tabs": {
+      "queue": "Cola",
+      "groupedSongs": "Canciones agrupadas"
+    },
+    "groupedSongs": {
+      "title": "Canciones agrupadas",
+      "description": "Revisa canciones con varias versiones que los espectadores y el streamer tratan como una sola cancion.",
+      "searchPlaceholder": "Filtrar canciones agrupadas",
+      "count": "{count, plural, one {# cancion agrupada} other {# canciones agrupadas}}",
+      "showing": "Mostrando {start}-{end} de {total}",
+      "previous": "Anterior",
+      "next": "Siguiente",
+      "filters": {
+        "all": "Todos los grupos",
+        "fallback": "Agrupacion de la app",
+        "groupedProjectId": "Agrupacion por proyecto",
+        "both": "Ambos"
+      },
+      "loading": "Cargando canciones agrupadas...",
+      "empty": "No se encontraron canciones agrupadas.",
+      "showVersions": "Mostrar versiones",
+      "projectIds": "IDs de proyecto: {ids}",
+      "groupingSource": {
+        "groupedProjectId": "Grupo de CustomsForge",
+        "fallback": "Agrupacion de la app",
+        "both": "Ambos"
+      },
+      "states": {
+        "loadFailed": "No se pudieron cargar las canciones agrupadas."
+      }
+    },
     "blacklistErrors": {
       "missingRequestVersionId": "Esta solicitud no tiene un ID de versión para bloquear.",
       "missingVersionVersionId": "Esta versión no tiene un ID de versión para bloquear.",

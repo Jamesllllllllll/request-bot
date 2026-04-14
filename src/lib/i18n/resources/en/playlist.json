@@ -359,6 +359,37 @@
       }
     },
     "currentTitle": "Current playlist",
+    "tabs": {
+      "queue": "Queue",
+      "groupedSongs": "Grouped songs"
+    },
+    "groupedSongs": {
+      "title": "Grouped songs",
+      "description": "Review songs with multiple versions that requesters and streamers treat as the same song.",
+      "searchPlaceholder": "Filter grouped songs",
+      "count": "{count, plural, one {# grouped song} other {# grouped songs}}",
+      "showing": "Showing {start}-{end} of {total}",
+      "previous": "Previous",
+      "next": "Next",
+      "filters": {
+        "all": "All groups",
+        "fallback": "App grouping",
+        "groupedProjectId": "Project grouping",
+        "both": "Both"
+      },
+      "loading": "Loading grouped songs...",
+      "empty": "No grouped songs found.",
+      "showVersions": "Show versions",
+      "projectIds": "Project IDs: {ids}",
+      "groupingSource": {
+        "groupedProjectId": "CustomsForge group",
+        "fallback": "App grouping",
+        "both": "Both"
+      },
+      "states": {
+        "loadFailed": "Unable to load grouped songs."
+      }
+    },
     "blacklistErrors": {
       "missingRequestVersionId": "This request does not have a version ID to blacklist.",
       "missingVersionVersionId": "This version does not have a version ID to blacklist.",

@@ -45,8 +45,8 @@ function createSong(
     id: "song-1",
     artistId: 77,
     authorId: 101,
-    title: "Cherub Rock",
-    artist: "The Smashing Pumpkins",
+    title: "Signal Bloom",
+    artist: "The Example Band",
     album: "Siamese Dream",
     creator: "charter",
     tuning: "Eb Standard",
@@ -190,7 +190,7 @@ describe("processEventSubChatMessage", () => {
         requestKind: "regular",
         song: expect.objectContaining({
           cdlcId: 12345,
-          title: "Cherub Rock",
+          title: "Signal Bloom",
         }),
       })
     );
@@ -198,7 +198,7 @@ describe("processEventSubChatMessage", () => {
       env,
       expect.objectContaining({
         message: expect.stringContaining(
-          'your song "The Smashing Pumpkins - Cherub Rock" has been added to the playlist.'
+          'your song "The Example Band - Signal Bloom" has been added to the playlist.'
         ),
       })
     );
@@ -236,7 +236,7 @@ describe("processEventSubChatMessage", () => {
       env,
       expect.objectContaining({
         message: expect.stringContaining(
-          '@streamer your song "The Smashing Pumpkins - Cherub Rock" has been added to the playlist.'
+          '@streamer your song "The Example Band - Signal Bloom" has been added to the playlist.'
         ),
       })
     );
@@ -475,7 +475,7 @@ describe("processEventSubChatMessage", () => {
       env,
       expect.objectContaining({
         message:
-          '@viewer_one your song "The Smashing Pumpkins - Cherub Rock" has been added to the playlist for 2 VIP tokens.',
+          '@viewer_one your song "The Example Band - Signal Bloom" has been added to the playlist for 2 VIP tokens.',
       })
     );
   });
@@ -506,10 +506,10 @@ describe("processEventSubChatMessage", () => {
     const result = await processEventSubChatMessage({
       env,
       event: createEvent({
-        rawMessage: "!sr cherub rock *bass",
+        rawMessage: "!sr signal bloom *bass",
       }),
       parsed: createParsed({
-        query: "cherub rock *bass",
+        query: "signal bloom *bass",
       }),
       deps,
     });
@@ -525,7 +525,7 @@ describe("processEventSubChatMessage", () => {
         requestKind: "regular",
         vipTokenCost: 2,
         song: expect.objectContaining({
-          requestedQuery: "cherub rock *bass",
+          requestedQuery: "signal bloom *bass",
         }),
       })
     );
@@ -541,7 +541,7 @@ describe("processEventSubChatMessage", () => {
       env,
       expect.objectContaining({
         message:
-          '@viewer_one your song "The Smashing Pumpkins - Cherub Rock" has been added to the playlist for 2 VIP tokens.',
+          '@viewer_one your song "The Example Band - Signal Bloom" has been added to the playlist for 2 VIP tokens.',
       })
     );
   });
@@ -620,7 +620,7 @@ describe("processEventSubChatMessage", () => {
       env,
       expect.objectContaining({
         message:
-          '@viewer_one your song "The Smashing Pumpkins - Cherub Rock" has been added to the playlist for 3 VIP tokens.',
+          '@viewer_one your song "The Example Band - Signal Bloom" has been added to the playlist for 3 VIP tokens.',
       })
     );
   });
@@ -700,7 +700,7 @@ describe("processEventSubChatMessage", () => {
             {
               id: "item-1",
               songId: "song-1",
-              songTitle: "Cherub Rock",
+              songTitle: "Signal Bloom",
               status: "queued",
               requestKind: "vip",
               requestedByTwitchUserId: "viewer-1",
@@ -755,7 +755,7 @@ describe("processEventSubChatMessage", () => {
       env,
       expect.objectContaining({
         message:
-          '@viewer_one the VIP token cost for your request "The Smashing Pumpkins - Cherub Rock" is now 3 VIP tokens. Spent 2 VIP tokens.',
+          '@viewer_one the VIP token cost for your request "The Example Band - Signal Bloom" is now 3 VIP tokens. Spent 2 VIP tokens.',
       })
     );
   });
@@ -771,7 +771,7 @@ describe("processEventSubChatMessage", () => {
             {
               id: "item-vip",
               songId: "song-1",
-              songTitle: "Cherub Rock",
+              songTitle: "Signal Bloom",
               status: "queued",
               requestKind: "vip",
               requestedByTwitchUserId: "viewer-1",
@@ -843,7 +843,7 @@ describe("processEventSubChatMessage", () => {
             {
               id: "item-vip",
               songId: "song-1",
-              songTitle: "Cherub Rock",
+              songTitle: "Signal Bloom",
               status: "queued",
               requestKind: "vip",
               requestedByTwitchUserId: "viewer-1",
@@ -907,7 +907,7 @@ describe("processEventSubChatMessage", () => {
             {
               id: "item-vip",
               songId: "song-1",
-              songTitle: "Cherub Rock",
+              songTitle: "Signal Bloom",
               status: "queued",
               position: 2,
               requestKind: "vip",
@@ -1080,11 +1080,11 @@ describe("processEventSubChatMessage", () => {
         chatterLogin: "mod_user",
         chatterDisplayName: "Mod User",
         isModerator: true,
-        rawMessage: "!sr cherub rock @viewer_two",
+        rawMessage: "!sr signal bloom @viewer_two",
       }),
       parsed: createParsed({
         command: "sr",
-        query: "cherub rock",
+        query: "signal bloom",
         targetLogin: "viewer_two",
       }),
       deps,
@@ -1253,11 +1253,11 @@ describe("processEventSubChatMessage", () => {
         chatterLogin: "mod_user",
         chatterDisplayName: "Mod User",
         isModerator: true,
-        rawMessage: "!edit mayonaise @viewer_two",
+        rawMessage: "!edit velvet static @viewer_two",
       }),
       parsed: createParsed({
         command: "edit",
-        query: "mayonaise",
+        query: "velvet static",
         targetLogin: "viewer_two",
       }),
       deps,
@@ -1274,7 +1274,7 @@ describe("processEventSubChatMessage", () => {
       vipTokenCost: 0,
       song: expect.objectContaining({
         id: "song-1",
-        title: "Cherub Rock",
+        title: "Signal Bloom",
       }),
     });
     expect(deps.removeRequestsFromPlaylist).not.toHaveBeenCalled();
@@ -1298,11 +1298,11 @@ describe("processEventSubChatMessage", () => {
         chatterLogin: "mod_user",
         chatterDisplayName: "Mod User",
         isModerator: true,
-        rawMessage: "!edit mayonaise @viewer_two",
+        rawMessage: "!edit velvet static @viewer_two",
       }),
       parsed: createParsed({
         command: "edit",
-        query: "mayonaise",
+        query: "velvet static",
         targetLogin: "viewer_two",
       }),
       deps,
@@ -1358,11 +1358,11 @@ describe("processEventSubChatMessage", () => {
     const result = await processEventSubChatMessage({
       env,
       event: createEvent({
-        rawMessage: "!edit mayonaise",
+        rawMessage: "!edit velvet static",
       }),
       parsed: createParsed({
         command: "edit",
-        query: "mayonaise",
+        query: "velvet static",
       }),
       deps,
     });
@@ -1416,11 +1416,11 @@ describe("processEventSubChatMessage", () => {
     const result = await processEventSubChatMessage({
       env,
       event: createEvent({
-        rawMessage: "!edit #4 mayonaise",
+        rawMessage: "!edit #4 velvet static",
       }),
       parsed: createParsed({
         command: "edit",
-        query: "mayonaise",
+        query: "velvet static",
         itemPosition: 4,
       }),
       deps,
@@ -1458,7 +1458,7 @@ describe("processEventSubChatMessage", () => {
         blacklistArtists: [{ artistName: "Chevelle" }],
         blacklistCharters: [{ charterName: "Frif" }],
         blacklistSongs: [{ songTitle: "The Red" }],
-        setlistArtists: [{ artistName: "Smashing Pumpkins" }],
+        setlistArtists: [{ artistName: "Example Band" }],
       }),
     });
 
@@ -1540,7 +1540,7 @@ describe("processEventSubChatMessage", () => {
           {
             id: "item-current",
             songId: "song-1",
-            songTitle: "Cherub Rock",
+            songTitle: "Signal Bloom",
             status: "current",
             requestKind: "regular",
             requestedByTwitchUserId: "viewer-1",
@@ -1583,7 +1583,7 @@ describe("processEventSubChatMessage", () => {
       env,
       expect.objectContaining({
         message:
-          "@viewer_one your requests are playing now: Cherub Rock and queued at #2.",
+          "@viewer_one your requests are playing now: Signal Bloom and queued at #2.",
       })
     );
   });
@@ -1806,10 +1806,10 @@ describe("processEventSubChatMessage", () => {
     const result = await processEventSubChatMessage({
       env,
       event: createEvent({
-        rawMessage: "!sr cherub rock",
+        rawMessage: "!sr signal bloom",
       }),
       parsed: createParsed({
-        query: "cherub rock",
+        query: "signal bloom",
       }),
       deps,
     });
@@ -1824,7 +1824,7 @@ describe("processEventSubChatMessage", () => {
         song: expect.objectContaining({
           id: "song-allowed",
           cdlcId: 22222,
-          title: "Cherub Rock",
+          title: "Signal Bloom",
           creator: "other-charter",
           candidateMatchesJson: expect.any(String),
         }),
@@ -1846,7 +1846,7 @@ describe("processEventSubChatMessage", () => {
       env,
       expect.objectContaining({
         message: expect.stringContaining(
-          'your song "The Smashing Pumpkins - Cherub Rock" has been added to the playlist.'
+          'your song "The Example Band - Signal Bloom" has been added to the playlist.'
         ),
       })
     );
@@ -1879,10 +1879,10 @@ describe("processEventSubChatMessage", () => {
     const result = await processEventSubChatMessage({
       env,
       event: createEvent({
-        rawMessage: "!sr cherub rock",
+        rawMessage: "!sr signal bloom",
       }),
       parsed: createParsed({
-        query: "cherub rock",
+        query: "signal bloom",
       }),
       deps,
     });
@@ -1906,11 +1906,11 @@ describe("processEventSubChatMessage", () => {
     const result = await processEventSubChatMessage({
       env,
       event: createEvent({
-        rawMessage: "!sr cherub rock @viewer_two",
+        rawMessage: "!sr signal bloom @viewer_two",
       }),
       parsed: createParsed({
         command: "sr",
-        query: "cherub rock",
+        query: "signal bloom",
         targetLogin: "viewer_two",
       }),
       deps,
@@ -1955,11 +1955,11 @@ describe("processEventSubChatMessage", () => {
         chatterLogin: "mod_one",
         chatterDisplayName: "Mod One",
         isModerator: true,
-        rawMessage: "!sr cherub rock @viewer_two",
+        rawMessage: "!sr signal bloom @viewer_two",
       }),
       parsed: createParsed({
         command: "sr",
-        query: "cherub rock",
+        query: "signal bloom",
         targetLogin: "viewer_two",
       }),
       deps,
@@ -1976,7 +1976,7 @@ describe("processEventSubChatMessage", () => {
         requestedByLogin: "viewer_two",
         requestedByDisplayName: "Viewer Two",
         song: expect.objectContaining({
-          title: "Cherub Rock",
+          title: "Signal Bloom",
           creator: "charter",
         }),
       })
@@ -1991,10 +1991,10 @@ describe("processEventSubChatMessage", () => {
     const result = await processEventSubChatMessage({
       env,
       event: createEvent({
-        rawMessage: "!sr smashing pumpkins zro",
+        rawMessage: "!sr example band zro",
       }),
       parsed: createParsed({
-        query: "smashing pumpkins zro",
+        query: "example band zro",
       }),
       deps,
     });
@@ -2007,11 +2007,10 @@ describe("processEventSubChatMessage", () => {
       env,
       expect.objectContaining({
         song: expect.objectContaining({
-          title: "smashing pumpkins zro",
+          title: "example band zro",
           source: "unmatched",
           warningCode: "no_song_match",
-          warningMessage:
-            'No matching track found for "smashing pumpkins zro".',
+          warningMessage: 'No matching track found for "example band zro".',
         }),
       })
     );
@@ -2019,7 +2018,7 @@ describe("processEventSubChatMessage", () => {
       env,
       expect.objectContaining({
         message: expect.stringContaining(
-          'there was no matching track found for "smashing pumpkins zro", but I added it anyway. You can edit or search the song database here: https://example.com/streamer'
+          'there was no matching track found for "example band zro", but I added it anyway. You can edit or search the song database here: https://example.com/streamer'
         ),
       })
     );
@@ -2042,10 +2041,10 @@ describe("processEventSubChatMessage", () => {
       env,
       event: createEvent({
         broadcasterLogin: "streamer_name",
-        rawMessage: "!sr smashing pumpkins zro",
+        rawMessage: "!sr example band zro",
       }),
       parsed: createParsed({
-        query: "smashing pumpkins zro",
+        query: "example band zro",
       }),
       deps,
     });
@@ -2078,10 +2077,10 @@ describe("processEventSubChatMessage", () => {
     const result = await processEventSubChatMessage({
       env,
       event: createEvent({
-        rawMessage: "!sr cherub rock",
+        rawMessage: "!sr signal bloom",
       }),
       parsed: createParsed({
-        query: "cherub rock",
+        query: "signal bloom",
       }),
       deps,
     });
@@ -2094,7 +2093,7 @@ describe("processEventSubChatMessage", () => {
       env,
       expect.objectContaining({
         song: expect.objectContaining({
-          title: "Cherub Rock",
+          title: "Signal Bloom",
           warningCode: "missing_required_paths",
           warningMessage: "Missing required paths: Lead.",
         }),
@@ -2136,10 +2135,10 @@ describe("processEventSubChatMessage", () => {
     const result = await processEventSubChatMessage({
       env,
       event: createEvent({
-        rawMessage: "!sr cherub rock *bass",
+        rawMessage: "!sr signal bloom *bass",
       }),
       parsed: createParsed({
-        query: "cherub rock *bass",
+        query: "signal bloom *bass",
       }),
       deps,
     });
@@ -2154,7 +2153,7 @@ describe("processEventSubChatMessage", () => {
         song: expect.objectContaining({
           id: "song-bass",
           cdlcId: 22222,
-          requestedQuery: "cherub rock *bass",
+          requestedQuery: "signal bloom *bass",
         }),
       })
     );
@@ -2170,13 +2169,13 @@ describe("processEventSubChatMessage", () => {
             {
               id: "item-1",
               songId: "song-bass",
-              songTitle: "Cherub Rock",
+              songTitle: "Signal Bloom",
               status: "queued",
               requestKind: "regular",
               requestedByTwitchUserId: "viewer-1",
               requestedByLogin: "viewer_one",
               requestedByDisplayName: "Viewer One",
-              requestedQuery: "cherub rock",
+              requestedQuery: "signal bloom",
             },
           ],
         })
@@ -2199,11 +2198,11 @@ describe("processEventSubChatMessage", () => {
     const result = await processEventSubChatMessage({
       env,
       event: createEvent({
-        rawMessage: "!vip cherub rock *bass",
+        rawMessage: "!vip signal bloom *bass",
       }),
       parsed: createParsed({
         command: "vip",
-        query: "cherub rock *bass",
+        query: "signal bloom *bass",
       }),
       deps,
     });
@@ -2222,7 +2221,7 @@ describe("processEventSubChatMessage", () => {
         vipTokenCost: 2,
         song: expect.objectContaining({
           id: "song-bass",
-          requestedQuery: "cherub rock *bass",
+          requestedQuery: "signal bloom *bass",
         }),
       })
     );
@@ -2246,10 +2245,10 @@ describe("processEventSubChatMessage", () => {
     const result = await processEventSubChatMessage({
       env,
       event: createEvent({
-        rawMessage: "!sr cherub rock",
+        rawMessage: "!sr signal bloom",
       }),
       parsed: createParsed({
-        query: "cherub rock",
+        query: "signal bloom",
       }),
       deps,
     });
@@ -2262,7 +2261,7 @@ describe("processEventSubChatMessage", () => {
       env,
       expect.objectContaining({
         song: expect.objectContaining({
-          title: "Cherub Rock",
+          title: "Signal Bloom",
           candidateMatchesJson: expect.any(String),
         }),
       })
@@ -2425,11 +2424,11 @@ describe("processEventSubChatMessage", () => {
     const result = await processEventSubChatMessage({
       env,
       event: createEvent({
-        rawMessage: "!vip cherub rock",
+        rawMessage: "!vip signal bloom",
       }),
       parsed: createParsed({
         command: "vip",
-        query: "cherub rock",
+        query: "signal bloom",
       }),
       deps,
     });
@@ -2450,7 +2449,7 @@ describe("processEventSubChatMessage", () => {
       env,
       expect.objectContaining({
         message: expect.stringContaining(
-          'your existing request "The Smashing Pumpkins - Cherub Rock" is now a VIP request'
+          'your existing request "The Example Band - Signal Bloom" is now a VIP request'
         ),
       })
     );
@@ -2484,11 +2483,11 @@ describe("processEventSubChatMessage", () => {
     const result = await processEventSubChatMessage({
       env,
       event: createEvent({
-        rawMessage: "!sr cherub rock",
+        rawMessage: "!sr signal bloom",
       }),
       parsed: createParsed({
         command: "sr",
-        query: "cherub rock",
+        query: "signal bloom",
       }),
       deps,
     });
@@ -2515,7 +2514,7 @@ describe("processEventSubChatMessage", () => {
       env,
       expect.objectContaining({
         message: expect.stringContaining(
-          'your existing VIP request "The Smashing Pumpkins - Cherub Rock" is now a regular request again.'
+          'your existing VIP request "The Example Band - Signal Bloom" is now a regular request again.'
         ),
       })
     );

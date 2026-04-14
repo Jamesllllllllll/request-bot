@@ -10,13 +10,19 @@ import {
 import {
   AlertTriangle,
   Bot,
+  Layers3,
   MessageSquare,
   ScrollText,
   ShieldAlert,
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { DashboardPageHeader } from "~/components/dashboard-page-header";
-import { PlaylistQueueItemPreview } from "~/components/playlist-management-surface";
+import {
+  type GroupedSongsGroupingFilter,
+  type GroupedSongsReportResponse,
+  GroupedSongsReviewCard,
+  PlaylistQueueItemPreview,
+} from "~/components/playlist-management-surface";
 import { Button } from "~/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "~/components/ui/card";
 import {
@@ -26,6 +32,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "~/components/ui/select";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "~/components/ui/tabs";
 import { useAppLocale, useLocaleTranslation } from "~/lib/i18n/client";
 import { getLocalizedPageTitle } from "~/lib/i18n/metadata";
 
@@ -144,6 +151,25 @@ async function fetchAuditLogsPage(offset: number, limit: number) {
   return response.json() as Promise<AuditLogsPageData>;
 }
 
+async function fetchGroupedSongsPage(
+  page: number,
+  query: string,
+  groupingSource: GroupedSongsGroupingFilter
+) {
+  const response = await fetch(
+    `/api/dashboard/grouped-songs?${new URLSearchParams({
+      page: String(page),
+      pageSize: "25",
+      ...(query ? { query } : {}),
+      ...(groupingSource !== "all" ? { groupingSource } : {}),
+    }).toString()}`
+  );
+
+  return response.json() as Promise<
+    GroupedSongsReportResponse & { error?: string }
+  >;
+}
+
 export const Route = createFileRoute("/dashboard/admin")({
   head: async () => ({
     meta: [
@@ -162,6 +188,9 @@ function DashboardAdminPage() {
   const { t } = useLocaleTranslation("admin");
   const { locale } = useAppLocale();
   const queryClient = useQueryClient();
+  const [adminTab, setAdminTab] = useState<
+    "overview" | "subscriptions" | "activity" | "groupedSongs"
+  >("overview");
   const [togglingOfflineTesting, setTogglingOfflineTesting] = useState(false);
   const [updatingBotAuth, setUpdatingBotAuth] = useState(false);
   const [cleaningChatSubscriptionsFor, setCleaningChatSubscriptionsFor] =
@@ -174,6 +203,17 @@ function DashboardAdminPage() {
   const [auditsOffset, setAuditsOffset] = useState(0);
   const [auditsLimit, setAuditsLimit] =
     useState<(typeof ADMIN_PAGE_SIZE_OPTIONS)[number]>(10);
+  const [groupedSongsQuery, setGroupedSongsQuery] = useState("");
+  const [debouncedGroupedSongsQuery, setDebouncedGroupedSongsQuery] =
+    useState("");
+  const [groupedSongsFilter, setGroupedSongsFilter] =
+    useState<GroupedSongsGroupingFilter>("all");
+  const [groupedSongsPage, setGroupedSongsPage] = useState(1);
+  const showDevelopmentAdminTools = import.meta.env.DEV;
+  const activeAdminTab =
+    !showDevelopmentAdminTools && adminTab === "groupedSongs"
+      ? "overview"
+      : adminTab;
   const { data, refetch } = useQuery<DashboardAdminData>({
     queryKey: ["dashboard-admin-base"],
     queryFn: fetchAdminBaseState,
@@ -196,6 +236,47 @@ function DashboardAdminPage() {
     staleTime: 30_000,
     placeholderData: (previousData) => previousData,
   });
+  const groupedSongsQueryResult = useQuery<GroupedSongsReportResponse>({
+    queryKey: [
+      "dashboard-admin-grouped-songs",
+      groupedSongsPage,
+      debouncedGroupedSongsQuery,
+      groupedSongsFilter,
+    ],
+    queryFn: async () => {
+      const body = await fetchGroupedSongsPage(
+        groupedSongsPage,
+        debouncedGroupedSongsQuery,
+        groupedSongsFilter
+      );
+
+      if (body.error) {
+        throw new Error(body.error);
+      }
+
+      return body;
+    },
+    enabled:
+      showDevelopmentAdminTools &&
+      canLoadActivity &&
+      activeAdminTab === "groupedSongs",
+    staleTime: 30_000,
+    placeholderData: (previousData) => previousData,
+  });
+
+  useEffect(() => {
+    const timeout = window.setTimeout(() => {
+      setDebouncedGroupedSongsQuery(groupedSongsQuery.trim());
+    }, 350);
+
+    return () => {
+      window.clearTimeout(timeout);
+    };
+  }, [groupedSongsQuery]);
+
+  useEffect(() => {
+    setGroupedSongsPage(1);
+  }, [debouncedGroupedSongsQuery, groupedSongsFilter]);
 
   useEffect(() => {
     if (!logsQuery.data?.hasNext) {
@@ -446,6 +527,32 @@ function DashboardAdminPage() {
     t
   );
   const showPlaylistPrototype = import.meta.env.DEV;
+  const adminTabs = [
+    {
+      value: "overview" as const,
+      label: t("tabs.overview"),
+      icon: ShieldAlert,
+    },
+    {
+      value: "subscriptions" as const,
+      label: t("tabs.subscriptions"),
+      icon: Bot,
+    },
+    {
+      value: "activity" as const,
+      label: t("tabs.activity"),
+      icon: ScrollText,
+    },
+    ...(showDevelopmentAdminTools
+      ? [
+          {
+            value: "groupedSongs" as const,
+            label: t("tabs.groupedSongs"),
+            icon: Layers3,
+          },
+        ]
+      : []),
+  ];
   const requestLogColumns = useMemo(
     () => getRequestLogColumns(t, locale),
     [locale, t]
@@ -474,6 +581,13 @@ function DashboardAdminPage() {
     () => getAuditLogColumns(t, locale),
     [locale, t]
   );
+  const groupedSongsError = groupedSongsQueryResult.error
+    ? groupedSongsQueryResult.error instanceof Error
+      ? groupedSongsQueryResult.error.message
+      : t("states.groupedSongsLoadFailed")
+    : null;
+  const emptySongIdSet = useMemo(() => new Set<number>(), []);
+  const emptyCharterIdSet = useMemo(() => new Set<number>(), []);
 
   return (
     <div className="page-section-stack dashboard-admin grid gap-6">
@@ -543,208 +657,308 @@ function DashboardAdminPage() {
         </div>
       ) : null}
 
-      <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-        <AdminMetric
-          icon={ShieldAlert}
-          label={t("metrics.requestIssues.label")}
-          value={String(recentFailures)}
-          description={t("metrics.requestIssues.description")}
-        />
-        <AdminMetric
-          icon={ScrollText}
-          label={t("metrics.auditRows.label")}
-          value={String(auditsQuery.data?.total ?? 0)}
-          description={t("metrics.auditRows.description")}
-        />
-        <div className="border border-(--border) bg-(--panel) p-5 shadow-(--shadow-soft)">
-          <div>
-            <p className="text-sm text-(--muted)">
-              {t("offlineTesting.title")}
-            </p>
-            <p
-              className={`mt-2 text-xl font-semibold ${
-                data?.settings?.adminForceBotWhileOffline
-                  ? "text-emerald-300"
-                  : "text-rose-300"
-              }`}
-            >
-              {data?.settings?.adminForceBotWhileOffline
-                ? t("status.enabled")
-                : t("status.disabled")}
-            </p>
-          </div>
-          <div className="dashboard-admin__offline-actions mt-4 flex flex-wrap gap-3">
-            <Button
-              type="button"
-              onClick={() => setOfflineTesting(true)}
-              disabled={
-                togglingOfflineTesting ||
-                !!data?.settings?.adminForceBotWhileOffline
-              }
-            >
-              {togglingOfflineTesting &&
-              !data?.settings?.adminForceBotWhileOffline
-                ? t("actions.enabling")
-                : t("actions.enable")}
-            </Button>
-            <Button
-              type="button"
-              variant="outline"
-              onClick={() => setOfflineTesting(false)}
-              disabled={
-                togglingOfflineTesting ||
-                !data?.settings?.adminForceBotWhileOffline
-              }
-            >
-              {togglingOfflineTesting &&
-              data?.settings?.adminForceBotWhileOffline
-                ? t("actions.disabling")
-                : t("actions.disable")}
-            </Button>
-          </div>
-        </div>
-      </section>
+      <Tabs
+        orientation="vertical"
+        value={activeAdminTab}
+        onValueChange={(value) =>
+          setAdminTab(
+            value as "overview" | "subscriptions" | "activity" | "groupedSongs"
+          )
+        }
+        className="flex-col gap-6 min-[961px]:grid min-[961px]:grid-cols-[15rem_minmax(0,1fr)] min-[961px]:items-start"
+      >
+        <div className="min-[961px]:sticky min-[961px]:top-24 min-[961px]:w-[15rem] min-[961px]:self-start">
+          <TabsList className="!grid h-auto w-full grid-cols-2 gap-2 rounded-[12px] border border-(--border) bg-(--panel-soft) p-2 sm:grid-cols-4 min-[961px]:!flex min-[961px]:max-h-[calc(100dvh-8rem)] min-[961px]:!w-[15rem] min-[961px]:!flex-col min-[961px]:!flex-nowrap min-[961px]:overflow-y-auto min-[961px]:rounded-[14px] min-[961px]:bg-(--panel) min-[961px]:p-2.5">
+            {adminTabs.map((tab) => {
+              const Icon = tab.icon;
 
-      <section className="grid gap-4">
-        <div className="grid gap-1">
-          <h2 className="text-3xl font-semibold text-(--text)">
-            {t("eventSub.title")}
-          </h2>
-          <p className="text-sm text-(--muted)">{t("eventSub.description")}</p>
-          <p className="text-xs text-(--muted)">
-            {t("eventSub.currentCallback", {
-              callback: data?.eventSub?.currentCallbackUrl ?? t("table.none"),
+              return (
+                <TabsTrigger
+                  key={tab.value}
+                  value={tab.value}
+                  className="h-auto min-h-11 w-full items-center justify-start gap-2 rounded-[10px] border border-transparent bg-transparent px-3 py-3 text-left normal-case tracking-normal whitespace-normal text-(--muted) shadow-none after:hidden data-[state=active]:border-(--border-strong) data-[state=active]:bg-(--panel) data-[state=active]:text-(--text) min-[961px]:min-h-12 min-[961px]:px-3.5"
+                >
+                  <span className="flex items-center gap-2 text-sm font-semibold text-current">
+                    <Icon className="h-4 w-4 shrink-0" />
+                    <span>{tab.label}</span>
+                  </span>
+                </TabsTrigger>
+              );
             })}
-          </p>
-          <p className="text-xs text-(--muted)">
-            {t("eventSub.currentBotUserId", {
-              userId: data?.eventSub?.currentBotUserId ?? t("table.none"),
-            })}
-          </p>
+          </TabsList>
         </div>
-        {data?.eventSub?.error ? (
-          <div className="border border-amber-400/40 bg-amber-500/10 p-4 text-sm text-amber-100">
-            {data.eventSub.error}
-          </div>
-        ) : null}
-        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-          <AdminMetric
-            icon={Bot}
-            label={t("metrics.botChatChannels.label")}
-            value={String(data?.eventSub?.channelsWithChatSubscription ?? 0)}
-            description={t("metrics.botChatChannels.description")}
-          />
-          <AdminMetric
-            icon={MessageSquare}
-            label={t("metrics.chatSubscriptions.label")}
-            value={String(data?.eventSub?.totalChatSubscriptions ?? 0)}
-            description={t("metrics.chatSubscriptions.description")}
-          />
-          <AdminMetric
-            icon={AlertTriangle}
-            label={t("metrics.duplicateChatChannels.label")}
-            value={String(
-              data?.eventSub?.channelsWithDuplicateChatSubscriptions ?? 0
-            )}
-            description={t("metrics.duplicateChatChannels.description")}
-          />
-        </div>
-        <AdminTable
-          data={data?.eventSub?.channels ?? []}
-          columns={eventSubColumns}
-          emptyMessage={t("eventSub.empty")}
-        />
-      </section>
 
-      {showPlaylistPrototype ? (
-        <section className="grid gap-4">
-          <div className="grid gap-1">
-            <h2 className="text-3xl font-semibold text-(--text)">
-              {t("prototype.title")}
-            </h2>
-            <p className="text-sm text-(--muted)">
-              {t("prototype.description")}
-            </p>
-          </div>
-          <DevPlaylistPrototypeCard />
-        </section>
-      ) : null}
+        <div className="grid gap-6">
+          <TabsContent
+            value="overview"
+            className="mt-0 flex-none outline-none data-[state=inactive]:hidden"
+          >
+            <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+              <AdminMetric
+                icon={ShieldAlert}
+                label={t("metrics.requestIssues.label")}
+                value={String(recentFailures)}
+                description={t("metrics.requestIssues.description")}
+              />
+              <AdminMetric
+                icon={ScrollText}
+                label={t("metrics.auditRows.label")}
+                value={String(auditsQuery.data?.total ?? 0)}
+                description={t("metrics.auditRows.description")}
+              />
+              <div className="border border-(--border) bg-(--panel) p-5 shadow-(--shadow-soft)">
+                <div>
+                  <p className="text-sm text-(--muted)">
+                    {t("offlineTesting.title")}
+                  </p>
+                  <p
+                    className={`mt-2 text-xl font-semibold ${
+                      data?.settings?.adminForceBotWhileOffline
+                        ? "text-emerald-300"
+                        : "text-rose-300"
+                    }`}
+                  >
+                    {data?.settings?.adminForceBotWhileOffline
+                      ? t("status.enabled")
+                      : t("status.disabled")}
+                  </p>
+                </div>
+                <div className="dashboard-admin__offline-actions mt-4 flex flex-wrap gap-3">
+                  <Button
+                    type="button"
+                    onClick={() => setOfflineTesting(true)}
+                    disabled={
+                      togglingOfflineTesting ||
+                      !!data?.settings?.adminForceBotWhileOffline
+                    }
+                  >
+                    {togglingOfflineTesting &&
+                    !data?.settings?.adminForceBotWhileOffline
+                      ? t("actions.enabling")
+                      : t("actions.enable")}
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => setOfflineTesting(false)}
+                    disabled={
+                      togglingOfflineTesting ||
+                      !data?.settings?.adminForceBotWhileOffline
+                    }
+                  >
+                    {togglingOfflineTesting &&
+                    data?.settings?.adminForceBotWhileOffline
+                      ? t("actions.disabling")
+                      : t("actions.disable")}
+                  </Button>
+                </div>
+              </div>
+            </section>
 
-      <section className="grid gap-4">
-        <div className="flex flex-wrap items-end justify-between gap-3">
-          <div className="grid gap-1">
-            <h2 className="text-3xl font-semibold text-(--text)">
-              {t("logs.title")}
-            </h2>
-            <p className="text-sm text-(--muted)">{t("logs.description")}</p>
-          </div>
-          <AdminPaginationControls
-            total={logsQuery.data?.total ?? 0}
-            offset={logsQuery.data?.offset ?? logsOffset}
-            limit={logsQuery.data?.limit ?? logsLimit}
-            rangeLabel={logsRangeLabel}
-            hasPrevious={logsQuery.data?.hasPrevious ?? logsOffset > 0}
-            hasNext={logsQuery.data?.hasNext ?? false}
-            isFetching={logsQuery.isFetching}
-            onPageSizeChange={(value) =>
-              setLogsLimit(value as (typeof ADMIN_PAGE_SIZE_OPTIONS)[number])
-            }
-            onPrevious={() =>
-              setLogsOffset((currentOffset) =>
-                Math.max(0, currentOffset - logsLimit)
-              )
-            }
-            onNext={() =>
-              setLogsOffset((currentOffset) => currentOffset + logsLimit)
-            }
-          />
-        </div>
-        <AdminTable
-          data={logs}
-          columns={requestLogColumns}
-          isLoading={logsQuery.isPending}
-          loadingMessage={t("logs.loading")}
-          emptyMessage={t("logs.empty")}
-        />
-      </section>
+            {showPlaylistPrototype ? (
+              <section className="grid gap-4">
+                <div className="grid gap-1">
+                  <h2 className="text-3xl font-semibold text-(--text)">
+                    {t("prototype.title")}
+                  </h2>
+                  <p className="text-sm text-(--muted)">
+                    {t("prototype.description")}
+                  </p>
+                </div>
+                <DevPlaylistPrototypeCard />
+              </section>
+            ) : null}
+          </TabsContent>
 
-      <section className="grid gap-4">
-        <div className="flex flex-wrap items-end justify-between gap-3">
-          <div className="grid gap-1">
-            <h2 className="text-3xl font-semibold text-(--text)">
-              {t("audits.title")}
-            </h2>
-            <p className="text-sm text-(--muted)">{t("audits.description")}</p>
-          </div>
-          <AdminPaginationControls
-            total={auditsQuery.data?.total ?? 0}
-            offset={auditsQuery.data?.offset ?? auditsOffset}
-            limit={auditsQuery.data?.limit ?? auditsLimit}
-            rangeLabel={auditsRangeLabel}
-            hasPrevious={auditsQuery.data?.hasPrevious ?? auditsOffset > 0}
-            hasNext={auditsQuery.data?.hasNext ?? false}
-            isFetching={auditsQuery.isFetching}
-            onPageSizeChange={(value) =>
-              setAuditsLimit(value as (typeof ADMIN_PAGE_SIZE_OPTIONS)[number])
-            }
-            onPrevious={() =>
-              setAuditsOffset((currentOffset) =>
-                Math.max(0, currentOffset - auditsLimit)
-              )
-            }
-            onNext={() =>
-              setAuditsOffset((currentOffset) => currentOffset + auditsLimit)
-            }
-          />
+          <TabsContent
+            value="subscriptions"
+            className="mt-0 flex-none outline-none data-[state=inactive]:hidden"
+          >
+            <section className="grid gap-4">
+              <div className="grid gap-1">
+                <h2 className="text-3xl font-semibold text-(--text)">
+                  {t("eventSub.title")}
+                </h2>
+                <p className="text-sm text-(--muted)">
+                  {t("eventSub.description")}
+                </p>
+                <p className="text-xs text-(--muted)">
+                  {t("eventSub.currentCallback", {
+                    callback:
+                      data?.eventSub?.currentCallbackUrl ?? t("table.none"),
+                  })}
+                </p>
+                <p className="text-xs text-(--muted)">
+                  {t("eventSub.currentBotUserId", {
+                    userId: data?.eventSub?.currentBotUserId ?? t("table.none"),
+                  })}
+                </p>
+              </div>
+              {data?.eventSub?.error ? (
+                <div className="border border-amber-400/40 bg-amber-500/10 p-4 text-sm text-amber-100">
+                  {data.eventSub.error}
+                </div>
+              ) : null}
+              <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+                <AdminMetric
+                  icon={Bot}
+                  label={t("metrics.botChatChannels.label")}
+                  value={String(
+                    data?.eventSub?.channelsWithChatSubscription ?? 0
+                  )}
+                  description={t("metrics.botChatChannels.description")}
+                />
+                <AdminMetric
+                  icon={MessageSquare}
+                  label={t("metrics.chatSubscriptions.label")}
+                  value={String(data?.eventSub?.totalChatSubscriptions ?? 0)}
+                  description={t("metrics.chatSubscriptions.description")}
+                />
+                <AdminMetric
+                  icon={AlertTriangle}
+                  label={t("metrics.duplicateChatChannels.label")}
+                  value={String(
+                    data?.eventSub?.channelsWithDuplicateChatSubscriptions ?? 0
+                  )}
+                  description={t("metrics.duplicateChatChannels.description")}
+                />
+              </div>
+              <AdminTable
+                data={data?.eventSub?.channels ?? []}
+                columns={eventSubColumns}
+                emptyMessage={t("eventSub.empty")}
+              />
+            </section>
+          </TabsContent>
+
+          <TabsContent
+            value="activity"
+            className="mt-0 flex-none outline-none data-[state=inactive]:hidden"
+          >
+            <section className="grid gap-4">
+              <div className="flex flex-wrap items-end justify-between gap-3">
+                <div className="grid gap-1">
+                  <h2 className="text-3xl font-semibold text-(--text)">
+                    {t("logs.title")}
+                  </h2>
+                  <p className="text-sm text-(--muted)">
+                    {t("logs.description")}
+                  </p>
+                </div>
+                <AdminPaginationControls
+                  total={logsQuery.data?.total ?? 0}
+                  offset={logsQuery.data?.offset ?? logsOffset}
+                  limit={logsQuery.data?.limit ?? logsLimit}
+                  rangeLabel={logsRangeLabel}
+                  hasPrevious={logsQuery.data?.hasPrevious ?? logsOffset > 0}
+                  hasNext={logsQuery.data?.hasNext ?? false}
+                  isFetching={logsQuery.isFetching}
+                  onPageSizeChange={(value) =>
+                    setLogsLimit(
+                      value as (typeof ADMIN_PAGE_SIZE_OPTIONS)[number]
+                    )
+                  }
+                  onPrevious={() =>
+                    setLogsOffset((currentOffset) =>
+                      Math.max(0, currentOffset - logsLimit)
+                    )
+                  }
+                  onNext={() =>
+                    setLogsOffset((currentOffset) => currentOffset + logsLimit)
+                  }
+                />
+              </div>
+              <AdminTable
+                data={logs}
+                columns={requestLogColumns}
+                isLoading={logsQuery.isPending}
+                loadingMessage={t("logs.loading")}
+                emptyMessage={t("logs.empty")}
+              />
+            </section>
+
+            <section className="grid gap-4">
+              <div className="flex flex-wrap items-end justify-between gap-3">
+                <div className="grid gap-1">
+                  <h2 className="text-3xl font-semibold text-(--text)">
+                    {t("audits.title")}
+                  </h2>
+                  <p className="text-sm text-(--muted)">
+                    {t("audits.description")}
+                  </p>
+                </div>
+                <AdminPaginationControls
+                  total={auditsQuery.data?.total ?? 0}
+                  offset={auditsQuery.data?.offset ?? auditsOffset}
+                  limit={auditsQuery.data?.limit ?? auditsLimit}
+                  rangeLabel={auditsRangeLabel}
+                  hasPrevious={
+                    auditsQuery.data?.hasPrevious ?? auditsOffset > 0
+                  }
+                  hasNext={auditsQuery.data?.hasNext ?? false}
+                  isFetching={auditsQuery.isFetching}
+                  onPageSizeChange={(value) =>
+                    setAuditsLimit(
+                      value as (typeof ADMIN_PAGE_SIZE_OPTIONS)[number]
+                    )
+                  }
+                  onPrevious={() =>
+                    setAuditsOffset((currentOffset) =>
+                      Math.max(0, currentOffset - auditsLimit)
+                    )
+                  }
+                  onNext={() =>
+                    setAuditsOffset(
+                      (currentOffset) => currentOffset + auditsLimit
+                    )
+                  }
+                />
+              </div>
+              <AdminTable
+                data={audits}
+                columns={auditLogColumns}
+                isLoading={auditsQuery.isPending}
+                loadingMessage={t("audits.loading")}
+                emptyMessage={t("audits.empty")}
+              />
+            </section>
+          </TabsContent>
+
+          {showDevelopmentAdminTools ? (
+            <TabsContent
+              value="groupedSongs"
+              className="mt-0 flex-none outline-none data-[state=inactive]:hidden"
+            >
+              <GroupedSongsReviewCard
+                query={groupedSongsQuery}
+                onQueryChange={setGroupedSongsQuery}
+                groupingSource={groupedSongsFilter}
+                onGroupingSourceChange={setGroupedSongsFilter}
+                page={groupedSongsPage}
+                onPreviousPage={() =>
+                  setGroupedSongsPage((current) => Math.max(1, current - 1))
+                }
+                onNextPage={() => setGroupedSongsPage((current) => current + 1)}
+                isLoading={groupedSongsQueryResult.isLoading}
+                error={groupedSongsError}
+                total={groupedSongsQueryResult.data?.total ?? 0}
+                pageSize={groupedSongsQueryResult.data?.pageSize ?? 25}
+                hasNextPage={groupedSongsQueryResult.data?.hasNextPage ?? false}
+                items={groupedSongsQueryResult.data?.items ?? []}
+                canManageBlacklist={false}
+                blacklistedSongIds={emptySongIdSet}
+                blacklistedCharterIds={emptyCharterIdSet}
+                preferredCharterIds={emptyCharterIdSet}
+                isBlacklistSongPending={false}
+                onBlacklistCandidateSong={() => {}}
+                onUnblacklistCandidateSong={() => {}}
+                onPreferCharter={() => {}}
+                onUnpreferCharter={() => {}}
+              />
+            </TabsContent>
+          ) : null}
         </div>
-        <AdminTable
-          data={audits}
-          columns={auditLogColumns}
-          isLoading={auditsQuery.isPending}
-          loadingMessage={t("audits.loading")}
-          emptyMessage={t("audits.empty")}
-        />
-      </section>
+      </Tabs>
     </div>
   );
 }

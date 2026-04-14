@@ -5,7 +5,7 @@
 1. Branch from `main`.
 
 Never commit directly to `main` and never push directly to `main`. If you start work while checked out on `main`, create a feature branch before staging, committing, or pushing. Do not bypass the repo hook that blocks commits on `main`.
-2. Install dependencies and bootstrap local data:
+2. Install dependencies and prepare the local app:
 
 ```bash
 npm install
@@ -94,6 +94,9 @@ Do not leave code that expects a schema change without a checked-in migration.
 - Keep [CHANGELOG.md](CHANGELOG.md), [package.json](package.json), and [package-lock.json](package-lock.json) aligned when preparing a release.
 - Update the version and changelog for every branch that merges into `main`.
 - Use a versioned changelog entry for shipped work. Do not keep an `Unreleased` section for merged changes.
+- Treat [CHANGELOG.md](CHANGELOG.md) as public release notes for a broad audience because it is shown in the app.
+- Write changelog entries around user-visible outcomes, not internal implementation details or engineering process notes.
+- Avoid internal-only language in changelog entries, such as SQL, database query behavior, CI, hooks, migrations, deployment plumbing, or exact failure modes.
 - Use `0.x.x` while the app is still pre-`1.0`.
 - Use a patch release for routine shipped work, fixes, docs, workflow updates, and cleanup.
 - Use a minor release when the shipped product scope expands materially.

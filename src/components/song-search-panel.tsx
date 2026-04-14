@@ -56,6 +56,7 @@ import {
   buildRequestedPathQuery,
   type RequestPathOption,
 } from "~/lib/requested-paths";
+import type { SongSearchResult } from "~/lib/song-search/types";
 import {
   formatCompactTuningSummary,
   getUniqueTunings,
@@ -70,28 +71,7 @@ import { cn, getErrorMessage } from "~/lib/utils";
 
 type SearchField = "any" | "title" | "artist" | "album" | "creator";
 
-export interface SearchSong {
-  id: string;
-  groupedProjectId?: number;
-  artistId?: number;
-  authorId?: number;
-  isPreferredCharter?: boolean;
-  title: string;
-  artist?: string;
-  album?: string;
-  creator?: string;
-  tuning?: string;
-  tuningIds?: number[];
-  parts?: string[];
-  durationText?: string;
-  durationSeconds?: number;
-  year?: number;
-  downloads?: number;
-  sourceUpdatedAt?: number;
-  sourceId?: number;
-  hasLyrics?: boolean;
-  source: string;
-}
+export interface SearchSong extends SongSearchResult {}
 
 type SearchResponse = {
   results: Array<
@@ -691,6 +671,7 @@ export function SongSearchPanel(props: {
     const isTop = position === "top";
     const showTopFilterSummary = isTop && showAppliedFiltersSummary;
     const showTopCount = isTop && !queryTooShort && !error && data != null;
+    const showTopSummaryBlock = showTopCount || showTopFilterSummary;
 
     if (totalPages <= 1 && !showTopFilterSummary && !showTopCount) {
       return null;
@@ -698,8 +679,18 @@ export function SongSearchPanel(props: {
 
     const paginationControls =
       totalPages > 1 ? (
-        <div className="flex justify-center">
-          <Pagination className="mx-auto w-auto justify-center">
+        <div
+          className={cn(
+            "flex justify-center",
+            isTop && "min-[940px]:justify-end"
+          )}
+        >
+          <Pagination
+            className={cn(
+              "mx-auto w-auto justify-center",
+              isTop && "min-[940px]:mx-0"
+            )}
+          >
             <PaginationContent>
               <PaginationItem>
                 <PaginationPrevious
@@ -754,49 +745,54 @@ export function SongSearchPanel(props: {
       <div
         className={cn(
           "grid gap-3 px-5 py-4",
+          isTop && showTopSummaryBlock
+            ? "min-[940px]:grid-cols-[minmax(0,1fr)_auto] min-[940px]:items-start"
+            : "",
           isTop
             ? "border-b border-(--border) bg-(--panel-muted)"
             : "border-t border-(--border) bg-(--panel-muted)"
         )}
       >
-        {isTop ? (
+        {isTop && showTopSummaryBlock ? (
           <>
-            {showTopCount ? (
-              <p className="text-sm font-semibold text-(--text)">
-                {t("summary.foundCount", { count: summaryCount })}
-              </p>
-            ) : null}
-            {showTopFilterSummary ? (
-              <div className="min-w-0 flex flex-wrap items-center gap-1.5 text-xs text-(--muted)">
-                <span className="uppercase tracking-[0.16em]">
-                  {t("summary.filters")}
-                </span>
-                {activePathFilters.map((path) => (
-                  <PathBadge
-                    key={`summary-${path}`}
-                    label={getPathLabel(path).toUpperCase()}
-                    shortLabel={getPathShortLabel(path)}
-                    className={getPathToneByValue(path)}
-                  />
-                ))}
-                {activeNonPathFilterCount > 0 ? (
-                  <span className="inline-flex items-center border border-(--border-strong) bg-(--panel) px-2 py-1 text-[11px] font-medium text-(--text)">
-                    {t("summary.moreCount", {
-                      count: activeNonPathFilterCount,
-                    })}
+            <div className="min-w-0 grid gap-2">
+              {showTopCount ? (
+                <p className="text-sm font-semibold text-(--text)">
+                  {t("summary.foundCount", { count: summaryCount })}
+                </p>
+              ) : null}
+              {showTopFilterSummary ? (
+                <div className="min-w-0 flex flex-wrap items-center gap-1.5 text-xs text-(--muted)">
+                  <span className="uppercase tracking-[0.16em]">
+                    {t("summary.filters")}
                   </span>
-                ) : null}
-                {!showAdvanced ? (
-                  <button
-                    type="button"
-                    className="text-(--brand) transition hover:opacity-80"
-                    onClick={() => setShowAdvanced(true)}
-                  >
-                    {t("summary.changeFilters")}
-                  </button>
-                ) : null}
-              </div>
-            ) : null}
+                  {activePathFilters.map((path) => (
+                    <PathBadge
+                      key={`summary-${path}`}
+                      label={getPathLabel(path).toUpperCase()}
+                      shortLabel={getPathShortLabel(path)}
+                      className={getPathToneByValue(path)}
+                    />
+                  ))}
+                  {activeNonPathFilterCount > 0 ? (
+                    <span className="inline-flex items-center border border-(--border-strong) bg-(--panel) px-2 py-1 text-[11px] font-medium text-(--text)">
+                      {t("summary.moreCount", {
+                        count: activeNonPathFilterCount,
+                      })}
+                    </span>
+                  ) : null}
+                  {!showAdvanced ? (
+                    <button
+                      type="button"
+                      className="text-(--brand) transition hover:opacity-80"
+                      onClick={() => setShowAdvanced(true)}
+                    >
+                      {t("summary.changeFilters")}
+                    </button>
+                  ) : null}
+                </div>
+              ) : null}
+            </div>
             {paginationControls}
           </>
         ) : (

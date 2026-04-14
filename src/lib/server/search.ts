@@ -6,31 +6,14 @@ import { getSessionUserId } from "~/lib/auth/session.server";
 import { consumeSearchRateLimit } from "~/lib/db/repositories";
 import type { AppEnv } from "~/lib/env";
 import { performCachedCatalogSearch } from "~/lib/server/cached-catalog-search";
+import type { SongSearchResult } from "~/lib/song-search/types";
 import { sha256 } from "~/lib/utils";
 import { searchInputSchema } from "~/lib/validation";
 
 export type SearchInput = z.input<typeof searchInputSchema>;
 
 export type SearchResponse = {
-  results: Array<{
-    id: string;
-    groupedProjectId?: number;
-    artistId?: number;
-    authorId?: number;
-    title: string;
-    artist?: string;
-    album?: string;
-    creator?: string;
-    tuning?: string;
-    parts?: string[];
-    durationText?: string;
-    year?: number;
-    hasLyrics?: boolean;
-    downloads?: number;
-    sourceId?: number;
-    source: string;
-    sourceUrl?: string;
-  }>;
+  results: SongSearchResult[];
   total: number;
   hiddenBlacklistedCount?: number;
   page: number;

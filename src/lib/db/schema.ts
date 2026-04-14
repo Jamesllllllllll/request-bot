@@ -461,6 +461,38 @@ export const playlistItems = sqliteTable(
   ]
 );
 
+export const channelChatterActivity = sqliteTable(
+  "channel_chatter_activity",
+  {
+    channelId: text("channel_id")
+      .notNull()
+      .references(() => channels.id),
+    twitchUserId: text("twitch_user_id").notNull(),
+    login: text("login").notNull(),
+    displayName: text("display_name").notNull(),
+    lastChatAt: integer("last_chat_at").notNull(),
+    createdAt: integer("created_at")
+      .notNull()
+      .default(sql`(unixepoch() * 1000)`),
+    updatedAt: integer("updated_at")
+      .notNull()
+      .default(sql`(unixepoch() * 1000)`),
+  },
+  (table) => [
+    primaryKey({
+      columns: [table.channelId, table.twitchUserId],
+    }),
+    index("channel_chatter_activity_channel_last_chat_idx").on(
+      table.channelId,
+      table.lastChatAt
+    ),
+    index("channel_chatter_activity_channel_login_idx").on(
+      table.channelId,
+      table.login
+    ),
+  ]
+);
+
 export const blockedUsers = sqliteTable(
   "blocked_users",
   {
@@ -987,6 +1019,8 @@ export type ChannelOwnedOfficialDlcInsert =
   typeof channelOwnedOfficialDlcs.$inferInsert;
 export type PlaylistInsert = typeof playlists.$inferInsert;
 export type PlaylistItemInsert = typeof playlistItems.$inferInsert;
+export type ChannelChatterActivityInsert =
+  typeof channelChatterActivity.$inferInsert;
 export type BlockedUserInsert = typeof blockedUsers.$inferInsert;
 export type BlacklistedArtistInsert = typeof blacklistedArtists.$inferInsert;
 export type BlacklistedSongInsert = typeof blacklistedSongs.$inferInsert;

@@ -1,7 +1,7 @@
 // Route: Shows the public playlist page for a single channel by slug.
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
-import { Check, CircleQuestionMark, Heart } from "lucide-react";
+import { Check, CircleQuestionMark, Clock3, Heart } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
 import { useEffect, useMemo, useState } from "react";
 import { ChannelCommunityPanel } from "~/components/channel-community-panel";
@@ -61,6 +61,10 @@ import { getLocalizedPageTitle } from "~/lib/i18n/metadata";
 import { formatSlugTitle } from "~/lib/page-title";
 import { getPickNumbersForQueuedItems } from "~/lib/pick-order";
 import {
+  isRequesterInactive,
+  mergeRequesterLastChatActivity,
+} from "~/lib/playlist/requester-activity";
+import {
   ADD_REQUESTS_WHEN_LIVE_MESSAGE,
   areChannelRequestsOpen,
 } from "~/lib/request-availability";
@@ -108,6 +112,7 @@ type PublicPlaylistItem = {
   requestedByLogin?: string | null;
   requestedByDisplayName?: string | null;
   requesterChatBadges?: RequesterChatBadge[] | null;
+  requesterLastChatAt?: number | null;
   requestKind?: "regular" | "vip" | null;
   vipTokenCost?: number | null;
   requestedQuery?: string | null;
@@ -388,6 +393,31 @@ function mergeStreamPlaylistData(
       payload.blacklistSongGroups ?? current?.blacklistSongGroups ?? [],
     setlistArtists: payload.setlistArtists ?? current?.setlistArtists ?? [],
   };
+}
+
+function mergeManagementRequesterActivity(
+  current: ManagementChannelPageData | null | undefined,
+  payload: PlaylistStreamPayload
+) {
+  if (!current) {
+    return current;
+  }
+
+  return {
+    ...current,
+    channel: {
+      ...(current.channel ?? {}),
+      ...(payload.channel ?? {}),
+    },
+    settings: {
+      ...(current.settings ?? {}),
+      ...(payload.settings ?? {}),
+    },
+    items: mergeRequesterLastChatActivity(
+      current.items ?? [],
+      payload.items ?? []
+    ),
+  } satisfies ManagementChannelPageData;
 }
 
 function getStreamReason(payload: PlaylistStreamPayload) {
@@ -790,8 +820,23 @@ function PublicChannelPage() {
     const source = new EventSource(
       `/api/channel/${slug}/playlist/management-stream`
     );
-    const handlePlaylistEvent = (_event: Event) => {
+    const handlePlaylistEvent = (event: Event) => {
+      const payload = JSON.parse(
+        (event as MessageEvent<string>).data
+      ) as PlaylistStreamPayload;
+      const reason = getStreamReason(payload);
+
       markStreamHealthy();
+
+      if (reason === "chat-activity") {
+        queryClient.setQueryData<ManagementChannelPageData | null>(
+          managementPlaylistQueryKey,
+          (current) =>
+            mergeManagementRequesterActivity(current, payload) ?? null
+        );
+        return;
+      }
+
       void queryClient.invalidateQueries({
         queryKey: managementPlaylistQueryKey,
         refetchType: "active",
@@ -4172,6 +4217,12 @@ function PublicPlaylistRow(props: {
     editedTimestamp != null &&
     editedLabel != null &&
     (props.item.createdAt == null || editedTimestamp > props.item.createdAt);
+  const requesterLastChatAt = props.item.requesterLastChatAt ?? null;
+  const requesterActivityLabel =
+    requesterLastChatAt != null
+      ? formatCompactPlaylistRelativeTime(requesterLastChatAt, t)
+      : null;
+  const requesterInactive = isRequesterInactive(requesterLastChatAt);
   const metadataLine = [
     addedLabel ? t("row.added", { time: addedLabel }) : null,
     showEditedLabel && editedLabel
@@ -4246,6 +4297,22 @@ function PublicPlaylistRow(props: {
             <p className="min-w-0 truncate text-base font-semibold text-(--text)">
               {requesterName}
             </p>
+            {requesterInactive ? (
+              <Badge className="border-amber-400/40 bg-amber-500/15 text-amber-100 hover:bg-amber-500/15">
+                {t("management.item.inactiveBadge")}
+              </Badge>
+            ) : null}
+            {requesterActivityLabel ? (
+              <span
+                className={cn(
+                  "inline-flex items-center gap-1 text-xs font-medium",
+                  requesterInactive ? "text-amber-100" : "text-(--muted)"
+                )}
+              >
+                <Clock3 className="h-3.5 w-3.5" />
+                <span>{requesterActivityLabel}</span>
+              </span>
+            ) : null}
           </div>
           <div className="mt-2 flex flex-wrap items-center gap-2">
             {props.showPickOrderBadges && props.item.pickNumber != null ? (

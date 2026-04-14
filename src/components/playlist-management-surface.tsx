@@ -93,6 +93,7 @@ import {
   getUpdatedPositionsAfterSetCurrent,
   getUpdatedQueuedPositionsAfterKindChange,
 } from "~/lib/playlist/order";
+import { isRequesterInactive } from "~/lib/playlist/requester-activity";
 import { areChannelRequestsOpen } from "~/lib/request-availability";
 import { formatPathLabel } from "~/lib/request-policy";
 import {
@@ -154,6 +155,7 @@ export type PlaylistItem = {
   regularPosition?: number | null;
   status: string;
   requestKind?: "regular" | "vip";
+  requesterLastChatAt?: number | null;
 };
 
 export type PlaylistCandidate = {
@@ -2997,6 +2999,10 @@ function PlaylistQueueItem(props: {
     editedTimestamp != null && editedTimestamp > props.item.createdAt
       ? t("row.edited", { time: formatTimeAgo(t, editedTimestamp) })
       : null;
+  const requesterLastChatAt = props.item.requesterLastChatAt ?? null;
+  const requesterInactive = isRequesterInactive(requesterLastChatAt);
+  const requesterActivityLabel =
+    requesterLastChatAt != null ? formatTimeAgo(t, requesterLastChatAt) : null;
 
   useEffect(() => {
     const element = itemRef.current;
@@ -3243,6 +3249,14 @@ function PlaylistQueueItem(props: {
                       {t("management.item.playingBadge")}
                     </Badge>
                   ) : null}
+                  {requesterInactive ? (
+                    <StatusPill
+                      icon={AlertTriangle}
+                      className="border-amber-400/40 bg-amber-500/15 text-amber-200"
+                    >
+                      {t("management.item.inactiveBadge")}
+                    </StatusPill>
+                  ) : null}
                   {props.item.warningMessage ? (
                     <StatusPill
                       icon={AlertTriangle}
@@ -3318,6 +3332,17 @@ function PlaylistQueueItem(props: {
                   ) : null}
                 </p>
               </div>
+              {getRequesterLabel(props.item) && requesterActivityLabel ? (
+                <p
+                  className={cn(
+                    "inline-flex items-center gap-1.5 text-sm",
+                    requesterInactive ? "text-amber-100" : "text-(--muted)"
+                  )}
+                >
+                  <Clock3 className="h-3.5 w-3.5" />
+                  <span>{requesterActivityLabel}</span>
+                </p>
+              ) : null}
               {props.item.requestedQuery &&
               !getRequestedPathLabel(props.item) ? (
                 <p className="text-xs text-amber-200">

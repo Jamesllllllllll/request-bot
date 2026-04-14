@@ -7,6 +7,7 @@ import { getDb } from "~/lib/db/client";
 import {
   getChannelBlacklistByChannelId,
   getChannelBySlug,
+  getChannelChatterActivityForRequesters,
   getChannelPreferredChartersByChannelId,
   getChannelSettingsByChannelId,
   getPlaylistByChannelId,
@@ -26,6 +27,7 @@ import {
   toPublicPreferredCharter,
   toPublicSetlistArtist,
 } from "~/lib/playlist/public-response";
+import { attachRequesterLastChatActivity } from "~/lib/playlist/requester-activity";
 import {
   getAllowedRequestPathsSetting,
   getRequestPathModifierVipTokenCostsSetting,
@@ -88,8 +90,37 @@ export const Route = createFileRoute("/api/channel/$slug/playlist")({
               allowedRequestPathsJson: "[]",
             }
           );
-          const publicItems = (
-            await enrichPlaylistItems(runtimeEnv, playlist?.items ?? [])
+          const enrichedItems = await enrichPlaylistItems(
+            runtimeEnv,
+            playlist?.items ?? []
+          );
+          const playlistRequesterItems = enrichedItems as Array<{
+            requestedByTwitchUserId?: string | null;
+            requestedByLogin?: string | null;
+          }>;
+          const activityRows = await getChannelChatterActivityForRequesters(
+            runtimeEnv,
+            {
+              channelId: channel.id,
+              twitchUserIds: playlistRequesterItems
+                .map((item) =>
+                  typeof item.requestedByTwitchUserId === "string"
+                    ? item.requestedByTwitchUserId
+                    : ""
+                )
+                .filter(Boolean),
+              logins: playlistRequesterItems
+                .map((item) =>
+                  typeof item.requestedByLogin === "string"
+                    ? item.requestedByLogin
+                    : ""
+                )
+                .filter(Boolean),
+            }
+          );
+          const publicItems = attachRequesterLastChatActivity(
+            enrichedItems,
+            activityRows
           ).map((item) =>
             toPublicPlaylistItem(
               item as unknown as Parameters<typeof toPublicPlaylistItem>[0]

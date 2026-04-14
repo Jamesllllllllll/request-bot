@@ -1,5 +1,5 @@
 import "@tanstack/react-start/server-only";
-import { and, asc, desc, eq, gt, inArray, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gt, inArray, or, sql } from "drizzle-orm";
 import { rollupFavoriteCharts } from "~/lib/channel-favorites";
 import type { AppEnv } from "~/lib/env";
 import { toPublicOverlaySettings } from "~/lib/overlay/public-settings";
@@ -8,6 +8,7 @@ import {
   getPreferredCharterSets,
   type PlaylistCandidateMatch,
 } from "~/lib/playlist/candidate-matches";
+import { REQUESTER_ACTIVITY_WRITE_THROTTLE_MS } from "~/lib/playlist/requester-activity";
 import { filterPlayedSongsSinceReset } from "~/lib/playlist/session";
 import { DEFAULT_MAX_QUEUE_SIZE } from "~/lib/settings-defaults";
 import {
@@ -73,6 +74,7 @@ import {
   type ChannelOwnedOfficialDlcInsert,
   catalogSearchState,
   catalogSongs,
+  channelChatterActivity,
   channelFavoriteCharts,
   channelOwnedOfficialDlcs,
   channelSettings,
@@ -858,6 +860,140 @@ export async function getPlaylistByChannelId(env: AppEnv, channelId: string) {
       (item) => item.status === "queued" || item.status === "current"
     ),
   };
+}
+
+export async function upsertChannelChatterActivity(
+  env: RepositoryDbEnv,
+  input: {
+    channelId: string;
+    twitchUserId: string;
+    login: string;
+    displayName: string;
+    lastChatAt?: number;
+  }
+) {
+  const normalizedLogin = input.login.trim().toLowerCase();
+  if (!normalizedLogin) {
+    return {
+      updated: false,
+      lastChatAt: input.lastChatAt ?? Date.now(),
+      previousLastChatAt: null,
+    };
+  }
+
+  const db = getDb(env);
+  const lastChatAt = input.lastChatAt ?? Date.now();
+  const existing = await db.query.channelChatterActivity.findFirst({
+    where: and(
+      eq(channelChatterActivity.channelId, input.channelId),
+      eq(channelChatterActivity.twitchUserId, input.twitchUserId)
+    ),
+    columns: {
+      lastChatAt: true,
+    },
+  });
+
+  if (
+    existing?.lastChatAt != null &&
+    lastChatAt - existing.lastChatAt < REQUESTER_ACTIVITY_WRITE_THROTTLE_MS
+  ) {
+    return {
+      updated: false,
+      lastChatAt: existing.lastChatAt,
+      previousLastChatAt: existing.lastChatAt,
+    };
+  }
+
+  await db
+    .insert(channelChatterActivity)
+    .values({
+      channelId: input.channelId,
+      twitchUserId: input.twitchUserId,
+      login: normalizedLogin,
+      displayName: input.displayName,
+      lastChatAt,
+    })
+    .onConflictDoUpdate({
+      target: [
+        channelChatterActivity.channelId,
+        channelChatterActivity.twitchUserId,
+      ],
+      set: {
+        login: normalizedLogin,
+        displayName: input.displayName,
+        lastChatAt,
+        updatedAt: lastChatAt,
+      },
+    });
+
+  return {
+    updated: true,
+    lastChatAt,
+    previousLastChatAt: existing?.lastChatAt ?? null,
+  };
+}
+
+export async function hasActivePlaylistRequestForUser(
+  env: RepositoryDbEnv,
+  input: {
+    channelId: string;
+    twitchUserId: string;
+  }
+) {
+  const row = await getDb(env).query.playlistItems.findFirst({
+    where: and(
+      eq(playlistItems.channelId, input.channelId),
+      eq(playlistItems.requestedByTwitchUserId, input.twitchUserId),
+      inArray(playlistItems.status, ["queued", "current"])
+    ),
+    columns: {
+      id: true,
+    },
+  });
+
+  return !!row;
+}
+
+export async function getChannelChatterActivityForRequesters(
+  env: RepositoryDbEnv,
+  input: {
+    channelId: string;
+    twitchUserIds?: string[];
+    logins?: string[];
+  }
+) {
+  const twitchUserIds = [
+    ...new Set(input.twitchUserIds?.filter(Boolean) ?? []),
+  ];
+  const logins = [
+    ...new Set(
+      (input.logins ?? [])
+        .map((login) => login.trim().toLowerCase())
+        .filter(Boolean)
+    ),
+  ];
+
+  if (twitchUserIds.length === 0 && logins.length === 0) {
+    return [];
+  }
+
+  const requesterFilter =
+    twitchUserIds.length > 0 && logins.length > 0
+      ? or(
+          inArray(channelChatterActivity.twitchUserId, twitchUserIds),
+          inArray(channelChatterActivity.login, logins)
+        )
+      : twitchUserIds.length > 0
+        ? inArray(channelChatterActivity.twitchUserId, twitchUserIds)
+        : inArray(channelChatterActivity.login, logins);
+
+  return getDb(env).query.channelChatterActivity.findMany({
+    where: and(
+      eq(channelChatterActivity.channelId, input.channelId),
+      requesterFilter
+    ),
+    orderBy: [desc(channelChatterActivity.lastChatAt)],
+  });
 }
 
 export async function getExtensionPanelPlaylistByChannelId(

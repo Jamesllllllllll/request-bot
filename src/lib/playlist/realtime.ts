@@ -8,6 +8,7 @@ export const playlistStreamNotifyReasons = [
   "blocks",
   "vip-tokens",
   "favorites",
+  "chat-activity",
 ] as const;
 
 export type PlaylistStreamNotifyReason =

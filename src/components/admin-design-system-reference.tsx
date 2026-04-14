@@ -90,7 +90,7 @@ export function AdminDesignSystemReference() {
                 <Label htmlFor="design-preview-search">Search field</Label>
                 <Input
                   id="design-preview-search"
-                  defaultValue="Smashing Pumpkins"
+                  defaultValue="Example Artist"
                 />
               </div>
               <div className="grid gap-2">
@@ -127,9 +127,9 @@ export function AdminDesignSystemReference() {
             </div>
             <div className="grid grid-cols-[minmax(0,2.1fr)_minmax(0,1.4fr)_minmax(0,1.2fr)_minmax(0,1fr)_72px] gap-4 bg-(--panel-strong) px-4 py-4">
               <div>
-                <p className="font-semibold text-(--text)">Cherub Rock</p>
+                <p className="font-semibold text-(--text)">Sample Song One</p>
                 <p className="mt-1 text-sm text-(--brand-deep)">
-                  Smashing Pumpkins
+                  Example Artist
                 </p>
               </div>
               <div>
@@ -155,9 +155,9 @@ export function AdminDesignSystemReference() {
             </div>
             <div className="grid grid-cols-[minmax(0,2.1fr)_minmax(0,1.4fr)_minmax(0,1.2fr)_minmax(0,1fr)_72px] gap-4 bg-(--panel-soft) px-4 py-4">
               <div>
-                <p className="font-semibold text-(--text)">Mayonaise</p>
+                <p className="font-semibold text-(--text)">Sample Song Two</p>
                 <p className="mt-1 text-sm text-(--brand-deep)">
-                  Smashing Pumpkins
+                  Example Artist
                 </p>
               </div>
               <div>

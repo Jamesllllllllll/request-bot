@@ -484,6 +484,15 @@ export const favoriteSongsPageSchema = z.object({
   pageSize: z.coerce.number().int().min(1).max(50).default(10),
 });
 
+export const groupedSongsPageSchema = z.object({
+  page: z.coerce.number().int().min(1).default(1),
+  pageSize: z.coerce.number().int().min(1).max(100).default(25),
+  query: z.string().trim().max(200).optional(),
+  groupingSource: z
+    .enum(["all", "groupedProjectId", "fallback", "both"])
+    .default("all"),
+});
+
 export const channelFavoriteMutationSchema = z.object({
   catalogSongId: z.string().trim().min(1).max(80),
   favorited: z.boolean(),

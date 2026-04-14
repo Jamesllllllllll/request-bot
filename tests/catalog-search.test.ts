@@ -9,6 +9,43 @@ vi.mock("~/lib/db/client", () => ({
 import { getDb } from "~/lib/db/client";
 import { searchCatalogSongs } from "~/lib/db/repositories";
 
+function toGroupingRow(row: {
+  id: string;
+  sourceSongId: number;
+  groupedProjectId: number | null;
+  artistId: number | null;
+  authorId: number | null;
+  title: string;
+  artistName: string;
+  albumName: string | null;
+  creatorName: string | null;
+  tuningSummary: string | null;
+  partsJson: string;
+  durationText: string | null;
+  durationSeconds: number | null;
+  year: number | null;
+  sourceUpdatedAt: number | null;
+  downloads: number;
+  hasLyrics: number;
+  source: string;
+}) {
+  return {
+    ...row,
+    leadTuningId: null,
+    leadTuningName: null,
+    rhythmTuningId: null,
+    rhythmTuningName: null,
+    bassTuningId: null,
+    bassTuningName: null,
+    altLeadTuningId: null,
+    altRhythmTuningId: null,
+    altBassTuningId: null,
+    bonusLeadTuningId: null,
+    bonusRhythmTuningId: null,
+    bonusBassTuningId: null,
+  };
+}
+
 describe("searchCatalogSongs", () => {
   const env = {} as AppEnv;
 
@@ -18,6 +55,29 @@ describe("searchCatalogSongs", () => {
 
   it("falls back to LIKE-only search when the FTS MATCH query fails", async () => {
     const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const matchedRows = [
+      {
+        id: "song-1",
+        sourceSongId: 12345,
+        groupedProjectId: null,
+        artistId: 77,
+        authorId: 88,
+        title: "Signal Bloom",
+        artistName: "The Example Band",
+        albumName: "Siamese Dream",
+        creatorName: "Charter",
+        tuningSummary: "Eb Standard",
+        partsJson: '["lead","rhythm"]',
+        durationText: "4:58",
+        durationSeconds: 298,
+        year: 1993,
+        sourceUpdatedAt: 1,
+        downloads: 1000,
+        hasLyrics: 1,
+        source: "custom",
+        relevance: 80,
+      },
+    ];
     const dbAll = vi
       .fn()
       .mockRejectedValueOnce(
@@ -25,43 +85,24 @@ describe("searchCatalogSongs", () => {
           "Failed query: SELECT rowid FROM catalog_song_fts WHERE catalog_song_fts MATCH ?"
         )
       )
-      .mockRejectedValueOnce(
-        new Error(
-          "Failed query: SELECT rowid FROM catalog_song_fts WHERE catalog_song_fts MATCH ?"
-        )
-      )
-      .mockResolvedValueOnce([{ count: 1 }])
-      .mockResolvedValueOnce([
-        {
-          id: "song-1",
-          sourceSongId: 12345,
-          groupedProjectId: null,
-          artistId: 77,
-          authorId: 88,
-          title: "Cherub Rock",
-          artistName: "The Smashing Pumpkins",
-          albumName: "Siamese Dream",
-          creatorName: "Charter",
-          tuningSummary: "Eb Standard",
-          partsJson: '["lead","rhythm"]',
-          durationText: "4:58",
-          durationSeconds: 298,
-          year: 1993,
-          sourceUpdatedAt: 1,
-          downloads: 1000,
-          hasLyrics: 1,
-          source: "custom",
-          relevance: 80,
-        },
-      ]);
+      .mockResolvedValueOnce(matchedRows)
+      .mockResolvedValueOnce(matchedRows.map((row) => toGroupingRow(row)));
+    const dbFindMany = vi
+      .fn()
+      .mockResolvedValue(matchedRows.map((row) => toGroupingRow(row)));
 
     vi.mocked(getDb).mockReturnValue({
       all: dbAll,
+      query: {
+        catalogSongs: {
+          findMany: dbFindMany,
+        },
+      },
     } as never);
 
     await expect(
       searchCatalogSongs(env, {
-        query: "Smashing Pumpkins",
+        query: "Example Band",
         page: 1,
         pageSize: 1,
         sortBy: "relevance",
@@ -73,13 +114,13 @@ describe("searchCatalogSongs", () => {
       results: [
         {
           id: "song-1",
-          title: "Cherub Rock",
-          artist: "The Smashing Pumpkins",
+          title: "Signal Bloom",
+          artist: "The Example Band",
         },
       ],
     });
 
-    expect(dbAll).toHaveBeenCalledTimes(4);
+    expect(dbAll).toHaveBeenCalledTimes(3);
     expect(warnSpy).toHaveBeenCalledTimes(1);
 
     warnSpy.mockRestore();
@@ -87,6 +128,29 @@ describe("searchCatalogSongs", () => {
 
   it("falls back to a simplified multi-token query when the main any-field search still fails", async () => {
     const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const matchedRows = [
+      {
+        id: "song-2",
+        sourceSongId: 99078,
+        groupedProjectId: null,
+        artistId: 443,
+        authorId: 282415,
+        title: "On My Soul",
+        artistName: "Bruno Mars",
+        albumName: "The Romantic",
+        creatorName: "Djpavs",
+        tuningSummary: "E Standard",
+        partsJson: '["lead","rhythm","bass","voice"]',
+        durationText: "2:54",
+        durationSeconds: 174,
+        year: 2026,
+        sourceUpdatedAt: 1773273600000,
+        downloads: 115,
+        hasLyrics: 1,
+        source: "library",
+        relevance: 40,
+      },
+    ];
     const dbAll = vi
       .fn()
       .mockRejectedValueOnce(
@@ -94,40 +158,20 @@ describe("searchCatalogSongs", () => {
           "Failed query: SELECT rowid FROM catalog_song_fts WHERE catalog_song_fts MATCH ?"
         )
       )
-      .mockRejectedValueOnce(
-        new Error(
-          "Failed query: SELECT rowid FROM catalog_song_fts WHERE catalog_song_fts MATCH ?"
-        )
-      )
       .mockRejectedValueOnce(new Error("Failed query: SELECT complex search"))
-      .mockRejectedValueOnce(new Error("Failed query: SELECT complex search"))
-      .mockResolvedValueOnce([{ count: 1 }])
-      .mockResolvedValueOnce([
-        {
-          id: "song-2",
-          sourceSongId: 99078,
-          groupedProjectId: null,
-          artistId: 443,
-          authorId: 282415,
-          title: "On My Soul",
-          artistName: "Bruno Mars",
-          albumName: "The Romantic",
-          creatorName: "Djpavs",
-          tuningSummary: "E Standard",
-          partsJson: '["lead","rhythm","bass","voice"]',
-          durationText: "2:54",
-          durationSeconds: 174,
-          year: 2026,
-          sourceUpdatedAt: 1773273600000,
-          downloads: 115,
-          hasLyrics: 1,
-          source: "library",
-          relevance: 40,
-        },
-      ]);
+      .mockResolvedValueOnce(matchedRows)
+      .mockResolvedValueOnce(matchedRows.map((row) => toGroupingRow(row)));
+    const dbFindMany = vi
+      .fn()
+      .mockResolvedValue(matchedRows.map((row) => toGroupingRow(row)));
 
     vi.mocked(getDb).mockReturnValue({
       all: dbAll,
+      query: {
+        catalogSongs: {
+          findMany: dbFindMany,
+        },
+      },
     } as never);
 
     await expect(
@@ -153,7 +197,7 @@ describe("searchCatalogSongs", () => {
       ],
     });
 
-    expect(dbAll).toHaveBeenCalledTimes(6);
+    expect(dbAll).toHaveBeenCalledTimes(4);
     expect(warnSpy).toHaveBeenCalledTimes(2);
     expect(warnSpy.mock.calls[1]?.[0]).toBe(
       "Catalog search retrying with simplified multi-token query"
@@ -173,9 +217,15 @@ describe("searchCatalogSongs", () => {
 
       return Promise.resolve([]);
     });
+    const dbFindMany = vi.fn().mockResolvedValue([]);
 
     vi.mocked(getDb).mockReturnValue({
       all: dbAll,
+      query: {
+        catalogSongs: {
+          findMany: dbFindMany,
+        },
+      },
     } as never);
 
     await expect(
@@ -244,63 +294,72 @@ describe("searchCatalogSongs", () => {
 
   it("prioritizes preferred charters in ranking and exposes the flag in results", async () => {
     const capturedSql: unknown[] = [];
+    const matchedRows = [
+      {
+        id: "song-preferred",
+        sourceSongId: 321,
+        groupedProjectId: 11,
+        artistId: 77,
+        authorId: 42,
+        title: "Preferred Song",
+        artistName: "Artist",
+        albumName: "Album",
+        creatorName: "FavCharter",
+        tuningSummary: "E Standard",
+        partsJson: '["lead"]',
+        durationText: "3:30",
+        durationSeconds: 210,
+        year: 2025,
+        sourceUpdatedAt: 2,
+        downloads: 100,
+        hasLyrics: 1,
+        source: "library",
+        isPreferredCharter: 1,
+        relevance: 90,
+      },
+      {
+        id: "song-neutral",
+        sourceSongId: 322,
+        groupedProjectId: 12,
+        artistId: 78,
+        authorId: 99,
+        title: "Neutral Song",
+        artistName: "Artist",
+        albumName: "Album",
+        creatorName: "OtherCharter",
+        tuningSummary: "E Standard",
+        partsJson: '["lead"]',
+        durationText: "3:45",
+        durationSeconds: 225,
+        year: 2025,
+        sourceUpdatedAt: 1,
+        downloads: 50,
+        hasLyrics: 0,
+        source: "library",
+        isPreferredCharter: 0,
+        relevance: 90,
+      },
+    ];
     const dbAll = vi.fn().mockImplementation((query) => {
       capturedSql.push(query);
 
       if (capturedSql.length === 1) {
-        return Promise.resolve([{ count: 2 }]);
+        return Promise.resolve(matchedRows);
       }
 
-      return Promise.resolve([
-        {
-          id: "song-preferred",
-          sourceSongId: 321,
-          groupedProjectId: 11,
-          artistId: 77,
-          authorId: 42,
-          title: "Preferred Song",
-          artistName: "Artist",
-          albumName: "Album",
-          creatorName: "FavCharter",
-          tuningSummary: "E Standard",
-          partsJson: '["lead"]',
-          durationText: "3:30",
-          durationSeconds: 210,
-          year: 2025,
-          sourceUpdatedAt: 2,
-          downloads: 100,
-          hasLyrics: 1,
-          source: "library",
-          isPreferredCharter: 1,
-          relevance: 90,
-        },
-        {
-          id: "song-neutral",
-          sourceSongId: 322,
-          groupedProjectId: 12,
-          artistId: 78,
-          authorId: 99,
-          title: "Neutral Song",
-          artistName: "Artist",
-          albumName: "Album",
-          creatorName: "OtherCharter",
-          tuningSummary: "E Standard",
-          partsJson: '["lead"]',
-          durationText: "3:45",
-          durationSeconds: 225,
-          year: 2025,
-          sourceUpdatedAt: 1,
-          downloads: 50,
-          hasLyrics: 0,
-          source: "library",
-          isPreferredCharter: 0,
-          relevance: 90,
-        },
-      ]);
+      return Promise.resolve(matchedRows.map((row) => toGroupingRow(row)));
     });
+    const dbFindMany = vi
+      .fn()
+      .mockResolvedValue(matchedRows.map((row) => toGroupingRow(row)));
 
     vi.mocked(getDb).mockReturnValue({
       all: dbAll,
+      query: {
+        catalogSongs: {
+          findMany: dbFindMany,
+        },
+      },
     } as never);
 
     await expect(
@@ -328,11 +387,137 @@ describe("searchCatalogSongs", () => {
     });
 
     const dialect = new SQLiteAsyncDialect();
-    const rowsQuery = dialect.sqlToQuery(capturedSql[1] as never);
+    const rowsQuery = dialect.sqlToQuery(capturedSql[0] as never);
 
     expect(rowsQuery.sql).toContain("AS isPreferredCharter");
-    expect(rowsQuery.sql).toMatch(
-      /ORDER BY isPreferredCharter DESC,\s*relevance DESC/i
-    );
+  });
+
+  it("expands grouped search results to include fallback-grouped sibling versions", async () => {
+    const matchedRows = [
+      {
+        id: "song-main",
+        sourceSongId: 99001,
+        groupedProjectId: null,
+        artistId: 77,
+        authorId: 42,
+        title: "Velvet Static",
+        artistName: "The Example Band",
+        albumName: "Siamese Dream",
+        creatorName: "Charter One",
+        tuningSummary: "E Standard",
+        partsJson: '["lead"]',
+        durationText: "5:17",
+        durationSeconds: 317,
+        year: 1993,
+        sourceUpdatedAt: 2,
+        downloads: 300,
+        hasLyrics: 1,
+        source: "library",
+        isPreferredCharter: 0,
+        relevance: 90,
+      },
+    ];
+    const dbAll = vi
+      .fn()
+      .mockResolvedValueOnce(matchedRows)
+      .mockResolvedValueOnce([
+        toGroupingRow(matchedRows[0]),
+        {
+          id: "song-alt",
+          sourceSongId: 99002,
+          groupedProjectId: null,
+          artistId: 77,
+          authorId: 99,
+          title: "Velvet Static",
+          artistName: "Example Band",
+          albumName: "Siamese Dream",
+          creatorName: "Charter Two",
+          tuningSummary: "Eb Standard",
+          leadTuningId: null,
+          leadTuningName: null,
+          rhythmTuningId: null,
+          rhythmTuningName: null,
+          bassTuningId: null,
+          bassTuningName: null,
+          altLeadTuningId: null,
+          altRhythmTuningId: null,
+          altBassTuningId: null,
+          bonusLeadTuningId: null,
+          bonusRhythmTuningId: null,
+          bonusBassTuningId: null,
+          partsJson: '["rhythm"]',
+          durationText: "5:17",
+          durationSeconds: 317,
+          year: 1993,
+          sourceUpdatedAt: 1,
+          downloads: 250,
+          hasLyrics: 1,
+          source: "library",
+        },
+      ]);
+    const dbFindMany = vi.fn().mockResolvedValue([
+      toGroupingRow(matchedRows[0]),
+      {
+        id: "song-alt",
+        sourceSongId: 99002,
+        groupedProjectId: null,
+        artistId: 77,
+        authorId: 99,
+        title: "Velvet Static",
+        artistName: "Example Band",
+        albumName: "Siamese Dream",
+        creatorName: "Charter Two",
+        tuningSummary: "Eb Standard",
+        leadTuningId: null,
+        leadTuningName: null,
+        rhythmTuningId: null,
+        rhythmTuningName: null,
+        bassTuningId: null,
+        bassTuningName: null,
+        altLeadTuningId: null,
+        altRhythmTuningId: null,
+        altBassTuningId: null,
+        bonusLeadTuningId: null,
+        bonusRhythmTuningId: null,
+        bonusBassTuningId: null,
+        partsJson: '["rhythm"]',
+        durationText: "5:17",
+        durationSeconds: 317,
+        year: 1993,
+        sourceUpdatedAt: 1,
+        downloads: 250,
+        hasLyrics: 1,
+        source: "library",
+      },
+    ]);
+
+    vi.mocked(getDb).mockReturnValue({
+      all: dbAll,
+      query: {
+        catalogSongs: {
+          findMany: dbFindMany,
+        },
+      },
+    } as never);
+
+    await expect(
+      searchCatalogSongs(env, {
+        query: "Velvet Static",
+        page: 1,
+        pageSize: 10,
+        sortBy: "relevance",
+        sortDirection: "desc",
+      })
+    ).resolves.toMatchObject({
+      total: 1,
+      results: [
+        {
+          id: "song-main",
+          versionCount: 2,
+          groupingSource: "fallback",
+          tuning: "E Standard | Eb Standard",
+        },
+      ],
+    });
   });
 });

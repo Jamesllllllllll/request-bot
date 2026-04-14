@@ -2,6 +2,19 @@
 
 All notable changes to this project are documented here.
 
+## [0.6.0] - 2026-04-14
+
+### Added
+- Song search now keeps alternate chart versions together so requesters can choose a song without having to guess which chart is the right one.
+
+### Changed
+- Favoriting a song now applies across grouped versions, so saved favorites stay consistent wherever that song appears.
+- Search results, request handling, and playlist version selection now stay aligned around the same grouped-song view.
+
+### Fixed
+- Streamers and moderators now get a more complete version list when a song has alternate charts.
+- Admin tools are cleaner in production, while development-only review tools stay limited to development.
+
 ## [0.5.0] - 2026-04-13
 
 ### Added
@@ -15,38 +28,37 @@ All notable changes to this project are documented here.
 - Documentation now explains the current catalog grouping and charter preference behavior.
 
 ### Fixed
-- Full-text search falls back cleanly when D1 rejects oversized MATCH queries, and the UI now shows friendly error messages instead of raw SQL details.
+- Search failure handling is smoother, with clearer messages when a search cannot be completed.
 - Manual adds, viewer adds, and chart version switching now surface sibling chart versions more consistently in the playlist manager.
 
 ## [0.4.4] - 2026-04-12
 
 ### Changed
-- Local verification now catches formatting problems earlier, including JSON and translation files.
+- Behind-the-scenes quality checks were tightened to keep updates more stable.
 
 ### Fixed
-- Formatting mistakes now fail before CI instead of only showing up after a push.
+- Release preparation is more reliable.
 
 ## [0.4.3] - 2026-04-12
 
 ### Changed
-- Release notes and contributor guidance now follow clearer versioning rules.
+- Documentation was cleaned up and clarified.
 
 ### Fixed
-- Old local file path examples were removed from the repo history and test data.
+- Examples and references were cleaned up for consistency.
 
 ## [0.4.2] - 2026-04-12
 
 ### Changed
-- Release and deployment steps are clearer and more consistent.
+- General release housekeeping and documentation were cleaned up.
 
 ### Fixed
-- CI no longer builds the standalone Twitch panel package when it is not needed.
-- The unused dashboard panel preview route and preview copy were removed.
+- The dashboard no longer includes an unused panel preview page.
 
 ## [0.4.1] - 2026-04-12
 
 ### Fixed
-- The Twitch panel CI build now uses the configured live app URL instead of a hardcoded domain.
+- Twitch panel release configuration is more reliable.
 
 ## [0.4.0] - 2026-04-12
 

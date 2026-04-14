@@ -11,7 +11,14 @@
     "offlineTestingFailed": "Le réglage du test hors ligne n’a pas pu être mis à jour.",
     "botUpdateFailed": "Le compte du bot n’a pas pu être mis à jour.",
     "chatSubscriptionCleanupFailed": "Les abonnements de chat n’ont pas pu être nettoyés.",
+    "groupedSongsLoadFailed": "Les morceaux groupés n’ont pas pu être chargés.",
     "updated": "Mis à jour."
+  },
+  "tabs": {
+    "overview": "Vue d’ensemble",
+    "subscriptions": "Abonnements",
+    "activity": "Activité",
+    "groupedSongs": "Morceaux groupés"
   },
   "status": {
     "connected": "Connecté",

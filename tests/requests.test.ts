@@ -18,9 +18,9 @@ import {
 
 describe("parseSongRequest", () => {
   it("parses !sr commands", () => {
-    expect(parseSongRequest("!sr cherub rock")).toEqual({
+    expect(parseSongRequest("!sr signal bloom")).toEqual({
       command: "!sr",
-      query: "cherub rock",
+      query: "signal bloom",
     });
   });
 
@@ -31,9 +31,9 @@ describe("parseSongRequest", () => {
 
 describe("parseChatCommand", () => {
   it("parses vip requests", () => {
-    expect(parseChatCommand("!vip cherub rock")).toEqual({
+    expect(parseChatCommand("!vip signal bloom")).toEqual({
       command: "vip",
-      query: "cherub rock",
+      query: "signal bloom",
     });
   });
 
@@ -44,17 +44,17 @@ describe("parseChatCommand", () => {
   });
 
   it("parses vip requests with an explicit token cost", () => {
-    expect(parseChatCommand("!vip cherub rock *2")).toEqual({
+    expect(parseChatCommand("!vip signal bloom *2")).toEqual({
       command: "vip",
-      query: "cherub rock",
+      query: "signal bloom",
       vipTokenCost: 2,
     });
   });
 
   it("parses vip requests with an explicit token cost and target login", () => {
-    expect(parseChatCommand("!vip cherub rock *2 @viewer_two")).toEqual({
+    expect(parseChatCommand("!vip signal bloom *2 @viewer_two")).toEqual({
       command: "vip",
-      query: "cherub rock",
+      query: "signal bloom",
       targetLogin: "viewer_two",
       vipTokenCost: 2,
     });
@@ -67,8 +67,8 @@ describe("parseChatCommand", () => {
           id: "song-1",
           sourceId: 9941,
           source: "library",
-          title: "Cherub Rock",
-          artist: "The Smashing Pumpkins",
+          title: "Signal Bloom",
+          artist: "The Example Band",
         },
         ["bass"]
       )
@@ -104,9 +104,9 @@ describe("parseChatCommand", () => {
   });
 
   it("parses edit commands with a playlist position", () => {
-    expect(parseChatCommand("!edit #2 cherub rock")).toEqual({
+    expect(parseChatCommand("!edit #2 signal bloom")).toEqual({
       command: "edit",
-      query: "cherub rock",
+      query: "signal bloom",
       itemPosition: 2,
     });
   });

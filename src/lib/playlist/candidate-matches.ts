@@ -1,3 +1,4 @@
+import { normalizeArtistNameForSongGrouping } from "~/lib/song-grouping";
 import type { SongSearchResult } from "~/lib/song-search/types";
 import {
   decodeHtmlEntities,
@@ -48,12 +49,7 @@ export type PlaylistCatalogCandidateSong = {
 export function normalizeArtistNameForCandidateGrouping(
   artistName?: string | null
 ) {
-  const normalized = artistName?.trim().toLowerCase();
-  if (!normalized) {
-    return "";
-  }
-
-  return normalized.replace(/^the\s+/, "");
+  return normalizeArtistNameForSongGrouping(artistName);
 }
 
 export function buildPlaylistCandidateMatchesJson(

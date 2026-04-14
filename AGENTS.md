@@ -7,6 +7,19 @@
 - Write UI copy in present tense.
 - If a beta or testing action is intentionally exposed in the UI, keep the copy short and action-oriented without internal implementation details.
 
+## Public Release Copy
+
+- Treat `CHANGELOG.md` as public end-user copy. It is shown inside the app, so write it for a broad audience.
+- Write changelog entries in plain language around visible improvements, new capabilities, and user-facing fixes.
+- Do not describe internal debugging, implementation mistakes, infrastructure failures, or engineering process details unless they matter directly to users.
+- Avoid technical internals such as SQL, database query behavior, CI, hooks, migration mechanics, deployment plumbing, or exact failure modes in public changelog entries.
+- If a change is mostly internal, summarize the user-facing benefit or omit it from the public changelog.
+
+## Catalog References
+
+- Do not use specific song titles, artist names, chart examples, or catalog contents as public examples in UI copy, documentation, or repo instructions unless the user explicitly asks for them.
+- Keep public-facing copy neutral about catalog contents and focus on product behavior instead of example entries.
+
 ## Runtime And Browser Checks
 
 - For this repo, assume the app is normally already running at `http://localhost:9000`.

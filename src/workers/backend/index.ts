@@ -1,5 +1,5 @@
 import { withMonitor, withSentry } from "@sentry/cloudflare";
-import { and, asc, desc, eq, inArray } from "drizzle-orm";
+import { and, asc, eq, inArray } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/d1";
 import {
   clearVipRequestCooldownBySourceItem,
@@ -7,6 +7,7 @@ import {
   createPlayedSong,
   getActiveBroadcasterAuthorizationForChannel,
   getBotAuthorization,
+  getCatalogSongGroupRowsForSongId,
   getChannelBlacklistByChannelId,
   getChannelPreferredChartersByChannelId,
   getSessionPlayedSongsByChannelId,
@@ -30,7 +31,6 @@ import {
   buildPlaylistCandidateMatchesFromCatalogSongs,
   buildPlaylistCandidateMatchesJson,
   getPreferredCharterSets,
-  normalizeArtistNameForCandidateGrouping,
   type PlaylistCandidateMatch,
 } from "~/lib/playlist/candidate-matches";
 import {
@@ -176,89 +176,10 @@ async function buildManualAddCandidateMatchesJson(input: {
   channelId: string;
   song: ManualAddInput["song"];
 }) {
-  const db = getDb(input.env);
-  const selectedSong = await db.query.catalogSongs.findFirst({
-    where: eq(schema.catalogSongs.id, input.song.id),
-    columns: {
-      id: true,
-      groupedProjectId: true,
-      authorId: true,
-      title: true,
-      artistName: true,
-      albumName: true,
-      creatorName: true,
-      tuningSummary: true,
-      partsJson: true,
-      hasLyrics: true,
-      durationText: true,
-      year: true,
-      sourceUpdatedAt: true,
-      downloads: true,
-      source: true,
-      sourceSongId: true,
-    },
-  });
-
-  if (!selectedSong) {
-    return input.song.candidateMatchesJson;
-  }
-
-  const groupedProjectId =
-    input.song.groupedProjectId ?? selectedSong.groupedProjectId ?? undefined;
-  const catalogSongColumns = {
-    id: true,
-    groupedProjectId: true,
-    authorId: true,
-    title: true,
-    artistName: true,
-    albumName: true,
-    creatorName: true,
-    tuningSummary: true,
-    partsJson: true,
-    hasLyrics: true,
-    durationText: true,
-    year: true,
-    sourceUpdatedAt: true,
-    downloads: true,
-    source: true,
-    sourceSongId: true,
-  } as const;
-
-  let candidateSongs =
-    groupedProjectId != null
-      ? await db.query.catalogSongs.findMany({
-          where: eq(schema.catalogSongs.groupedProjectId, groupedProjectId),
-          columns: catalogSongColumns,
-          orderBy: [
-            desc(schema.catalogSongs.sourceUpdatedAt),
-            desc(schema.catalogSongs.downloads),
-            desc(schema.catalogSongs.sourceSongId),
-          ],
-        })
-      : [];
-
-  if (candidateSongs.length <= 1) {
-    const titleMatches = await db.query.catalogSongs.findMany({
-      where: eq(schema.catalogSongs.title, selectedSong.title),
-      columns: catalogSongColumns,
-      orderBy: [
-        desc(schema.catalogSongs.sourceUpdatedAt),
-        desc(schema.catalogSongs.downloads),
-        desc(schema.catalogSongs.sourceSongId),
-      ],
-    });
-
-    const selectedArtistKey = normalizeArtistNameForCandidateGrouping(
-      selectedSong.artistName
-    );
-
-    candidateSongs = titleMatches.filter(
-      (song) =>
-        normalizeArtistNameForCandidateGrouping(song.artistName) ===
-        selectedArtistKey
-    );
-  }
-
+  const candidateSongs = await getCatalogSongGroupRowsForSongId(
+    input.env as unknown as AppEnv,
+    input.song.id
+  );
   if (candidateSongs.length <= 1) {
     return input.song.candidateMatchesJson;
   }

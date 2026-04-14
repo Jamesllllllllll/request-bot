@@ -53,6 +53,11 @@ import {
 import { Badge } from "~/components/ui/badge";
 import { Button } from "~/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "~/components/ui/card";
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from "~/components/ui/collapsible";
 import { Input } from "~/components/ui/input";
 import {
   Popover,
@@ -95,6 +100,10 @@ import {
   getRequestVipTokenPlan,
   getStoredRequestedPaths,
 } from "~/lib/requested-paths";
+import {
+  getSongPrimaryGroupKey,
+  summarizeSongGroup,
+} from "~/lib/song-grouping";
 import {
   formatCompactTuningSummary,
   getUniqueTunings,
@@ -251,7 +260,12 @@ type ManualSearchData = Pick<SearchResponse, "results">;
 type SearchResponse = {
   results: Array<{
     id: string;
+    groupKey?: string;
+    groupingSource?: "groupedProjectId" | "fallback" | "both";
+    versionCount?: number;
+    groupedProjectIds?: number[];
     groupedProjectId?: number;
+    artistId?: number;
     authorId?: number;
     title: string;
     artist?: string;
@@ -266,6 +280,31 @@ type SearchResponse = {
     sourceId?: number;
   }>;
 };
+
+export type GroupedSongsReportResponse = {
+  items: Array<{
+    groupKey: string;
+    groupingSource: "groupedProjectId" | "fallback" | "both";
+    versionCount: number;
+    groupedProjectIds: number[];
+    title: string;
+    artist?: string;
+    tuning?: string;
+    latestUpdatedAt?: number;
+    downloads?: number;
+    versions: PlaylistCandidate[];
+  }>;
+  total: number;
+  page: number;
+  pageSize: number;
+  hasNextPage: boolean;
+};
+
+export type GroupedSongsGroupingFilter =
+  | "all"
+  | "groupedProjectId"
+  | "fallback"
+  | "both";
 
 const playlistItemTransition = {
   duration: 0.22,
@@ -333,9 +372,13 @@ export type PlaylistManagementSurfaceProps = {
   embedCurrentPlaylist?: boolean;
   currentPlaylistTitle?: string | null;
   canManageFavorites?: boolean;
-  isSongFavorited?: (songId: string) => boolean;
-  favoritePendingSongId?: string | null;
-  onToggleFavorite?: (songId: string, favorited: boolean) => void;
+  isSongFavorited?: (groupKey: string) => boolean;
+  favoritePendingGroupKey?: string | null;
+  onToggleFavorite?: (input: {
+    songId: string;
+    groupKey: string;
+    favorited: boolean;
+  }) => void;
 };
 
 function formatTimeAgo(t: TFunction, timestamp: number) {
@@ -468,7 +511,6 @@ export function PlaylistManagementSurface(
     },
     enabled: manualQuery.trim().length >= 3,
   });
-
   const mutation = useMutation({
     mutationFn: async (body: Record<string, unknown>) => {
       const response = await fetch(playlistMutationEndpoint, {
@@ -1208,249 +1250,18 @@ export function PlaylistManagementSurface(
         </Card>
       ) : null}
 
-      {props.embedCurrentPlaylist ? (
-        <section className="grid max-[960px]:px-3">
-          <div className="flex flex-wrap items-start justify-between gap-4 mb-3">
-            {props.currentPlaylistTitle ? (
-              <h2 className="text-4xl font-semibold text-(--text)">
-                {props.currentPlaylistTitle}
-              </h2>
-            ) : null}
-            <PlaylistManagementActions
-              className="dashboard-playlist__actions dashboard-playlist__actions--public flex flex-wrap items-center gap-3"
-              showBotToggle={false}
-              botEnabled={botChannelEnabled}
-              isBotTogglePending={isBotTogglePending}
-              onToggleBot={handleBotToggle}
-              itemCount={items.length}
-              canEndSession={canEndSession}
-              resetSessionTooltip={resetSessionTooltip}
-              isMutationPending={mutation.isPending}
-              isResetSessionPending={isResetSessionPending}
-              onShuffle={handleShufflePlaylist}
-              onClear={handleClearPlaylist}
-              onReset={handleResetSession}
-            />
-          </div>
-          <CurrentPlaylistRows
-            items={items}
-            playlistActionError={playlistActionError}
-            draggingItemId={draggingItemId}
-            dropTargetState={dropTargetState}
-            currentItemId={currentItemId}
-            showPickOrderBadges={showPickOrderBadges}
-            canManageBlacklist={canManageBlacklist}
-            blacklistedArtistIds={blacklistedArtistIds}
-            blacklistedSongIds={blacklistedSongIds}
-            blacklistedSongGroupIds={blacklistedSongGroupIds}
-            blacklistedCharterIds={blacklistedCharterIds}
-            preferredCharterIds={preferredCharterIds}
-            canManageFavorites={props.canManageFavorites}
-            isSongFavorited={props.isSongFavorited}
-            favoritePendingSongId={props.favoritePendingSongId}
-            onToggleFavorite={props.onToggleFavorite}
-            vipTokenBalancesByLogin={vipTokenBalancesByLogin}
-            channelLogin={managedChannelLogin}
-            requestPathModifierVipTokenCost={
-              playlistQuery.data?.settings?.requestPathModifierVipTokenCost ?? 0
-            }
-            requestPathModifierVipTokenCosts={
-              playlistQuery.data?.settings?.requestPathModifierVipTokenCosts
-            }
-            requestPathModifierUsesVipPriority={
-              playlistQuery.data?.settings
-                ?.requestPathModifierUsesVipPriority ?? true
-            }
-            vipTokenDurationThresholds={vipTokenDurationThresholds}
-            isDeletingItem={isDeletingItem}
-            isRowPending={isRowPending}
-            isReorderPending={
-              mutation.isPending && pendingRowAction?.action === "reorderItems"
-            }
-            useTouchReorderControls={useTouchReorderControls}
-            onDragStart={setDraggingItemId}
-            onDragEnd={() => {
-              setDraggingItemId(null);
-              setDropTargetState(null);
-            }}
-            onDragHover={(targetItemId, edge) =>
-              setDropTargetState({ itemId: targetItemId, edge })
-            }
-            onDragLeaveForItem={(itemId) => {
-              setDropTargetState((current) =>
-                current?.itemId === itemId ? null : current
-              );
-            }}
-            onReorder={reorderPlaylist}
-            onMoveItem={reorderPlaylistByMoveAction}
-            onSetCurrent={(itemId) =>
-              mutation.mutate({
-                action: "setCurrent",
-                itemId,
-              })
-            }
-            onReturnToQueue={(itemId) =>
-              mutation.mutate({
-                action: "returnToQueue",
-                itemId,
-              })
-            }
-            onMarkPlayed={(itemId) =>
-              mutation.mutate({
-                action: "markPlayed",
-                itemId,
-              })
-            }
-            onDelete={(item) =>
-              setDeleteDialogItem({
-                id: item.id,
-                songTitle: item.songTitle,
-                songArtist: item.songArtist,
-              })
-            }
-            onChangeRequestKind={(itemId, requestKind) =>
-              mutation.mutate({
-                action: "changeRequestKind",
-                itemId,
-                requestKind,
-              })
-            }
-            onBlacklistSong={(item) => {
-              if (item.songCatalogSourceId == null) {
-                setPlaylistActionError(
-                  t("management.blacklistErrors.missingRequestVersionId")
-                );
-                return;
-              }
-
-              moderationMutation.mutate({
-                action: "addBlacklistedSong",
-                songId: item.songCatalogSourceId,
-                songTitle: item.songTitle,
-                artistName: item.songArtist ?? undefined,
-              });
-            }}
-            onBlacklistCandidateSong={(candidate) => {
-              if (candidate.sourceId == null) {
-                setPlaylistActionError(
-                  t("management.blacklistErrors.missingVersionVersionId")
-                );
-                return;
-              }
-
-              moderationMutation.mutate({
-                action: "addBlacklistedSong",
-                songId: candidate.sourceId,
-                songTitle: candidate.title,
-                artistName: candidate.artist ?? undefined,
-              });
-            }}
-            onUnblacklistCandidateSong={(candidate) => {
-              if (candidate.sourceId == null) {
-                setPlaylistActionError(
-                  t("management.blacklistErrors.missingVersionVersionId")
-                );
-                return;
-              }
-
-              moderationMutation.mutate({
-                action: "removeBlacklistedSong",
-                songId: candidate.sourceId,
-              });
-            }}
-            onBlacklistSongGroup={(item) => {
-              if (item.songGroupedProjectId == null) {
-                setPlaylistActionError(
-                  t("management.blacklistErrors.missingRequestSongGroupId")
-                );
-                return;
-              }
-
-              moderationMutation.mutate({
-                action: "addBlacklistedSongGroup",
-                groupedProjectId: item.songGroupedProjectId,
-                songTitle: item.songTitle,
-                artistId: item.songArtistId ?? null,
-                artistName: item.songArtist ?? undefined,
-              });
-            }}
-            onBlacklistArtist={(item) => {
-              if (item.songArtistId == null) {
-                setPlaylistActionError(
-                  t("management.blacklistErrors.missingRequestArtistId")
-                );
-                return;
-              }
-
-              moderationMutation.mutate({
-                action: "addBlacklistedArtist",
-                artistId: item.songArtistId,
-                artistName:
-                  item.songArtist ??
-                  t("management.blacklistErrors.unknownArtist"),
-              });
-            }}
-            onBlacklistCharter={(candidate) => {
-              if (candidate.authorId == null) {
-                setPlaylistActionError(
-                  t("management.blacklistErrors.missingVersionCharterId")
-                );
-                return;
-              }
-
-              moderationMutation.mutate({
-                action: "addBlacklistedCharter",
-                charterId: candidate.authorId,
-                charterName:
-                  candidate.creator ??
-                  t("management.blacklistErrors.unknownCharter"),
-              });
-            }}
-            onPreferCharter={(candidate) => {
-              if (candidate.authorId == null) {
-                setPlaylistActionError(
-                  t("management.blacklistErrors.missingVersionCharterId")
-                );
-                return;
-              }
-
-              moderationMutation.mutate({
-                action: "addPreferredCharter",
-                charterId: candidate.authorId,
-                charterName:
-                  candidate.creator ??
-                  t("management.blacklistErrors.unknownCharter"),
-              });
-            }}
-            onUnpreferCharter={(candidate) => {
-              if (candidate.authorId == null) {
-                setPlaylistActionError(
-                  t("management.blacklistErrors.missingVersionCharterId")
-                );
-                return;
-              }
-
-              moderationMutation.mutate({
-                action: "removePreferredCharter",
-                charterId: candidate.authorId,
-              });
-            }}
-            isBlacklistArtistPending={moderationMutation.isPending}
-            isBlacklistSongPending={moderationMutation.isPending}
-            isBlacklistSongGroupPending={moderationMutation.isPending}
-            isBlacklistCharterPending={moderationMutation.isPending}
-          />
-        </section>
-      ) : (
-        <Card>
-          <CardHeader>
-            <div className="flex flex-wrap items-start justify-between gap-4">
-              <CardTitle>
-                {props.currentPlaylistTitle ?? t("management.currentTitle")}
-              </CardTitle>
+      <div className="grid gap-4">
+        {props.embedCurrentPlaylist ? (
+          <section className="grid max-[960px]:px-3">
+            <div className="flex flex-wrap items-start justify-between gap-4 mb-3">
+              {props.currentPlaylistTitle ? (
+                <h2 className="text-4xl font-semibold text-(--text)">
+                  {props.currentPlaylistTitle}
+                </h2>
+              ) : null}
               <PlaylistManagementActions
-                className="dashboard-playlist__actions flex flex-wrap gap-3"
-                showBotToggle={accessRole === "owner"}
+                className="dashboard-playlist__actions dashboard-playlist__actions--public flex flex-wrap items-center gap-3"
+                showBotToggle={false}
                 botEnabled={botChannelEnabled}
                 isBotTogglePending={isBotTogglePending}
                 onToggleBot={handleBotToggle}
@@ -1464,8 +1275,6 @@ export function PlaylistManagementSurface(
                 onReset={handleResetSession}
               />
             </div>
-          </CardHeader>
-          <CardContent className="grid gap-3">
             <CurrentPlaylistRows
               items={items}
               playlistActionError={playlistActionError}
@@ -1481,7 +1290,7 @@ export function PlaylistManagementSurface(
               preferredCharterIds={preferredCharterIds}
               canManageFavorites={props.canManageFavorites}
               isSongFavorited={props.isSongFavorited}
-              favoritePendingSongId={props.favoritePendingSongId}
+              favoritePendingGroupKey={props.favoritePendingGroupKey}
               onToggleFavorite={props.onToggleFavorite}
               vipTokenBalancesByLogin={vipTokenBalancesByLogin}
               channelLogin={managedChannelLogin}
@@ -1676,9 +1485,246 @@ export function PlaylistManagementSurface(
               isBlacklistSongGroupPending={moderationMutation.isPending}
               isBlacklistCharterPending={moderationMutation.isPending}
             />
-          </CardContent>
-        </Card>
-      )}
+          </section>
+        ) : (
+          <Card>
+            <CardHeader>
+              <div className="flex flex-wrap items-start justify-between gap-4">
+                <CardTitle>
+                  {props.currentPlaylistTitle ?? t("management.currentTitle")}
+                </CardTitle>
+                <PlaylistManagementActions
+                  className="dashboard-playlist__actions flex flex-wrap gap-3"
+                  showBotToggle={accessRole === "owner"}
+                  botEnabled={botChannelEnabled}
+                  isBotTogglePending={isBotTogglePending}
+                  onToggleBot={handleBotToggle}
+                  itemCount={items.length}
+                  canEndSession={canEndSession}
+                  resetSessionTooltip={resetSessionTooltip}
+                  isMutationPending={mutation.isPending}
+                  isResetSessionPending={isResetSessionPending}
+                  onShuffle={handleShufflePlaylist}
+                  onClear={handleClearPlaylist}
+                  onReset={handleResetSession}
+                />
+              </div>
+            </CardHeader>
+            <CardContent className="grid gap-3">
+              <CurrentPlaylistRows
+                items={items}
+                playlistActionError={playlistActionError}
+                draggingItemId={draggingItemId}
+                dropTargetState={dropTargetState}
+                currentItemId={currentItemId}
+                showPickOrderBadges={showPickOrderBadges}
+                canManageBlacklist={canManageBlacklist}
+                blacklistedArtistIds={blacklistedArtistIds}
+                blacklistedSongIds={blacklistedSongIds}
+                blacklistedSongGroupIds={blacklistedSongGroupIds}
+                blacklistedCharterIds={blacklistedCharterIds}
+                preferredCharterIds={preferredCharterIds}
+                canManageFavorites={props.canManageFavorites}
+                isSongFavorited={props.isSongFavorited}
+                favoritePendingGroupKey={props.favoritePendingGroupKey}
+                onToggleFavorite={props.onToggleFavorite}
+                vipTokenBalancesByLogin={vipTokenBalancesByLogin}
+                channelLogin={managedChannelLogin}
+                requestPathModifierVipTokenCost={
+                  playlistQuery.data?.settings
+                    ?.requestPathModifierVipTokenCost ?? 0
+                }
+                requestPathModifierVipTokenCosts={
+                  playlistQuery.data?.settings?.requestPathModifierVipTokenCosts
+                }
+                requestPathModifierUsesVipPriority={
+                  playlistQuery.data?.settings
+                    ?.requestPathModifierUsesVipPriority ?? true
+                }
+                vipTokenDurationThresholds={vipTokenDurationThresholds}
+                isDeletingItem={isDeletingItem}
+                isRowPending={isRowPending}
+                isReorderPending={
+                  mutation.isPending &&
+                  pendingRowAction?.action === "reorderItems"
+                }
+                useTouchReorderControls={useTouchReorderControls}
+                onDragStart={setDraggingItemId}
+                onDragEnd={() => {
+                  setDraggingItemId(null);
+                  setDropTargetState(null);
+                }}
+                onDragHover={(targetItemId, edge) =>
+                  setDropTargetState({ itemId: targetItemId, edge })
+                }
+                onDragLeaveForItem={(itemId) => {
+                  setDropTargetState((current) =>
+                    current?.itemId === itemId ? null : current
+                  );
+                }}
+                onReorder={reorderPlaylist}
+                onMoveItem={reorderPlaylistByMoveAction}
+                onSetCurrent={(itemId) =>
+                  mutation.mutate({
+                    action: "setCurrent",
+                    itemId,
+                  })
+                }
+                onReturnToQueue={(itemId) =>
+                  mutation.mutate({
+                    action: "returnToQueue",
+                    itemId,
+                  })
+                }
+                onMarkPlayed={(itemId) =>
+                  mutation.mutate({
+                    action: "markPlayed",
+                    itemId,
+                  })
+                }
+                onDelete={(item) =>
+                  setDeleteDialogItem({
+                    id: item.id,
+                    songTitle: item.songTitle,
+                    songArtist: item.songArtist,
+                  })
+                }
+                onChangeRequestKind={(itemId, requestKind) =>
+                  mutation.mutate({
+                    action: "changeRequestKind",
+                    itemId,
+                    requestKind,
+                  })
+                }
+                onBlacklistSong={(item) => {
+                  if (item.songCatalogSourceId == null) {
+                    setPlaylistActionError(
+                      t("management.blacklistErrors.missingRequestVersionId")
+                    );
+                    return;
+                  }
+
+                  moderationMutation.mutate({
+                    action: "addBlacklistedSong",
+                    songId: item.songCatalogSourceId,
+                    songTitle: item.songTitle,
+                    artistName: item.songArtist ?? undefined,
+                  });
+                }}
+                onBlacklistCandidateSong={(candidate) => {
+                  if (candidate.sourceId == null) {
+                    setPlaylistActionError(
+                      t("management.blacklistErrors.missingVersionVersionId")
+                    );
+                    return;
+                  }
+
+                  moderationMutation.mutate({
+                    action: "addBlacklistedSong",
+                    songId: candidate.sourceId,
+                    songTitle: candidate.title,
+                    artistName: candidate.artist ?? undefined,
+                  });
+                }}
+                onUnblacklistCandidateSong={(candidate) => {
+                  if (candidate.sourceId == null) {
+                    setPlaylistActionError(
+                      t("management.blacklistErrors.missingVersionVersionId")
+                    );
+                    return;
+                  }
+
+                  moderationMutation.mutate({
+                    action: "removeBlacklistedSong",
+                    songId: candidate.sourceId,
+                  });
+                }}
+                onBlacklistSongGroup={(item) => {
+                  if (item.songGroupedProjectId == null) {
+                    setPlaylistActionError(
+                      t("management.blacklistErrors.missingRequestSongGroupId")
+                    );
+                    return;
+                  }
+
+                  moderationMutation.mutate({
+                    action: "addBlacklistedSongGroup",
+                    groupedProjectId: item.songGroupedProjectId,
+                    songTitle: item.songTitle,
+                    artistId: item.songArtistId ?? null,
+                    artistName: item.songArtist ?? undefined,
+                  });
+                }}
+                onBlacklistArtist={(item) => {
+                  if (item.songArtistId == null) {
+                    setPlaylistActionError(
+                      t("management.blacklistErrors.missingRequestArtistId")
+                    );
+                    return;
+                  }
+
+                  moderationMutation.mutate({
+                    action: "addBlacklistedArtist",
+                    artistId: item.songArtistId,
+                    artistName:
+                      item.songArtist ??
+                      t("management.blacklistErrors.unknownArtist"),
+                  });
+                }}
+                onBlacklistCharter={(candidate) => {
+                  if (candidate.authorId == null) {
+                    setPlaylistActionError(
+                      t("management.blacklistErrors.missingVersionCharterId")
+                    );
+                    return;
+                  }
+
+                  moderationMutation.mutate({
+                    action: "addBlacklistedCharter",
+                    charterId: candidate.authorId,
+                    charterName:
+                      candidate.creator ??
+                      t("management.blacklistErrors.unknownCharter"),
+                  });
+                }}
+                onPreferCharter={(candidate) => {
+                  if (candidate.authorId == null) {
+                    setPlaylistActionError(
+                      t("management.blacklistErrors.missingVersionCharterId")
+                    );
+                    return;
+                  }
+
+                  moderationMutation.mutate({
+                    action: "addPreferredCharter",
+                    charterId: candidate.authorId,
+                    charterName:
+                      candidate.creator ??
+                      t("management.blacklistErrors.unknownCharter"),
+                  });
+                }}
+                onUnpreferCharter={(candidate) => {
+                  if (candidate.authorId == null) {
+                    setPlaylistActionError(
+                      t("management.blacklistErrors.missingVersionCharterId")
+                    );
+                    return;
+                  }
+
+                  moderationMutation.mutate({
+                    action: "removePreferredCharter",
+                    charterId: candidate.authorId,
+                  });
+                }}
+                isBlacklistArtistPending={moderationMutation.isPending}
+                isBlacklistSongPending={moderationMutation.isPending}
+                isBlacklistSongGroupPending={moderationMutation.isPending}
+                isBlacklistCharterPending={moderationMutation.isPending}
+              />
+            </CardContent>
+          </Card>
+        )}
+      </div>
 
       {props.showAncillaryPanels !== false ? (
         <>
@@ -1916,9 +1962,13 @@ function CurrentPlaylistRows(props: {
   blacklistedCharterIds: Set<number>;
   preferredCharterIds: Set<number>;
   canManageFavorites?: boolean;
-  isSongFavorited?: (songId: string) => boolean;
-  favoritePendingSongId?: string | null;
-  onToggleFavorite?: (songId: string, favorited: boolean) => void;
+  isSongFavorited?: (groupKey: string) => boolean;
+  favoritePendingGroupKey?: string | null;
+  onToggleFavorite?: (input: {
+    songId: string;
+    groupKey: string;
+    favorited: boolean;
+  }) => void;
   vipTokenBalancesByLogin: Map<string, number>;
   channelLogin: string;
   requestPathModifierVipTokenCost: number;
@@ -1975,14 +2025,56 @@ function CurrentPlaylistRows(props: {
       ) : null}
       <AnimatePresence initial={false} mode="popLayout">
         {props.items.map((item, index) => {
-          const favoriteSongId = item.songId ?? null;
+          const resolvedCandidates = getResolvedPlaylistCandidates(item);
+          const favoriteSongs =
+            resolvedCandidates.length > 0
+              ? resolvedCandidates.map((candidate) => ({
+                  id: candidate.id,
+                  groupedProjectId: candidate.groupedProjectId,
+                  title: candidate.title,
+                  artist: candidate.artist,
+                }))
+              : item.songId
+                ? [
+                    {
+                      id: item.songId,
+                      groupedProjectId: item.songGroupedProjectId,
+                      title: item.songTitle,
+                      artist: item.songArtist,
+                    },
+                  ]
+                : [];
+          const favoriteGroup =
+            favoriteSongs.length > 0 ? summarizeSongGroup(favoriteSongs) : null;
+          const favoriteSongId =
+            item.songId ??
+            resolvedCandidates[0]?.id ??
+            favoriteSongs[0]?.id ??
+            null;
+          const favoriteGroupKey =
+            favoriteGroup?.groupKey ??
+            (favoriteSongId
+              ? getSongPrimaryGroupKey({
+                  id: favoriteSongId,
+                  groupedProjectId: item.songGroupedProjectId,
+                  title: item.songTitle,
+                  artist: item.songArtist,
+                })
+              : null);
           const isFavorited =
-            favoriteSongId != null
-              ? (props.isSongFavorited?.(favoriteSongId) ?? false)
+            favoriteGroupKey != null
+              ? (props.isSongFavorited?.(favoriteGroupKey) ?? false)
               : false;
           const onToggleFavorite =
-            favoriteSongId != null && props.onToggleFavorite
-              ? () => props.onToggleFavorite?.(favoriteSongId, !isFavorited)
+            favoriteSongId != null &&
+            favoriteGroupKey != null &&
+            props.onToggleFavorite
+              ? () =>
+                  props.onToggleFavorite?.({
+                    songId: favoriteSongId,
+                    groupKey: favoriteGroupKey,
+                    favorited: !isFavorited,
+                  })
               : undefined;
 
           return (
@@ -2048,12 +2140,14 @@ function CurrentPlaylistRows(props: {
               preferredCharterIds={props.preferredCharterIds}
               blacklistedSongIds={props.blacklistedSongIds}
               canManageFavorites={
-                !!props.canManageFavorites && favoriteSongId != null
+                !!props.canManageFavorites &&
+                favoriteSongId != null &&
+                favoriteGroupKey != null
               }
               isFavorited={isFavorited}
               favoritePending={
-                favoriteSongId != null &&
-                props.favoritePendingSongId === favoriteSongId
+                favoriteGroupKey != null &&
+                props.favoritePendingGroupKey === favoriteGroupKey
               }
               onToggleFavorite={onToggleFavorite}
               onDragStart={props.onDragStart}
@@ -2089,6 +2183,210 @@ function CurrentPlaylistRows(props: {
         </p>
       ) : null}
     </>
+  );
+}
+
+export function GroupedSongsReviewCard(props: {
+  query: string;
+  onQueryChange: (value: string) => void;
+  groupingSource: GroupedSongsGroupingFilter;
+  onGroupingSourceChange: (value: GroupedSongsGroupingFilter) => void;
+  page: number;
+  onPreviousPage: () => void;
+  onNextPage: () => void;
+  isLoading: boolean;
+  error: string | null;
+  total: number;
+  pageSize: number;
+  hasNextPage: boolean;
+  items: GroupedSongsReportResponse["items"];
+  canManageBlacklist: boolean;
+  blacklistedSongIds: Set<number>;
+  blacklistedCharterIds: Set<number>;
+  preferredCharterIds: Set<number>;
+  isBlacklistSongPending: boolean;
+  onBlacklistCandidateSong: (candidate: PlaylistCandidate) => void;
+  onUnblacklistCandidateSong: (candidate: PlaylistCandidate) => void;
+  onPreferCharter: (candidate: PlaylistCandidate) => void;
+  onUnpreferCharter: (candidate: PlaylistCandidate) => void;
+}) {
+  const { t } = useLocaleTranslation("playlist");
+  const { locale } = useAppLocale();
+  const start = props.total === 0 ? 0 : (props.page - 1) * props.pageSize + 1;
+  const end = Math.min(props.total, start + props.items.length - 1);
+
+  return (
+    <Card>
+      <CardHeader className="grid gap-4">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div className="grid gap-1">
+            <CardTitle>{t("management.groupedSongs.title")}</CardTitle>
+            <p className="text-sm text-(--muted)">
+              {t("management.groupedSongs.description")}
+            </p>
+          </div>
+          <Badge variant="outline" className="h-8 px-3 text-[11px]">
+            {t("management.groupedSongs.count", { count: props.total })}
+          </Badge>
+        </div>
+        <div className="flex flex-wrap items-end justify-between gap-3">
+          <div className="grid w-full max-w-3xl gap-3">
+            <Input
+              value={props.query}
+              onChange={(event) => props.onQueryChange(event.target.value)}
+              placeholder={t("management.groupedSongs.searchPlaceholder")}
+            />
+            <div className="flex flex-wrap gap-2">
+              {(
+                [
+                  "all",
+                  "fallback",
+                  "groupedProjectId",
+                  "both",
+                ] as GroupedSongsGroupingFilter[]
+              ).map((value) => (
+                <Button
+                  key={value}
+                  type="button"
+                  size="sm"
+                  variant={
+                    props.groupingSource === value ? "default" : "outline"
+                  }
+                  onClick={() => props.onGroupingSourceChange(value)}
+                  className="h-8 px-3 text-[11px]"
+                >
+                  {t(`management.groupedSongs.filters.${value}`)}
+                </Button>
+              ))}
+            </div>
+          </div>
+          <div className="flex items-center gap-2 text-sm text-(--muted)">
+            <span>
+              {props.total > 0
+                ? t("management.groupedSongs.showing", {
+                    start,
+                    end,
+                    total: props.total,
+                  })
+                : t("management.groupedSongs.empty")}
+            </span>
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              onClick={props.onPreviousPage}
+              disabled={props.page <= 1 || props.isLoading}
+            >
+              {t("management.groupedSongs.previous")}
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              onClick={props.onNextPage}
+              disabled={!props.hasNextPage || props.isLoading}
+            >
+              {t("management.groupedSongs.next")}
+            </Button>
+          </div>
+        </div>
+      </CardHeader>
+      <CardContent className="grid gap-3">
+        {props.error ? (
+          <div className="border border-rose-500/40 bg-rose-500/10 px-4 py-3 text-sm text-rose-200">
+            {props.error}
+          </div>
+        ) : null}
+        {props.isLoading ? (
+          <p className="text-sm text-(--muted)">
+            {t("management.groupedSongs.loading")}
+          </p>
+        ) : null}
+        {!props.isLoading && !props.error && props.items.length === 0 ? (
+          <p className="text-sm leading-7 text-(--muted)">
+            {t("management.groupedSongs.empty")}
+          </p>
+        ) : null}
+        {props.items.map((group) => {
+          const groupingSourceLabel =
+            group.groupingSource === "both"
+              ? t("management.groupedSongs.groupingSource.both")
+              : group.groupingSource === "fallback"
+                ? t("management.groupedSongs.groupingSource.fallback")
+                : t("management.groupedSongs.groupingSource.groupedProjectId");
+
+          return (
+            <Collapsible
+              key={group.groupKey}
+              className="border border-(--border) bg-(--panel-soft)"
+            >
+              <CollapsibleTrigger className="grid w-full gap-3 px-4 py-3 text-left hover:bg-(--panel)">
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="break-words font-semibold text-(--text)">
+                      {group.artist
+                        ? `${group.title} - ${group.artist}`
+                        : group.title}
+                    </p>
+                    <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-(--muted)">
+                      <Badge variant="outline" className="h-7 px-2 text-[10px]">
+                        {t("management.item.versionsCount", {
+                          count: group.versionCount,
+                        })}
+                      </Badge>
+                      <Badge variant="outline" className="h-7 px-2 text-[10px]">
+                        {groupingSourceLabel}
+                      </Badge>
+                      {group.groupedProjectIds.length > 0 ? (
+                        <Badge
+                          variant="outline"
+                          className="h-7 px-2 text-[10px] normal-case tracking-normal"
+                        >
+                          {t("management.groupedSongs.projectIds", {
+                            ids: group.groupedProjectIds.join(", "),
+                          })}
+                        </Badge>
+                      ) : null}
+                    </div>
+                  </div>
+                  <div className="grid gap-1 text-right text-xs text-(--muted)">
+                    {group.tuning ? <p>{group.tuning}</p> : null}
+                    <p>
+                      {group.latestUpdatedAt
+                        ? formatLocaleDate(locale, group.latestUpdatedAt, {
+                            dateStyle: "medium",
+                          })
+                        : t("management.versionsTable.unknown")}
+                      {group.downloads != null
+                        ? ` · ${formatNumber(locale, group.downloads)}`
+                        : ""}
+                    </p>
+                    <p className="font-medium text-(--brand-deep)">
+                      {t("management.groupedSongs.showVersions")}
+                    </p>
+                  </div>
+                </div>
+              </CollapsibleTrigger>
+              <CollapsibleContent className="px-4 pb-4">
+                <PlaylistVersionsTable
+                  itemId={group.groupKey}
+                  candidates={group.versions}
+                  canManageBlacklist={props.canManageBlacklist}
+                  blacklistedSongIds={props.blacklistedSongIds}
+                  blacklistedCharterIds={props.blacklistedCharterIds}
+                  preferredCharterIds={props.preferredCharterIds}
+                  isBlacklistSongPending={props.isBlacklistSongPending}
+                  onBlacklistCandidateSong={props.onBlacklistCandidateSong}
+                  onUnblacklistCandidateSong={props.onUnblacklistCandidateSong}
+                  onPreferCharter={props.onPreferCharter}
+                  onUnpreferCharter={props.onUnpreferCharter}
+                />
+              </CollapsibleContent>
+            </Collapsible>
+          );
+        })}
+      </CardContent>
+    </Card>
   );
 }
 

@@ -20,6 +20,7 @@ vi.mock("~/lib/db/repositories", () => ({
   createRequestLog: vi.fn(),
   getActiveBroadcasterAuthorizationForChannel: vi.fn(),
   getCatalogSongById: vi.fn(),
+  getCatalogSongGroupRowsForSongId: vi.fn(),
   getChannelBlacklistByChannelId: vi.fn(),
   getChannelBySlug: vi.fn(),
   getChannelPreferredChartersByChannelId: vi.fn(),
@@ -58,6 +59,7 @@ import {
   createRequestLog,
   getActiveBroadcasterAuthorizationForChannel,
   getCatalogSongById,
+  getCatalogSongGroupRowsForSongId,
   getChannelBlacklistByChannelId,
   getChannelBySlug,
   getChannelPreferredChartersByChannelId,
@@ -105,6 +107,60 @@ function jsonResponse(body: unknown) {
       "content-type": "application/json",
     },
   });
+}
+
+function toCatalogGroupingRow(input: {
+  id: string;
+  groupedProjectId?: number | null;
+  artistId?: number | null;
+  authorId?: number | null;
+  title: string;
+  artistName: string;
+  albumName?: string | null;
+  creatorName?: string | null;
+  tuningSummary?: string | null;
+  partsJson?: string;
+  durationText?: string | null;
+  durationSeconds?: number | null;
+  year?: number | null;
+  sourceUpdatedAt?: number | null;
+  downloads?: number;
+  hasLyrics?: number;
+  source?: string;
+  sourceSongId?: number;
+}) {
+  return {
+    id: input.id,
+    groupedProjectId: input.groupedProjectId ?? null,
+    artistId: input.artistId ?? null,
+    authorId: input.authorId ?? null,
+    title: input.title,
+    artistName: input.artistName,
+    albumName: input.albumName ?? null,
+    creatorName: input.creatorName ?? null,
+    tuningSummary: input.tuningSummary ?? null,
+    leadTuningId: null,
+    leadTuningName: null,
+    rhythmTuningId: null,
+    rhythmTuningName: null,
+    bassTuningId: null,
+    bassTuningName: null,
+    altLeadTuningId: null,
+    altRhythmTuningId: null,
+    altBassTuningId: null,
+    bonusLeadTuningId: null,
+    bonusRhythmTuningId: null,
+    bonusBassTuningId: null,
+    partsJson: input.partsJson ?? "[]",
+    durationText: input.durationText ?? null,
+    durationSeconds: input.durationSeconds ?? null,
+    year: input.year ?? null,
+    sourceUpdatedAt: input.sourceUpdatedAt ?? null,
+    downloads: input.downloads ?? 0,
+    hasLyrics: input.hasLyrics ?? 0,
+    source: input.source ?? "library",
+    sourceSongId: input.sourceSongId ?? 0,
+  };
 }
 
 describe("viewer request service", () => {
@@ -167,8 +223,8 @@ describe("viewer request service", () => {
     groupedProjectId: 44,
     artistId: 77,
     authorId: 88,
-    title: "Cherub Rock",
-    artist: "The Smashing Pumpkins",
+    title: "Signal Bloom",
+    artist: "The Example Band",
     album: "Siamese Dream",
     creator: "Charter",
     tuning: "Eb Standard",
@@ -211,6 +267,26 @@ describe("viewer request service", () => {
     vi.mocked(countActiveRequestsForUser).mockResolvedValue(0);
     vi.mocked(countAcceptedRequestsInPeriod).mockResolvedValue(0);
     vi.mocked(getCatalogSongById).mockResolvedValue(baseSong as never);
+    vi.mocked(getCatalogSongGroupRowsForSongId).mockResolvedValue([
+      toCatalogGroupingRow({
+        id: baseSong.id,
+        groupedProjectId: baseSong.groupedProjectId ?? null,
+        artistId: baseSong.artistId ?? null,
+        authorId: baseSong.authorId ?? null,
+        title: baseSong.title,
+        artistName: baseSong.artist,
+        albumName: baseSong.album,
+        creatorName: baseSong.creator,
+        tuningSummary: baseSong.tuning,
+        partsJson: JSON.stringify(baseSong.parts),
+        durationText: baseSong.durationText,
+        sourceUpdatedAt: 1,
+        downloads: baseSong.downloads,
+        hasLyrics: 1,
+        source: baseSong.source,
+        sourceSongId: baseSong.sourceId,
+      }),
+    ] as never);
     vi.mocked(getActiveBroadcasterAuthorizationForChannel).mockResolvedValue(
       null
     );
@@ -414,7 +490,7 @@ describe("viewer request service", () => {
 
     expect(result).toEqual({
       ok: true,
-      message: 'Added "The Smashing Pumpkins - Cherub Rock" to the playlist.',
+      message: 'Added "The Example Band - Signal Bloom" to the playlist.',
     });
     expect(callBackend).toHaveBeenCalledWith(
       env,
@@ -455,56 +531,50 @@ describe("viewer request service", () => {
       ...baseSong,
       id: "song-mayo-1",
       groupedProjectId: undefined,
-      title: "Mayonaise",
-      artist: "The Smashing Pumpkins",
+      title: "Velvet Static",
+      artist: "The Example Band",
       creator: "Shinyditto12",
       sourceId: 99001,
       sourceUrl: "https://ignition4.customsforge.com/cdlc/99001",
     } as never);
-    vi.mocked(getDb).mockReturnValue(
-      createDbState({
-        catalogSongs: [
-          {
-            id: "song-mayo-1",
-            groupedProjectId: null,
-            authorId: 42,
-            title: "Mayonaise",
-            artistName: "The Smashing Pumpkins",
-            albumName: "Siamese Dream",
-            creatorName: "Shinyditto12",
-            tuningSummary: "E Standard",
-            partsJson: '["lead","rhythm"]',
-            hasLyrics: 1,
-            durationText: "5:17",
-            year: 1993,
-            sourceUpdatedAt: 1700000000000,
-            downloads: 200,
-            source: "library",
-            sourceUrl: "https://ignition4.customsforge.com/cdlc/99001",
-            sourceSongId: 99001,
-          },
-          {
-            id: "song-mayo-2",
-            groupedProjectId: null,
-            authorId: 9205,
-            title: "Mayonaise",
-            artistName: "Smashing Pumpkins",
-            albumName: "Siamese Dream",
-            creatorName: "Mekanizm",
-            tuningSummary: "E Standard",
-            partsJson: '["lead","bass"]',
-            hasLyrics: 1,
-            durationText: "5:17",
-            year: 1993,
-            sourceUpdatedAt: 1600000000000,
-            downloads: 100,
-            source: "library",
-            sourceUrl: "https://ignition4.customsforge.com/cdlc/99002",
-            sourceSongId: 99002,
-          },
-        ],
-      }) as never
-    );
+    vi.mocked(getCatalogSongGroupRowsForSongId).mockResolvedValue([
+      toCatalogGroupingRow({
+        id: "song-mayo-1",
+        groupedProjectId: null,
+        authorId: 42,
+        title: "Velvet Static",
+        artistName: "The Example Band",
+        albumName: "Siamese Dream",
+        creatorName: "Shinyditto12",
+        tuningSummary: "E Standard",
+        partsJson: '["lead","rhythm"]',
+        hasLyrics: 1,
+        durationText: "5:17",
+        year: 1993,
+        sourceUpdatedAt: 1700000000000,
+        downloads: 200,
+        source: "library",
+        sourceSongId: 99001,
+      }),
+      toCatalogGroupingRow({
+        id: "song-mayo-2",
+        groupedProjectId: null,
+        authorId: 9205,
+        title: "Velvet Static",
+        artistName: "Example Band",
+        albumName: "Siamese Dream",
+        creatorName: "Mekanizm",
+        tuningSummary: "E Standard",
+        partsJson: '["lead","bass"]',
+        hasLyrics: 1,
+        durationText: "5:17",
+        year: 1993,
+        sourceUpdatedAt: 1600000000000,
+        downloads: 100,
+        source: "library",
+        sourceSongId: 99002,
+      }),
+    ] as never);
 
     await expect(
       performViewerRequestMutation({
@@ -520,7 +590,7 @@ describe("viewer request service", () => {
       })
     ).resolves.toEqual({
       ok: true,
-      message: 'Added "The Smashing Pumpkins - Mayonaise" to the playlist.',
+      message: 'Added "The Example Band - Velvet Static" to the playlist.',
     });
 
     const body = JSON.parse(
@@ -572,7 +642,7 @@ describe("viewer request service", () => {
       })
     ).resolves.toEqual({
       ok: true,
-      message: 'Added "The Smashing Pumpkins - Cherub Rock" to the playlist.',
+      message: 'Added "The Example Band - Signal Bloom" to the playlist.',
     });
 
     expect(searchCatalogSongs).toHaveBeenCalledWith(
@@ -617,7 +687,7 @@ describe("viewer request service", () => {
       })
     ).resolves.toEqual({
       ok: true,
-      message: 'Added "The Smashing Pumpkins - Cherub Rock" to the playlist.',
+      message: 'Added "The Example Band - Signal Bloom" to the playlist.',
     });
 
     expect(searchCatalogSongs).toHaveBeenCalledWith(
@@ -729,7 +799,7 @@ describe("viewer request service", () => {
     ).resolves.toEqual({
       ok: true,
       message:
-        'Added "The Smashing Pumpkins - Cherub Rock" to the playlist for 2 VIP tokens.',
+        'Added "The Example Band - Signal Bloom" to the playlist for 2 VIP tokens.',
     });
 
     const body = JSON.parse(
@@ -802,7 +872,7 @@ describe("viewer request service", () => {
     ).resolves.toEqual({
       ok: true,
       message:
-        'Added "The Smashing Pumpkins - Cherub Rock (Bass)" to the playlist for 3 VIP tokens.',
+        'Added "The Example Band - Signal Bloom (Bass)" to the playlist for 3 VIP tokens.',
     });
 
     const body = JSON.parse(
@@ -901,7 +971,7 @@ describe("viewer request service", () => {
     ).resolves.toEqual({
       ok: true,
       message:
-        'Added "The Smashing Pumpkins - Cherub Rock" as a VIP request for 3 VIP tokens.',
+        'Added "The Example Band - Signal Bloom" as a VIP request for 3 VIP tokens.',
     });
 
     const body = JSON.parse(
@@ -974,7 +1044,7 @@ describe("viewer request service", () => {
     ).resolves.toEqual({
       ok: true,
       message:
-        'Added "The Smashing Pumpkins - Cherub Rock (Bass)" as a VIP request for 4 VIP tokens.',
+        'Added "The Example Band - Signal Bloom (Bass)" as a VIP request for 4 VIP tokens.',
     });
 
     const body = JSON.parse(
@@ -1049,7 +1119,7 @@ describe("viewer request service", () => {
     ).resolves.toEqual({
       ok: true,
       message:
-        'Your request "The Smashing Pumpkins - Cherub Rock" is now marked as VIP for 3 VIP tokens and will play next. Spent 2 VIP tokens.',
+        'Your request "The Example Band - Signal Bloom" is now marked as VIP for 3 VIP tokens and will play next. Spent 2 VIP tokens.',
     });
 
     const body = JSON.parse(
@@ -1467,7 +1537,7 @@ describe("viewer request service", () => {
       })
     ).resolves.toEqual({
       ok: true,
-      message: 'Edited your request to "The Smashing Pumpkins - Cherub Rock".',
+      message: 'Edited your request to "The Example Band - Signal Bloom".',
     });
 
     expect(callBackend).toHaveBeenCalledTimes(1);
@@ -1487,8 +1557,8 @@ describe("viewer request service", () => {
       requestKind: "regular",
       song: {
         id: "song-1",
-        title: "Cherub Rock",
-        artist: "The Smashing Pumpkins",
+        title: "Signal Bloom",
+        artist: "The Example Band",
       },
     });
   });
@@ -1543,7 +1613,7 @@ describe("viewer request service", () => {
     ).resolves.toEqual({
       ok: true,
       message:
-        'Edited your request to "The Smashing Pumpkins - Cherub Rock". Refunded 1 VIP token.',
+        'Edited your request to "The Example Band - Signal Bloom". Refunded 1 VIP token.',
     });
 
     expect(callBackend).toHaveBeenCalledTimes(1);
@@ -1563,8 +1633,8 @@ describe("viewer request service", () => {
       requestKind: "regular",
       song: {
         id: "song-1",
-        title: "Cherub Rock",
-        artist: "The Smashing Pumpkins",
+        title: "Signal Bloom",
+        artist: "The Example Band",
       },
     });
   });
@@ -1613,7 +1683,7 @@ describe("viewer request service", () => {
     ).resolves.toEqual({
       ok: true,
       message:
-        'Edited your request to "The Smashing Pumpkins - Cherub Rock" as a VIP request for 1 VIP token. Refunded 1 VIP token.',
+        'Edited your request to "The Example Band - Signal Bloom" as a VIP request for 1 VIP token. Refunded 1 VIP token.',
     });
 
     expect(grantVipToken).toHaveBeenCalledWith(

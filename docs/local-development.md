@@ -49,13 +49,13 @@ Add these when you test Twitch auth, EventSub, bot flows, or the panel:
 
 Use `VITE_ALLOWED_HOSTS` when you need extra local hostnames, and `VITE_TWITCH_EXTENSION_API_BASE_URL` when the standalone panel build needs a different app origin.
 
-4. Bootstrap the local D1 database:
+4. Bootstrap the app database:
 
 ```bash
 npm run db:bootstrap:local
 ```
 
-That resets local D1, applies migrations, and seeds the bundled sample catalog.
+That resets D1, applies migrations, and prepares the app database.
 
 5. Start the app:
 
@@ -82,15 +82,15 @@ For this repo, treat `http://localhost:9000` as the default existing dev app. Be
 
 Use `npm run db:migrate` for normal local schema updates.
 
-Use `npm run db:bootstrap:local` only when you intentionally want to reset local data back to the bundled sample catalog.
+Use `npm run db:bootstrap:local` only when you intentionally want to reset the app database.
 
-## What Works With The Sample Catalog
+## What Works Locally
 
 - home page and channel pages
 - search and filters
 - settings and moderation UI
 - playlist management flows
-- Twitch panel UI against local data
+- Twitch panel UI
 
 Twitch sign-in, EventSub, bot replies, and hosted Twitch panel testing need valid Twitch credentials.
 

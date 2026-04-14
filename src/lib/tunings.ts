@@ -269,7 +269,12 @@ export function getTuningSummaryFromFields(input: TuningFields) {
   const labels = getTuningOptionsFromFields(input).map(
     (option) => option.label
   );
-  return labels.length > 0 ? labels.join(" | ") : undefined;
+  if (labels.length > 0) {
+    return labels.join(" | ");
+  }
+
+  const fallbackTunings = getUniqueTunings([input.tuningSummary]);
+  return fallbackTunings.length > 0 ? fallbackTunings.join(" | ") : undefined;
 }
 
 export function getTuningIdsFromSong(input: {

@@ -18,8 +18,8 @@ describe("extension panel demo state", () => {
       viewerProfile: mockModeratorViewerProfile,
       song: {
         id: "song-1",
-        title: "Cherub Rock",
-        artist: "Smashing Pumpkins",
+        title: "Signal Bloom",
+        artist: "Example Band",
         album: "Siamese Dream",
         creator: "CustomsForge",
         sourceId: 123,
@@ -35,8 +35,8 @@ describe("extension panel demo state", () => {
     expect(added).toMatchObject({
       id: "preview-request-1",
       songId: "song-1",
-      songTitle: "Cherub Rock",
-      songArtist: "Smashing Pumpkins",
+      songTitle: "Signal Bloom",
+      songArtist: "Example Band",
       requestedByTwitchUserId: mockModeratorViewerProfile.twitchUserId,
       requestedByLogin: mockModeratorViewerProfile.login,
       requestKind: "regular",

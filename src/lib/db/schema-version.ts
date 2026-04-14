@@ -85,5 +85,5 @@ export async function assertDatabaseSchemaCurrent(env: DatabaseEnv) {
 
 function getSchemaMismatchMessage(summary: string, detail?: string) {
   const suffix = detail ? ` ${detail}` : "";
-  return `Your local database is out of date. Run \`npm run db:migrate\`, then restart the dev server. ${summary}${suffix}`.trim();
+  return `The database schema is out of date. Run \`npm run db:migrate\`, then restart the dev server. ${summary}${suffix}`.trim();
 }

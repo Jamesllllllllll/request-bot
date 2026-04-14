@@ -36,7 +36,7 @@ The local app runs on:
 http://localhost:9000
 ```
 
-Use the bundled sample catalog for normal local development. For Twitch auth, EventSub, bot flows, or panel testing, fill in the Twitch-related values in [`.env.example`](.env.example) and follow [docs/local-development.md](docs/local-development.md).
+For Twitch auth, EventSub, bot flows, or panel testing, fill in the Twitch-related values in [`.env.example`](.env.example) and follow [docs/local-development.md](docs/local-development.md).
 
 ## Verification
 

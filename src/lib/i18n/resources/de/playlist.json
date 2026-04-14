@@ -359,6 +359,37 @@
       }
     },
     "currentTitle": "Aktuelle Playlist",
+    "tabs": {
+      "queue": "Warteschlange",
+      "groupedSongs": "Gruppierte Songs"
+    },
+    "groupedSongs": {
+      "title": "Gruppierte Songs",
+      "description": "Prufe Songs mit mehreren Versionen, die fur Anfragende und Streamer als derselbe Song behandelt werden.",
+      "searchPlaceholder": "Gruppierte Songs filtern",
+      "count": "{count, plural, one {# gruppierter Song} other {# gruppierte Songs}}",
+      "showing": "{start}-{end} von {total}",
+      "previous": "Zuruck",
+      "next": "Weiter",
+      "filters": {
+        "all": "Alle Gruppen",
+        "fallback": "App-Gruppierung",
+        "groupedProjectId": "Projektgruppierung",
+        "both": "Beides"
+      },
+      "loading": "Gruppierte Songs werden geladen...",
+      "empty": "Keine gruppierten Songs gefunden.",
+      "showVersions": "Versionen anzeigen",
+      "projectIds": "Projekt-IDs: {ids}",
+      "groupingSource": {
+        "groupedProjectId": "CustomsForge-Gruppe",
+        "fallback": "App-Gruppierung",
+        "both": "Beides"
+      },
+      "states": {
+        "loadFailed": "Gruppierte Songs konnten nicht geladen werden."
+      }
+    },
     "blacklistErrors": {
       "missingRequestVersionId": "Diese Anfrage verfügt nicht über eine Versions-ID, die auf die schwarze Liste gesetzt werden könnte.",
       "missingVersionVersionId": "Für diese Version gibt es keine Versions-ID, die auf die schwarze Liste gesetzt werden könnte.",

@@ -47,8 +47,8 @@ insert into playlist_items (
     "pl_test",
     "chn_test",
     "song_test",
-    "Wonderwall",
-    "Oasis",
+    "Neon Shelter",
+    "Example Duo",
     "(What's the Story) Morning Glory?",
     "Ubisoft",
     "Custom Tuning",
@@ -82,7 +82,12 @@ print(json.dumps(row))
         encoding: "utf8",
       }
     );
-    expect(JSON.parse(output)).toEqual(["Wonderwall", "regular", "manual", 0]);
+    expect(JSON.parse(output)).toEqual([
+      "Neon Shelter",
+      "regular",
+      "manual",
+      0,
+    ]);
   });
 
   test("fresh migrated database defaults max queue size to 50", () => {

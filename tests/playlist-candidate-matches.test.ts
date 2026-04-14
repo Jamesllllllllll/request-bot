@@ -22,8 +22,8 @@ describe("playlist candidate matches", () => {
           id: "song-alt",
           groupedProjectId: 123,
           authorId: 42,
-          title: "Mayonaise",
-          artistName: "The Smashing Pumpkins",
+          title: "Velvet Static",
+          artistName: "The Example Band",
           albumName: "Siamese Dream",
           creatorName: "Another Charter",
           tuningSummary: "E Standard",
@@ -40,8 +40,8 @@ describe("playlist candidate matches", () => {
           id: "song-preferred",
           groupedProjectId: 123,
           authorId: 9205,
-          title: "Mayonaise",
-          artistName: "The Smashing Pumpkins",
+          title: "Velvet Static",
+          artistName: "The Example Band",
           albumName: "Siamese Dream",
           creatorName: "Mekanizm",
           tuningSummary: "E Standard",
@@ -77,7 +77,7 @@ describe("playlist candidate matches", () => {
       buildPlaylistCandidateMatchesJson([
         {
           id: "song-1",
-          title: "Mayonaise",
+          title: "Velvet Static",
         },
       ])
     ).toBeUndefined();
@@ -86,11 +86,11 @@ describe("playlist candidate matches", () => {
       buildPlaylistCandidateMatchesJson([
         {
           id: "song-1",
-          title: "Mayonaise",
+          title: "Velvet Static",
         },
         {
           id: "song-2",
-          title: "Mayonaise",
+          title: "Velvet Static",
         },
       ])
     ).toContain('"song-2"');
@@ -103,8 +103,8 @@ describe("playlist candidate matches", () => {
         groupedProjectId: 123,
         authorId: 9205,
         isPreferredCharter: true,
-        title: "Mayonaise",
-        artist: "The Smashing Pumpkins",
+        title: "Velvet Static",
+        artist: "The Example Band",
         album: "Siamese Dream",
         creator: "Mekanizm",
         tuning: "E Standard",
@@ -132,11 +132,11 @@ describe("playlist candidate matches", () => {
   });
 
   it("normalizes artist names for fallback candidate grouping", () => {
-    expect(
-      normalizeArtistNameForCandidateGrouping("The Smashing Pumpkins")
-    ).toBe("smashing pumpkins");
-    expect(normalizeArtistNameForCandidateGrouping("Smashing Pumpkins")).toBe(
-      "smashing pumpkins"
+    expect(normalizeArtistNameForCandidateGrouping("The Example Band")).toBe(
+      "example band"
+    );
+    expect(normalizeArtistNameForCandidateGrouping("Example Band")).toBe(
+      "example band"
     );
   });
 });

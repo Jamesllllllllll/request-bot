@@ -75,6 +75,7 @@ import {
   type RequestPathOption,
   requestedPathsMatch,
 } from "~/lib/requested-paths";
+import { getSongPrimaryGroupKey } from "~/lib/song-grouping";
 import type { RequesterChatBadge } from "~/lib/twitch/chat-badges";
 import { cn, decodeHtmlEntities, getErrorMessage } from "~/lib/utils";
 import { viewerSessionQueryOptions } from "~/lib/viewer-session-query";
@@ -280,6 +281,7 @@ type ManagementChannelPageData = Omit<
 type FavoriteSongsData = {
   items: SearchSong[];
   favoritedChartSongIds: string[];
+  favoritedGroupKeys: string[];
   total: number;
   page: number;
   limit: number;
@@ -289,6 +291,7 @@ type FavoriteSongsData = {
 
 type PendingFavoriteState = {
   songId: string;
+  groupKey: string;
   favorited: boolean;
 } | null;
 
@@ -1011,14 +1014,27 @@ function PublicChannelPage() {
   const canManageBlacklist =
     !!managementQuery.data?.settings?.canManageBlacklist;
   const canManageSetlist = !!managementQuery.data?.settings?.canManageSetlist;
-  const favoritedChartSongIds = useMemo(
-    () => new Set(favoritesQuery.data?.favoritedChartSongIds ?? []),
-    [favoritesQuery.data?.favoritedChartSongIds]
+  const favoritedGroupKeys = useMemo(
+    () => new Set(favoritesQuery.data?.favoritedGroupKeys ?? []),
+    [favoritesQuery.data?.favoritedGroupKeys]
   );
-  const isChartFavorited = (songId: string) =>
-    pendingFavoriteState?.songId === songId
+  const isGroupFavorited = (groupKey?: string | null) => {
+    if (!groupKey) {
+      return false;
+    }
+
+    return pendingFavoriteState?.groupKey === groupKey
       ? pendingFavoriteState.favorited
-      : favoritedChartSongIds.has(songId);
+      : favoritedGroupKeys.has(groupKey);
+  };
+  const getSearchSongGroupKey = (song: SearchSong) =>
+    song.groupKey ??
+    getSongPrimaryGroupKey({
+      id: song.id,
+      groupedProjectId: song.groupedProjectId,
+      title: song.title,
+      artist: song.artist,
+    });
 
   const requestsEnabledMutation = useMutation({
     mutationFn: async (nextRequestsEnabled: boolean) => {
@@ -1362,7 +1378,11 @@ function PublicChannelPage() {
     },
   });
   const favoriteSongMutation = useMutation({
-    mutationFn: async (input: { songId: string; favorited: boolean }) => {
+    mutationFn: async (input: {
+      songId: string;
+      groupKey: string;
+      favorited: boolean;
+    }) => {
       const response = await fetch(`/api/channel/${slug}/favorites`, {
         method: "POST",
         headers: {
@@ -1388,6 +1408,7 @@ function PublicChannelPage() {
     onMutate: (input) => {
       setPendingFavoriteState({
         songId: input.songId,
+        groupKey: input.groupKey,
         favorited: input.favorited,
       });
     },
@@ -1712,11 +1733,12 @@ function PublicChannelPage() {
               embedCurrentPlaylist
               currentPlaylistTitle={null}
               canManageFavorites={canManageFavorites}
-              isSongFavorited={isChartFavorited}
-              favoritePendingSongId={pendingFavoriteState?.songId ?? null}
-              onToggleFavorite={(songId, favorited) =>
+              isSongFavorited={isGroupFavorited}
+              favoritePendingGroupKey={pendingFavoriteState?.groupKey ?? null}
+              onToggleFavorite={({ songId, groupKey, favorited }) =>
                 favoriteSongMutation.mutate({
                   songId,
+                  groupKey,
                   favorited,
                 })
               }
@@ -1941,20 +1963,24 @@ function PublicChannelPage() {
             }
             renderTitleAccessory={
               canManageFavorites
-                ? ({ song }: SearchSongActionRenderArgs) => (
-                    <FavoriteToggleButton
-                      favorited={isChartFavorited(song.id)}
-                      pending={pendingFavoriteState?.songId === song.id}
-                      onToggle={() =>
-                        favoriteSongMutation.mutate({
-                          songId: song.id,
-                          favorited: !isChartFavorited(song.id),
-                        })
-                      }
-                      className="mt-[-2px] h-7 w-7"
-                      iconClassName="h-3.5 w-3.5"
-                    />
-                  )
+                ? ({ song }: SearchSongActionRenderArgs) => {
+                    const groupKey = getSearchSongGroupKey(song);
+                    return (
+                      <FavoriteToggleButton
+                        favorited={isGroupFavorited(groupKey)}
+                        pending={pendingFavoriteState?.groupKey === groupKey}
+                        onToggle={() =>
+                          favoriteSongMutation.mutate({
+                            songId: song.id,
+                            groupKey,
+                            favorited: !isGroupFavorited(groupKey),
+                          })
+                        }
+                        className="mt-[-2px] h-7 w-7"
+                        iconClassName="h-3.5 w-3.5"
+                      />
+                    );
+                  }
                 : undefined
             }
             renderActions={

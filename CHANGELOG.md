@@ -2,6 +2,14 @@
 
 All notable changes to this project are documented here.
 
+## [0.7.0] - 2026-04-14
+
+### Added
+- Playlist entries now show when a requester has gone AFK, making it easier for streamers and viewers to spot requests that may need a quick check-in.
+
+### Changed
+- Requester activity on the playlist now updates live as chat messages come in, so AFK badges clear automatically when someone is active again.
+
 ## [0.6.0] - 2026-04-14
 
 ### Added

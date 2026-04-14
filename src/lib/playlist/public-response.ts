@@ -107,6 +107,7 @@ export type PublicPlaylistItem = {
   requestedByLogin?: string | null;
   requestedByDisplayName?: string | null;
   requesterChatBadges?: RequesterChatBadge[] | null;
+  requesterLastChatAt?: number | null;
   requestKind?: "regular" | "vip" | null;
   vipTokenCost?: number | null;
   requestedQuery?: string | null;
@@ -136,6 +137,7 @@ export function toPublicPlaylistItem(
     requestedByLogin: item.requestedByLogin,
     requestedByDisplayName: item.requestedByDisplayName,
     requesterChatBadges: item.requesterChatBadges,
+    requesterLastChatAt: item.requesterLastChatAt,
     requestKind: item.requestKind,
     vipTokenCost: item.vipTokenCost,
     requestedQuery: item.requestedQuery,

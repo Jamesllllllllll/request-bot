@@ -105,6 +105,8 @@ describe("playlist management capabilities", () => {
           id: "pli_123",
           songTitle: "Neon Noir",
           songArtist: "VV",
+          requestedByLogin: "viewer_one",
+          requesterLastChatAt: 456,
           songDurationText: "3:49",
           songUrl: "https://example.com/song",
           songDownloads: 4284,
@@ -145,6 +147,7 @@ describe("playlist management capabilities", () => {
     });
     expect(result.items[0]).toMatchObject({
       id: "pli_123",
+      requesterLastChatAt: 456,
       songDurationText: "3:49",
       songUrl: "https://example.com/song",
       warningMessage: "Needs lead path",

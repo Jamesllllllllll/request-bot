@@ -8,6 +8,7 @@ import {
   createAuditLog,
   getCatalogSongsByIds,
   getChannelBlacklistByChannelId,
+  getChannelChatterActivityForRequesters,
   getChannelPreferredChartersByChannelId,
   getChannelSettingsByChannelId,
   getDashboardChannelAccess,
@@ -30,6 +31,7 @@ import {
 } from "~/lib/db/schema-version";
 import type { AppEnv } from "~/lib/env";
 import { toPlaylistClientChannel } from "~/lib/playlist/public-response";
+import { attachRequesterLastChatActivity } from "~/lib/playlist/requester-activity";
 import {
   ADD_REQUESTS_WHEN_LIVE_MESSAGE,
   areChannelRequestsOpen,
@@ -152,6 +154,50 @@ type PlaylistManagementAccess = NonNullable<
   Awaited<ReturnType<typeof getDashboardChannelAccess>>
 >;
 
+async function attachPlaylistRequesterActivity(
+  runtimeEnv: AppEnv,
+  channelId: string,
+  items: Array<Record<string, unknown>>
+) {
+  const twitchUserIds = [
+    ...new Set(
+      items
+        .map((item) =>
+          typeof item.requestedByTwitchUserId === "string"
+            ? item.requestedByTwitchUserId.trim()
+            : ""
+        )
+        .filter(Boolean)
+    ),
+  ];
+  const logins = [
+    ...new Set(
+      items
+        .map((item) =>
+          typeof item.requestedByLogin === "string"
+            ? item.requestedByLogin.trim().toLowerCase()
+            : ""
+        )
+        .filter(Boolean)
+    ),
+  ];
+
+  if (twitchUserIds.length === 0 && logins.length === 0) {
+    return items;
+  }
+
+  const activityRows = await getChannelChatterActivityForRequesters(
+    runtimeEnv,
+    {
+      channelId,
+      twitchUserIds,
+      logins,
+    }
+  );
+
+  return attachRequesterLastChatActivity(items, activityRows);
+}
+
 export async function requirePlaylistManagementState(
   request: Request,
   runtimeEnv: AppEnv,
@@ -185,8 +231,15 @@ export async function loadPlaylistManagementStateForAccess(
       return null;
     }
 
+    const items = await attachPlaylistRequesterActivity(
+      runtimeEnv,
+      state.channel.id,
+      state.items
+    );
+
     return {
       ...state,
+      items,
       accessRole: access.accessRole,
       actorUserId: access.actorUserId,
     } satisfies PlaylistManagementState;
@@ -225,11 +278,17 @@ export async function loadPlaylistManagementStateForAccess(
     return null;
   }
 
+  const items = await attachPlaylistRequesterActivity(
+    runtimeEnv,
+    access.channel.id,
+    playlistState.items
+  );
+
   return {
     channel: access.channel,
     settings,
     playlist: playlistState.playlist,
-    items: playlistState.items,
+    items,
     playedSongs: playedRows,
     blocks: blockRows,
     vipTokens: vipTokenRows,

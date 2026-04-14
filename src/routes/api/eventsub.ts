@@ -5,6 +5,8 @@ import { notifyPlaylistStream } from "~/lib/backend";
 import {
   getChannelByTwitchChannelId,
   getChannelSettingsByChannelId,
+  hasActivePlaylistRequestForUser,
+  upsertChannelChatterActivity,
 } from "~/lib/db/repositories";
 import type { AppEnv } from "~/lib/env";
 import {
@@ -313,6 +315,40 @@ export const Route = createFileRoute("/api/eventsub")({
           event.rawMessage,
           normalizeCommandPrefix(settings.commandPrefix)
         );
+        const hasActivePlaylistRequest = parsed
+          ? false
+          : await hasActivePlaylistRequestForUser(runtimeEnv, {
+              channelId: channel.id,
+              twitchUserId: event.chatterTwitchUserId,
+            });
+
+        if (parsed || hasActivePlaylistRequest) {
+          try {
+            const activityUpdate = await upsertChannelChatterActivity(
+              runtimeEnv,
+              {
+                channelId: channel.id,
+                twitchUserId: event.chatterTwitchUserId,
+                login: event.chatterLogin,
+                displayName: event.chatterDisplayName,
+              }
+            );
+
+            if (activityUpdate.updated) {
+              await notifyPlaylistStream(runtimeEnv, {
+                channelId: channel.id,
+                reason: "chat-activity",
+              });
+            }
+          } catch (error) {
+            console.warn("Failed to record chatter activity", {
+              channelId: channel.id,
+              chatterLogin: event.chatterLogin,
+              error: error instanceof Error ? error.message : String(error),
+            });
+          }
+        }
+
         if (!parsed) {
           console.info(
             "EventSub chat message ignored because it was not a supported command"

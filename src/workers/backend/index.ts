@@ -9,6 +9,7 @@ import {
   getBotAuthorization,
   getCatalogSongGroupRowsForSongId,
   getChannelBlacklistByChannelId,
+  getChannelChatterActivityForRequesters,
   getChannelPreferredChartersByChannelId,
   getSessionPlayedSongsByChannelId,
   upsertVipRequestCooldown,
@@ -55,6 +56,7 @@ import {
   isPlaylistStreamNotifyReason,
   type PlaylistStreamNotifyReason,
 } from "~/lib/playlist/realtime";
+import { attachRequesterLastChatActivity } from "~/lib/playlist/requester-activity";
 import type {
   AddRequestInput,
   ChangeRequestKindInput,
@@ -1926,6 +1928,18 @@ class ChannelPlaylistDurableObjectBase {
     const songIds = [
       ...new Set(items.map((item) => item.songId).filter(Boolean)),
     ];
+    const activityRows = await getChannelChatterActivityForRequesters(
+      this.env,
+      {
+        channelId,
+        twitchUserIds: items
+          .map((item) => item.requestedByTwitchUserId ?? "")
+          .filter(Boolean),
+        logins: items
+          .map((item) => item.requestedByLogin ?? "")
+          .filter(Boolean),
+      }
+    );
     const catalogSongs =
       songIds.length > 0
         ? await db.query.catalogSongs.findMany({
@@ -2002,7 +2016,7 @@ class ChannelPlaylistDurableObjectBase {
       blacklistSongs: blacklistSongs.map(toPublicBlacklistSong),
       blacklistSongGroups: blacklistSongGroups.map(toPublicBlacklistSongGroup),
       setlistArtists: setlistRows.map(toPublicSetlistArtist),
-      items: [...items]
+      items: [...attachRequesterLastChatActivity(items, activityRows)]
         .sort((a, b) => a.position - b.position)
         .map((item) => {
           const catalogSong = catalogSongsById.get(item.songId);

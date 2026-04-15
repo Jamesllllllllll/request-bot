@@ -24,6 +24,7 @@ describe("Twitch extension PubSub sender", () => {
       sendExtensionPlaylistPubSubMessage(
         {
           TWITCH_CLIENT_ID: "client-id",
+          TWITCH_EXTENSION_CLIENT_ID: "extension-client-id",
           TWITCH_EXTENSION_SECRET: "c2VjcmV0",
         },
         {
@@ -38,7 +39,7 @@ describe("Twitch extension PubSub sender", () => {
     expect(requestInit?.method).toBe("POST");
     expect(requestInit?.headers).toMatchObject({
       Authorization: expect.stringMatching(/^Bearer /),
-      "Client-Id": "client-id",
+      "Client-Id": "extension-client-id",
       "Content-Type": "application/json",
     });
 
@@ -81,6 +82,7 @@ describe("Twitch extension PubSub sender", () => {
       sendExtensionPlaylistPubSubMessage(
         {
           TWITCH_CLIENT_ID: "client-id",
+          TWITCH_EXTENSION_CLIENT_ID: "extension-client-id",
           TWITCH_EXTENSION_SECRET: "",
         },
         {

@@ -12,7 +12,7 @@ import type { AppEnv } from "~/lib/env";
 import type { TuningOption } from "~/lib/tunings";
 import { json } from "~/lib/utils";
 
-const filterOptionsCacheKey = "search-filter-options-v4";
+const filterOptionsCacheKey = "search-filter-options-v5";
 const filterOptionsCacheTtlMs = 60 * 60 * 1000;
 
 export const Route = createFileRoute("/api/search/filters")({
@@ -24,6 +24,7 @@ export const Route = createFileRoute("/api/search/filters")({
         try {
           const versionToken = await getCatalogSearchVersionToken(runtimeEnv);
           const cached = await getCachedSearchResult<{
+            catalogTotal: number;
             years: number[];
             tunings: TuningOption[];
           }>(runtimeEnv, filterOptionsCacheKey, Date.now(), versionToken);

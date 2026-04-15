@@ -4,7 +4,7 @@
   },
   "page": {
     "title": "Buscar",
-    "infoNote": "Esta demo contem apenas {count} musicas.",
+    "infoNote": "Esta demo contem {count} musicas.",
     "placeholder": "Busque por titulo, artista ou album"
   },
   "summary": {
@@ -43,6 +43,7 @@
   },
   "states": {
     "loading": "Carregando musicas...",
+    "startSearch": "Comece a digitar ou use filtros para navegar pelas musicas.",
     "queryTooShort": "Os termos de busca precisam ter pelo menos 3 caracteres.",
     "emptyFiltered": "Nenhuma musica corresponde a esses filtros ainda. Tente ampliar a busca ou limpar um dos filtros avancados.",
     "emptyCatalog": "Ainda nao ha musicas disponiveis no catalogo de demo.",

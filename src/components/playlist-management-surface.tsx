@@ -367,6 +367,7 @@ export type PlaylistManagementSurfaceProps = {
   playlistData?: PlaylistManagementSurfaceData | null;
   refetchIntervalMs?: number | false;
   staleTimeMs?: number;
+  invalidateOnMutationSuccess?: boolean;
   headerTitle?: string;
   headerDescription?: string;
   showAncillaryPanels?: boolean;
@@ -488,14 +489,16 @@ export function PlaylistManagementSurface(
 
   const manualSearchQuery = useQuery<ManualSearchData>({
     queryKey: ["playlist-manual-search", debouncedManualQuery],
-    queryFn: async () => {
+    queryFn: async ({ signal }) => {
       const params = new URLSearchParams({
         query: debouncedManualQuery.trim(),
         page: "1",
         pageSize: "6",
         field: "any",
       });
-      const response = await fetch(`/api/search?${params.toString()}`);
+      const response = await fetch(`/api/search?${params.toString()}`, {
+        signal,
+      });
       const body = (await response.json().catch(() => null)) as
         | SearchResponse
         | { message?: string }
@@ -776,9 +779,11 @@ export function PlaylistManagementSurface(
         setDebouncedManualQuery("");
         setManualRequesterLogin("");
       }
-      void queryClient.invalidateQueries({
-        queryKey: playlistQueryKey,
-      });
+      if (props.invalidateOnMutationSuccess ?? true) {
+        void queryClient.invalidateQueries({
+          queryKey: playlistQueryKey,
+        });
+      }
     },
     onSettled: () => {
       setPendingRowAction(null);
@@ -822,9 +827,11 @@ export function PlaylistManagementSurface(
     },
     onSuccess: () => {
       setPlaylistActionError(null);
-      void queryClient.invalidateQueries({
-        queryKey: playlistQueryKey,
-      });
+      if (props.invalidateOnMutationSuccess ?? true) {
+        void queryClient.invalidateQueries({
+          queryKey: playlistQueryKey,
+        });
+      }
     },
   });
 

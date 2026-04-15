@@ -2,6 +2,18 @@
 
 All notable changes to this project are documented here.
 
+## [0.8.0] - 2026-04-15
+
+### Added
+- The homepage now highlights live streamers with a community pulse that shows daily request activity, artists in rotation, and songs currently being played, with quick links out to Twitch.
+
+### Changed
+- The live homepage section is easier to scan, with a stronger featured streamer layout and more compact supporting activity widgets.
+- The Twitch panel feels lighter and more focused, with quieter search behavior and faster playlist updates while a stream is live.
+
+### Fixed
+- Search and playlist views stay more responsive during broader song lookups and panel refreshes.
+
 ## [0.7.0] - 2026-04-14
 
 ### Added

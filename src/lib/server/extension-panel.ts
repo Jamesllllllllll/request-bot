@@ -359,6 +359,7 @@ export async function getExtensionBootstrapState(input: {
             env: input.env,
             channel,
             viewer: linkedViewer,
+            traceId: input.traceId,
             requesterOverride: viewerRequestAccessOverride.requesterOverride,
             ignoreRequestsDisabled:
               viewerRequestAccessOverride.ignoreRequestsDisabled,

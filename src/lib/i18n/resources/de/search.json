@@ -43,6 +43,7 @@
   },
   "states": {
     "loading": "Songs werden geladen...",
+    "startSearch": "Beginne zu tippen oder nutze Filter, um Songs zu durchsuchen.",
     "queryTooShort": "Suchbegriffe müssen mindestens 3 Zeichen lang sein.",
     "emptyFiltered": "Bisher entsprachen keine Songs diesen Filtern. Versuchen Sie, das Suchfeld zu erweitern oder eine der erweiterten Eingaben zu löschen.",
     "emptyCatalog": "Im Demokatalog sind noch keine Songs verfügbar.",

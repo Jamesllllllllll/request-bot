@@ -403,6 +403,21 @@ function mergeManagementRequesterActivity(
     return current;
   }
 
+  const mergedItems = payload.items
+    ? payload.items.map((item) => {
+        const currentItem = current.items?.find(
+          (existingItem) => existingItem.id === item.id
+        );
+
+        return currentItem
+          ? {
+              ...currentItem,
+              ...item,
+            }
+          : item;
+      })
+    : current.items;
+
   return {
     ...current,
     channel: {
@@ -413,15 +428,43 @@ function mergeManagementRequesterActivity(
       ...(current.settings ?? {}),
       ...(payload.settings ?? {}),
     },
-    items: mergeRequesterLastChatActivity(
-      current.items ?? [],
-      payload.items ?? []
-    ),
+    items:
+      payload.streamMeta?.reason === "chat-activity"
+        ? mergeRequesterLastChatActivity(
+            current.items ?? [],
+            payload.items ?? []
+          )
+        : mergedItems,
+    playedSongs: payload.playedSongs ?? current.playedSongs,
+    blacklistArtists: payload.blacklistArtists ?? current.blacklistArtists,
+    blacklistCharters: payload.blacklistCharters ?? current.blacklistCharters,
+    preferredCharters: payload.preferredCharters ?? current.preferredCharters,
+    blacklistSongs: payload.blacklistSongs ?? current.blacklistSongs,
+    blacklistSongGroups:
+      payload.blacklistSongGroups ?? current.blacklistSongGroups,
+    setlistArtists: payload.setlistArtists ?? current.setlistArtists,
   } satisfies ManagementChannelPageData;
 }
 
 function getStreamReason(payload: PlaylistStreamPayload) {
   return payload.streamMeta?.reason ?? "playlist";
+}
+
+function shouldMergeManagementStreamPayload(reason: string) {
+  return (
+    reason === "initial" ||
+    reason === "playlist" ||
+    reason === "requests" ||
+    reason === "settings" ||
+    reason === "stream-status" ||
+    reason === "blacklist" ||
+    reason === "setlist" ||
+    reason === "chat-activity"
+  );
+}
+
+function shouldInvalidateManagementState(reason: string) {
+  return reason === "vip-tokens" || reason === "blocks";
 }
 
 function shouldInvalidateViewerState(reason: string) {
@@ -662,8 +705,7 @@ function PublicChannelPage() {
     queryKey: ["channel-favorites", slug],
     queryFn: async () => {
       const params = new URLSearchParams({
-        page: "1",
-        pageSize: "1",
+        summary: "1",
       });
       const response = await fetch(`/api/channel/${slug}/favorites?${params}`);
       const body = (await response.json().catch(() => null)) as
@@ -828,7 +870,7 @@ function PublicChannelPage() {
 
       markStreamHealthy();
 
-      if (reason === "chat-activity") {
+      if (shouldMergeManagementStreamPayload(reason)) {
         queryClient.setQueryData<ManagementChannelPageData | null>(
           managementPlaylistQueryKey,
           (current) =>
@@ -837,10 +879,12 @@ function PublicChannelPage() {
         return;
       }
 
-      void queryClient.invalidateQueries({
-        queryKey: managementPlaylistQueryKey,
-        refetchType: "active",
-      });
+      if (shouldInvalidateManagementState(reason)) {
+        void queryClient.invalidateQueries({
+          queryKey: managementPlaylistQueryKey,
+          refetchType: "active",
+        });
+      }
     };
 
     source.onopen = () => {
@@ -1773,6 +1817,7 @@ function PublicChannelPage() {
                 managementPollingFallbackEnabled ? 2_000 : false
               }
               staleTimeMs={Number.POSITIVE_INFINITY}
+              invalidateOnMutationSuccess={managementPollingFallbackEnabled}
               showAncillaryPanels={false}
               showManualAdd={false}
               embedCurrentPlaylist

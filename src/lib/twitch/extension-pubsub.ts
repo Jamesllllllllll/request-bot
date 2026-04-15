@@ -80,13 +80,19 @@ async function createExtensionExternalJwt(input: {
 }
 
 export async function sendExtensionPlaylistPubSubMessage(
-  env: Pick<BackendEnv, "TWITCH_CLIENT_ID" | "TWITCH_EXTENSION_SECRET">,
+  env: Pick<
+    BackendEnv,
+    | "TWITCH_CLIENT_ID"
+    | "TWITCH_EXTENSION_CLIENT_ID"
+    | "TWITCH_EXTENSION_SECRET"
+  >,
   input: {
     broadcasterId: string;
     reason: PlaylistStreamNotifyReason;
   }
 ) {
-  if (!env.TWITCH_EXTENSION_SECRET?.trim()) {
+  const extensionClientId = env.TWITCH_EXTENSION_CLIENT_ID?.trim();
+  if (!env.TWITCH_EXTENSION_SECRET?.trim() || !extensionClientId) {
     return false;
   }
 
@@ -101,7 +107,7 @@ export async function sendExtensionPlaylistPubSubMessage(
     method: "POST",
     headers: {
       Authorization: `Bearer ${authorization}`,
-      "Client-Id": env.TWITCH_CLIENT_ID,
+      "Client-Id": extensionClientId,
       "Content-Type": "application/json",
     },
     body: JSON.stringify({

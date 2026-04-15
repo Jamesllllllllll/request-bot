@@ -10,6 +10,7 @@ export interface AppEnv {
   SENTRY_RELEASE?: string;
   SENTRY_TRACES_SAMPLE_RATE?: string;
   TWITCH_CLIENT_ID: string;
+  TWITCH_EXTENSION_CLIENT_ID?: string;
   TWITCH_CLIENT_SECRET: string;
   TWITCH_TOKEN_ENCRYPTION_SECRET: string;
   TWITCH_EVENTSUB_SECRET: string;
@@ -31,6 +32,7 @@ export interface BackendEnv {
   SENTRY_RELEASE?: string;
   SENTRY_TRACES_SAMPLE_RATE?: string;
   TWITCH_CLIENT_ID: string;
+  TWITCH_EXTENSION_CLIENT_ID?: string;
   TWITCH_CLIENT_SECRET: string;
   TWITCH_TOKEN_ENCRYPTION_SECRET: string;
   TWITCH_EVENTSUB_SECRET: string;

@@ -26,6 +26,20 @@
     "rulesTitle": "Definissez les regles",
     "rulesBody": "Controlez les listes noires, les setlists, la moderation et les parametres de demande pour votre chaine."
   },
+  "community": {
+    "eyebrow": "Pouls de la communaute",
+    "title": "Ce que jouent les streams Rocksmith aujourd'hui",
+    "requestsToday": "Demandes aujourd'hui",
+    "requestersToday": "Requesters aujourd'hui",
+    "songsToday": "Morceaux en rotation",
+    "channelsToday": "Chaines actives aujourd'hui",
+    "mostPlayed": "Les plus joues aujourd'hui",
+    "topArtists": "Artistes en rotation",
+    "plays": "{count} lectures",
+    "channels": "{count} chaines",
+    "songs": "{count} morceaux",
+    "empty": "Aucun morceau n'a encore ete joue aujourd'hui."
+  },
   "live": {
     "eyebrow": "En direct",
     "title": "Streamers actuels",
@@ -36,6 +50,7 @@
     "empty": "Aucun streamer n'est encore en direct avec le bot actif.",
     "previewAlt": "Apercu du live de {displayName}",
     "status": "En direct",
+    "playedToday": "{count} joues aujourd'hui",
     "nowPlaying": "En cours",
     "upNext": "Ensuite",
     "nextRequest": "Prochaine demande",

@@ -5,6 +5,7 @@ import {
   createAuditLog,
   getCatalogSongById,
   getChannelBySlug,
+  getChannelFavoritedSongGroupKeys,
   getChannelFavoriteSongsPage,
   setChannelFavoriteChart,
 } from "~/lib/db/repositories";
@@ -28,6 +29,7 @@ export const Route = createFileRoute("/api/channel/$slug/favorites")({
         }
 
         const url = new URL(request.url);
+        const summaryOnly = url.searchParams.get("summary") === "1";
         const parsed = favoriteSongsPageSchema.safeParse({
           page: url.searchParams.get("page") ?? undefined,
           pageSize: url.searchParams.get("pageSize") ?? undefined,
@@ -41,6 +43,24 @@ export const Route = createFileRoute("/api/channel/$slug/favorites")({
             },
             { status: 400 }
           );
+        }
+
+        if (summaryOnly) {
+          const favoritedGroupKeys = await getChannelFavoritedSongGroupKeys(
+            runtimeEnv,
+            channel.id
+          );
+
+          return json({
+            items: [],
+            favoritedChartSongIds: [],
+            favoritedGroupKeys,
+            total: favoritedGroupKeys.length,
+            page: 1,
+            limit: 0,
+            hasPrevious: false,
+            hasNext: false,
+          });
         }
 
         return json(

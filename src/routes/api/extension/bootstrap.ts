@@ -19,6 +19,8 @@ export const Route = createFileRoute("/api/extension/bootstrap")({
         const runtimeEnv = env as AppEnv;
         const traceId = crypto.randomUUID();
         const startedAt = Date.now();
+        const refreshCause =
+          request.headers.get("x-extension-refresh-cause") ?? "unknown";
         let authMs: number | null = null;
         let auth: Awaited<
           ReturnType<typeof requireExtensionAuthFromRequest>
@@ -27,6 +29,7 @@ export const Route = createFileRoute("/api/extension/bootstrap")({
         console.info("Extension bootstrap request received", {
           traceId,
           origin: request.headers.get("origin"),
+          refreshCause,
         });
 
         try {
@@ -44,11 +47,27 @@ export const Route = createFileRoute("/api/extension/bootstrap")({
           });
           const elapsedMs = Date.now() - startedAt;
 
+          console.info("Extension bootstrap request completed", {
+            traceId,
+            elapsedMs,
+            authMs,
+            refreshCause,
+            channelId: auth.channelId,
+            role: auth.role,
+            isLinked: auth.isLinked,
+            connected: responseBody.connected,
+            playlistItemCount: responseBody.playlist.items.length,
+            currentItemId: responseBody.playlist.currentItemId,
+            requestsEnabled: responseBody.settings.requestsEnabled,
+            isLive: responseBody.channel?.isLive ?? null,
+          });
+
           if (elapsedMs >= 1000) {
             console.info("Extension bootstrap request completed slowly", {
               traceId,
               elapsedMs,
               authMs,
+              refreshCause,
               channelId: auth.channelId,
               role: auth.role,
               isLinked: auth.isLinked,
@@ -63,6 +82,7 @@ export const Route = createFileRoute("/api/extension/bootstrap")({
             authMs,
             status: getExtensionErrorStatus(error),
             origin: request.headers.get("origin"),
+            refreshCause,
             channelId: auth?.channelId ?? null,
             role: auth?.role ?? null,
             isLinked: auth?.isLinked ?? null,

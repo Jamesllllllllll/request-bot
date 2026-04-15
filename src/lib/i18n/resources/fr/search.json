@@ -4,7 +4,7 @@
   },
   "page": {
     "title": "Recherche",
-    "infoNote": "Cette demo contient seulement {count} morceaux.",
+    "infoNote": "Cette demo contient {count} morceaux.",
     "placeholder": "Rechercher par titre, artiste ou album"
   },
   "summary": {
@@ -43,6 +43,7 @@
   },
   "states": {
     "loading": "Chargement des morceaux...",
+    "startSearch": "Commencez a taper ou utilisez les filtres pour parcourir les morceaux.",
     "queryTooShort": "Les termes de recherche doivent contenir au moins 3 caracteres.",
     "emptyFiltered": "Aucun morceau ne correspond encore a ces filtres. Essayez d'elargir la recherche ou de supprimer un filtre avance.",
     "emptyCatalog": "Aucun morceau n'est encore disponible dans le catalogue de demo.",

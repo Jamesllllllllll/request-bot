@@ -217,6 +217,52 @@ export class ViewerRequestError extends Error {
 const blockedViewerRequestReason =
   "You are blocked from requesting songs in this channel.";
 
+function logViewerRequestContextStage(
+  traceId: string | undefined,
+  event: "started" | "completed",
+  input: {
+    stage: string;
+    channelId: string;
+    viewerTwitchUserId: string;
+    durationMs?: number;
+    resultSummary?: Record<string, unknown>;
+  }
+) {
+  if (!traceId) {
+    return;
+  }
+
+  console.info(`Viewer request context stage ${event}`, {
+    traceId,
+    stage: input.stage,
+    channelId: input.channelId,
+    viewerTwitchUserId: input.viewerTwitchUserId,
+    durationMs: input.durationMs ?? null,
+    ...(input.resultSummary ?? {}),
+  });
+}
+
+async function measureViewerRequestContextStage<T>(
+  traceId: string | undefined,
+  input: {
+    stage: string;
+    channelId: string;
+    viewerTwitchUserId: string;
+    summarizeResult?: (result: T) => Record<string, unknown>;
+    operation: () => Promise<T>;
+  }
+) {
+  logViewerRequestContextStage(traceId, "started", input);
+  const startedAt = Date.now();
+  const result = await input.operation();
+  logViewerRequestContextStage(traceId, "completed", {
+    ...input,
+    durationMs: Date.now() - startedAt,
+    resultSummary: input.summarizeResult?.(result),
+  });
+  return result;
+}
+
 export async function getViewerRequestState(input: {
   env: AppEnv;
   request: Request;
@@ -289,20 +335,37 @@ export async function getViewerRequestStateForChannelViewer(input: {
   env: AppEnv;
   channel: ViewerChannel;
   viewer: ViewerIdentity;
+  traceId?: string;
   requesterOverride?: Partial<
     Pick<RequesterContext, "isBroadcaster" | "isModerator">
   >;
   ignoreRequestsDisabled?: boolean;
 }): Promise<ViewerRequestStatePayload> {
+  const startedAt = Date.now();
   const context = await loadViewerRequestContext(
     input.env,
     input.channel,
     input.viewer,
     {
+      traceId: input.traceId,
       requesterOverride: input.requesterOverride,
       ignoreRequestsDisabled: input.ignoreRequestsDisabled,
     }
   );
+
+  if (input.traceId) {
+    console.info("Viewer request state completed", {
+      traceId: input.traceId,
+      channelId: input.channel.id,
+      viewerTwitchUserId: input.viewer.twitchUserId,
+      elapsedMs: Date.now() - startedAt,
+      accessAllowed: context.access.allowed,
+      isSubscriber: context.subscription.isSubscriber,
+      subscriptionVerified: context.subscription.verified,
+      vipTokensAvailable: context.vipTokensAvailable,
+      activeRequestLimit: context.activeRequestLimit,
+    });
+  }
 
   return {
     viewer: {
@@ -326,6 +389,7 @@ export async function performViewerRequestMutationForChannelViewer(input: {
   viewer: ViewerIdentity;
   mutation: ViewerRequestMutationInput;
   source?: ViewerRequestSource;
+  traceId?: string;
   requesterOverride?: Partial<
     Pick<RequesterContext, "isBroadcaster" | "isModerator">
   >;
@@ -336,6 +400,7 @@ export async function performViewerRequestMutationForChannelViewer(input: {
     input.channel,
     input.viewer,
     {
+      traceId: input.traceId,
       requesterOverride: input.requesterOverride,
       ignoreRequestsDisabled: input.ignoreRequestsDisabled,
     }
@@ -358,12 +423,24 @@ async function loadViewerRequestContext(
   channel: ViewerChannel,
   viewer: ViewerIdentity,
   options?: {
+    traceId?: string;
     requesterOverride?: Partial<
       Pick<RequesterContext, "isBroadcaster" | "isModerator">
     >;
     ignoreRequestsDisabled?: boolean;
   }
 ): Promise<ViewerRequestContext> {
+  const startedAt = Date.now();
+  const traceId = options?.traceId;
+
+  if (traceId) {
+    console.info("Viewer request context started", {
+      traceId,
+      channelId: channel.id,
+      viewerTwitchUserId: viewer.twitchUserId,
+    });
+  }
+
   const [
     settings,
     playlist,
@@ -375,22 +452,108 @@ async function loadViewerRequestContext(
     balance,
     vipRequestCooldown,
   ] = await Promise.all([
-    getChannelSettingsByChannelId(env, channel.id),
-    getPlaylistByChannelId(env, channel.id),
-    getChannelBlacklistByChannelId(env, channel.id),
-    getChannelPreferredChartersByChannelId(env, channel.id),
-    getDb(env).query.setlistArtists.findMany({
-      where: eq(setlistArtists.channelId, channel.id),
-    }),
-    isBlockedUser(env, channel.id, viewer.twitchUserId),
-    resolveViewerSubscription(env, channel.id, channel.twitchChannelId, viewer),
-    getVipTokenBalance(env, {
+    measureViewerRequestContextStage(traceId, {
+      stage: "getChannelSettingsByChannelId",
       channelId: channel.id,
-      login: viewer.login,
+      viewerTwitchUserId: viewer.twitchUserId,
+      summarizeResult: (result) => ({
+        found: result != null,
+      }),
+      operation: () => getChannelSettingsByChannelId(env, channel.id),
     }),
-    getVipRequestCooldown(env, {
+    measureViewerRequestContextStage(traceId, {
+      stage: "getPlaylistByChannelId",
       channelId: channel.id,
-      login: viewer.login,
+      viewerTwitchUserId: viewer.twitchUserId,
+      summarizeResult: (result) => ({
+        found: result != null,
+        itemCount: result?.items.length ?? null,
+      }),
+      operation: () => getPlaylistByChannelId(env, channel.id),
+    }),
+    measureViewerRequestContextStage(traceId, {
+      stage: "getChannelBlacklistByChannelId",
+      channelId: channel.id,
+      viewerTwitchUserId: viewer.twitchUserId,
+      summarizeResult: (result) => ({
+        blacklistedSongCount: result.blacklistSongs.length,
+        blacklistedArtistCount: result.blacklistArtists.length,
+        blacklistedCharterCount: result.blacklistCharters.length,
+        blacklistedSongGroupCount: result.blacklistSongGroups.length,
+      }),
+      operation: () => getChannelBlacklistByChannelId(env, channel.id),
+    }),
+    measureViewerRequestContextStage(traceId, {
+      stage: "getChannelPreferredChartersByChannelId",
+      channelId: channel.id,
+      viewerTwitchUserId: viewer.twitchUserId,
+      summarizeResult: (result) => ({
+        preferredCharterCount: result.length,
+      }),
+      operation: () => getChannelPreferredChartersByChannelId(env, channel.id),
+    }),
+    measureViewerRequestContextStage(traceId, {
+      stage: "getSetlistArtists",
+      channelId: channel.id,
+      viewerTwitchUserId: viewer.twitchUserId,
+      summarizeResult: (result) => ({
+        setlistArtistCount: result.length,
+      }),
+      operation: () =>
+        getDb(env).query.setlistArtists.findMany({
+          where: eq(setlistArtists.channelId, channel.id),
+        }),
+    }),
+    measureViewerRequestContextStage(traceId, {
+      stage: "isBlockedUser",
+      channelId: channel.id,
+      viewerTwitchUserId: viewer.twitchUserId,
+      summarizeResult: (result) => ({
+        blocked: result,
+      }),
+      operation: () => isBlockedUser(env, channel.id, viewer.twitchUserId),
+    }),
+    measureViewerRequestContextStage(traceId, {
+      stage: "resolveViewerSubscription",
+      channelId: channel.id,
+      viewerTwitchUserId: viewer.twitchUserId,
+      summarizeResult: (result) => ({
+        isSubscriber: result.isSubscriber,
+        verified: result.verified,
+      }),
+      operation: () =>
+        resolveViewerSubscription(
+          env,
+          channel.id,
+          channel.twitchChannelId,
+          viewer
+        ),
+    }),
+    measureViewerRequestContextStage(traceId, {
+      stage: "getVipTokenBalance",
+      channelId: channel.id,
+      viewerTwitchUserId: viewer.twitchUserId,
+      summarizeResult: (result) => ({
+        vipTokensAvailable: result?.availableCount ?? 0,
+      }),
+      operation: () =>
+        getVipTokenBalance(env, {
+          channelId: channel.id,
+          login: viewer.login,
+        }),
+    }),
+    measureViewerRequestContextStage(traceId, {
+      stage: "getVipRequestCooldown",
+      channelId: channel.id,
+      viewerTwitchUserId: viewer.twitchUserId,
+      summarizeResult: (result) => ({
+        cooldownActive: result != null,
+      }),
+      operation: () =>
+        getVipRequestCooldown(env, {
+          channelId: channel.id,
+          login: viewer.login,
+        }),
     }),
   ]);
 
@@ -427,6 +590,22 @@ async function loadViewerRequestContext(
   });
 
   const limit = getActiveRequestLimit(settings, requester);
+
+  if (traceId) {
+    console.info("Viewer request context completed", {
+      traceId,
+      channelId: channel.id,
+      viewerTwitchUserId: viewer.twitchUserId,
+      elapsedMs: Date.now() - startedAt,
+      accessAllowed: access.allowed,
+      blocked,
+      isSubscriber: subscription.isSubscriber,
+      subscriptionVerified: subscription.verified,
+      vipTokensAvailable: balance?.availableCount ?? 0,
+      activeRequestLimit: Number.isFinite(limit) ? limit : null,
+      playlistItemCount: playlist.items.length,
+    });
+  }
 
   return {
     viewer,

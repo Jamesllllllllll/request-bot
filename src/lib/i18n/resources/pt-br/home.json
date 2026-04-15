@@ -26,6 +26,20 @@
     "rulesTitle": "Defina as regras",
     "rulesBody": "Controle listas de bloqueio, setlists, moderacao e configuracoes de pedido do seu canal."
   },
+  "community": {
+    "eyebrow": "Pulso da comunidade",
+    "title": "O que os streams de Rocksmith estao tocando hoje",
+    "requestsToday": "Pedidos hoje",
+    "requestersToday": "Requesters hoje",
+    "songsToday": "Musicas em rotacao",
+    "channelsToday": "Canais ativos hoje",
+    "mostPlayed": "Mais tocadas hoje",
+    "topArtists": "Artistas em rotacao",
+    "plays": "{count} reproducoes",
+    "channels": "{count} canais",
+    "songs": "{count} musicas",
+    "empty": "Ainda nao houve musicas tocadas hoje."
+  },
   "live": {
     "eyebrow": "Ao vivo agora",
     "title": "Streamers atuais",
@@ -36,6 +50,7 @@
     "empty": "Ainda nao ha streamers ao vivo com o bot ativo.",
     "previewAlt": "Previa da live de {displayName}",
     "status": "Ao vivo",
+    "playedToday": "{count} tocadas hoje",
     "nowPlaying": "Tocando agora",
     "upNext": "Em seguida",
     "nextRequest": "Proximo pedido",

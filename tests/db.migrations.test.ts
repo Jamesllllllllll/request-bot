@@ -182,6 +182,58 @@ print(json.dumps(row))
     expect(JSON.parse(output)).toEqual(["en"]);
   });
 
+  test("fresh migrated database creates catalog grouping indexes", () => {
+    const tempDir = mkdtempSync(join(tmpdir(), "request-bot-db-"));
+    const dbPath = join(tempDir, "test.sqlite");
+    const migrationPaths = readdirSync(join(process.cwd(), "drizzle"))
+      .filter((name) => name.endsWith(".sql"))
+      .sort()
+      .map((name) => join(process.cwd(), "drizzle", name));
+
+    const script = `
+import json
+import sqlite3
+import sys
+
+db_path = sys.argv[1]
+migration_paths = json.loads(sys.argv[2])
+
+con = sqlite3.connect(db_path)
+cur = con.cursor()
+
+for migration_path in migration_paths:
+    with open(migration_path, "r", encoding="utf-8") as file:
+        sql = file.read()
+    cur.executescript(sql)
+
+rows = cur.execute("""
+select name
+from sqlite_master
+where type='index'
+  and tbl_name='catalog_songs'
+  and name in ('catalog_songs_grouped_project_idx', 'catalog_songs_grouping_fallback_idx')
+order by name
+""").fetchall()
+con.commit()
+con.close()
+print(json.dumps(rows))
+`;
+
+    const output = execFileSync(
+      pythonCommand,
+      ["-", dbPath, JSON.stringify(migrationPaths)],
+      {
+        input: script,
+        encoding: "utf8",
+      }
+    );
+
+    expect(JSON.parse(output)).toEqual([
+      ["catalog_songs_grouped_project_idx"],
+      ["catalog_songs_grouping_fallback_idx"],
+    ]);
+  });
+
   test("fresh migrated database defaults channel point reward settings safely", () => {
     const tempDir = mkdtempSync(join(tmpdir(), "request-bot-db-"));
     const dbPath = join(tempDir, "test.sqlite");

@@ -7,7 +7,7 @@ const extensionCorsHeaderEntries = {
   "access-control-allow-origin": "*",
   "access-control-allow-methods": "GET, POST, OPTIONS",
   "access-control-allow-headers":
-    "authorization, content-type, x-extension-jwt",
+    "authorization, content-type, x-extension-jwt, x-extension-refresh-cause",
   "access-control-max-age": "86400",
 };
 

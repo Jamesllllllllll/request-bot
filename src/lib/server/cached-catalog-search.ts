@@ -1,3 +1,4 @@
+import { throwIfAborted } from "~/lib/abort";
 import {
   getCachedSearchResultState,
   getCatalogSearchVersionToken,
@@ -13,6 +14,7 @@ import {
 } from "~/lib/db/repositories";
 import type { AppEnv } from "~/lib/env";
 import { getRequestWaitUntil } from "~/lib/server/request-context";
+import { createRequestStageTimer } from "~/lib/server/request-tracing";
 import { parseStoredTuningIds } from "~/lib/tunings";
 import { sha256 } from "~/lib/utils";
 
@@ -48,6 +50,8 @@ export type CachedCatalogSearchInput = {
   cacheFreshMs?: number;
   cacheStaleMs?: number;
   revalidationLeaseMs?: number;
+  signal?: AbortSignal | null;
+  traceId?: string;
 };
 
 type NormalizedCachedCatalogSearchInput = {
@@ -243,22 +247,30 @@ async function runCatalogSearch(input: {
   env: AppEnv;
   normalizedSearch: NormalizedCachedCatalogSearchInput;
   resolvedChannel: ResolvedChannel | null;
+  signal?: AbortSignal | null;
+  traceId?: string;
 }) {
+  throwIfAborted(input.signal);
   const filters = await resolveChannelSearchFilters(input);
+  throwIfAborted(input.signal);
   const results = await searchCatalogSongsInDb(input.env, {
     ...input.normalizedSearch,
     ...filters.favoritesFilterInput,
     ...filters.channelPolicyFilterInput,
     ...filters.charterPreferenceFilterInput,
+    signal: input.signal,
+    traceId: input.traceId,
     ...(input.normalizedSearch.showBlacklisted
       ? {}
       : filters.blacklistFilterInput),
   });
+  throwIfAborted(input.signal);
 
   if (!input.normalizedSearch.showBlacklisted || !filters.hasBlacklistFilters) {
     return results;
   }
 
+  throwIfAborted(input.signal);
   return {
     ...results,
     hiddenBlacklistedCount: (
@@ -268,6 +280,8 @@ async function runCatalogSearch(input: {
         ...filters.channelPolicyFilterInput,
         ...filters.charterPreferenceFilterInput,
         ...filters.blacklistFilterInput,
+        signal: input.signal,
+        traceId: input.traceId,
       })
     ).hiddenBlacklistedCount,
   };
@@ -281,6 +295,7 @@ function revalidateSearchCacheInBackground(input: {
   versionToken: string;
   cacheFreshMs: number;
   cacheStaleMs: number;
+  traceId?: string;
 }) {
   const waitUntil = getRequestWaitUntil();
   const refreshPromise = (async () => {
@@ -288,6 +303,7 @@ function revalidateSearchCacheInBackground(input: {
       env: input.env,
       normalizedSearch: input.normalizedSearch,
       resolvedChannel: input.resolvedChannel,
+      traceId: input.traceId,
     });
     const now = Date.now();
 
@@ -317,11 +333,30 @@ function revalidateSearchCacheInBackground(input: {
 export async function performCachedCatalogSearch(
   input: CachedCatalogSearchInput
 ): Promise<CachedCatalogSearchResult> {
+  const timer = createRequestStageTimer();
+  throwIfAborted(input.signal);
   const normalizedSearch = normalizeCachedCatalogSearchInput(input.search);
-  const resolvedChannel = await resolveSearchChannel({
-    env: input.env,
-    channelScope: input.channelScope,
-  });
+  if (input.traceId) {
+    console.info("Cached catalog search stage started", {
+      traceId: input.traceId,
+      stage: "resolveSearchChannel",
+    });
+  }
+  const resolvedChannel = await timer.measure("resolveSearchChannel", () =>
+    resolveSearchChannel({
+      env: input.env,
+      channelScope: input.channelScope,
+    })
+  );
+  if (input.traceId) {
+    console.info("Cached catalog search stage completed", {
+      traceId: input.traceId,
+      stage: "resolveSearchChannel",
+      durationMs: timer.stageDurations.resolveSearchChannel,
+      channelId: resolvedChannel?.id ?? null,
+    });
+  }
+  throwIfAborted(input.signal);
   const cacheFreshMs = input.cacheFreshMs ?? defaultSearchCacheFreshTtlMs;
   const cacheStaleMs = input.cacheStaleMs ?? defaultSearchCacheStaleTtlMs;
   const revalidationLeaseMs =
@@ -331,19 +366,64 @@ export async function performCachedCatalogSearch(
     resolvedChannel?.id ?? ""
   );
   const cacheKey = await sha256(JSON.stringify(cacheInput));
-  const versionToken = await resolveSearchCacheVersionToken({
-    env: input.env,
-    resolvedChannel,
-  });
-  const cached = await getCachedSearchResultState<CachedCatalogSearchData>(
-    input.env,
-    {
+  if (input.traceId) {
+    console.info("Cached catalog search stage started", {
+      traceId: input.traceId,
+      stage: "resolveVersionToken",
+    });
+  }
+  const versionToken = await timer.measure("resolveVersionToken", () =>
+    resolveSearchCacheVersionToken({
+      env: input.env,
+      resolvedChannel,
+    })
+  );
+  if (input.traceId) {
+    console.info("Cached catalog search stage completed", {
+      traceId: input.traceId,
+      stage: "resolveVersionToken",
+      durationMs: timer.stageDurations.resolveVersionToken,
+    });
+  }
+  throwIfAborted(input.signal);
+  if (input.traceId) {
+    console.info("Cached catalog search stage started", {
+      traceId: input.traceId,
+      stage: "getCachedSearchResultState",
+      cacheKey,
+    });
+  }
+  const cached = await timer.measure("getCachedSearchResultState", () =>
+    getCachedSearchResultState<CachedCatalogSearchData>(input.env, {
       cacheKey,
       versionToken,
-    }
+    })
   );
+  if (input.traceId) {
+    console.info("Cached catalog search stage completed", {
+      traceId: input.traceId,
+      stage: "getCachedSearchResultState",
+      durationMs: timer.stageDurations.getCachedSearchResultState,
+      cacheKey,
+      cacheState: cached.state,
+    });
+  }
+  throwIfAborted(input.signal);
 
   if (cached.state === "fresh") {
+    if (input.traceId) {
+      console.info("Cached catalog search resolved", {
+        traceId: input.traceId,
+        cacheState: cached.state,
+        elapsedMs: Object.values(timer.stageDurations).reduce(
+          (total, duration) => total + duration,
+          0
+        ),
+        stageDurations: timer.stageDurations,
+        channelId: resolvedChannel?.id ?? null,
+      });
+    }
+
     return {
       data: cached.response,
       cacheStatus: "hit",
@@ -352,10 +432,28 @@ export async function performCachedCatalogSearch(
   }
 
   if (cached.state === "stale") {
-    const hasLease = await tryAcquireSearchCacheRevalidationLease(input.env, {
-      cacheKey,
-      leaseMs: revalidationLeaseMs,
-    });
+    if (input.traceId) {
+      console.info("Cached catalog search stage started", {
+        traceId: input.traceId,
+        stage: "acquireRevalidationLease",
+        cacheKey,
+      });
+    }
+    const hasLease = await timer.measure("acquireRevalidationLease", () =>
+      tryAcquireSearchCacheRevalidationLease(input.env, {
+        cacheKey,
+        leaseMs: revalidationLeaseMs,
+      })
+    );
+    if (input.traceId) {
+      console.info("Cached catalog search stage completed", {
+        traceId: input.traceId,
+        stage: "acquireRevalidationLease",
+        durationMs: timer.stageDurations.acquireRevalidationLease,
+        cacheKey,
+        hasLease,
+      });
+    }
 
     if (hasLease) {
       revalidateSearchCacheInBackground({
@@ -366,6 +464,21 @@ export async function performCachedCatalogSearch(
         versionToken,
         cacheFreshMs,
         cacheStaleMs,
+        traceId: input.traceId,
+      });
+    }
+
+    if (input.traceId) {
+      console.info("Cached catalog search resolved", {
+        traceId: input.traceId,
+        cacheState: cached.state,
+        hasLease,
+        elapsedMs: Object.values(timer.stageDurations).reduce(
+          (total, duration) => total + duration,
+          0
+        ),
+        stageDurations: timer.stageDurations,
+        channelId: resolvedChannel?.id ?? null,
       });
     }
 
@@ -376,20 +489,74 @@ export async function performCachedCatalogSearch(
     };
   }
 
-  const data = await runCatalogSearch({
-    env: input.env,
-    normalizedSearch,
-    resolvedChannel,
-  });
+  if (input.traceId) {
+    console.info("Cached catalog search stage started", {
+      traceId: input.traceId,
+      stage: "runCatalogSearch",
+      cacheKey,
+    });
+  }
+  const data = await timer.measure("runCatalogSearch", () =>
+    runCatalogSearch({
+      env: input.env,
+      normalizedSearch,
+      resolvedChannel,
+      signal: input.signal,
+      traceId: input.traceId,
+    })
+  );
+  if (input.traceId) {
+    console.info("Cached catalog search stage completed", {
+      traceId: input.traceId,
+      stage: "runCatalogSearch",
+      durationMs: timer.stageDurations.runCatalogSearch,
+      cacheKey,
+      total: data.total,
+      resultCount: data.results.length,
+    });
+  }
   const now = Date.now();
 
-  await upsertCachedSearchResult(input.env, {
-    cacheKey,
-    responseJson: JSON.stringify(data),
-    versionToken,
-    freshUntil: now + cacheFreshMs,
-    staleUntil: now + cacheStaleMs,
-  });
+  if (input.traceId) {
+    console.info("Cached catalog search stage started", {
+      traceId: input.traceId,
+      stage: "upsertCachedSearchResult",
+      cacheKey,
+    });
+  }
+  await timer.measure("upsertCachedSearchResult", () =>
+    upsertCachedSearchResult(input.env, {
+      cacheKey,
+      responseJson: JSON.stringify(data),
+      versionToken,
+      freshUntil: now + cacheFreshMs,
+      staleUntil: now + cacheStaleMs,
+    })
+  );
+  if (input.traceId) {
+    console.info("Cached catalog search stage completed", {
+      traceId: input.traceId,
+      stage: "upsertCachedSearchResult",
+      durationMs: timer.stageDurations.upsertCachedSearchResult,
+      cacheKey,
+    });
+  }
+
+  if (input.traceId) {
+    console.info("Cached catalog search resolved", {
+      traceId: input.traceId,
+      cacheState: "miss",
+      elapsedMs: Object.values(timer.stageDurations).reduce(
+        (total, duration) => total + duration,
+        0
+      ),
+      stageDurations: timer.stageDurations,
+      channelId: resolvedChannel?.id ?? null,
+      total: data.total,
+      resultCount: data.results.length,
+      hiddenBlacklistedCount: data.hiddenBlacklistedCount ?? 0,
+    });
+  }
 
   return {
     data,

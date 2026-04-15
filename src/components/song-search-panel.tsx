@@ -87,11 +87,13 @@ type SearchResponse = {
 };
 
 type SearchFilterOptionsResponse = {
+  catalogTotal: number;
   tunings: TuningOption[];
   years: number[];
 };
 
 type SearchFilterOptionsWireResponse = {
+  catalogTotal?: number;
   tunings: Array<TuningOption | string>;
   years: number[];
 };
@@ -125,6 +127,7 @@ function normalizeSearchFilterOptionsResponse(
 ): SearchFilterOptionsResponse {
   if (!input) {
     return {
+      catalogTotal: 0,
       tunings: [],
       years: [],
     };
@@ -156,6 +159,11 @@ function normalizeSearchFilterOptionsResponse(
   }
 
   return {
+    catalogTotal:
+      typeof input.catalogTotal === "number" &&
+      Number.isFinite(input.catalogTotal)
+        ? input.catalogTotal
+        : 0,
     tunings: [...tuningOptionsById.values()].sort((left, right) =>
       compareTuningIds(left.id, right.id)
     ),
@@ -314,6 +322,20 @@ export function SongSearchPanel(props: {
     [props.extraSearchParams]
   );
   const activePathFilters = debouncedAdvancedFilters.parts;
+  const hasCustomPathFilters = useMemo(() => {
+    const activePathKey = [...new Set(activePathFilters)].sort().join(",");
+    const defaultPathKey = [...normalizedDefaultPathFilters].sort().join(",");
+
+    return (
+      activePathKey !== defaultPathKey ||
+      debouncedAdvancedFilters.partsMatchMode !== defaultPathFilterMatchMode
+    );
+  }, [
+    activePathFilters,
+    debouncedAdvancedFilters.partsMatchMode,
+    defaultPathFilterMatchMode,
+    normalizedDefaultPathFilters,
+  ]);
   const activeNonPathFilterCount = useMemo(
     () =>
       [
@@ -402,15 +424,10 @@ export function SongSearchPanel(props: {
     () =>
       Boolean(
         debouncedQuery.trim() ||
-          Object.entries(debouncedAdvancedFilters).some(([key, value]) =>
-            key === "partsMatchMode"
-              ? false
-              : Array.isArray(value)
-                ? value.length > 0
-                : value.trim()
-          )
+          activeNonPathFilterCount > 0 ||
+          hasCustomPathFilters
       ),
-    [debouncedAdvancedFilters, debouncedQuery]
+    [activeNonPathFilterCount, debouncedQuery, hasCustomPathFilters]
   );
   const hasAdvancedFilter = useMemo(
     () =>
@@ -430,9 +447,9 @@ export function SongSearchPanel(props: {
   const searchEnabled = props.searchEnabled ?? true;
 
   const filterOptionsQuery = useQuery<SearchFilterOptionsResponse>({
-    queryKey: ["search-filter-options-v2"],
-    queryFn: async () => {
-      const response = await fetch("/api/search/filters");
+    queryKey: ["search-filter-options-v3"],
+    queryFn: async ({ signal }) => {
+      const response = await fetch("/api/search/filters", { signal });
       const body = (await response.json().catch(() => null)) as
         | SearchFilterOptionsWireResponse
         | { message?: string }
@@ -454,38 +471,29 @@ export function SongSearchPanel(props: {
     staleTime: 60 * 60 * 1000,
     gcTime: 60 * 60 * 1000,
   });
-
-  const shouldLoadCatalogTotal = Boolean(props.infoNote?.includes("{count}"));
-  const catalogTotalQuery = useQuery<Pick<SearchResponse, "total">>({
-    queryKey: ["song-search-total-count"],
-    queryFn: async () => {
-      const response = await fetch("/api/search?page=1&pageSize=1&field=any");
-      const body = (await response.json().catch(() => null)) as
-        | SearchResponse
-        | { message?: string }
-        | null;
-
-      if (!response.ok) {
-        throw new Error(
-          getUserFriendlySearchErrorMessage(
-            body && "message" in body ? body.message : null,
-            t("errors.searchFailed")
+  const hasMeaningfulExtraSearchParams = useMemo(
+    () =>
+      Boolean(
+        props.extraSearchParams &&
+          Object.entries(props.extraSearchParams).some(
+            ([key, value]) =>
+              value !== undefined &&
+              value !== false &&
+              key !== "channelSlug" &&
+              key !== "showBlacklisted"
           )
-        );
-      }
-
-      return { total: (body as SearchResponse).total };
-    },
-    enabled: shouldLoadCatalogTotal,
-    staleTime: 60 * 60 * 1000,
-    gcTime: 60 * 60 * 1000,
-  });
+      ),
+    [props.extraSearchParams]
+  );
+  const hasSearchIntent = hasSearchInput || hasMeaningfulExtraSearchParams;
 
   const searchQuery = useQuery<SearchResponse>({
     queryKey: ["song-search", searchParamsBaseKey, page],
-    enabled: searchEnabled && !queryTooShort,
-    queryFn: async (): Promise<SearchResponse> => {
-      const response = await fetch(`/api/search?${searchParams.toString()}`);
+    enabled: searchEnabled && !queryTooShort && hasSearchIntent,
+    queryFn: async ({ signal }): Promise<SearchResponse> => {
+      const response = await fetch(`/api/search?${searchParams.toString()}`, {
+        signal,
+      });
       const body = (await response.json().catch(() => null)) as
         | SearchResponse
         | { message?: string }
@@ -557,7 +565,7 @@ export function SongSearchPanel(props: {
   );
   const resolvedInfoNote = props.infoNote?.replace(
     "{count}",
-    String(catalogTotalQuery.data?.total ?? 0)
+    String(filterOptionsQuery.data?.catalogTotal ?? 0)
   );
   const summaryCount = props.useTotalForSummary
     ? (data?.total ?? 0)
@@ -1185,9 +1193,19 @@ export function SongSearchPanel(props: {
                   </div>
                 ) : null}
 
-                {!isLoading && !queryTooShort && visibleResults.length === 0 ? (
+                {!isLoading && !queryTooShort && !error && !hasSearchIntent ? (
                   <div className="px-5 py-8 text-sm text-(--muted)">
-                    {hasSearchInput
+                    {t("states.startSearch")}
+                  </div>
+                ) : null}
+
+                {!isLoading &&
+                !queryTooShort &&
+                !error &&
+                hasSearchIntent &&
+                visibleResults.length === 0 ? (
+                  <div className="px-5 py-8 text-sm text-(--muted)">
+                    {hasSearchInput || hasMeaningfulExtraSearchParams
                       ? t("states.emptyFiltered")
                       : t("states.emptyCatalog")}
                   </div>

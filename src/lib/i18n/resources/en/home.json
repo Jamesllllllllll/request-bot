@@ -26,6 +26,20 @@
     "rulesTitle": "Set the rules",
     "rulesBody": "Control blacklists, setlists, moderation, and request settings for your channel."
   },
+  "community": {
+    "eyebrow": "Community pulse",
+    "title": "What Rocksmith streams are playing today",
+    "requestsToday": "Requests today",
+    "requestersToday": "Requesters today",
+    "songsToday": "Songs in rotation",
+    "channelsToday": "Channels active today",
+    "mostPlayed": "Most played today",
+    "topArtists": "Artists in rotation",
+    "plays": "{count} plays",
+    "channels": "{count} channels",
+    "songs": "{count} songs",
+    "empty": "No plays logged today yet."
+  },
   "live": {
     "eyebrow": "Live now",
     "title": "Current streamers",
@@ -36,6 +50,7 @@
     "empty": "No streamers are live with the bot active yet.",
     "previewAlt": "{displayName} live stream preview",
     "status": "Live",
+    "playedToday": "{count} played today",
     "nowPlaying": "Now playing",
     "upNext": "Up next",
     "nextRequest": "Next request",

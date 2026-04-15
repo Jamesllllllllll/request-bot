@@ -203,15 +203,9 @@ export async function requirePlaylistManagementState(
   runtimeEnv: AppEnv,
   requestedSlug?: string | null
 ) {
-  await assertDatabaseSchemaCurrent(runtimeEnv);
-  const userId = await getSessionUserId(request, runtimeEnv);
-  if (!userId) {
-    return null;
-  }
-
-  const access = await getDashboardChannelAccess(
+  const access = await requirePlaylistManagementAccess(
+    request,
     runtimeEnv,
-    userId,
     requestedSlug
   );
   if (!access) {
@@ -219,6 +213,20 @@ export async function requirePlaylistManagementState(
   }
 
   return loadPlaylistManagementStateForAccess(runtimeEnv, access);
+}
+
+export async function requirePlaylistManagementAccess(
+  request: Request,
+  runtimeEnv: AppEnv,
+  requestedSlug?: string | null
+) {
+  await assertDatabaseSchemaCurrent(runtimeEnv);
+  const userId = await getSessionUserId(request, runtimeEnv);
+  if (!userId) {
+    return null;
+  }
+
+  return getDashboardChannelAccess(runtimeEnv, userId, requestedSlug);
 }
 
 export async function loadPlaylistManagementStateForAccess(

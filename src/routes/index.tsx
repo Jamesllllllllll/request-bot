@@ -4,6 +4,7 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import {
   ArrowRight,
   ExternalLink,
+  Flame,
   ListMusic,
   Radio,
   Search,
@@ -12,39 +13,21 @@ import {
 import { useEffect, useState } from "react";
 import { Button } from "~/components/ui/button";
 import { Skeleton } from "~/components/ui/skeleton";
+import type {
+  HomeCommunityArtistTrend,
+  HomeLiveChannel,
+  HomeLiveChannelsResponse,
+} from "~/lib/home/community";
 import { useLocaleTranslation } from "~/lib/i18n/client";
 import { getLocalizedPageTitle } from "~/lib/i18n/metadata";
 import { viewerSessionQueryOptions } from "~/lib/viewer-session-query";
 
-type HomeLiveChannel = {
-  id: string;
-  slug: string;
-  displayName: string;
-  login: string;
-  playlistHref?: string | null;
-  playlistExternal?: boolean;
-  streamTitle?: string | null;
-  streamThumbnailUrl?: string | null;
-  currentItem?: {
-    title: string;
-    artist?: string | null;
-  } | null;
-  nextItem?: {
-    title: string;
-    artist?: string | null;
-  } | null;
-};
-
-const HOME_LIVE_CHANNELS_CACHE_KEY = "request-bot:home-live-channels:v1";
+const HOME_LIVE_CHANNELS_CACHE_KEY = "request-bot:home-live-channels:v2";
 const HOME_LIVE_CHANNELS_CACHE_TTL_MS = 5 * 60 * 1000;
-
-type HomeLiveChannelsResponse = {
-  channels: HomeLiveChannel[];
-};
 
 type HomeLiveChannelsCache = {
   cachedAt: number;
-  channels: HomeLiveChannel[];
+  payload: HomeLiveChannelsResponse;
 };
 
 export const Route = createFileRoute("/")({
@@ -100,9 +83,7 @@ function HomePage() {
       const response = await fetch("/api/channels/live");
       return response.json() as Promise<HomeLiveChannelsResponse>;
     },
-    initialData: cachedLiveChannels
-      ? { channels: cachedLiveChannels.channels }
-      : undefined,
+    initialData: cachedLiveChannels?.payload,
     initialDataUpdatedAt: cachedLiveChannels?.cachedAt,
     staleTime: HOME_LIVE_CHANNELS_CACHE_TTL_MS,
   });
@@ -129,10 +110,21 @@ function HomePage() {
       return;
     }
 
-    writeHomeLiveChannelsCache(liveChannelsQuery.data.channels);
+    writeHomeLiveChannelsCache(liveChannelsQuery.data);
   }, [liveChannelsQuery.data]);
 
-  const liveChannels = liveChannelsQuery.data?.channels ?? [];
+  const liveChannelsResponse = liveChannelsQuery.data ?? null;
+  const liveChannels = liveChannelsResponse?.channels ?? [];
+  const liveCommunity = liveChannelsResponse?.community ?? null;
+  const communityTopArtists = liveCommunity?.topArtistsToday.slice(0, 4) ?? [];
+  const communityNowPlaying = liveChannels
+    .filter((channel) => channel.currentItem)
+    .slice(0, 4);
+  const shouldShowCommunity =
+    !!liveCommunity &&
+    (liveCommunity.requestsPlayedToday > 0 ||
+      communityTopArtists.length > 0 ||
+      communityNowPlaying.length > 0);
   const rocksmithDemoChannels = demoChannelsQuery.data?.channels ?? [];
   const displayedChannels = showDemoChannels
     ? rocksmithDemoChannels
@@ -280,9 +272,22 @@ function HomePage() {
               <LiveChannelsSectionSkeleton />
             ) : featuredChannel ? (
               <>
-                <FeaturedLiveChannelCard channel={featuredChannel} />
+                <FeaturedLiveChannelCard
+                  channel={featuredChannel}
+                  communityAddon={
+                    !showDemoChannels &&
+                    shouldShowCommunity &&
+                    liveCommunity ? (
+                      <FeaturedCommunityAddon
+                        requestsPlayedToday={liveCommunity.requestsPlayedToday}
+                        topArtists={communityTopArtists}
+                        nowPlaying={communityNowPlaying}
+                      />
+                    ) : null
+                  }
+                />
                 {secondaryChannels.length ? (
-                  <div className="grid gap-4 md:grid-cols-2">
+                  <div className="grid gap-4 md:grid-cols-2 2xl:grid-cols-3">
                     {secondaryChannels.map((channel) => (
                       <CompactLiveChannelCard
                         key={channel.id}
@@ -304,7 +309,10 @@ function HomePage() {
   );
 }
 
-function FeaturedLiveChannelCard(props: { channel: HomeLiveChannel }) {
+function FeaturedLiveChannelCard(props: {
+  channel: HomeLiveChannel;
+  communityAddon?: React.ReactNode;
+}) {
   const { t } = useLocaleTranslation("home");
   const { channel } = props;
   const playlistHref =
@@ -337,10 +345,20 @@ function FeaturedLiveChannelCard(props: { channel: HomeLiveChannel }) {
                 {channel.streamTitle}
               </p>
             ) : null}
+            {channel.playedTodayCount > 0 ? (
+              <div className="mt-4 flex flex-wrap gap-2">
+                <LiveChannelStatPill>
+                  {t("live.playedToday", {
+                    count: channel.playedTodayCount,
+                    ns: "home",
+                  })}
+                </LiveChannelStatPill>
+              </div>
+            ) : null}
           </div>
           <div className="mt-1 inline-flex items-center gap-2 border border-emerald-500/30 bg-emerald-500/10 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.2em] text-emerald-200">
             <Radio className="h-3.5 w-3.5" />
-            {t("live.status")}
+            {t("live.status", { ns: "home" })}
           </div>
         </div>
         {channel.currentItem || channel.nextItem ? (
@@ -348,7 +366,7 @@ function FeaturedLiveChannelCard(props: { channel: HomeLiveChannel }) {
             {channel.currentItem ? (
               <QueueSnippet
                 icon={Radio}
-                label={t("live.nowPlaying")}
+                label={t("live.nowPlaying", { ns: "home" })}
                 title={channel.currentItem.title}
                 artist={channel.currentItem.artist}
               />
@@ -357,7 +375,8 @@ function FeaturedLiveChannelCard(props: { channel: HomeLiveChannel }) {
               <QueueSnippet
                 icon={ListMusic}
                 label={t(
-                  channel.currentItem ? "live.upNext" : "live.nextRequest"
+                  channel.currentItem ? "live.upNext" : "live.nextRequest",
+                  { ns: "home" }
                 )}
                 title={channel.nextItem.title}
                 artist={channel.nextItem.artist}
@@ -404,6 +423,11 @@ function FeaturedLiveChannelCard(props: { channel: HomeLiveChannel }) {
             </a>
           </Button>
         </div>
+        {props.communityAddon ? (
+          <div className="mt-6 border-t border-(--border) pt-6">
+            {props.communityAddon}
+          </div>
+        ) : null}
       </div>
     </div>
   );
@@ -444,6 +468,16 @@ function CompactLiveChannelCard(props: { channel: HomeLiveChannel }) {
                 {channel.streamTitle}
               </p>
             ) : null}
+            {channel.playedTodayCount > 0 ? (
+              <div className="mt-4 flex flex-wrap gap-2">
+                <LiveChannelStatPill>
+                  {t("live.playedToday", {
+                    count: channel.playedTodayCount,
+                    ns: "home",
+                  })}
+                </LiveChannelStatPill>
+              </div>
+            ) : null}
           </div>
           <Radio className="mt-1 h-4 w-4 shrink-0 text-(--accent-strong)" />
         </div>
@@ -452,7 +486,8 @@ function CompactLiveChannelCard(props: { channel: HomeLiveChannel }) {
             <QueueSnippet
               icon={channel.currentItem ? Radio : ListMusic}
               label={t(
-                channel.currentItem ? "live.nowPlaying" : "live.nextRequest"
+                channel.currentItem ? "live.nowPlaying" : "live.nextRequest",
+                { ns: "home" }
               )}
               title={
                 channel.currentItem?.title ?? channel.nextItem?.title ?? ""
@@ -529,6 +564,152 @@ function QueueSnippet(props: {
           <p className="truncate text-xs text-(--muted)">{props.artist}</p>
         ) : null}
       </div>
+    </div>
+  );
+}
+
+function CompactCommunityMetric(props: { label: string; value: string }) {
+  return (
+    <div className="min-w-[11rem] border border-(--border) bg-(--panel-soft) px-4 py-3">
+      <div className="flex items-center justify-between gap-3">
+        <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-(--brand-deep)">
+          {props.label}
+        </p>
+        <div className="flex h-9 w-9 shrink-0 items-center justify-center border border-(--border) bg-(--panel-muted) text-(--brand)">
+          <Flame className="h-4 w-4" />
+        </div>
+      </div>
+      <p className="mt-3 text-3xl font-semibold tracking-[-0.04em] text-(--text)">
+        {props.value}
+      </p>
+    </div>
+  );
+}
+
+function CommunityRowsCard(props: {
+  title: string;
+  children: React.ReactNode;
+  isEmpty: boolean;
+}) {
+  const { t } = useLocaleTranslation("home");
+
+  return (
+    <div className="border border-(--border) bg-(--panel-soft) p-4">
+      <p className="text-xs font-semibold uppercase tracking-[0.22em] text-(--brand-deep)">
+        {props.title}
+      </p>
+      {!props.isEmpty ? (
+        <div className="mt-4 overflow-hidden border border-(--border)">
+          {props.children}
+        </div>
+      ) : (
+        <div className="mt-4 border border-dashed border-(--border) bg-(--panel) px-4 py-5 text-sm leading-6 text-(--muted)">
+          {t("community.empty", { ns: "home" })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ArtistTrendCard(props: {
+  title: string;
+  items: HomeCommunityArtistTrend[];
+}) {
+  const { t } = useLocaleTranslation("home");
+
+  return (
+    <CommunityRowsCard title={props.title} isEmpty={!props.items.length}>
+      {props.items.map((item, index) => (
+        <div
+          key={item.artist}
+          className={`flex items-center justify-between gap-3 px-4 py-3 ${
+            index % 2 === 0 ? "bg-(--panel)" : "bg-(--panel-muted)"
+          }`}
+        >
+          <p className="min-w-0 truncate text-sm font-medium text-(--text)">
+            {item.artist}
+          </p>
+          <span className="shrink-0 text-[11px] uppercase tracking-[0.18em] text-(--muted)">
+            {t("community.plays", { ns: "home", count: item.playCount })}
+          </span>
+        </div>
+      ))}
+    </CommunityRowsCard>
+  );
+}
+
+function NowPlayingCard(props: { items: HomeLiveChannel[] }) {
+  const { t } = useLocaleTranslation("home");
+
+  return (
+    <CommunityRowsCard
+      title={t("live.nowPlaying", { ns: "home" })}
+      isEmpty={!props.items.length}
+    >
+      {props.items.map((channel, index) => (
+        <div
+          key={channel.id}
+          className={`flex items-center justify-between gap-4 px-4 py-3 ${
+            index % 2 === 0 ? "bg-(--panel)" : "bg-(--panel-muted)"
+          }`}
+        >
+          <div className="min-w-0">
+            <p className="truncate text-sm font-medium text-(--text)">
+              {channel.currentItem?.title ?? ""}
+            </p>
+            {channel.currentItem?.artist ? (
+              <p className="truncate text-xs text-(--muted)">
+                {channel.currentItem.artist}
+              </p>
+            ) : null}
+          </div>
+          <a
+            href={`https://twitch.tv/${channel.login}`}
+            target="_blank"
+            rel="noreferrer"
+            className="inline-flex shrink-0 items-center gap-1.5 text-xs font-medium text-(--brand-deep) underline-offset-4 hover:underline"
+          >
+            <span className="truncate">{channel.displayName}</span>
+            <ExternalLink className="h-3.5 w-3.5" />
+          </a>
+        </div>
+      ))}
+    </CommunityRowsCard>
+  );
+}
+
+function FeaturedCommunityAddon(props: {
+  requestsPlayedToday: number;
+  topArtists: HomeCommunityArtistTrend[];
+  nowPlaying: HomeLiveChannel[];
+}) {
+  const { t } = useLocaleTranslation("home");
+
+  return (
+    <div className="grid gap-4">
+      <p className="text-[11px] font-semibold uppercase tracking-[0.24em] text-(--brand-deep)">
+        {t("community.eyebrow", { ns: "home" })}
+      </p>
+      <div className="grid gap-4 xl:grid-cols-[minmax(0,0.7fr)_minmax(0,1fr)_minmax(0,1fr)]">
+        <CompactCommunityMetric
+          label={t("community.requestsToday", { ns: "home" })}
+          value={formatHomeCount(props.requestsPlayedToday)}
+        />
+        <ArtistTrendCard
+          title={t("community.topArtists", { ns: "home" })}
+          items={props.topArtists}
+        />
+        <NowPlayingCard items={props.nowPlaying} />
+      </div>
+    </div>
+  );
+}
+
+function LiveChannelStatPill(props: { children: React.ReactNode }) {
+  return (
+    <div className="inline-flex items-center gap-2 border border-(--border) bg-(--panel) px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-(--muted)">
+      <Flame className="h-3.5 w-3.5 text-(--brand)" />
+      {props.children}
     </div>
   );
 }
@@ -651,6 +832,10 @@ function FeatureListRow(props: {
   );
 }
 
+function formatHomeCount(value: number) {
+  return value.toLocaleString();
+}
+
 function readHomeLiveChannelsCache() {
   if (typeof window === "undefined") {
     return null;
@@ -666,7 +851,8 @@ function readHomeLiveChannelsCache() {
     if (
       !parsed ||
       typeof parsed.cachedAt !== "number" ||
-      !Array.isArray(parsed.channels)
+      !parsed.payload ||
+      !Array.isArray(parsed.payload.channels)
     ) {
       return null;
     }
@@ -677,26 +863,26 @@ function readHomeLiveChannelsCache() {
 
     return {
       cachedAt: parsed.cachedAt,
-      channels: parsed.channels as HomeLiveChannel[],
+      payload: parsed.payload as HomeLiveChannelsResponse,
     } satisfies HomeLiveChannelsCache;
   } catch {
     return null;
   }
 }
 
-function writeHomeLiveChannelsCache(channels: HomeLiveChannel[]) {
+function writeHomeLiveChannelsCache(payload: HomeLiveChannelsResponse) {
   if (typeof window === "undefined") {
     return;
   }
 
   try {
-    const payload: HomeLiveChannelsCache = {
+    const nextCache: HomeLiveChannelsCache = {
       cachedAt: Date.now(),
-      channels,
+      payload,
     };
     window.localStorage.setItem(
       HOME_LIVE_CHANNELS_CACHE_KEY,
-      JSON.stringify(payload)
+      JSON.stringify(nextCache)
     );
   } catch {
     // Ignore storage failures in private or restricted contexts.

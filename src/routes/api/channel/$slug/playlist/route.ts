@@ -2,6 +2,7 @@
 import { env } from "cloudflare:workers";
 import { createFileRoute } from "@tanstack/react-router";
 import { asc, eq } from "drizzle-orm";
+import { isAbortError, throwIfAborted } from "~/lib/abort";
 import { getSessionUserId } from "~/lib/auth/session.server";
 import { getDb } from "~/lib/db/client";
 import {
@@ -40,6 +41,11 @@ import {
   requirePlaylistManagementState,
   toPlaylistMutationErrorResponse,
 } from "~/lib/server/playlist-management";
+import {
+  createRequestStageTimer,
+  registerAbortTrace,
+  serializeErrorForLog,
+} from "~/lib/server/request-tracing";
 import { json } from "~/lib/utils";
 import { playlistMutationSchema } from "~/lib/validation";
 
@@ -48,20 +54,49 @@ export const Route = createFileRoute("/api/channel/$slug/playlist")({
     handlers: {
       GET: async ({ request, params }) => {
         const runtimeEnv = env as AppEnv;
-        const channel = await getChannelBySlug(runtimeEnv, params.slug);
+        const traceId = crypto.randomUUID();
+        const startedAt = Date.now();
+        const timer = createRequestStageTimer();
+        const traceContext = {
+          traceId,
+          slug: params.slug,
+          path: `/api/channel/${params.slug}/playlist`,
+        };
 
-        if (!channel) {
-          return json({ error: "Channel not found" }, { status: 404 });
-        }
+        console.info("Playlist request started", traceContext);
+        const cleanupAbortTrace = registerAbortTrace(request.signal, () => {
+          console.warn("Playlist request abort signaled", {
+            ...traceContext,
+            elapsedMs: Date.now() - startedAt,
+            stageDurations: timer.stageDurations,
+          });
+        });
 
         try {
-          const sessionUserId = await getSessionUserId(request, runtimeEnv);
+          throwIfAborted(request.signal);
+          const channel = await timer.measure("getChannelBySlug", () =>
+            getChannelBySlug(runtimeEnv, params.slug)
+          );
+
+          if (!channel) {
+            console.warn("Playlist request channel not found", {
+              ...traceContext,
+              elapsedMs: Date.now() - startedAt,
+              stageDurations: timer.stageDurations,
+            });
+            return json({ error: "Channel not found" }, { status: 404 });
+          }
+
+          const sessionUserId = await timer.measure("getSessionUserId", () =>
+            getSessionUserId(request, runtimeEnv)
+          );
           const accessRole =
             sessionUserId && channel.ownerUserId === sessionUserId
               ? "owner"
               : sessionUserId
                 ? "viewer"
                 : "anonymous";
+          throwIfAborted(request.signal);
           const [
             playlist,
             playedRows,
@@ -69,55 +104,60 @@ export const Route = createFileRoute("/api/channel/$slug/playlist")({
             preferredCharters,
             settings,
             setlistRows,
-          ] = await Promise.all([
-            getPlaylistByChannelId(runtimeEnv, channel.id),
-            getSessionPlayedSongsByChannelId(runtimeEnv, {
-              channelId: channel.id,
-              limit: 500,
-              order: "desc",
-            }),
-            getChannelBlacklistByChannelId(runtimeEnv, channel.id),
-            getChannelPreferredChartersByChannelId(runtimeEnv, channel.id),
-            getChannelSettingsByChannelId(runtimeEnv, channel.id),
-            getDb(runtimeEnv).query.setlistArtists.findMany({
-              where: eq(setlistArtists.channelId, channel.id),
-              orderBy: [asc(setlistArtists.artistName)],
-            }),
-          ]);
+          ] = await timer.measure("loadPlaylistCoreData", () =>
+            Promise.all([
+              getPlaylistByChannelId(runtimeEnv, channel.id),
+              getSessionPlayedSongsByChannelId(runtimeEnv, {
+                channelId: channel.id,
+                limit: 500,
+                order: "desc",
+              }),
+              getChannelBlacklistByChannelId(runtimeEnv, channel.id),
+              getChannelPreferredChartersByChannelId(runtimeEnv, channel.id),
+              getChannelSettingsByChannelId(runtimeEnv, channel.id),
+              getDb(runtimeEnv).query.setlistArtists.findMany({
+                where: eq(setlistArtists.channelId, channel.id),
+                orderBy: [asc(setlistArtists.artistName)],
+              }),
+            ])
+          );
           const allowedRequestPaths = getAllowedRequestPathsSetting(
             settings ?? {
               allowRequestPathModifiers: false,
               allowedRequestPathsJson: "[]",
             }
           );
-          const enrichedItems = await enrichPlaylistItems(
-            runtimeEnv,
-            playlist?.items ?? []
+          throwIfAborted(request.signal);
+          const enrichedItems = await timer.measure("enrichPlaylistItems", () =>
+            enrichPlaylistItems(runtimeEnv, playlist?.items ?? [])
           );
           const playlistRequesterItems = enrichedItems as Array<{
             requestedByTwitchUserId?: string | null;
             requestedByLogin?: string | null;
           }>;
-          const activityRows = await getChannelChatterActivityForRequesters(
-            runtimeEnv,
-            {
-              channelId: channel.id,
-              twitchUserIds: playlistRequesterItems
-                .map((item) =>
-                  typeof item.requestedByTwitchUserId === "string"
-                    ? item.requestedByTwitchUserId
-                    : ""
-                )
-                .filter(Boolean),
-              logins: playlistRequesterItems
-                .map((item) =>
-                  typeof item.requestedByLogin === "string"
-                    ? item.requestedByLogin
-                    : ""
-                )
-                .filter(Boolean),
-            }
+          throwIfAborted(request.signal);
+          const activityRows = await timer.measure(
+            "getRequesterLastChatActivity",
+            () =>
+              getChannelChatterActivityForRequesters(runtimeEnv, {
+                channelId: channel.id,
+                twitchUserIds: playlistRequesterItems
+                  .map((item) =>
+                    typeof item.requestedByTwitchUserId === "string"
+                      ? item.requestedByTwitchUserId
+                      : ""
+                  )
+                  .filter(Boolean),
+                logins: playlistRequesterItems
+                  .map((item) =>
+                    typeof item.requestedByLogin === "string"
+                      ? item.requestedByLogin
+                      : ""
+                  )
+                  .filter(Boolean),
+              })
           );
+          throwIfAborted(request.signal);
           const publicItems = attachRequesterLastChatActivity(
             enrichedItems,
             activityRows
@@ -126,6 +166,18 @@ export const Route = createFileRoute("/api/channel/$slug/playlist")({
               item as unknown as Parameters<typeof toPublicPlaylistItem>[0]
             )
           );
+
+          console.info("Playlist request completed", {
+            ...traceContext,
+            elapsedMs: Date.now() - startedAt,
+            stageDurations: timer.stageDurations,
+            accessRole,
+            playlistItemCount: publicItems.length,
+            playedSongCount: playedRows.length,
+            blacklistArtistCount: blacklist.blacklistArtists.length,
+            blacklistCharterCount: blacklist.blacklistCharters.length,
+            preferredCharterCount: preferredCharters.length,
+          });
 
           return json({
             channel: toPlaylistClientChannel(channel),
@@ -193,7 +245,25 @@ export const Route = createFileRoute("/api/channel/$slug/playlist")({
             requiredPaths: [],
           });
         } catch (error) {
+          if (isAbortError(error)) {
+            console.warn("Playlist request aborted", {
+              ...traceContext,
+              elapsedMs: Date.now() - startedAt,
+              stageDurations: timer.stageDurations,
+              error: serializeErrorForLog(error),
+            });
+            return new Response(null, { status: 499 });
+          }
+
+          console.error("Playlist request failed", {
+            ...traceContext,
+            elapsedMs: Date.now() - startedAt,
+            stageDurations: timer.stageDurations,
+            error: serializeErrorForLog(error),
+          });
           return toPlaylistMutationErrorResponse(error);
+        } finally {
+          cleanupAbortTrace();
         }
       },
       POST: async ({ request, params }) => {

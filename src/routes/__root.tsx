@@ -18,7 +18,7 @@ import {
   Radio,
   Settings2,
 } from "lucide-react";
-import { type ComponentType, useEffect, useState } from "react";
+import { type ComponentType, useEffect, useRef, useState } from "react";
 import { LanguagePicker } from "~/components/language-picker";
 import { SiteFooter } from "~/components/site-footer";
 import { Button } from "~/components/ui/button";
@@ -52,6 +52,66 @@ export const Route = createRootRouteWithContext<AppRouterContext>()({
   component: RootComponent,
 });
 
+const navigationTraceSessionStorageKey = "navigation-trace-session-id";
+
+function getCurrentBrowserUrl() {
+  return `${window.location.pathname}${window.location.search}${window.location.hash}`;
+}
+
+function getNavigationTraceSessionId() {
+  const existingSessionId = window.sessionStorage.getItem(
+    navigationTraceSessionStorageKey
+  );
+  if (existingSessionId) {
+    return existingSessionId;
+  }
+
+  const nextSessionId = crypto.randomUUID();
+  window.sessionStorage.setItem(
+    navigationTraceSessionStorageKey,
+    nextSessionId
+  );
+  return nextSessionId;
+}
+
+function sendNavigationTrace(
+  payload: {
+    sessionId: string;
+    sequence: number;
+    event: "page_ready" | "route_change" | "pagehide";
+    occurredAt: number;
+    fromUrl?: string | null;
+    toUrl?: string | null;
+    url?: string | null;
+    visibilityState?: string;
+    historyLength?: number;
+    navigationType?: string;
+  },
+  beacon = false
+) {
+  const body = JSON.stringify(payload);
+
+  if (beacon && typeof navigator.sendBeacon === "function") {
+    const sent = navigator.sendBeacon(
+      "/api/client-trace",
+      new Blob([body], { type: "application/json" })
+    );
+    if (sent) {
+      return;
+    }
+  }
+
+  void fetch("/api/client-trace", {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+    },
+    body,
+    keepalive: true,
+    credentials: "same-origin",
+  }).catch(() => {});
+}
+
 function RootComponent() {
   const { locale } = Route.useLoaderData();
   const router = useRouter();
@@ -78,6 +138,7 @@ function RootComponent() {
       <body>
         <QueryClientProvider client={queryClient}>
           <AppI18nProvider initialLocale={locale}>
+            <ClientNavigationTrace />
             <AppShell />
           </AppI18nProvider>
           {showDevtools ? <SafeTanStackRouterDevtools /> : null}
@@ -125,6 +186,74 @@ function SafeTanStackRouterDevtools() {
   }
 
   return <RouterDevtools />;
+}
+
+function ClientNavigationTrace() {
+  const pathname = useRouterState({
+    select: (state) => state.location.pathname,
+  });
+  const sessionIdRef = useRef<string | null>(null);
+  const sequenceRef = useRef(0);
+  const previousUrlRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    const currentUrl = getCurrentBrowserUrl();
+    const sessionId = sessionIdRef.current ?? getNavigationTraceSessionId();
+    const previousUrl = previousUrlRef.current;
+    const navigationEntry = performance.getEntriesByType("navigation").at(0) as
+      | PerformanceNavigationTiming
+      | undefined;
+
+    sessionIdRef.current = sessionId;
+    sequenceRef.current += 1;
+
+    sendNavigationTrace({
+      sessionId,
+      sequence: sequenceRef.current,
+      event: previousUrl == null ? "page_ready" : "route_change",
+      occurredAt: Date.now(),
+      fromUrl: previousUrl,
+      toUrl: currentUrl,
+      url: currentUrl,
+      visibilityState: document.visibilityState,
+      historyLength: window.history.length,
+      navigationType:
+        previousUrl == null ? (navigationEntry?.type ?? "unknown") : "spa",
+    });
+
+    previousUrlRef.current = currentUrl;
+  }, [pathname]);
+
+  useEffect(() => {
+    const handlePageHide = () => {
+      const sessionId = sessionIdRef.current ?? getNavigationTraceSessionId();
+      const currentUrl = getCurrentBrowserUrl();
+
+      sessionIdRef.current = sessionId;
+      sequenceRef.current += 1;
+
+      sendNavigationTrace(
+        {
+          sessionId,
+          sequence: sequenceRef.current,
+          event: "pagehide",
+          occurredAt: Date.now(),
+          url: currentUrl,
+          visibilityState: document.visibilityState,
+          historyLength: window.history.length,
+        },
+        true
+      );
+    };
+
+    window.addEventListener("pagehide", handlePageHide);
+
+    return () => {
+      window.removeEventListener("pagehide", handlePageHide);
+    };
+  }, []);
+
+  return null;
 }
 
 function AppShell() {

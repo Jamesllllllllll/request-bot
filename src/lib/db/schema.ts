@@ -975,6 +975,7 @@ export const catalogSongs = sqliteTable(
     index("catalog_songs_author_id_idx").on(table.authorId),
     index("catalog_songs_artist_title_idx").on(table.artistName, table.title),
     index("catalog_songs_creator_idx").on(table.creatorName),
+    index("catalog_songs_grouped_project_idx").on(table.groupedProjectId),
     index("catalog_songs_source_updated_idx").on(table.sourceUpdatedAt),
     index("catalog_songs_downloads_idx").on(table.downloads),
   ]

@@ -7,7 +7,10 @@ vi.mock("~/lib/db/client", () => ({
 }));
 
 import { getDb } from "~/lib/db/client";
-import { searchCatalogSongs } from "~/lib/db/repositories";
+import {
+  getCatalogSongGroupRowsForSongIds,
+  searchCatalogSongs,
+} from "~/lib/db/repositories";
 
 function toGroupingRow(row: {
   id: string;
@@ -51,6 +54,32 @@ describe("searchCatalogSongs", () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+  });
+
+  it("returns an empty result for a blank browse request without explicit filters", async () => {
+    const dbAll = vi.fn();
+
+    vi.mocked(getDb).mockReturnValue({
+      all: dbAll,
+    } as never);
+
+    await expect(
+      searchCatalogSongs(env, {
+        page: 1,
+        pageSize: 20,
+        sortBy: "updated",
+        sortDirection: "desc",
+      })
+    ).resolves.toEqual({
+      results: [],
+      total: 0,
+      hiddenBlacklistedCount: 0,
+      page: 1,
+      pageSize: 20,
+      hasNextPage: false,
+    });
+
+    expect(dbAll).not.toHaveBeenCalled();
   });
 
   it("falls back to LIKE-only search when the FTS MATCH query fails", async () => {
@@ -124,6 +153,54 @@ describe("searchCatalogSongs", () => {
     expect(warnSpy).toHaveBeenCalledTimes(1);
 
     warnSpy.mockRestore();
+  });
+
+  it("chunks grouped-song seed lookups to stay under the D1 SQL variable limit", async () => {
+    const songIds = Array.from({ length: 181 }, (_, index) => `song-${index}`);
+    const groupingRows = songIds.map((songId, index) =>
+      toGroupingRow({
+        id: songId,
+        sourceSongId: index + 1,
+        groupedProjectId: null,
+        artistId: null,
+        authorId: null,
+        title: "",
+        artistName: "",
+        albumName: null,
+        creatorName: null,
+        tuningSummary: null,
+        partsJson: "[]",
+        durationText: null,
+        durationSeconds: null,
+        year: null,
+        sourceUpdatedAt: null,
+        downloads: 0,
+        hasLyrics: 0,
+        source: "library",
+      })
+    );
+    const dbFindMany = vi
+      .fn()
+      .mockResolvedValueOnce(groupingRows.slice(0, 90))
+      .mockResolvedValueOnce(groupingRows.slice(90, 180))
+      .mockResolvedValueOnce(groupingRows.slice(180));
+    const dbAll = vi.fn().mockResolvedValue([]);
+
+    vi.mocked(getDb).mockReturnValue({
+      all: dbAll,
+      query: {
+        catalogSongs: {
+          findMany: dbFindMany,
+        },
+      },
+    } as never);
+
+    await expect(
+      getCatalogSongGroupRowsForSongIds(env, songIds)
+    ).resolves.toHaveLength(181);
+
+    expect(dbFindMany).toHaveBeenCalledTimes(3);
+    expect(dbAll).not.toHaveBeenCalled();
   });
 
   it("falls back to a simplified multi-token query when the main any-field search still fails", async () => {

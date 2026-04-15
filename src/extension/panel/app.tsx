@@ -95,6 +95,7 @@ import {
   type VipTokenDurationThreshold,
 } from "~/lib/vip-token-duration-thresholds";
 import { formatVipTokenCount } from "~/lib/vip-tokens";
+import { emitExtensionPanelClientTrace } from "./client-trace";
 import { toExtensionApiUrl, toExtensionAppUrl } from "./config";
 import {
   applyDemoViewerRequestMutation,
@@ -108,10 +109,7 @@ import {
   readPanelStoredLocale,
   resolveExtensionPanelLocale,
 } from "./locale";
-import {
-  parseExtensionPanelPubSubMessage,
-  shouldRefreshPanelSearchFromPubSub,
-} from "./pubsub";
+import { parseExtensionPanelPubSubMessage } from "./pubsub";
 import {
   getTwitchExtensionHelper,
   loadTwitchExtensionHelper,
@@ -324,6 +322,27 @@ type TransientPanelNotice = {
 };
 
 const PANEL_VISIBLE_REFRESH_INTERVAL_MS = 15_000;
+type PanelRefreshCause =
+  | "initial-load"
+  | "poll"
+  | "visibility"
+  | "pubsub:playlist"
+  | "pubsub:requests"
+  | "pubsub:settings"
+  | "pubsub:stream-status"
+  | "pubsub:blacklist"
+  | "pubsub:setlist"
+  | "pubsub:blocks"
+  | "pubsub:vip-tokens"
+  | "pubsub:favorites"
+  | "pubsub:chat-activity"
+  | "viewer-request-success"
+  | "viewer-request-failure"
+  | "remove-request-success"
+  | "remove-request-failure"
+  | "playlist-mutation-success"
+  | "playlist-mutation-failure"
+  | "state-requests-open-changed";
 
 export function ExtensionPanelApp(props: { apiBaseUrl?: string }) {
   const [initialLocale, setInitialLocale] = useState<AppLocale>(() =>
@@ -369,13 +388,17 @@ function ExtensionPanelAppContent(props: {
   const [pendingPubSubReason, setPendingPubSubReason] =
     useState<PlaylistStreamNotifyReason | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
-  const [debouncedSearchQuery, setDebouncedSearchQuery] = useState("");
   const [searchFiltersOverride, setSearchFiltersOverride] =
     useState<PanelSearchFilters | null>(null);
   const [searchResults, setSearchResults] =
     useState<PanelSearchResponse | null>(null);
   const [searchError, setSearchError] = useState<string | null>(null);
   const [searching, setSearching] = useState(false);
+  const [lastSubmittedSearchQuery, setLastSubmittedSearchQuery] = useState<
+    string | null
+  >(null);
+  const [lastSubmittedSearchFilters, setLastSubmittedSearchFilters] =
+    useState<PanelSearchFilters | null>(null);
   const [activeTab, setActiveTab] = useState<"playlist" | "search">("playlist");
   const [transientNotice, setTransientNotice] =
     useState<TransientPanelNotice | null>(null);
@@ -394,6 +417,7 @@ function ExtensionPanelAppContent(props: {
   const [dropTargetState, setDropTargetState] =
     useState<PanelDropTargetState>(null);
   const authCallbackRegisteredRef = useRef(false);
+  const bootstrapReadyTraceKeyRef = useRef<string | null>(null);
   const latestSearchRequestRef = useRef(0);
   const latestTransientNoticeIdRef = useRef(0);
   const removeConfirmRef = useRef<HTMLDivElement | null>(null);
@@ -492,6 +516,11 @@ function ExtensionPanelAppContent(props: {
   );
   const searchFilters = searchFiltersOverride ?? defaultSearchFilters;
   const searchFiltersChangedFromDefaults = searchFiltersOverride != null;
+  const showingSubmittedSearchState =
+    lastSubmittedSearchQuery != null &&
+    lastSubmittedSearchFilters != null &&
+    lastSubmittedSearchQuery === searchQuery &&
+    arePanelSearchFiltersEqual(lastSubmittedSearchFilters, searchFilters);
 
   useEffect(() => {
     document.documentElement.classList.add("extension-mode");
@@ -504,16 +533,6 @@ function ExtensionPanelAppContent(props: {
   }, []);
 
   useEffect(() => {
-    const timeout = window.setTimeout(() => {
-      setDebouncedSearchQuery(searchQuery);
-    }, 800);
-
-    return () => {
-      window.clearTimeout(timeout);
-    };
-  }, [searchQuery]);
-
-  useEffect(() => {
     if (!searchTabBlockedByRequestsOff) {
       return;
     }
@@ -521,6 +540,8 @@ function ExtensionPanelAppContent(props: {
     setSearchResults(null);
     setSearchError(null);
     setSearching(false);
+    setLastSubmittedSearchQuery(null);
+    setLastSubmittedSearchFilters(null);
   }, [searchTabBlockedByRequestsOff]);
 
   useEffect(() => {
@@ -577,9 +598,18 @@ function ExtensionPanelAppContent(props: {
   useEffect(() => {
     let cancelled = false;
 
+    emitExtensionPanelClientTrace({
+      event: "extension_helper_load_started",
+      helperState,
+    });
+
     void loadTwitchExtensionHelper()
       .then(() => {
         if (!cancelled) {
+          emitExtensionPanelClientTrace({
+            event: "extension_helper_load_completed",
+            helperState: "ready",
+          });
           setHelperState("ready");
         }
       })
@@ -588,6 +618,14 @@ function ExtensionPanelAppContent(props: {
           return;
         }
 
+        emitExtensionPanelClientTrace({
+          event: "extension_helper_load_failed",
+          helperState: "error",
+          message:
+            error instanceof Error && error.message.trim()
+              ? error.message
+              : t("notices.helperLoadFailed"),
+        });
         setHelperState("error");
         setHelperError(
           error instanceof Error && error.message.trim()
@@ -608,6 +646,11 @@ function ExtensionPanelAppContent(props: {
 
     const helper = getTwitchExtensionHelper();
     if (!helper) {
+      emitExtensionPanelClientTrace({
+        event: "extension_helper_unavailable",
+        helperState: "error",
+        message: t("notices.helperUnavailable"),
+      });
       setHelperState("error");
       setHelperError(t("notices.helperUnavailable"));
       return;
@@ -615,6 +658,12 @@ function ExtensionPanelAppContent(props: {
 
     authCallbackRegisteredRef.current = true;
     helper.onAuthorized((nextAuth) => {
+      emitExtensionPanelClientTrace({
+        event: "extension_authorized",
+        channelId: nextAuth.channelId,
+        isLinked: Boolean(nextAuth.userId),
+        helperState: "ready",
+      });
       setAuth(nextAuth);
       setHelperTimedOut(false);
       setBootstrapError(null);
@@ -629,6 +678,10 @@ function ExtensionPanelAppContent(props: {
     }
 
     const timeout = window.setTimeout(() => {
+      emitExtensionPanelClientTrace({
+        event: "extension_authorization_timeout",
+        helperState,
+      });
       setHelperTimedOut(true);
     }, 1800);
 
@@ -651,6 +704,7 @@ function ExtensionPanelAppContent(props: {
           token: auth.token,
           silent: true,
           throwOnError: true,
+          cause: "initial-load",
         });
 
         if (cancelled || !data) {
@@ -691,6 +745,31 @@ function ExtensionPanelAppContent(props: {
   }, [auth?.token, props.apiBaseUrl]);
 
   useEffect(() => {
+    if (!bootstrap) {
+      return;
+    }
+
+    const nextTraceKey = [
+      bootstrap.connected ? "1" : "0",
+      bootstrap.channel?.id ?? "no-channel",
+      bootstrap.viewer.isLinked ? "1" : "0",
+      bootstrap.viewer.profile?.twitchUserId ?? "no-viewer",
+    ].join(":");
+
+    if (bootstrapReadyTraceKeyRef.current === nextTraceKey) {
+      return;
+    }
+
+    bootstrapReadyTraceKeyRef.current = nextTraceKey;
+    emitExtensionPanelClientTrace({
+      event: "extension_bootstrap_state_ready",
+      channelId: bootstrap.channel?.id ?? null,
+      connected: bootstrap.connected,
+      isLinked: bootstrap.viewer.isLinked,
+    });
+  }, [bootstrap]);
+
+  useEffect(() => {
     if (typeof window === "undefined") {
       return;
     }
@@ -720,6 +799,7 @@ function ExtensionPanelAppContent(props: {
     token?: string;
     silent?: boolean;
     throwOnError?: boolean;
+    cause?: PanelRefreshCause;
   }) {
     const token = input?.token ?? auth?.token;
     if (!token) {
@@ -727,11 +807,30 @@ function ExtensionPanelAppContent(props: {
     }
 
     try {
+      emitExtensionPanelClientTrace({
+        event: "extension_bootstrap_fetch_started",
+        channelId: auth?.channelId ?? null,
+        detail: input?.cause ?? (input?.silent ? "silent" : "interactive"),
+      });
       const data = await fetchExtensionJson<PanelBootstrapResponse>(
         token,
         "/api/extension/bootstrap",
-        props.apiBaseUrl
+        props.apiBaseUrl,
+        {
+          headers: {
+            "x-extension-refresh-cause":
+              input?.cause ?? (input?.silent ? "silent" : "interactive"),
+          },
+        }
       );
+
+      emitExtensionPanelClientTrace({
+        event: "extension_bootstrap_fetch_completed",
+        channelId: data.channel?.id ?? auth?.channelId ?? null,
+        detail: input?.cause ?? undefined,
+        connected: data.connected,
+        isLinked: data.viewer.isLinked,
+      });
 
       startTransition(() => {
         setBootstrap(data);
@@ -742,9 +841,23 @@ function ExtensionPanelAppContent(props: {
       return data;
     } catch (error) {
       if (input?.throwOnError) {
+        emitExtensionPanelClientTrace({
+          event: "extension_bootstrap_fetch_failed",
+          channelId: auth?.channelId ?? null,
+          detail: input?.cause ?? undefined,
+          status: error instanceof ExtensionRequestError ? error.status : null,
+          message: getErrorText(error, t("notices.panelStateLoadFailed")),
+        });
         throw error;
       }
 
+      emitExtensionPanelClientTrace({
+        event: "extension_bootstrap_fetch_failed",
+        channelId: auth?.channelId ?? null,
+        detail: input?.cause ?? undefined,
+        status: error instanceof ExtensionRequestError ? error.status : null,
+        message: getErrorText(error, t("notices.panelStateLoadFailed")),
+      });
       if (!input?.silent) {
         setBootstrapError(
           getErrorText(error, t("notices.panelStateLoadFailed"))
@@ -770,6 +883,7 @@ function ExtensionPanelAppContent(props: {
   async function refreshPanelState(input?: {
     token?: string;
     silent?: boolean;
+    cause?: PanelRefreshCause;
   }) {
     const token = input?.token ?? auth?.token;
     if (!token) {
@@ -777,23 +891,47 @@ function ExtensionPanelAppContent(props: {
     }
 
     try {
+      emitExtensionPanelClientTrace({
+        event: "extension_state_refresh_started",
+        channelId: auth?.channelId ?? null,
+        detail: input?.cause ?? (input?.silent ? "silent" : "interactive"),
+      });
       const data = await fetchExtensionJson<PanelStateResponse>(
         token,
         "/api/extension/state",
-        props.apiBaseUrl
+        props.apiBaseUrl,
+        {
+          headers: {
+            "x-extension-refresh-cause":
+              input?.cause ?? (input?.silent ? "silent" : "interactive"),
+          },
+        }
       );
 
       if (
         areChannelRequestsOpen(bootstrap?.channel ?? {}) !==
         areChannelRequestsOpen(data.channel)
       ) {
+        emitExtensionPanelClientTrace({
+          event: "extension_state_refresh_requires_bootstrap",
+          channelId: auth?.channelId ?? null,
+          detail: input?.cause ?? "state-requests-open-changed",
+        });
         await refreshBootstrapState({
           token,
           silent: input?.silent,
+          cause: "state-requests-open-changed",
         });
 
         return data;
       }
+
+      emitExtensionPanelClientTrace({
+        event: "extension_state_refresh_completed",
+        channelId: auth?.channelId ?? null,
+        detail: input?.cause ?? undefined,
+        connected: true,
+      });
 
       startTransition(() => {
         setBootstrap((current) =>
@@ -826,6 +964,13 @@ function ExtensionPanelAppContent(props: {
 
       return data;
     } catch (error) {
+      emitExtensionPanelClientTrace({
+        event: "extension_state_refresh_failed",
+        channelId: auth?.channelId ?? null,
+        detail: input?.cause ?? undefined,
+        status: error instanceof ExtensionRequestError ? error.status : null,
+        message: getErrorText(error, t("notices.panelStateRefreshFailed")),
+      });
       if (!input?.silent) {
         setBootstrapError(
           getErrorText(error, t("notices.panelStateRefreshFailed"))
@@ -839,17 +984,11 @@ function ExtensionPanelAppContent(props: {
     const refreshedBootstrap = await refreshBootstrapState({
       token: auth?.token,
       silent: true,
+      cause: `pubsub:${reason}`,
     });
 
     if (!refreshedBootstrap) {
       return;
-    }
-
-    if (
-      shouldRefreshPanelSearchFromPubSub(reason) &&
-      canRunPanelSearch(debouncedSearchQuery.trim(), searchFilters)
-    ) {
-      await runSearch(debouncedSearchQuery, searchFilters);
     }
   }
 
@@ -880,7 +1019,18 @@ function ExtensionPanelAppContent(props: {
         return;
       }
 
+      emitExtensionPanelClientTrace({
+        event: "extension_pubsub_received",
+        channelId: auth?.channelId ?? null,
+        detail: parsed.reason,
+      });
+
       if (draggingItemId) {
+        emitExtensionPanelClientTrace({
+          event: "extension_pubsub_deferred",
+          channelId: auth?.channelId ?? null,
+          detail: parsed.reason,
+        });
         setPendingPubSubReason(parsed.reason);
         return;
       }
@@ -893,13 +1043,7 @@ function ExtensionPanelAppContent(props: {
     return () => {
       helper.unlisten?.("broadcast", handlePubSubMessage);
     };
-  }, [
-    auth?.token,
-    debouncedSearchQuery,
-    draggingItemId,
-    helperState,
-    searchFilters,
-  ]);
+  }, [auth?.token, draggingItemId, helperState]);
 
   useEffect(() => {
     if (!pendingPubSubReason || draggingItemId) {
@@ -939,6 +1083,7 @@ function ExtensionPanelAppContent(props: {
       const data = await refreshPanelState({
         token: auth.token,
         silent: true,
+        cause: "poll",
       });
 
       if (cancelled) {
@@ -967,7 +1112,31 @@ function ExtensionPanelAppContent(props: {
         if (timeoutId != null) {
           window.clearTimeout(timeoutId);
         }
-        void refreshIfVisible();
+        void refreshPanelState({
+          token: auth.token,
+          silent: true,
+          cause: "visibility",
+        }).then((data) => {
+          if (cancelled) {
+            return;
+          }
+
+          if (data) {
+            retryAttempt = 0;
+            setConnectionMessage(null);
+            scheduleNextRefresh(PANEL_VISIBLE_REFRESH_INTERVAL_MS);
+            return;
+          }
+
+          retryAttempt += 1;
+          const retryDelayMs = getRetryDelayMs(retryAttempt, 3000, 60000);
+          setConnectionMessage(
+            t("notices.connectionInterruptedRetry", {
+              delay: formatRetryDelay(retryDelayMs),
+            })
+          );
+          scheduleNextRefresh(retryDelayMs);
+        });
       }
     };
 
@@ -1094,14 +1263,6 @@ function ExtensionPanelAppContent(props: {
     }
   }
 
-  useEffect(() => {
-    if (!auth?.token) {
-      return;
-    }
-
-    void runSearch(debouncedSearchQuery, searchFilters);
-  }, [auth?.token, debouncedSearchQuery, props.apiBaseUrl, searchFilters]);
-
   async function handleSearchSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
 
@@ -1114,11 +1275,8 @@ function ExtensionPanelAppContent(props: {
       return;
     }
 
-    if (debouncedSearchQuery !== searchQuery) {
-      setDebouncedSearchQuery(searchQuery);
-      return;
-    }
-
+    setLastSubmittedSearchQuery(searchQuery);
+    setLastSubmittedSearchFilters(createPanelSearchFilters(searchFilters));
     void runSearch(query, searchFilters);
   }
 
@@ -1172,6 +1330,7 @@ function ExtensionPanelAppContent(props: {
       );
       await refreshPanelState({
         token: auth.token,
+        cause: "viewer-request-success",
       });
       startTransition(() => {
         setEditingRequestItemId(null);
@@ -1181,6 +1340,7 @@ function ExtensionPanelAppContent(props: {
       await refreshPanelState({
         token: auth.token,
         silent: true,
+        cause: "viewer-request-failure",
       });
       showTransientNotice(
         "danger",
@@ -1234,11 +1394,13 @@ function ExtensionPanelAppContent(props: {
       );
       await refreshPanelState({
         token: auth.token,
+        cause: "remove-request-success",
       });
     } catch (error) {
       await refreshPanelState({
         token: auth.token,
         silent: true,
+        cause: "remove-request-failure",
       });
       showTransientNotice(
         "danger",
@@ -1290,6 +1452,7 @@ function ExtensionPanelAppContent(props: {
       }
       await refreshPanelState({
         token: auth.token,
+        cause: "playlist-mutation-success",
       });
 
       if (mutation.action !== "reorderItems") {
@@ -1302,6 +1465,7 @@ function ExtensionPanelAppContent(props: {
       await refreshPanelState({
         token: auth.token,
         silent: true,
+        cause: "playlist-mutation-failure",
       });
       showTransientNotice(
         "danger",
@@ -1597,15 +1761,18 @@ function ExtensionPanelAppContent(props: {
             <PanelRequestsStatusBar requestsEnabled={requestsEnabled} />
             <TabsList
               variant="line"
-              className="grid h-auto w-full shrink-0 grid-cols-2 gap-0 rounded-none border-b border-(--border-strong) bg-(--panel) p-0"
+              className="grid h-auto w-full shrink-0 gap-0 rounded-none border-b border-(--border-strong) bg-(--panel) p-0"
+              style={{
+                gridTemplateColumns: "minmax(0, 1.15fr) minmax(0, 0.85fr)",
+              }}
             >
               <TabsTrigger
                 value="playlist"
-                className="h-auto justify-center rounded-none border-0 px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-(--muted) shadow-none after:bottom-0 after:h-px after:bg-(--brand-deep) data-[state=active]:text-(--brand-deep)"
+                className="h-auto min-w-0 justify-center rounded-none border-0 px-2.5 py-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-(--muted) shadow-none after:bottom-0 after:h-px after:bg-(--brand-deep) data-[state=active]:text-(--brand-deep)"
                 style={{ fontFamily: '"IBM Plex Sans", sans-serif' }}
               >
-                <span className="inline-flex items-center gap-1">
-                  <span>{t("queue.tab")}</span>
+                <span className="inline-flex min-w-0 items-center gap-0.5">
+                  <span className="truncate">{t("queue.tab")}</span>
                   <span className="shrink-0 text-[11px] font-semibold uppercase tracking-[0.18em] text-current">
                     ({queueCount})
                   </span>
@@ -1613,7 +1780,7 @@ function ExtensionPanelAppContent(props: {
               </TabsTrigger>
               <TabsTrigger
                 value="search"
-                className="h-auto rounded-none border-0 px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-(--muted) shadow-none after:bottom-0 after:h-px after:bg-(--brand-deep) data-[state=active]:text-(--brand-deep)"
+                className="h-auto min-w-0 rounded-none border-0 px-2 py-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-(--muted) shadow-none after:bottom-0 after:h-px after:bg-(--brand-deep) data-[state=active]:text-(--brand-deep)"
                 style={{ fontFamily: '"IBM Plex Sans", sans-serif' }}
               >
                 {t("search.tab")}
@@ -1789,7 +1956,7 @@ function ExtensionPanelAppContent(props: {
                         showReset={searchFiltersChangedFromDefaults}
                       />
 
-                      {searchError ? (
+                      {showingSubmittedSearchState && searchError ? (
                         <p className="mt-2 text-[11px] text-(--danger)">
                           {translateExtensionMessage(searchError, t)}
                         </p>
@@ -1820,7 +1987,8 @@ function ExtensionPanelAppContent(props: {
                     <div className="border-t border-(--border) px-3 py-3 text-[11px] text-(--muted)">
                       {t("requests.offRightNow")}
                     </div>
-                  ) : searchResults?.items?.length ? (
+                  ) : showingSubmittedSearchState &&
+                    searchResults?.items?.length ? (
                     <div>
                       {searchResults.items.map((item, index) => {
                         const songId = getString(item, "id");
@@ -1976,10 +2144,10 @@ function ExtensionPanelAppContent(props: {
                         );
                       })}
                     </div>
-                  ) : canRunPanelSearch(
-                      debouncedSearchQuery.trim(),
-                      searchFilters
-                    ) && !searching ? (
+                  ) : showingSubmittedSearchState &&
+                    canRunPanelSearch(searchQuery, searchFilters) &&
+                    !searching &&
+                    !searchError ? (
                     <div className="border-t border-(--border) px-3 py-2 text-[11px] text-(--muted)">
                       {t("search.noResults")}
                     </div>
@@ -2023,7 +2191,6 @@ export function ExtensionPanelModeratorPreview() {
     useState<PanelDropTargetState>(null);
   const [activeTab, setActiveTab] = useState<"playlist" | "search">("playlist");
   const [searchQuery, setSearchQuery] = useState("");
-  const [debouncedSearchQuery, setDebouncedSearchQuery] = useState("");
   const [searchFilters, setSearchFilters] = useState<PanelSearchFilters>(() =>
     createPanelSearchFilters({
       parts: ["lead", "bass"],
@@ -2034,6 +2201,11 @@ export function ExtensionPanelModeratorPreview() {
     useState<PanelSearchResponse | null>(null);
   const [searchError, setSearchError] = useState<string | null>(null);
   const [searching, setSearching] = useState(false);
+  const [lastSubmittedSearchQuery, setLastSubmittedSearchQuery] = useState<
+    string | null
+  >(null);
+  const [lastSubmittedSearchFilters, setLastSubmittedSearchFilters] =
+    useState<PanelSearchFilters | null>(null);
   const latestTransientNoticeIdRef = useRef(0);
   const latestSearchRequestRef = useRef(0);
   const removeConfirmRef = useRef<HTMLDivElement | null>(null);
@@ -2084,16 +2256,11 @@ export function ExtensionPanelModeratorPreview() {
     searchFilters,
     defaultSearchFilters
   );
-
-  useEffect(() => {
-    const timeout = window.setTimeout(() => {
-      setDebouncedSearchQuery(searchQuery);
-    }, 300);
-
-    return () => {
-      window.clearTimeout(timeout);
-    };
-  }, [searchQuery]);
+  const showingSubmittedSearchState =
+    lastSubmittedSearchQuery != null &&
+    lastSubmittedSearchFilters != null &&
+    lastSubmittedSearchQuery === searchQuery &&
+    arePanelSearchFiltersEqual(lastSubmittedSearchFilters, searchFilters);
 
   useEffect(() => {
     if (!transientNotice) {
@@ -2465,18 +2632,10 @@ export function ExtensionPanelModeratorPreview() {
     }
   }
 
-  useEffect(() => {
-    void runPreviewSearch(debouncedSearchQuery, searchFilters);
-  }, [debouncedSearchQuery, searchFilters]);
-
   async function handleSearchSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-
-    if (debouncedSearchQuery !== searchQuery) {
-      setDebouncedSearchQuery(searchQuery);
-      return;
-    }
-
+    setLastSubmittedSearchQuery(searchQuery);
+    setLastSubmittedSearchFilters(createPanelSearchFilters(searchFilters));
     void runPreviewSearch(searchQuery, searchFilters);
   }
 
@@ -2704,15 +2863,18 @@ export function ExtensionPanelModeratorPreview() {
           <PanelRequestsStatusBar requestsEnabled />
           <TabsList
             variant="line"
-            className="grid h-auto w-full shrink-0 grid-cols-2 gap-0 rounded-none border-b border-(--border-strong) bg-(--panel) p-0"
+            className="grid h-auto w-full shrink-0 gap-0 rounded-none border-b border-(--border-strong) bg-(--panel) p-0"
+            style={{
+              gridTemplateColumns: "minmax(0, 1.15fr) minmax(0, 0.85fr)",
+            }}
           >
             <TabsTrigger
               value="playlist"
-              className="h-auto justify-center rounded-none border-0 px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-(--muted) shadow-none after:bottom-0 after:h-px after:bg-(--brand-deep) data-[state=active]:text-(--brand-deep)"
+              className="h-auto min-w-0 justify-center rounded-none border-0 px-2.5 py-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-(--muted) shadow-none after:bottom-0 after:h-px after:bg-(--brand-deep) data-[state=active]:text-(--brand-deep)"
               style={{ fontFamily: '"IBM Plex Sans", sans-serif' }}
             >
-              <span className="inline-flex items-center gap-1">
-                <span>{t("queue.tab")}</span>
+              <span className="inline-flex min-w-0 items-center gap-0.5">
+                <span className="truncate">{t("queue.tab")}</span>
                 <span className="shrink-0 text-[11px] font-semibold uppercase tracking-[0.18em] text-current">
                   ({queueCount})
                 </span>
@@ -2720,7 +2882,7 @@ export function ExtensionPanelModeratorPreview() {
             </TabsTrigger>
             <TabsTrigger
               value="search"
-              className="h-auto rounded-none border-0 px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-(--muted) shadow-none after:bottom-0 after:h-px after:bg-(--brand-deep) data-[state=active]:text-(--brand-deep)"
+              className="h-auto min-w-0 rounded-none border-0 px-2 py-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-(--muted) shadow-none after:bottom-0 after:h-px after:bg-(--brand-deep) data-[state=active]:text-(--brand-deep)"
               style={{ fontFamily: '"IBM Plex Sans", sans-serif' }}
             >
               {t("search.tab")}
@@ -2878,7 +3040,7 @@ export function ExtensionPanelModeratorPreview() {
                   showReset={searchFiltersChangedFromDefaults}
                 />
 
-                {searchError ? (
+                {showingSubmittedSearchState && searchError ? (
                   <p className="mt-2 text-[11px] text-(--danger)">
                     {translateExtensionMessage(searchError, t)}
                   </p>
@@ -2903,7 +3065,7 @@ export function ExtensionPanelModeratorPreview() {
               </div>
 
               <div>
-                {searchResults?.items?.length ? (
+                {showingSubmittedSearchState && searchResults?.items?.length ? (
                   <div>
                     {searchResults.items.map((item, index) => {
                       const songId = getString(item, "id");
@@ -2957,10 +3119,10 @@ export function ExtensionPanelModeratorPreview() {
                       );
                     })}
                   </div>
-                ) : canRunPanelSearch(
-                    debouncedSearchQuery.trim(),
-                    searchFilters
-                  ) && !searching ? (
+                ) : showingSubmittedSearchState &&
+                  canRunPanelSearch(searchQuery, searchFilters) &&
+                  !searching &&
+                  !searchError ? (
                   <div className="border-t border-(--border) px-3 py-2 text-[11px] text-(--muted)">
                     {t("search.noResults")}
                   </div>
@@ -4953,11 +5115,7 @@ function formatSearchSongLabel(item: Record<string, unknown>, t: TFunction) {
 }
 
 function formatSearchSongMeta(item: Record<string, unknown>) {
-  return [
-    getString(item, "album"),
-    getString(item, "creator"),
-    getString(item, "tuning"),
-  ]
+  return [getString(item, "album"), getString(item, "tuning")]
     .filter(Boolean)
     .join(" · ");
 }

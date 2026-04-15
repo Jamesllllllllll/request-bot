@@ -4,7 +4,7 @@
   },
   "page": {
     "title": "Search",
-    "infoNote": "This demo only contains {count} songs.",
+    "infoNote": "This demo contains {count} songs.",
     "placeholder": "Search by song title, artist or album"
   },
   "summary": {
@@ -43,6 +43,7 @@
   },
   "states": {
     "loading": "Loading songs...",
+    "startSearch": "Start typing or use filters to browse songs.",
     "queryTooShort": "Search terms must be at least 3 characters.",
     "emptyFiltered": "No songs matched those filters yet. Try broadening the search field or clearing one of the advanced inputs.",
     "emptyCatalog": "No songs are available in the demo catalog yet.",

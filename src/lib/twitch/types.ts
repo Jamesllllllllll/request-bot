@@ -62,6 +62,7 @@ export interface TwitchStreamsResponse {
     title: string;
     started_at: string;
     thumbnail_url: string;
+    game_name?: string;
   }>;
 }
 

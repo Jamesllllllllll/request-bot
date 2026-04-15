@@ -1884,6 +1884,7 @@ class ChannelPlaylistDurableObjectBase {
       playedSongs,
       blacklistArtists,
       blacklistCharters,
+      preferredCharters,
       blacklistSongs,
       blacklistSongGroups,
       setlistRows,
@@ -1907,6 +1908,9 @@ class ChannelPlaylistDurableObjectBase {
       }),
       db.query.blacklistedCharters.findMany({
         where: eq(schema.blacklistedCharters.channelId, channelId),
+      }),
+      db.query.preferredCharters.findMany({
+        where: eq(schema.preferredCharters.channelId, channelId),
       }),
       db.query.blacklistedSongs.findMany({
         where: eq(schema.blacklistedSongs.channelId, channelId),
@@ -2013,6 +2017,10 @@ class ChannelPlaylistDurableObjectBase {
       }),
       blacklistArtists: blacklistArtists.map(toPublicBlacklistArtist),
       blacklistCharters: blacklistCharters.map(toPublicBlacklistCharter),
+      preferredCharters: preferredCharters.map((charter) => ({
+        charterId: charter.charterId,
+        charterName: charter.charterName,
+      })),
       blacklistSongs: blacklistSongs.map(toPublicBlacklistSong),
       blacklistSongGroups: blacklistSongGroups.map(toPublicBlacklistSongGroup),
       setlistArtists: setlistRows.map(toPublicSetlistArtist),

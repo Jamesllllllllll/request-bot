@@ -1,8 +1,18 @@
 // Route: Returns the current list of live channels known to the app.
 import { env } from "cloudflare:workers";
 import { createFileRoute } from "@tanstack/react-router";
-import { getLiveChannels } from "~/lib/db/repositories";
+import { isAbortError, throwIfAborted } from "~/lib/abort";
+import { getHomeLiveChannels } from "~/lib/db/repositories";
 import type { AppEnv } from "~/lib/env";
+import type {
+  HomeLiveChannel,
+  HomeLiveChannelsResponse,
+} from "~/lib/home/community";
+import {
+  createRequestStageTimer,
+  registerAbortTrace,
+  serializeErrorForLog,
+} from "~/lib/server/request-tracing";
 import {
   getAppAccessToken,
   getLiveStreams,
@@ -15,58 +25,146 @@ import { json } from "~/lib/utils";
 const FEATURED_DEMO_LOGIN = "younggun";
 const ROCKSMITH_TAGS = new Set(["rocksmith", "rocksmith2014"]);
 const ROCKSMITH_SEARCH_LIMIT = 100;
-const ROCKSMITH_DEMO_RESULTS_LIMIT = 6;
 
 export const Route = createFileRoute("/api/channels/live")({
   server: {
     handlers: {
       GET: async ({ request }) => {
         const runtimeEnv = env as AppEnv;
+        const traceId = crypto.randomUUID();
+        const startedAt = Date.now();
+        const timer = createRequestStageTimer();
         const url = new URL(request.url);
+        const source = url.searchParams.get("source");
+        const traceContext = {
+          traceId,
+          path: url.pathname,
+          source,
+        };
 
-        if (url.searchParams.get("source") === "rocksmith") {
+        console.info("Live channels request started", traceContext);
+        const cleanupAbortTrace = registerAbortTrace(request.signal, () => {
+          console.warn("Live channels request abort signaled", {
+            ...traceContext,
+            elapsedMs: Date.now() - startedAt,
+            stageDurations: timer.stageDurations,
+          });
+        });
+
+        if (source === "rocksmith") {
           try {
-            const appToken = await getAppAccessToken(runtimeEnv);
-            const [curatedChannels, twitchChannels] = await Promise.all([
-              getCuratedRocksmithDemoChannels({
-                env: runtimeEnv,
-                accessToken: appToken.access_token,
-              }),
-              searchTwitchChannels({
-                env: runtimeEnv,
-                accessToken: appToken.access_token,
-                query: "Rocksmith",
-                first: ROCKSMITH_SEARCH_LIMIT,
-                liveOnly: true,
-              }),
-            ]);
-
-            return json({
+            throwIfAborted(request.signal);
+            const appToken = await timer.measure("getAppAccessToken", () =>
+              getAppAccessToken(runtimeEnv)
+            );
+            const [curatedChannels, twitchChannels] = await timer.measure(
+              "loadRocksmithChannels",
+              () =>
+                Promise.all([
+                  getCuratedRocksmithDemoChannels({
+                    env: runtimeEnv,
+                    accessToken: appToken.access_token,
+                  }),
+                  searchTwitchChannels({
+                    env: runtimeEnv,
+                    accessToken: appToken.access_token,
+                    query: "Rocksmith",
+                    first: ROCKSMITH_SEARCH_LIMIT,
+                    liveOnly: true,
+                  }),
+                ])
+            );
+            throwIfAborted(request.signal);
+            const responseBody = {
               channels: toRocksmithDemoChannels(
                 curatedChannels,
                 twitchChannels
               ),
+              community: null,
+            } satisfies HomeLiveChannelsResponse;
+
+            console.info("Live channels request completed", {
+              ...traceContext,
+              elapsedMs: Date.now() - startedAt,
+              stageDurations: timer.stageDurations,
+              channelCount: responseBody.channels.length,
             });
+
+            return json(responseBody);
           } catch (error) {
+            if (isAbortError(error)) {
+              console.warn("Live channels request aborted", {
+                ...traceContext,
+                elapsedMs: Date.now() - startedAt,
+                stageDurations: timer.stageDurations,
+                error: serializeErrorForLog(error),
+              });
+              return new Response(null, { status: 499 });
+            }
+
             console.error("Failed to fetch Rocksmith demo channels", {
-              error: error instanceof Error ? error.message : String(error),
+              ...traceContext,
+              elapsedMs: Date.now() - startedAt,
+              stageDurations: timer.stageDurations,
+              error: serializeErrorForLog(error),
             });
 
             return json(
-              { error: "Failed to fetch Rocksmith channels.", channels: [] },
+              {
+                error: "Failed to fetch Rocksmith channels.",
+                channels: [],
+                community: null,
+              } satisfies HomeLiveChannelsResponse & { error: string },
               { status: 502 }
             );
+          } finally {
+            cleanupAbortTrace();
           }
         }
 
-        const channels = await getLiveChannels(runtimeEnv);
-        return json({ channels });
+        try {
+          throwIfAborted(request.signal);
+          const responseBody = await timer.measure("getHomeLiveChannels", () =>
+            getHomeLiveChannels(runtimeEnv)
+          );
+          throwIfAborted(request.signal);
+
+          console.info("Live channels request completed", {
+            ...traceContext,
+            elapsedMs: Date.now() - startedAt,
+            stageDurations: timer.stageDurations,
+            channelCount: responseBody.channels.length,
+            hasCommunity: responseBody.community != null,
+          });
+
+          return json(responseBody);
+        } catch (error) {
+          if (isAbortError(error)) {
+            console.warn("Live channels request aborted", {
+              ...traceContext,
+              elapsedMs: Date.now() - startedAt,
+              stageDurations: timer.stageDurations,
+              error: serializeErrorForLog(error),
+            });
+            return new Response(null, { status: 499 });
+          }
+
+          console.error("Live channels request failed", {
+            ...traceContext,
+            elapsedMs: Date.now() - startedAt,
+            stageDurations: timer.stageDurations,
+            error: serializeErrorForLog(error),
+          });
+          throw error;
+        } finally {
+          cleanupAbortTrace();
+        }
       },
     },
   },
 });
 
-function toRocksmithDemoChannels(
+export function toRocksmithDemoChannels(
   curatedChannels: HomeLiveChannel[],
   channels: Awaited<ReturnType<typeof searchTwitchChannels>>
 ) {
@@ -74,7 +172,7 @@ function toRocksmithDemoChannels(
   const dedupedChannels = [
     ...curatedChannels,
     ...channels
-      .filter((channel) => hasRocksmithTag(channel))
+      .filter((channel) => isEligibleRocksmithDemoSearchChannel(channel))
       .map((channel) => toRocksmithDemoChannel(channel)),
   ].filter((channel) => {
     const login = normalizeLogin(channel.login);
@@ -95,27 +193,8 @@ function toRocksmithDemoChannels(
     dedupedChannels.unshift(featuredChannel);
   }
 
-  return dedupedChannels.slice(0, ROCKSMITH_DEMO_RESULTS_LIMIT);
+  return dedupedChannels;
 }
-
-type HomeLiveChannel = {
-  id: string;
-  slug: string;
-  displayName: string;
-  login: string;
-  playlistHref?: string | null;
-  playlistExternal?: boolean;
-  streamTitle?: string | null;
-  streamThumbnailUrl?: string | null;
-  currentItem?: {
-    title: string;
-    artist?: string | null;
-  } | null;
-  nextItem?: {
-    title: string;
-    artist?: string | null;
-  } | null;
-};
 
 function toRocksmithDemoChannel(
   channel: Awaited<ReturnType<typeof searchTwitchChannels>>[number]
@@ -129,6 +208,7 @@ function toRocksmithDemoChannel(
     login,
     streamTitle: channel.title ?? channel.game_name ?? null,
     streamThumbnailUrl: `https://static-cdn.jtvnw.net/previews-ttv/live_user_${login}-640x360.jpg`,
+    playedTodayCount: 0,
     currentItem: null,
     nextItem: null,
   };
@@ -149,7 +229,9 @@ async function getCuratedRocksmithDemoChannels(input: {
     broadcasterUserIds: users.map((user) => user.id),
   });
   const liveStreamsByLogin = new Map(
-    liveStreams.map((stream) => [normalizeLogin(stream.user_login), stream])
+    liveStreams
+      .filter((stream) => hasAllowedRocksmithCategory(stream.game_name))
+      .map((stream) => [normalizeLogin(stream.user_login), stream])
   );
 
   return ROCKSMITH_DEMO_LOGINS.map((login) => liveStreamsByLogin.get(login))
@@ -171,9 +253,18 @@ function toRocksmithDemoChannelFromLiveStream(
     streamThumbnailUrl: stream.thumbnail_url
       .replace("{width}", "640")
       .replace("{height}", "360"),
+    playedTodayCount: 0,
     currentItem: null,
     nextItem: null,
   };
+}
+
+export function isEligibleRocksmithDemoSearchChannel(
+  channel: Awaited<ReturnType<typeof searchTwitchChannels>>[number]
+) {
+  return (
+    hasRocksmithTag(channel) && hasAllowedRocksmithCategory(channel.game_name)
+  );
 }
 
 function hasRocksmithTag(
@@ -182,6 +273,22 @@ function hasRocksmithTag(
   return (channel.tags ?? []).some((tag) =>
     ROCKSMITH_TAGS.has(tag.trim().toLowerCase())
   );
+}
+
+export function hasAllowedRocksmithCategory(gameName?: string | null) {
+  const normalizedCategory = normalizeCategoryName(gameName);
+  return (
+    normalizedCategory === "music" || normalizedCategory.startsWith("rocksmith")
+  );
+}
+
+function normalizeCategoryName(gameName?: string | null) {
+  return (gameName ?? "")
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
 }
 
 function normalizeLogin(login: string) {

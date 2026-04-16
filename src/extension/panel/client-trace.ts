@@ -41,7 +41,7 @@ export function emitExtensionPanelClientTrace(input: {
   isLinked?: boolean | null;
   helperState?: string | null;
 }) {
-  if (typeof window === "undefined") {
+  if (typeof window === "undefined" || !import.meta.env.DEV) {
     return;
   }
 

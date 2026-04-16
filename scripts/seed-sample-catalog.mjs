@@ -8,7 +8,7 @@ const tempSqlPath = path.join(repoRoot, ".generated", "tmp-sample-seed.sql");
 const mode = process.argv[2];
 
 if (mode !== "local" && mode !== "remote") {
-  console.error('Usage: node scripts/seed-sample-catalog.mjs <local|remote>');
+  console.error("Usage: node scripts/seed-sample-catalog.mjs <local|remote>");
   process.exit(1);
 }
 
@@ -31,11 +31,7 @@ const baseArgs = ["npx", "wrangler", "d1", "execute", "request_bot"];
 if (mode === "local") {
   baseArgs.push("--local");
 } else {
-  baseArgs.push(
-    "--remote",
-    "--config",
-    ".generated/wrangler.production.jsonc"
-  );
+  baseArgs.push("--remote", "--config", ".generated/wrangler.production.jsonc");
 }
 
 function splitSqlList(value) {
@@ -86,12 +82,18 @@ function toInsertAndUpdateStatements(statement) {
   const [, columnsText, valuesText] = match;
   const columns = splitSqlList(columnsText);
   const values = splitSqlList(valuesText);
-  const row = Object.fromEntries(columns.map((column, index) => [column, values[index]]));
+  const row = Object.fromEntries(
+    columns.map((column, index) => [column, values[index]])
+  );
   const updateColumns = columns.filter(
     (column) =>
-      !["id", "source", "source_song_id", "created_at", "first_seen_at"].includes(
-        column
-      )
+      ![
+        "id",
+        "source",
+        "source_song_id",
+        "created_at",
+        "first_seen_at",
+      ].includes(column)
   );
 
   const assignments = updateColumns
@@ -116,15 +118,12 @@ const statements = rawStatements
       : [statement]
   );
 
-const preStatements = [
-  "DROP TRIGGER IF EXISTS `catalog_song_fts_update`",
-];
+const preStatements = ["DROP TRIGGER IF EXISTS `catalog_song_fts_update`"];
 
 const postStatements = [
   "INSERT INTO catalog_song_fts(catalog_song_fts) VALUES('rebuild')",
   `CREATE TRIGGER \`catalog_song_fts_update\` AFTER UPDATE ON \`catalog_songs\` BEGIN
-  INSERT INTO catalog_song_fts(catalog_song_fts, rowid, song_id, title, artist_name, album_name, creator_name, genre_name, subgenre_name, tuning_summary, parts_summary, artists_ft)
-  VALUES('delete', old.rowid, old.id, old.title, old.artist_name, coalesce(old.album_name, ''), coalesce(old.creator_name, ''), coalesce(old.genre_name, ''), coalesce(old.subgenre_name, ''), coalesce(old.tuning_summary, ''), coalesce(old.parts_json, '[]'), coalesce(old.artists_ft_json, '[]'));
+  DELETE FROM catalog_song_fts WHERE rowid = old.rowid;
   INSERT INTO catalog_song_fts (
     rowid,
     song_id,
@@ -156,12 +155,19 @@ END`,
 for (const statement of [...preStatements, ...statements, ...postStatements]) {
   fs.mkdirSync(path.dirname(tempSqlPath), { recursive: true });
   fs.writeFileSync(tempSqlPath, `${statement};\n`);
-  const command = [...baseArgs, "--file", JSON.stringify(tempSqlPath)].join(" ");
+  const command = [...baseArgs, "--file", JSON.stringify(tempSqlPath)].join(
+    " "
+  );
   execSync(command, {
     cwd: repoRoot,
     stdio: "inherit",
   });
 }
+
+execSync(`node scripts/refresh-catalog-canonical-groups.mjs ${mode}`, {
+  cwd: repoRoot,
+  stdio: "inherit",
+});
 
 console.log(
   `Seeded sample catalog with ${statements.length} statement${statements.length === 1 ? "" : "s"}.`

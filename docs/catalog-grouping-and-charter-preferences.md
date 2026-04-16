@@ -23,7 +23,7 @@ Artist normalization is intentionally conservative. It currently:
 
 That fallback keeps requester and streamer views aligned even when the upstream catalog does not provide a shared `grouped_project_id`.
 
-The app does not persist a separate internal canonical grouping table yet, so fallback grouping is computed from the catalog data rather than stored as new catalog metadata.
+The app now persists a canonical internal group assignment on each catalog row. New or updated catalog rows refresh that canonical grouping when they are imported, and existing rows can be backfilled with the catalog-group refresh task. Search and version expansion read the stored canonical grouping when it is present instead of recomputing the full fallback graph on every request.
 
 ## Preferred Charters
 
@@ -45,6 +45,6 @@ Preferred charters also do not override moderation rules. If a chart is blacklis
 Today, the app uses two layers:
 
 1. upstream catalog grouping from CustomsForge when it exists
-2. request-time fallback grouping for same-title and normalized-artist matches when upstream grouping is missing
+2. stored canonical grouping that also bridges same-title and normalized-artist fallback matches when upstream grouping is missing
 
 That keeps search results, request handling, and playlist version selection consistent while preserving a fuller version list for streamers and moderators.

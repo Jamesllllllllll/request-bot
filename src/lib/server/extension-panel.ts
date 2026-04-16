@@ -38,8 +38,14 @@ type ExtensionSearchInput = {
   page: number;
   pageSize: number;
   favoritesOnly?: boolean;
+  title?: string;
+  artist?: string;
+  album?: string;
+  creator?: string;
+  tuning?: number[];
   parts?: string[];
   partsMatchMode?: "any" | "all";
+  year?: number[];
 };
 
 type ExtensionTraceContext = {
@@ -539,11 +545,17 @@ export async function searchExtensionCatalog(input: {
     search: {
       query: input.search.query,
       favoritesOnly: input.search.favoritesOnly,
+      title: input.search.title,
+      artist: input.search.artist,
+      album: input.search.album,
+      creator: input.search.creator,
+      tuning: input.search.tuning,
       parts: requestedParts.length > 0 ? requestedParts : defaultSearchParts,
       partsMatchMode:
         requestedParts.length > 0
           ? (input.search.partsMatchMode ?? "any")
           : getRequiredPathsMatchMode(settings?.requiredPathsMatchMode),
+      year: input.search.year,
       page: input.search.page,
       pageSize: input.search.pageSize,
     },

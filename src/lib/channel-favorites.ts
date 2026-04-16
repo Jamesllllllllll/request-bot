@@ -21,8 +21,53 @@ export function rollupFavoriteCharts(
   blacklist: ChannelBlacklist
 ) {
   const chartsById = new Map(charts.map((chart) => [chart.id, chart]));
+  const canUseStoredGroups = charts.every(
+    (chart) =>
+      typeof chart.groupKey === "string" &&
+      chart.groupKey.length > 0 &&
+      (chart.groupingSource === "groupedProjectId" ||
+        chart.groupingSource === "fallback" ||
+        chart.groupingSource === "both")
+  );
+  const chartGroups = canUseStoredGroups
+    ? (() => {
+        const groupsByKey = new Map<string, FavoritedChart[]>();
+        for (const chart of charts) {
+          const groupKey = chart.groupKey;
+          if (!groupKey) {
+            continue;
+          }
 
-  return buildSongGroups(charts)
+          const current = groupsByKey.get(groupKey) ?? [];
+          current.push(chart);
+          groupsByKey.set(groupKey, current);
+        }
+
+        return [...groupsByKey.entries()]
+          .map(([groupKey, groupCharts]) => {
+            const firstChart = groupCharts[0];
+            if (
+              !firstChart ||
+              (firstChart.groupingSource !== "groupedProjectId" &&
+                firstChart.groupingSource !== "fallback" &&
+                firstChart.groupingSource !== "both")
+            ) {
+              return null;
+            }
+
+            return {
+              groupKey,
+              groupingSource: firstChart.groupingSource,
+              songs: groupCharts,
+            };
+          })
+          .filter((group): group is NonNullable<typeof group> =>
+            Boolean(group)
+          );
+      })()
+    : buildSongGroups(charts);
+
+  return chartGroups
     .map((group) => {
       const groupCharts = group.songs
         .map((song) => chartsById.get(song.id))

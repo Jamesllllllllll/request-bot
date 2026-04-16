@@ -121,6 +121,7 @@ function RootComponent() {
   });
   const isExtensionRoute = pathname.startsWith("/extension/");
   const showDevtools = import.meta.env.DEV && !isExtensionRoute;
+  const showClientTrace = import.meta.env.DEV;
 
   return (
     <html lang={locale}>
@@ -138,7 +139,7 @@ function RootComponent() {
       <body>
         <QueryClientProvider client={queryClient}>
           <AppI18nProvider initialLocale={locale}>
-            <ClientNavigationTrace />
+            {showClientTrace ? <ClientNavigationTrace /> : null}
             <AppShell />
           </AppI18nProvider>
           {showDevtools ? <SafeTanStackRouterDevtools /> : null}

@@ -9,9 +9,11 @@ import {
   extractClosestEdge,
 } from "@atlaskit/pragmatic-drag-and-drop-hitbox/closest-edge";
 import { getReorderDestinationIndex } from "@atlaskit/pragmatic-drag-and-drop-hitbox/util/get-reorder-destination-index";
+import { useQuery } from "@tanstack/react-query";
 import type { TFunction } from "i18next";
 import {
   Check,
+  ChevronDown,
   CircleAlert,
   CircleCheckBig,
   CircleHelp,
@@ -24,6 +26,7 @@ import {
   Play,
   Search,
   Shuffle,
+  SlidersHorizontal,
   Sparkles,
   Sword,
   Trash2,
@@ -33,6 +36,7 @@ import {
 import { AnimatePresence, motion } from "motion/react";
 import {
   type FormEvent,
+  type MouseEvent as ReactMouseEvent,
   type ReactNode,
   type RefObject,
   startTransition,
@@ -43,12 +47,27 @@ import {
 } from "react";
 import { PickOrderBadge } from "~/components/pick-order-badge";
 import { Button } from "~/components/ui/button";
+import { Checkbox } from "~/components/ui/checkbox";
 import {
   Collapsible,
   CollapsibleContent,
   CollapsibleTrigger,
 } from "~/components/ui/collapsible";
+import {
+  Command,
+  CommandEmpty,
+  CommandGroup,
+  CommandInput,
+  CommandItem,
+  CommandList,
+} from "~/components/ui/command";
 import { Input } from "~/components/ui/input";
+import { Label } from "~/components/ui/label";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "~/components/ui/popover";
 import {
   Select,
   SelectContent,
@@ -71,7 +90,6 @@ import {
   useLocaleTranslation,
 } from "~/lib/i18n/client";
 import { type AppLocale, localeOptions } from "~/lib/i18n/locales";
-import { playlistDisplayItemHasLyrics } from "~/lib/playlist/management-display";
 import {
   getQueuedPositionsFromRegularOrder,
   getUpdatedPositionsAfterSetCurrent,
@@ -86,6 +104,12 @@ import {
   getRequestVipTokenPlan,
   type RequestPathOption,
 } from "~/lib/requested-paths";
+import {
+  normalizeSearchFilterOptionsResponse,
+  type SearchFilterOptionsResponse,
+  type SearchFilterOptionsWireResponse,
+} from "~/lib/song-search/filter-options";
+import type { TuningOption } from "~/lib/tunings";
 import { cn } from "~/lib/utils";
 import { getVipTokenAutomationDetails } from "~/lib/vip-token-automation";
 import {
@@ -110,6 +134,15 @@ import {
   resolveExtensionPanelLocale,
 } from "./locale";
 import { parseExtensionPanelPubSubMessage } from "./pubsub";
+import {
+  appendPanelSearchFiltersToParams,
+  arePanelSearchFiltersEqual,
+  canonicalizePanelSearchFilters,
+  canRunPanelSearch,
+  createPanelSearchFilters,
+  type PanelSearchFilters,
+  type PanelSearchPath,
+} from "./search-filters";
 import {
   getTwitchExtensionHelper,
   loadTwitchExtensionHelper,
@@ -238,14 +271,6 @@ type PreviewCatalogSearchResponse = {
   pageSize?: number;
   hiddenBlacklistedCount?: number;
   error?: string;
-};
-
-type PanelSearchPath = (typeof pathOptions)[number];
-
-type PanelSearchFilters = {
-  favoritesOnly: boolean;
-  parts: PanelSearchPath[];
-  partsMatchMode: "any" | "all";
 };
 
 type PanelPlaylistMutation =
@@ -388,6 +413,8 @@ function ExtensionPanelAppContent(props: {
   const [pendingPubSubReason, setPendingPubSubReason] =
     useState<PlaylistStreamNotifyReason | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
+  const [quickRandomQuery, setQuickRandomQuery] = useState("");
+  const [quickChoiceQuery, setQuickChoiceQuery] = useState("");
   const [searchFiltersOverride, setSearchFiltersOverride] =
     useState<PanelSearchFilters | null>(null);
   const [searchResults, setSearchResults] =
@@ -519,7 +546,7 @@ function ExtensionPanelAppContent(props: {
   const showingSubmittedSearchState =
     lastSubmittedSearchQuery != null &&
     lastSubmittedSearchFilters != null &&
-    lastSubmittedSearchQuery === searchQuery &&
+    lastSubmittedSearchQuery === searchQuery.trim() &&
     arePanelSearchFiltersEqual(lastSubmittedSearchFilters, searchFilters);
 
   useEffect(() => {
@@ -593,7 +620,19 @@ function ExtensionPanelAppContent(props: {
 
   useEffect(() => {
     setSearchFiltersOverride(null);
+    setQuickRandomQuery("");
+    setQuickChoiceQuery("");
   }, [bootstrap?.channel?.slug]);
+
+  useEffect(() => {
+    if (getString(editingRequest ?? {}, "warningCode") !== "streamer_choice") {
+      return;
+    }
+
+    setQuickChoiceQuery(
+      getString(editingRequest ?? {}, "requestedQuery") ?? ""
+    );
+  }, [editingRequest]);
 
   useEffect(() => {
     let cancelled = false;
@@ -1163,20 +1202,6 @@ function ExtensionPanelAppContent(props: {
     });
   }
 
-  function toggleSearchFilterPath(path: PanelSearchPath) {
-    updateSearchFilters((current) => {
-      const nextParts = current.parts.includes(path)
-        ? current.parts.filter((value) => value !== path)
-        : [...current.parts, path];
-
-      return {
-        ...current,
-        parts: nextParts,
-        partsMatchMode: nextParts.length > 1 ? current.partsMatchMode : "any",
-      };
-    });
-  }
-
   function resetSearchFilters() {
     setSearchFiltersOverride(null);
   }
@@ -1228,15 +1253,7 @@ function ExtensionPanelAppContent(props: {
       if (normalizedQuery.length >= 3) {
         params.set("query", normalizedQuery);
       }
-      if (filters.favoritesOnly) {
-        params.set("favoritesOnly", "true");
-      }
-      for (const part of filters.parts) {
-        params.append("parts", part);
-      }
-      if (filters.parts.length > 0) {
-        params.set("partsMatchMode", filters.partsMatchMode);
-      }
+      appendPanelSearchFiltersToParams(params, filters);
       const results = await fetchExtensionJson<PanelSearchResponse>(
         auth.token,
         `/api/extension/search?${params.toString()}`,
@@ -1275,9 +1292,10 @@ function ExtensionPanelAppContent(props: {
       return;
     }
 
-    setLastSubmittedSearchQuery(searchQuery);
-    setLastSubmittedSearchFilters(createPanelSearchFilters(searchFilters));
-    void runSearch(query, searchFilters);
+    const submittedFilters = canonicalizePanelSearchFilters(searchFilters);
+    setLastSubmittedSearchQuery(query);
+    setLastSubmittedSearchFilters(submittedFilters);
+    void runSearch(query, submittedFilters);
   }
 
   async function handleSubmitRequest(input: PanelViewerRequestSubmitInput) {
@@ -1917,12 +1935,12 @@ function ExtensionPanelAppContent(props: {
                               ? t("search.placeholderEdit")
                               : t("search.placeholder")
                           }
-                          className="h-8 rounded-none border-(--border-strong) px-2 py-1 text-[12px] shadow-none focus-visible:ring-1 focus-visible:ring-(--brand) focus-visible:ring-offset-0"
+                          className="h-8 border-(--border-strong) bg-(--panel) px-2 py-1 text-[12px] shadow-none focus-visible:ring-1 focus-visible:ring-(--brand) focus-visible:ring-offset-0"
                         />
                         <Button
                           type="submit"
                           size="sm"
-                          className="h-8 rounded-none px-2 shadow-none"
+                          className="h-8 px-2 shadow-none"
                           disabled={
                             searching ||
                             !auth?.token ||
@@ -1938,20 +1956,7 @@ function ExtensionPanelAppContent(props: {
                       </form>
                       <PanelSearchFiltersBar
                         filters={searchFilters}
-                        defaultFilters={defaultSearchFilters}
-                        onFavoritesOnlyChange={(favoritesOnly) => {
-                          updateSearchFilters((current) => ({
-                            ...current,
-                            favoritesOnly,
-                          }));
-                        }}
-                        onPathToggle={toggleSearchFilterPath}
-                        onMatchModeChange={(partsMatchMode) => {
-                          updateSearchFilters((current) => ({
-                            ...current,
-                            partsMatchMode,
-                          }));
-                        }}
+                        onChange={updateSearchFilters}
                         onReset={resetSearchFilters}
                         showReset={searchFiltersChangedFromDefaults}
                       />
@@ -1963,18 +1968,28 @@ function ExtensionPanelAppContent(props: {
                       ) : null}
                       {showSpecialRequestControls ? (
                         <PanelSpecialRequestControls
-                          query={searchQuery}
+                          randomQuery={quickRandomQuery}
+                          onRandomQueryChange={setQuickRandomQuery}
+                          choiceQuery={quickChoiceQuery}
+                          onChoiceQueryChange={setQuickChoiceQuery}
                           canRequest={canQuickRequest}
                           canVipRequest={canQuickVipRequest}
                           vipDisabledReason={quickVipDisabledReason}
                           pendingAction={pendingAction}
                           isEditingRequest={isEditingRequest}
-                          onSubmit={(requestMode, requestKind) => {
-                            void handleSubmitRequest({
-                              query: searchQuery,
-                              requestMode,
-                              requestKind,
-                            });
+                          onSubmit={(input) => {
+                            void handleSubmitRequest(
+                              input.requestMode === "favorite"
+                                ? {
+                                    requestMode: input.requestMode,
+                                    requestKind: input.requestKind,
+                                  }
+                                : {
+                                    query: input.query,
+                                    requestMode: input.requestMode,
+                                    requestKind: input.requestKind,
+                                  }
+                            );
                           }}
                         />
                       ) : null}
@@ -2055,7 +2070,7 @@ function ExtensionPanelAppContent(props: {
                                   <Button
                                     size="sm"
                                     variant="outline"
-                                    className="h-7 rounded-none px-2 text-[11px] shadow-none"
+                                    className="h-6 px-2 text-[10px] leading-none shadow-none"
                                     disabled={
                                       !songId ||
                                       pendingAction === managerActionKey ||
@@ -2191,6 +2206,8 @@ export function ExtensionPanelModeratorPreview() {
     useState<PanelDropTargetState>(null);
   const [activeTab, setActiveTab] = useState<"playlist" | "search">("playlist");
   const [searchQuery, setSearchQuery] = useState("");
+  const [quickRandomQuery, setQuickRandomQuery] = useState("");
+  const [quickChoiceQuery, setQuickChoiceQuery] = useState("");
   const [searchFilters, setSearchFilters] = useState<PanelSearchFilters>(() =>
     createPanelSearchFilters({
       parts: ["lead", "bass"],
@@ -2259,7 +2276,7 @@ export function ExtensionPanelModeratorPreview() {
   const showingSubmittedSearchState =
     lastSubmittedSearchQuery != null &&
     lastSubmittedSearchFilters != null &&
-    lastSubmittedSearchQuery === searchQuery &&
+    lastSubmittedSearchQuery === searchQuery.trim() &&
     arePanelSearchFiltersEqual(lastSubmittedSearchFilters, searchFilters);
 
   useEffect(() => {
@@ -2308,6 +2325,16 @@ export function ExtensionPanelModeratorPreview() {
       setEditingRequestItemId(null);
     }
   }, [editingRequest, editingRequestItemId]);
+
+  useEffect(() => {
+    if (getString(editingRequest ?? {}, "warningCode") !== "streamer_choice") {
+      return;
+    }
+
+    setQuickChoiceQuery(
+      getString(editingRequest ?? {}, "requestedQuery") ?? ""
+    );
+  }, [editingRequest]);
 
   function showTransientMessage(
     tone: TransientPanelNotice["tone"],
@@ -2529,20 +2556,6 @@ export function ExtensionPanelModeratorPreview() {
     }
   }
 
-  function toggleSearchFilterPath(path: PanelSearchPath) {
-    setSearchFilters((current) => {
-      const nextParts = current.parts.includes(path)
-        ? current.parts.filter((value) => value !== path)
-        : [...current.parts, path];
-
-      return {
-        ...current,
-        parts: nextParts,
-        partsMatchMode: nextParts.length > 1 ? current.partsMatchMode : "any",
-      };
-    });
-  }
-
   function resetSearchFilters() {
     setSearchFilters(defaultSearchFilters);
   }
@@ -2584,15 +2597,7 @@ export function ExtensionPanelModeratorPreview() {
       if (normalizedQuery.length >= 3) {
         params.set("query", normalizedQuery);
       }
-      if (filters.favoritesOnly) {
-        params.set("favoritesOnly", "true");
-      }
-      for (const part of filters.parts) {
-        params.append("parts", part);
-      }
-      if (filters.parts.length > 0) {
-        params.set("partsMatchMode", filters.partsMatchMode);
-      }
+      appendPanelSearchFiltersToParams(params, filters);
 
       const response = await fetch(`/api/search?${params.toString()}`);
       const payload = (await response
@@ -2634,9 +2639,70 @@ export function ExtensionPanelModeratorPreview() {
 
   async function handleSearchSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    setLastSubmittedSearchQuery(searchQuery);
-    setLastSubmittedSearchFilters(createPanelSearchFilters(searchFilters));
-    void runPreviewSearch(searchQuery, searchFilters);
+    const query = searchQuery.trim();
+    const submittedFilters = canonicalizePanelSearchFilters(searchFilters);
+    setLastSubmittedSearchQuery(query);
+    setLastSubmittedSearchFilters(submittedFilters);
+    void runPreviewSearch(query, submittedFilters);
+  }
+
+  async function fetchPreviewSearchPage(input: {
+    query?: string;
+    field?: "any" | "artist";
+    page: number;
+    pageSize: number;
+  }) {
+    const params = new URLSearchParams({
+      channelSlug: previewChannelSlug,
+      page: String(input.page),
+      pageSize: String(input.pageSize),
+    });
+    const normalizedQuery = input.query?.trim() ?? "";
+
+    if (normalizedQuery.length > 0) {
+      params.set("query", normalizedQuery);
+    }
+    if (input.field) {
+      params.set("field", input.field);
+    }
+
+    const response = await fetch(`/api/search?${params.toString()}`);
+    const payload = (await response
+      .json()
+      .catch(() => null)) as PreviewCatalogSearchResponse | null;
+
+    if (!response.ok) {
+      throw new Error(payload?.error ?? t("search.searchFailed"));
+    }
+
+    return payload;
+  }
+
+  async function resolvePreviewRandomSong(query: string) {
+    const firstPage = await fetchPreviewSearchPage({
+      query,
+      field: "artist",
+      page: 1,
+      pageSize: 1,
+    });
+    const total = Math.max(
+      0,
+      firstPage?.total ?? firstPage?.results?.length ?? 0
+    );
+
+    if (total === 0) {
+      return null;
+    }
+
+    const randomPageNumber = Math.floor(Math.random() * total) + 1;
+    const randomPage = await fetchPreviewSearchPage({
+      query,
+      field: "artist",
+      page: randomPageNumber,
+      pageSize: 1,
+    });
+
+    return randomPage?.results?.[0] ?? null;
   }
 
   async function handleSubmitRequest(input: PanelViewerRequestSubmitInput) {
@@ -2644,16 +2710,14 @@ export function ExtensionPanelModeratorPreview() {
       "query" in input && typeof input.query === "string"
         ? input.query.trim()
         : null;
-    const song =
+    let song =
       "songId" in input
         ? (searchResults?.items.find(
             (item) => getString(item, "id") === input.songId
           ) ?? null)
-        : input.requestMode === "random"
-          ? pickRandomPanelSearchItem(searchResults?.items ?? [])
-          : null;
+        : null;
 
-    if (("songId" in input || input.requestMode === "random") && !song) {
+    if ("songId" in input && !song) {
       showTransientMessage("danger", t("search.unavailable"));
       return;
     }
@@ -2680,41 +2744,57 @@ export function ExtensionPanelModeratorPreview() {
     setPendingAction(getPanelViewerRequestActionKey(input));
     setTransientNotice(null);
 
-    startTransition(() => {
-      setPlaylist((current) =>
-        applyDemoViewerRequestMutation({
-          playlist: current,
-          viewerProfile: mockModeratorViewerProfile,
-          ...("songId" in input || input.requestMode === "random"
-            ? {
-                song: song as Record<string, unknown>,
-                requestMode: "catalog",
-                requestedPath:
-                  "songId" in input ? input.requestedPath : undefined,
-              }
-            : "query" in input
-              ? {
-                  query: normalizedQuery ?? "",
-                  requestMode: input.requestMode,
-                }
-              : {
-                  requestMode: input.requestMode,
-                }),
-          requestKind: input.requestKind,
-          vipTokenCost: input.vipTokenCost,
-          replaceExisting: false,
-          replaceItemId: editingRequestItemId ?? undefined,
-        })
-      );
-      setEditingRequestItemId(null);
-      setActiveTab("playlist");
-    });
+    try {
+      if (input.requestMode === "random") {
+        song = await resolvePreviewRandomSong(normalizedQuery ?? "");
+        if (!song) {
+          showTransientMessage("danger", t("search.unavailable"));
+          return;
+        }
+      }
 
-    showTransientMessage(
-      "success",
-      isEditingRequest ? t("requests.updated") : t("requests.added")
-    );
-    setPendingAction(null);
+      startTransition(() => {
+        setPlaylist((current) =>
+          applyDemoViewerRequestMutation({
+            playlist: current,
+            viewerProfile: mockModeratorViewerProfile,
+            ...("songId" in input || input.requestMode === "random"
+              ? {
+                  song: song as Record<string, unknown>,
+                  requestMode: "catalog",
+                  requestedPath:
+                    "songId" in input ? input.requestedPath : undefined,
+                }
+              : "query" in input
+                ? {
+                    query: normalizedQuery ?? "",
+                    requestMode: input.requestMode,
+                  }
+                : {
+                    requestMode: input.requestMode,
+                  }),
+            requestKind: input.requestKind,
+            vipTokenCost: input.vipTokenCost,
+            replaceExisting: false,
+            replaceItemId: editingRequestItemId ?? undefined,
+          })
+        );
+        setEditingRequestItemId(null);
+        setActiveTab("playlist");
+      });
+
+      showTransientMessage(
+        "success",
+        isEditingRequest ? t("requests.updated") : t("requests.added")
+      );
+    } catch (error) {
+      showTransientMessage(
+        "danger",
+        getErrorText(error, t("search.searchFailed"))
+      );
+    } finally {
+      setPendingAction(null);
+    }
   }
 
   function handleEditRequest(itemId: string) {
@@ -3002,12 +3082,12 @@ export function ExtensionPanelModeratorPreview() {
                         ? t("search.placeholderEdit")
                         : t("search.placeholder")
                     }
-                    className="h-8 rounded-none border-(--border-strong) px-2 py-1 text-[12px] shadow-none focus-visible:ring-1 focus-visible:ring-(--brand) focus-visible:ring-offset-0"
+                    className="h-8 border-(--border-strong) bg-(--panel) px-2 py-1 text-[12px] shadow-none focus-visible:ring-1 focus-visible:ring-(--brand) focus-visible:ring-offset-0"
                   />
                   <Button
                     type="submit"
                     size="sm"
-                    className="h-8 rounded-none px-2 shadow-none"
+                    className="h-8 px-2 shadow-none"
                     disabled={
                       searching ||
                       !canRunPanelSearch(searchQuery, searchFilters)
@@ -3022,20 +3102,9 @@ export function ExtensionPanelModeratorPreview() {
                 </form>
                 <PanelSearchFiltersBar
                   filters={searchFilters}
-                  defaultFilters={defaultSearchFilters}
-                  onFavoritesOnlyChange={(favoritesOnly) => {
-                    setSearchFilters((current) => ({
-                      ...current,
-                      favoritesOnly,
-                    }));
-                  }}
-                  onPathToggle={toggleSearchFilterPath}
-                  onMatchModeChange={(partsMatchMode) => {
-                    setSearchFilters((current) => ({
-                      ...current,
-                      partsMatchMode,
-                    }));
-                  }}
+                  onChange={(updater) =>
+                    setSearchFilters((current) => updater(current))
+                  }
                   onReset={resetSearchFilters}
                   showReset={searchFiltersChangedFromDefaults}
                 />
@@ -3046,7 +3115,10 @@ export function ExtensionPanelModeratorPreview() {
                   </p>
                 ) : null}
                 <PanelSpecialRequestControls
-                  query={searchQuery}
+                  randomQuery={quickRandomQuery}
+                  onRandomQueryChange={setQuickRandomQuery}
+                  choiceQuery={quickChoiceQuery}
+                  onChoiceQueryChange={setQuickChoiceQuery}
                   canRequest
                   canVipRequest={
                     mockModeratorViewerProfile.vipTokensAvailable >= 1
@@ -3054,12 +3126,19 @@ export function ExtensionPanelModeratorPreview() {
                   vipDisabledReason={vipSearchDisabledReason}
                   pendingAction={pendingAction}
                   isEditingRequest={isEditingRequest}
-                  onSubmit={(requestMode, requestKind) => {
-                    void handleSubmitRequest({
-                      query: searchQuery,
-                      requestMode,
-                      requestKind,
-                    });
+                  onSubmit={(input) => {
+                    void handleSubmitRequest(
+                      input.requestMode === "favorite"
+                        ? {
+                            requestMode: input.requestMode,
+                            requestKind: input.requestKind,
+                          }
+                        : {
+                            query: input.query,
+                            requestMode: input.requestMode,
+                            requestKind: input.requestKind,
+                          }
+                    );
                   }}
                 />
               </div>
@@ -3223,16 +3302,6 @@ function PanelPlaylistRow(props: {
     props.dropTargetState?.itemId === props.itemId
       ? props.dropTargetState.edge
       : null;
-  const itemHasLyrics =
-    props.canManagePlaylist &&
-    playlistDisplayItemHasLyrics({
-      songHasLyrics:
-        typeof props.item.songHasLyrics === "boolean"
-          ? props.item.songHasLyrics
-          : null,
-      songPartsJson: getString(props.item, "songPartsJson") ?? undefined,
-    });
-
   useEffect(() => {
     const element = itemRef.current;
     const dragHandle = dragHandleRef.current;
@@ -3471,7 +3540,6 @@ function PanelPlaylistRow(props: {
                 </p>
                 {pickNumber != null ||
                 getPanelRequestedPathLabel(props.item) ||
-                itemHasLyrics ||
                 (isVipRequest && getPanelStoredVipTokenCost(props.item) > 1) ||
                 (!isVipRequest &&
                   getPanelStoredVipTokenCost(props.item) > 0) ? (
@@ -3484,11 +3552,6 @@ function PanelPlaylistRow(props: {
                         {getPanelRequestedPathLabel(props.item)}
                       </span>
                     ) : null}
-                    {itemHasLyrics ? (
-                      <span className="inline-flex h-5 items-center border border-(--border-strong) bg-(--panel-soft) px-1.5 text-[9px] leading-none font-medium uppercase tracking-[0.12em] text-(--muted)">
-                        {t("queue.lyrics")}
-                      </span>
-                    ) : null}
                     {(isVipRequest &&
                       getPanelStoredVipTokenCost(props.item) > 1) ||
                     (!isVipRequest &&
@@ -3497,11 +3560,6 @@ function PanelPlaylistRow(props: {
                         {t("vip.balance", {
                           count: getPanelStoredVipTokenCost(props.item),
                         })}
-                      </span>
-                    ) : null}
-                    {itemHasLyrics ? (
-                      <span className="inline-flex h-5 items-center border border-(--border-strong) bg-(--panel-soft) px-1.5 text-[9px] leading-none font-medium uppercase tracking-[0.12em] text-(--muted)">
-                        {t("queue.lyrics")}
                       </span>
                     ) : null}
                   </div>
@@ -3754,7 +3812,7 @@ function PanelSearchEditBanner(props: {
           type="button"
           size="sm"
           variant="ghost"
-          className="h-6 rounded-none px-1.5 text-[10px] font-semibold uppercase tracking-[0.14em] text-(--muted) shadow-none hover:bg-(--panel-soft) hover:text-(--text)"
+          className="h-6 px-1.5 text-[10px] font-semibold uppercase tracking-[0.14em] text-(--muted) shadow-none hover:bg-(--panel-soft) hover:text-(--text)"
           onClick={props.onCancel}
         >
           {t("buttons.cancel")}
@@ -3776,7 +3834,7 @@ function PanelSearchVipButton(props: {
   const button = (
     <Button
       size="sm"
-      className="h-7 rounded-none px-2 text-[11px] shadow-none"
+      className="h-6 px-2 text-[10px] leading-none shadow-none"
       disabled={props.disabled}
       onClick={props.onClick}
     >
@@ -3804,54 +3862,68 @@ function PanelSearchVipButton(props: {
   );
 }
 
+type PanelSpecialRequestSubmitInput =
+  | {
+      requestMode: "random" | "choice";
+      requestKind: "regular" | "vip";
+      query: string;
+    }
+  | {
+      requestMode: "favorite";
+      requestKind: "regular" | "vip";
+    };
+
 function PanelSpecialRequestControls(props: {
-  query: string;
+  randomQuery: string;
+  onRandomQueryChange: (value: string) => void;
+  choiceQuery: string;
+  onChoiceQueryChange: (value: string) => void;
   canRequest: boolean;
   canVipRequest: boolean;
   vipDisabledReason?: string | null;
   pendingAction: string | null;
   isEditingRequest: boolean;
-  onSubmit: (
-    requestMode: "random" | "favorite" | "choice",
-    requestKind: "regular" | "vip"
-  ) => void;
+  onSubmit: (input: PanelSpecialRequestSubmitInput) => void;
 }) {
-  const { t } = useLocaleTranslation("extension");
-  const normalizedQuery = props.query.trim();
+  const { t } = useLocaleTranslation(["extension", "search"]);
+  const [open, setOpen] = useState(false);
+  const normalizedRandomQuery = props.randomQuery.trim();
+  const normalizedChoiceQuery = props.choiceQuery.trim();
+  const busy = props.pendingAction != null;
   const randomDisabledReason = getPanelSpecialRequestDisabledReason({
-    query: normalizedQuery,
+    query: normalizedRandomQuery,
     requestMode: "random",
     canRequest: props.canRequest,
     t,
   });
   const randomVipDisabledReason = getPanelSpecialRequestDisabledReason({
-    query: normalizedQuery,
+    query: normalizedRandomQuery,
     requestMode: "random",
     canRequest: props.canVipRequest,
     fallbackReason: props.vipDisabledReason ?? t("vip.insufficient"),
     t,
   });
   const choiceDisabledReason = getPanelSpecialRequestDisabledReason({
-    query: normalizedQuery,
+    query: normalizedChoiceQuery,
     requestMode: "choice",
     canRequest: props.canRequest,
     t,
   });
   const choiceVipDisabledReason = getPanelSpecialRequestDisabledReason({
-    query: normalizedQuery,
+    query: normalizedChoiceQuery,
     requestMode: "choice",
     canRequest: props.canVipRequest,
     fallbackReason: props.vipDisabledReason ?? t("vip.insufficient"),
     t,
   });
   const favoriteDisabledReason = getPanelSpecialRequestDisabledReason({
-    query: normalizedQuery,
+    query: "",
     requestMode: "favorite",
     canRequest: props.canRequest,
     t,
   });
   const favoriteVipDisabledReason = getPanelSpecialRequestDisabledReason({
-    query: normalizedQuery,
+    query: "",
     requestMode: "favorite",
     canRequest: props.canVipRequest,
     fallbackReason: props.vipDisabledReason ?? t("vip.insufficient"),
@@ -3859,92 +3931,227 @@ function PanelSpecialRequestControls(props: {
   });
 
   return (
-    <div className="mt-2 grid gap-2 border border-(--border) bg-(--panel-soft) px-2 py-2">
-      <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-(--brand-deep)">
-        {t("requests.quick")}
-      </p>
-      <div className="grid gap-2">
-        <PanelSpecialRequestRow
-          label={t("requests.randomSong")}
-          disabledReason={randomDisabledReason}
-          vipDisabledReason={randomVipDisabledReason}
-          busy={props.pendingAction != null}
-          regularPending={
-            props.pendingAction ===
-            getPanelViewerRequestActionKey({
-              query: normalizedQuery,
-              requestMode: "random",
-              requestKind: "regular",
-            })
-          }
-          vipPending={
-            props.pendingAction ===
-            getPanelViewerRequestActionKey({
-              query: normalizedQuery,
-              requestMode: "random",
-              requestKind: "vip",
-            })
-          }
+    <Collapsible open={open} onOpenChange={setOpen}>
+      <div className="mt-1.5">
+        <CollapsibleTrigger asChild>
+          <button
+            type="button"
+            className="flex w-full items-center justify-between gap-2 text-left"
+          >
+            <span className="inline-flex min-w-0 items-center gap-1.5 text-[10px] font-semibold uppercase tracking-[0.16em] text-(--muted)">
+              <Sparkles className="h-3 w-3 text-(--brand-deep)" />
+              <span>{t("requests.quick", { ns: "extension" })}</span>
+            </span>
+            <ChevronDown
+              className={cn(
+                "h-4 w-4 shrink-0 text-(--muted) transition-transform",
+                open ? "rotate-180" : ""
+              )}
+            />
+          </button>
+        </CollapsibleTrigger>
+        <CollapsibleContent className="overflow-hidden">
+          <div className="grid gap-2 pt-2">
+            <PanelSpecialRequestInputRow
+              label={t("requests.randomSong", { ns: "extension" })}
+              value={props.randomQuery}
+              onValueChange={props.onRandomQueryChange}
+              placeholder={t("controls.artist", { ns: "search" })}
+              disabled={busy}
+              regularDisabledReason={randomDisabledReason}
+              vipDisabledReason={randomVipDisabledReason}
+              busy={busy}
+              regularPending={
+                props.pendingAction ===
+                getPanelViewerRequestActionKey({
+                  query: normalizedRandomQuery,
+                  requestMode: "random",
+                  requestKind: "regular",
+                })
+              }
+              vipPending={
+                props.pendingAction ===
+                getPanelViewerRequestActionKey({
+                  query: normalizedRandomQuery,
+                  requestMode: "random",
+                  requestKind: "vip",
+                })
+              }
+              isEditingRequest={props.isEditingRequest}
+              onRegularClick={() =>
+                props.onSubmit({
+                  query: props.randomQuery,
+                  requestMode: "random",
+                  requestKind: "regular",
+                })
+              }
+              onVipClick={() =>
+                props.onSubmit({
+                  query: props.randomQuery,
+                  requestMode: "random",
+                  requestKind: "vip",
+                })
+              }
+            />
+            <PanelSpecialRequestRow
+              label={t("requests.randomFavorite", { ns: "extension" })}
+              regularDisabledReason={favoriteDisabledReason}
+              vipDisabledReason={favoriteVipDisabledReason}
+              busy={busy}
+              regularPending={
+                props.pendingAction ===
+                getPanelViewerRequestActionKey({
+                  requestMode: "favorite",
+                  requestKind: "regular",
+                })
+              }
+              vipPending={
+                props.pendingAction ===
+                getPanelViewerRequestActionKey({
+                  requestMode: "favorite",
+                  requestKind: "vip",
+                })
+              }
+              isEditingRequest={props.isEditingRequest}
+              onRegularClick={() =>
+                props.onSubmit({
+                  requestMode: "favorite",
+                  requestKind: "regular",
+                })
+              }
+              onVipClick={() =>
+                props.onSubmit({
+                  requestMode: "favorite",
+                  requestKind: "vip",
+                })
+              }
+            />
+            <PanelSpecialRequestInputRow
+              label={t("requests.streamerChoice", { ns: "extension" })}
+              value={props.choiceQuery}
+              onValueChange={props.onChoiceQueryChange}
+              placeholder={t("search.placeholder", { ns: "extension" })}
+              disabled={busy}
+              regularDisabledReason={choiceDisabledReason}
+              vipDisabledReason={choiceVipDisabledReason}
+              busy={busy}
+              regularPending={
+                props.pendingAction ===
+                getPanelViewerRequestActionKey({
+                  query: normalizedChoiceQuery,
+                  requestMode: "choice",
+                  requestKind: "regular",
+                })
+              }
+              vipPending={
+                props.pendingAction ===
+                getPanelViewerRequestActionKey({
+                  query: normalizedChoiceQuery,
+                  requestMode: "choice",
+                  requestKind: "vip",
+                })
+              }
+              isEditingRequest={props.isEditingRequest}
+              onRegularClick={() =>
+                props.onSubmit({
+                  query: props.choiceQuery,
+                  requestMode: "choice",
+                  requestKind: "regular",
+                })
+              }
+              onVipClick={() =>
+                props.onSubmit({
+                  query: props.choiceQuery,
+                  requestMode: "choice",
+                  requestKind: "vip",
+                })
+              }
+            />
+          </div>
+        </CollapsibleContent>
+      </div>
+    </Collapsible>
+  );
+}
+
+function PanelSpecialRequestInputRow(props: {
+  label: string;
+  value: string;
+  onValueChange: (value: string) => void;
+  placeholder: string;
+  disabled?: boolean;
+  regularDisabledReason: string | null;
+  vipDisabledReason: string | null;
+  busy: boolean;
+  regularPending: boolean;
+  vipPending: boolean;
+  isEditingRequest: boolean;
+  onRegularClick: () => void;
+  onVipClick: () => void;
+}) {
+  return (
+    <div className="grid gap-1">
+      <div className="flex items-center justify-between gap-2">
+        <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-(--muted)">
+          {props.label}
+        </p>
+        <PanelSpecialRequestActionButtons
+          regularDisabledReason={props.regularDisabledReason}
+          vipDisabledReason={props.vipDisabledReason}
+          busy={props.busy}
+          regularPending={props.regularPending}
+          vipPending={props.vipPending}
           isEditingRequest={props.isEditingRequest}
-          onRegularClick={() => props.onSubmit("random", "regular")}
-          onVipClick={() => props.onSubmit("random", "vip")}
-        />
-        <PanelSpecialRequestRow
-          label={t("requests.randomFavorite")}
-          disabledReason={favoriteDisabledReason}
-          vipDisabledReason={favoriteVipDisabledReason}
-          busy={props.pendingAction != null}
-          regularPending={
-            props.pendingAction ===
-            getPanelViewerRequestActionKey({
-              requestMode: "favorite",
-              requestKind: "regular",
-            })
-          }
-          vipPending={
-            props.pendingAction ===
-            getPanelViewerRequestActionKey({
-              requestMode: "favorite",
-              requestKind: "vip",
-            })
-          }
-          isEditingRequest={props.isEditingRequest}
-          onRegularClick={() => props.onSubmit("favorite", "regular")}
-          onVipClick={() => props.onSubmit("favorite", "vip")}
-        />
-        <PanelSpecialRequestRow
-          label={t("requests.streamerChoice")}
-          disabledReason={choiceDisabledReason}
-          vipDisabledReason={choiceVipDisabledReason}
-          busy={props.pendingAction != null}
-          regularPending={
-            props.pendingAction ===
-            getPanelViewerRequestActionKey({
-              query: normalizedQuery,
-              requestMode: "choice",
-              requestKind: "regular",
-            })
-          }
-          vipPending={
-            props.pendingAction ===
-            getPanelViewerRequestActionKey({
-              query: normalizedQuery,
-              requestMode: "choice",
-              requestKind: "vip",
-            })
-          }
-          isEditingRequest={props.isEditingRequest}
-          onRegularClick={() => props.onSubmit("choice", "regular")}
-          onVipClick={() => props.onSubmit("choice", "vip")}
+          onRegularClick={props.onRegularClick}
+          onVipClick={props.onVipClick}
         />
       </div>
+      <Input
+        value={props.value}
+        onChange={(event) => props.onValueChange(event.target.value)}
+        placeholder={props.placeholder}
+        spellCheck={false}
+        autoCorrect="off"
+        autoCapitalize="none"
+        disabled={props.disabled}
+        className="h-7 border-(--border-strong) bg-(--panel) px-2 py-1 text-[11px] shadow-none focus-visible:ring-1 focus-visible:ring-(--brand) focus-visible:ring-offset-0"
+      />
     </div>
   );
 }
 
 function PanelSpecialRequestRow(props: {
   label: string;
-  disabledReason: string | null;
+  regularDisabledReason: string | null;
+  vipDisabledReason: string | null;
+  busy: boolean;
+  regularPending: boolean;
+  vipPending: boolean;
+  isEditingRequest: boolean;
+  onRegularClick: () => void;
+  onVipClick: () => void;
+}) {
+  return (
+    <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-2">
+      <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-(--muted)">
+        {props.label}
+      </p>
+      <PanelSpecialRequestActionButtons
+        regularDisabledReason={props.regularDisabledReason}
+        vipDisabledReason={props.vipDisabledReason}
+        busy={props.busy}
+        regularPending={props.regularPending}
+        vipPending={props.vipPending}
+        isEditingRequest={props.isEditingRequest}
+        onRegularClick={props.onRegularClick}
+        onVipClick={props.onVipClick}
+      />
+    </div>
+  );
+}
+
+function PanelSpecialRequestActionButtons(props: {
+  regularDisabledReason: string | null;
   vipDisabledReason: string | null;
   busy: boolean;
   regularPending: boolean;
@@ -3954,38 +4161,35 @@ function PanelSpecialRequestRow(props: {
   onVipClick: () => void;
 }) {
   const { t } = useLocaleTranslation("extension");
-  const regularDisabled = props.busy || props.disabledReason != null;
+  const regularDisabled = props.busy || props.regularDisabledReason != null;
   const vipDisabled = props.busy || props.vipDisabledReason != null;
 
   return (
-    <div className="grid grid-cols-[1fr_auto] items-center gap-2">
-      <p className="text-[11px] text-(--muted)">{props.label}</p>
-      <div className="flex items-center gap-1">
-        <Button
-          type="button"
-          size="sm"
-          variant="outline"
-          className="h-7 rounded-none px-2 text-[11px] shadow-none"
-          disabled={regularDisabled}
-          onClick={props.onRegularClick}
-          title={props.disabledReason ?? undefined}
-        >
-          {props.regularPending
-            ? props.isEditingRequest
-              ? t("buttons.editing")
-              : t("buttons.adding")
-            : props.isEditingRequest
-              ? t("buttons.edit")
-              : t("buttons.add")}
-        </Button>
-        <PanelSearchVipButton
-          disabled={vipDisabled}
-          disabledReason={props.vipDisabledReason}
-          pending={props.vipPending}
-          isEditingRequest={props.isEditingRequest}
-          onClick={props.onVipClick}
-        />
-      </div>
+    <div className="flex items-center gap-1">
+      <Button
+        type="button"
+        size="sm"
+        variant="outline"
+        className="h-6 px-2 text-[10px] leading-none shadow-none"
+        disabled={regularDisabled}
+        onClick={props.onRegularClick}
+        title={props.regularDisabledReason ?? undefined}
+      >
+        {props.regularPending
+          ? props.isEditingRequest
+            ? t("buttons.editing")
+            : t("buttons.adding")
+          : props.isEditingRequest
+            ? t("buttons.edit")
+            : t("buttons.add")}
+      </Button>
+      <PanelSearchVipButton
+        disabled={vipDisabled}
+        disabledReason={props.vipDisabledReason}
+        pending={props.vipPending}
+        isEditingRequest={props.isEditingRequest}
+        onClick={props.onVipClick}
+      />
     </div>
   );
 }
@@ -4486,74 +4690,6 @@ function getStringArray(input: Record<string, unknown>, key: string) {
     : null;
 }
 
-function normalizePanelSearchPaths(
-  paths: Array<string | null | undefined> | null | undefined
-) {
-  const normalized = new Set<PanelSearchPath>();
-
-  for (const path of paths ?? []) {
-    const normalizedPath = String(path ?? "")
-      .trim()
-      .toLowerCase();
-    if (pathOptions.includes(normalizedPath as PanelSearchPath)) {
-      normalized.add(normalizedPath as PanelSearchPath);
-    }
-  }
-
-  return pathOptions.filter((path) => normalized.has(path));
-}
-
-function createPanelSearchFilters(input?: {
-  favoritesOnly?: boolean;
-  parts?: Array<string | null | undefined> | null;
-  partsMatchMode?: PanelSearchFilters["partsMatchMode"];
-}): PanelSearchFilters {
-  return {
-    favoritesOnly: input?.favoritesOnly ?? false,
-    parts: normalizePanelSearchPaths(input?.parts),
-    partsMatchMode: input?.partsMatchMode === "all" ? "all" : "any",
-  };
-}
-
-function haveSameSelectedValues(left: string[], right: string[]) {
-  if (left.length !== right.length) {
-    return false;
-  }
-
-  const normalizedLeft = [...left].sort();
-  const normalizedRight = [...right].sort();
-
-  return normalizedLeft.every(
-    (value, index) => value === normalizedRight[index]
-  );
-}
-
-function arePanelSearchFiltersEqual(
-  left: PanelSearchFilters,
-  right: PanelSearchFilters
-) {
-  return (
-    left.favoritesOnly === right.favoritesOnly &&
-    left.partsMatchMode === right.partsMatchMode &&
-    haveSameSelectedValues(left.parts, right.parts)
-  );
-}
-
-function canRunPanelSearch(query: string, filters: PanelSearchFilters) {
-  const normalizedQuery = query.trim();
-  return (
-    normalizedQuery.length >= 3 ||
-    (normalizedQuery.length === 0 &&
-      (filters.favoritesOnly || filters.parts.length > 0))
-  );
-}
-
-function formatPanelSearchPathList(paths: string[]) {
-  return normalizePanelSearchPaths(paths)
-    .map((path) => formatPathLabel(path))
-    .join(", ");
-}
-
 function getPanelSearchPathTone(path: PanelSearchPath) {
   switch (path) {
     case "lead":
@@ -4567,118 +4703,603 @@ function getPanelSearchPathTone(path: PanelSearchPath) {
   }
 }
 
+function getPanelSearchPathTextTone(path: PanelSearchPath) {
+  switch (path) {
+    case "lead":
+      return "text-emerald-300";
+    case "rhythm":
+      return "text-sky-300";
+    case "bass":
+      return "text-orange-300";
+    default:
+      return "text-(--text)";
+  }
+}
+
+type PanelSearchMultiSelectOption = {
+  value: string;
+  label: string;
+  keywords?: string[];
+};
+
+type PanelSearchSummaryItem = {
+  key: string;
+  label: string;
+  className?: string;
+};
+
+function truncatePanelFilterSummaryText(value: string, maxLength = 18) {
+  const normalized = value.trim();
+  if (normalized.length <= maxLength) {
+    return normalized;
+  }
+
+  return `${normalized.slice(0, maxLength - 1).trimEnd()}...`;
+}
+
+function getPanelSearchSummaryItems(
+  filters: PanelSearchFilters,
+  t: TFunction
+): PanelSearchSummaryItem[] {
+  const summaryItems: PanelSearchSummaryItem[] = [];
+
+  for (const path of filters.parts) {
+    summaryItems.push({
+      key: `path:${path}`,
+      label: formatPathLabel(path),
+      className: cn(
+        "font-semibold uppercase tracking-[0.12em]",
+        getPanelSearchPathTextTone(path)
+      ),
+    });
+  }
+
+  if (filters.parts.length > 1) {
+    summaryItems.push({
+      key: "parts-match-mode",
+      label:
+        filters.partsMatchMode === "all"
+          ? t("search.matchAll", { ns: "extension" })
+          : t("search.matchAny", { ns: "extension" }),
+      className: "font-semibold uppercase tracking-[0.12em] text-(--muted)",
+    });
+  }
+
+  if (filters.favoritesOnly) {
+    summaryItems.push({
+      key: "favorites",
+      label: t("search.favoritesOnly", { ns: "extension" }),
+      className: "font-semibold text-rose-300",
+    });
+  }
+
+  if (filters.title.trim()) {
+    summaryItems.push({
+      key: "title",
+      label: `${t("controls.title", { ns: "search" })}: ${truncatePanelFilterSummaryText(filters.title)}`,
+    });
+  }
+
+  if (filters.artist.trim()) {
+    summaryItems.push({
+      key: "artist",
+      label: `${t("controls.artist", { ns: "search" })}: ${truncatePanelFilterSummaryText(filters.artist)}`,
+    });
+  }
+
+  if (filters.album.trim()) {
+    summaryItems.push({
+      key: "album",
+      label: `${t("controls.album", { ns: "search" })}: ${truncatePanelFilterSummaryText(filters.album)}`,
+    });
+  }
+
+  if (filters.creator.trim()) {
+    summaryItems.push({
+      key: "creator",
+      label: `${t("controls.creator", { ns: "search" })}: ${truncatePanelFilterSummaryText(filters.creator)}`,
+    });
+  }
+
+  if (filters.tuning.length > 0) {
+    summaryItems.push({
+      key: "tuning",
+      label: `${t("controls.tuning", { ns: "search" })}: ${filters.tuning.length}`,
+    });
+  }
+
+  if (filters.year.length > 0) {
+    summaryItems.push({
+      key: "year",
+      label: `${t("controls.year", { ns: "search" })}: ${filters.year.length}`,
+    });
+  }
+
+  return summaryItems;
+}
+
 function PanelSearchFiltersBar(props: {
   filters: PanelSearchFilters;
-  defaultFilters: PanelSearchFilters;
-  onFavoritesOnlyChange: (favoritesOnly: boolean) => void;
-  onPathToggle: (path: PanelSearchPath) => void;
-  onMatchModeChange: (
-    partsMatchMode: PanelSearchFilters["partsMatchMode"]
+  onChange: (
+    updater: (current: PanelSearchFilters) => PanelSearchFilters
   ) => void;
   onReset: () => void;
   showReset: boolean;
 }) {
-  const { t } = useLocaleTranslation("extension");
-  const defaultSummary =
-    props.defaultFilters.parts.length > 0
-      ? t("search.defaultPathsSummary", {
-          paths: formatPanelSearchPathList(props.defaultFilters.parts),
-          mode:
-            props.defaultFilters.partsMatchMode === "all"
-              ? t("search.matchAll")
-              : t("search.matchAny"),
-        })
-      : null;
+  const { t } = useLocaleTranslation(["extension", "search"]);
+  const [open, setOpen] = useState(false);
+  const filterOptionsQuery = useQuery<SearchFilterOptionsResponse>({
+    queryKey: ["search-filter-options-v3"],
+    enabled: open,
+    queryFn: async ({ signal }) => {
+      const response = await fetch("/api/search/filters", { signal });
+      const body = (await response.json().catch(() => null)) as
+        | SearchFilterOptionsWireResponse
+        | { message?: string }
+        | null;
+
+      if (!response.ok) {
+        throw new Error(body && "message" in body ? body.message : "");
+      }
+
+      return normalizeSearchFilterOptionsResponse(
+        body as SearchFilterOptionsWireResponse | null
+      );
+    },
+    staleTime: 60 * 60 * 1000,
+    gcTime: 60 * 60 * 1000,
+  });
+  const tuningOptions = useMemo(
+    () =>
+      (filterOptionsQuery.data?.tunings ?? []).map(
+        (option: TuningOption) =>
+          ({
+            value: String(option.id),
+            label: option.label,
+          }) satisfies PanelSearchMultiSelectOption
+      ),
+    [filterOptionsQuery.data?.tunings]
+  );
+  const yearOptions = useMemo(
+    () =>
+      (filterOptionsQuery.data?.years ?? []).map(
+        (year) =>
+          ({
+            value: String(year),
+            label: String(year),
+          }) satisfies PanelSearchMultiSelectOption
+      ),
+    [filterOptionsQuery.data?.years]
+  );
+  const summaryItems = useMemo(
+    () => getPanelSearchSummaryItems(props.filters, t),
+    [props.filters, t]
+  );
+  const filterOptionsPlaceholder =
+    filterOptionsQuery.isPending && !filterOptionsQuery.data
+      ? t("search.loadingFilters", { ns: "extension" })
+      : undefined;
+  const filtersDisabled =
+    (filterOptionsQuery.isPending && !filterOptionsQuery.data) ||
+    filterOptionsQuery.isError;
+
+  function handleResetClick(event: ReactMouseEvent<HTMLButtonElement>) {
+    event.preventDefault();
+    event.stopPropagation();
+    props.onReset();
+  }
+
+  function updateTextFilter(
+    key: "album" | "artist" | "creator" | "title",
+    value: string
+  ) {
+    props.onChange((current) => ({
+      ...current,
+      [key]: value,
+    }));
+  }
+
+  function togglePath(path: PanelSearchPath) {
+    props.onChange((current) => {
+      const nextParts = current.parts.includes(path)
+        ? current.parts.filter((value) => value !== path)
+        : [...current.parts, path];
+
+      return {
+        ...current,
+        parts: nextParts,
+        partsMatchMode: nextParts.length > 1 ? current.partsMatchMode : "any",
+      };
+    });
+  }
+
+  function toggleTuning(tuningId: number) {
+    props.onChange((current) => ({
+      ...current,
+      tuning: current.tuning.includes(tuningId)
+        ? current.tuning.filter((value) => value !== tuningId)
+        : [...current.tuning, tuningId],
+    }));
+  }
+
+  function toggleYear(year: number) {
+    props.onChange((current) => ({
+      ...current,
+      year: current.year.includes(year)
+        ? current.year.filter((value) => value !== year)
+        : [...current.year, year],
+    }));
+  }
 
   return (
-    <div className="mt-2 border border-(--border) bg-(--panel-soft) px-2 py-2">
-      <div className="flex items-center justify-between gap-2">
-        <span className="text-[10px] font-semibold uppercase tracking-[0.16em] text-(--muted)">
-          {t("search.filtersLabel")}
-        </span>
-        {props.showReset ? (
+    <Collapsible open={open} onOpenChange={setOpen}>
+      <div className="mt-1.5">
+        <div className="flex items-start gap-1.5">
+          <CollapsibleTrigger asChild>
+            <button
+              type="button"
+              className="flex min-w-0 flex-1 items-start text-left"
+            >
+              <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-0.5">
+                <span className="inline-flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-[0.16em] text-(--muted)">
+                  <SlidersHorizontal className="h-3 w-3" />
+                  <span>{t("search.filtersLabel", { ns: "extension" })}</span>
+                </span>
+                {summaryItems.map((item) => (
+                  <span
+                    key={item.key}
+                    className={cn(
+                      "text-[10px] leading-4 text-(--text)",
+                      item.className
+                    )}
+                  >
+                    {item.label}
+                  </span>
+                ))}
+              </div>
+            </button>
+          </CollapsibleTrigger>
+          <div className="flex shrink-0 items-center gap-0.5">
+            {props.showReset ? (
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <button
+                    type="button"
+                    className="inline-flex h-5 w-5 shrink-0 items-center justify-center text-rose-300 transition hover:bg-rose-950/30 hover:text-rose-100"
+                    onClick={handleResetClick}
+                    aria-label={t("buttons.reset", { ns: "extension" })}
+                    title={t("buttons.reset", { ns: "extension" })}
+                  >
+                    <Undo2 className="h-3.5 w-3.5" />
+                  </button>
+                </TooltipTrigger>
+                <TooltipContent>
+                  {t("buttons.reset", { ns: "extension" })}
+                </TooltipContent>
+              </Tooltip>
+            ) : null}
+            <CollapsibleTrigger asChild>
+              <button
+                type="button"
+                className="inline-flex h-5 w-5 shrink-0 items-center justify-center text-(--muted) transition hover:text-(--text)"
+                aria-label={t("search.filtersLabel", { ns: "extension" })}
+                title={t("search.filtersLabel", { ns: "extension" })}
+              >
+                <ChevronDown
+                  className={cn(
+                    "h-4 w-4 transition-transform",
+                    open ? "rotate-180" : ""
+                  )}
+                />
+              </button>
+            </CollapsibleTrigger>
+          </div>
+        </div>
+        <CollapsibleContent className="overflow-hidden">
+          <div className="grid gap-2 pt-2">
+            <div className="flex flex-wrap gap-1.5">
+              <Button
+                type="button"
+                size="sm"
+                variant={props.filters.favoritesOnly ? "secondary" : "outline"}
+                className={cn(
+                  "h-6 px-2 text-[10px] shadow-none",
+                  props.filters.favoritesOnly
+                    ? "border-rose-700/50 bg-rose-950 text-rose-100 hover:bg-rose-900"
+                    : "text-(--muted)"
+                )}
+                onClick={() =>
+                  props.onChange((current) => ({
+                    ...current,
+                    favoritesOnly: !current.favoritesOnly,
+                  }))
+                }
+              >
+                <Heart
+                  className={cn(
+                    "h-3 w-3",
+                    props.filters.favoritesOnly ? "fill-current" : ""
+                  )}
+                />
+                <span>{t("search.favoritesOnly", { ns: "extension" })}</span>
+              </Button>
+            </div>
+
+            <div className="grid gap-1.5">
+              <Label className="text-[10px] font-semibold uppercase tracking-[0.14em] text-(--muted)">
+                {t("controls.path", { ns: "search" })}
+              </Label>
+              <div className="flex flex-wrap gap-1.5">
+                {pathOptions.map((path) => {
+                  const selected = props.filters.parts.includes(path);
+
+                  return (
+                    <button
+                      key={path}
+                      type="button"
+                      className={cn(
+                        "inline-flex h-6 items-center justify-center border px-1.5 text-[10px] font-semibold uppercase tracking-[0.14em] transition",
+                        selected
+                          ? getPanelSearchPathTone(path)
+                          : "border-(--border-strong) bg-(--panel) text-(--muted) hover:border-(--brand) hover:text-(--text)"
+                      )}
+                      onClick={() => togglePath(path)}
+                    >
+                      {formatPathLabel(path)}
+                    </button>
+                  );
+                })}
+              </div>
+              {props.filters.parts.length > 1 ? (
+                <div className="flex gap-1.5">
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant={
+                      props.filters.partsMatchMode === "any"
+                        ? "secondary"
+                        : "outline"
+                    }
+                    className="h-6 px-2 text-[10px] shadow-none"
+                    onClick={() =>
+                      props.onChange((current) => ({
+                        ...current,
+                        partsMatchMode: "any",
+                      }))
+                    }
+                  >
+                    {t("search.matchAny", { ns: "extension" })}
+                  </Button>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant={
+                      props.filters.partsMatchMode === "all"
+                        ? "secondary"
+                        : "outline"
+                    }
+                    className="h-6 px-2 text-[10px] shadow-none"
+                    onClick={() =>
+                      props.onChange((current) => ({
+                        ...current,
+                        partsMatchMode: "all",
+                      }))
+                    }
+                  >
+                    {t("search.matchAll", { ns: "extension" })}
+                  </Button>
+                </div>
+              ) : null}
+            </div>
+
+            <div className="grid gap-2">
+              <div className="grid gap-1.5">
+                <Label className="text-[10px] font-semibold uppercase tracking-[0.14em] text-(--muted)">
+                  {t("controls.title", { ns: "search" })}
+                </Label>
+                <Input
+                  value={props.filters.title}
+                  onChange={(event) =>
+                    updateTextFilter("title", event.target.value)
+                  }
+                  spellCheck={false}
+                  autoCorrect="off"
+                  autoCapitalize="none"
+                  className="h-8 border-(--border-strong) bg-(--panel) px-2 py-1 text-[12px] shadow-none focus-visible:ring-1 focus-visible:ring-(--brand) focus-visible:ring-offset-0"
+                />
+              </div>
+              <div className="grid gap-1.5">
+                <Label className="text-[10px] font-semibold uppercase tracking-[0.14em] text-(--muted)">
+                  {t("controls.artist", { ns: "search" })}
+                </Label>
+                <Input
+                  value={props.filters.artist}
+                  onChange={(event) =>
+                    updateTextFilter("artist", event.target.value)
+                  }
+                  spellCheck={false}
+                  autoCorrect="off"
+                  autoCapitalize="none"
+                  className="h-8 border-(--border-strong) bg-(--panel) px-2 py-1 text-[12px] shadow-none focus-visible:ring-1 focus-visible:ring-(--brand) focus-visible:ring-offset-0"
+                />
+              </div>
+              <div className="grid gap-1.5">
+                <Label className="text-[10px] font-semibold uppercase tracking-[0.14em] text-(--muted)">
+                  {t("controls.album", { ns: "search" })}
+                </Label>
+                <Input
+                  value={props.filters.album}
+                  onChange={(event) =>
+                    updateTextFilter("album", event.target.value)
+                  }
+                  spellCheck={false}
+                  autoCorrect="off"
+                  autoCapitalize="none"
+                  className="h-8 border-(--border-strong) bg-(--panel) px-2 py-1 text-[12px] shadow-none focus-visible:ring-1 focus-visible:ring-(--brand) focus-visible:ring-offset-0"
+                />
+              </div>
+              <div className="grid gap-1.5">
+                <Label className="text-[10px] font-semibold uppercase tracking-[0.14em] text-(--muted)">
+                  {t("controls.creator", { ns: "search" })}
+                </Label>
+                <Input
+                  value={props.filters.creator}
+                  onChange={(event) =>
+                    updateTextFilter("creator", event.target.value)
+                  }
+                  spellCheck={false}
+                  autoCorrect="off"
+                  autoCapitalize="none"
+                  className="h-8 border-(--border-strong) bg-(--panel) px-2 py-1 text-[12px] shadow-none focus-visible:ring-1 focus-visible:ring-(--brand) focus-visible:ring-offset-0"
+                />
+              </div>
+            </div>
+
+            <div className="grid gap-2">
+              <div className="grid gap-1.5">
+                <Label className="text-[10px] font-semibold uppercase tracking-[0.14em] text-(--muted)">
+                  {t("controls.tuning", { ns: "search" })}
+                </Label>
+                <PanelSearchMultiSelect
+                  label={t("controls.tuning", { ns: "search" })}
+                  options={tuningOptions}
+                  selectedValues={props.filters.tuning.map((value) =>
+                    String(value)
+                  )}
+                  onAdd={(value) => toggleTuning(Number(value))}
+                  onRemove={(value) => toggleTuning(Number(value))}
+                  disabled={filtersDisabled}
+                  placeholder={filterOptionsPlaceholder}
+                />
+              </div>
+              <div className="grid gap-1.5">
+                <Label className="text-[10px] font-semibold uppercase tracking-[0.14em] text-(--muted)">
+                  {t("controls.year", { ns: "search" })}
+                </Label>
+                <PanelSearchMultiSelect
+                  label={t("controls.year", { ns: "search" })}
+                  options={yearOptions}
+                  selectedValues={props.filters.year.map((value) =>
+                    String(value)
+                  )}
+                  onAdd={(value) => toggleYear(Number(value))}
+                  onRemove={(value) => toggleYear(Number(value))}
+                  disabled={filtersDisabled}
+                  placeholder={filterOptionsPlaceholder}
+                />
+              </div>
+            </div>
+
+            {filterOptionsQuery.isPending && !filterOptionsQuery.data ? (
+              <p className="text-[10px] leading-4 text-(--muted)">
+                {t("search.loadingFilters", { ns: "extension" })}
+              </p>
+            ) : null}
+            {filterOptionsQuery.isError ? (
+              <p className="text-[10px] leading-4 text-(--danger)">
+                {t("errors.filterOptionsFailed", { ns: "search" })}
+              </p>
+            ) : null}
+          </div>
+        </CollapsibleContent>
+      </div>
+    </Collapsible>
+  );
+}
+
+function PanelSearchMultiSelect(props: {
+  label: string;
+  options: readonly PanelSearchMultiSelectOption[];
+  selectedValues: readonly string[];
+  onAdd: (value: string) => void;
+  onRemove: (value: string) => void;
+  disabled?: boolean;
+  placeholder?: string;
+}) {
+  const { t } = useLocaleTranslation("search");
+  const [open, setOpen] = useState(false);
+  const optionLabelByValue = useMemo(
+    () => new Map(props.options.map((option) => [option.value, option.label])),
+    [props.options]
+  );
+  const summary =
+    props.selectedValues.length > 0
+      ? t("multiSelect.selected", { count: props.selectedValues.length })
+      : (props.placeholder ?? t("multiSelect.select", { label: props.label }));
+
+  return (
+    <div className="grid gap-1.5">
+      <Popover open={open} onOpenChange={setOpen}>
+        <PopoverTrigger asChild>
           <button
             type="button"
-            className="inline-flex items-center gap-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-(--muted) transition hover:text-(--text)"
-            onClick={props.onReset}
+            disabled={props.disabled}
+            className="flex h-8 w-full items-center justify-between rounded-[3px] border border-(--border-strong) bg-(--panel) px-2 py-1 text-left text-[11px] text-(--text) shadow-none transition-colors hover:border-(--brand) disabled:cursor-not-allowed disabled:opacity-60"
           >
-            <Undo2 className="h-3 w-3" />
-            <span>{t("search.resetFilters")}</span>
-          </button>
-        ) : null}
-      </div>
-      {defaultSummary ? (
-        <p className="mt-1 text-[10px] leading-4 text-(--muted)">
-          {defaultSummary}
-        </p>
-      ) : null}
-      <div className="mt-2 flex flex-wrap gap-1.5">
-        <Button
-          type="button"
-          size="sm"
-          variant={props.filters.favoritesOnly ? "secondary" : "outline"}
-          className={cn(
-            "h-7 rounded-none px-2 text-[10px] shadow-none",
-            props.filters.favoritesOnly
-              ? "border-rose-700/50 bg-rose-950 text-rose-100 hover:bg-rose-900"
-              : "text-(--muted)"
-          )}
-          onClick={() =>
-            props.onFavoritesOnlyChange(!props.filters.favoritesOnly)
-          }
-        >
-          <Heart
-            className={cn(
-              "h-3 w-3",
-              props.filters.favoritesOnly ? "fill-current" : ""
-            )}
-          />
-          <span>{t("search.favoritesOnly")}</span>
-        </Button>
-        {pathOptions.map((path) => {
-          const selected = props.filters.parts.includes(path);
-
-          return (
-            <button
-              key={path}
-              type="button"
+            <span className="truncate">{summary}</span>
+            <ChevronDown
               className={cn(
-                "inline-flex h-7 items-center justify-center border px-2 text-[10px] font-semibold uppercase tracking-[0.14em] transition",
-                selected
-                  ? getPanelSearchPathTone(path)
-                  : "border-(--border-strong) bg-(--panel) text-(--muted) hover:border-(--brand) hover:text-(--text)"
+                "h-3.5 w-3.5 shrink-0 text-(--muted) transition-transform",
+                open ? "rotate-180" : ""
               )}
-              onClick={() => props.onPathToggle(path)}
+            />
+          </button>
+        </PopoverTrigger>
+        <PopoverContent
+          align="start"
+          className="w-(--radix-popover-trigger-width) border-(--border) bg-(--panel-strong) p-0 text-(--text)"
+        >
+          <Command className="bg-(--panel-strong) text-(--text)">
+            <CommandInput
+              placeholder={t("multiSelect.filter", { label: props.label })}
+            />
+            <CommandList className="max-h-52">
+              <CommandEmpty>{t("multiSelect.noMatches")}</CommandEmpty>
+              <CommandGroup>
+                {props.options.map((option) => {
+                  const selected = props.selectedValues.includes(option.value);
+
+                  return (
+                    <CommandItem
+                      key={option.value}
+                      value={`${option.label} ${option.value}`}
+                      keywords={option.keywords}
+                      onSelect={() => {
+                        if (selected) {
+                          props.onRemove(option.value);
+                        } else {
+                          props.onAdd(option.value);
+                        }
+                      }}
+                      className="cursor-pointer gap-2 bg-transparent text-(--text) transition-colors hover:bg-(--panel) data-[selected=true]:bg-(--panel) data-[selected=true]:text-(--text)"
+                    >
+                      <Checkbox
+                        checked={selected}
+                        className="pointer-events-none"
+                      />
+                      <span className="text-xs">{option.label}</span>
+                    </CommandItem>
+                  );
+                })}
+              </CommandGroup>
+            </CommandList>
+          </Command>
+        </PopoverContent>
+      </Popover>
+
+      {props.selectedValues.length > 0 ? (
+        <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
+          {props.selectedValues.map((value) => (
+            <button
+              key={value}
+              type="button"
+              onClick={() => props.onRemove(value)}
+              className="inline-flex items-center gap-0.5 text-[10px] leading-4 text-(--text) transition hover:text-(--brand)"
             >
-              {formatPathLabel(path)}
+              <span>{optionLabelByValue.get(value) ?? value}</span>
+              <X className="h-3 w-3" />
             </button>
-          );
-        })}
-      </div>
-      {props.filters.parts.length > 1 ? (
-        <div className="mt-2 flex gap-1.5">
-          <Button
-            type="button"
-            size="sm"
-            variant={
-              props.filters.partsMatchMode === "any" ? "secondary" : "outline"
-            }
-            className="h-7 rounded-none px-2 text-[10px] shadow-none"
-            onClick={() => props.onMatchModeChange("any")}
-          >
-            {t("search.matchAny")}
-          </Button>
-          <Button
-            type="button"
-            size="sm"
-            variant={
-              props.filters.partsMatchMode === "all" ? "secondary" : "outline"
-            }
-            className="h-7 rounded-none px-2 text-[10px] shadow-none"
-            onClick={() => props.onMatchModeChange("all")}
-          >
-            {t("search.matchAll")}
-          </Button>
+          ))}
         </div>
       ) : null}
     </div>
@@ -4874,7 +5495,7 @@ function PanelSearchSongActions(props: {
               )
             }
           >
-            <SelectTrigger className="h-8 min-w-[9rem] rounded-none px-2 text-[11px] shadow-none">
+            <SelectTrigger className="h-8 min-w-[9rem] px-2 text-[11px] shadow-none">
               <SelectValue placeholder={t("requests.noPathPreference")} />
             </SelectTrigger>
             <SelectContent>
@@ -4895,7 +5516,7 @@ function PanelSearchSongActions(props: {
           <Button
             size="sm"
             variant="outline"
-            className="h-7 rounded-none px-2 text-[11px] shadow-none"
+            className="h-6 px-2 text-[10px] leading-none shadow-none"
             disabled={!!regularDisabledReason || regularPending}
             title={regularDisabledReason ?? undefined}
             onClick={() => {
@@ -4927,7 +5548,7 @@ function PanelSearchSongActions(props: {
           <Button
             size="sm"
             variant="outline"
-            className="h-7 rounded-none px-2 text-[11px] shadow-none"
+            className="h-6 px-2 text-[10px] leading-none shadow-none"
             disabled={!!vipDisabledReason || vipPending}
             title={vipDisabledReason ?? undefined}
             onClick={() => {
@@ -5146,15 +5767,6 @@ function getPanelSpecialRequestDisabledReason(input: {
   }
 
   return null;
-}
-
-function pickRandomPanelSearchItem(items: Array<Record<string, unknown>>) {
-  if (items.length === 0) {
-    return null;
-  }
-
-  const index = Math.floor(Math.random() * items.length);
-  return items[index] ?? null;
 }
 
 function PanelRequestsStatusBar({

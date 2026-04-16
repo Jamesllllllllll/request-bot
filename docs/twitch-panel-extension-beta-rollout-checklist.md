@@ -23,7 +23,7 @@ npm run deploy
 
 Confirm the site loads on the final app origin before you update the Twitch extension settings.
 
-## 4. Set Worker Secrets
+## 4. Set Worker Configuration
 
 Make sure the frontend Worker has:
 
@@ -40,6 +40,8 @@ Make sure the backend Worker has:
 - `TWITCH_CLIENT_ID`
 - `TWITCH_CLIENT_SECRET`
 - `TWITCH_EVENTSUB_SECRET`
+- `TWITCH_EXTENSION_CLIENT_ID`
+- `TWITCH_EXTENSION_SECRET`
 - `SENTRY_DSN` when Sentry is enabled
 
 ## 5. Update Twitch

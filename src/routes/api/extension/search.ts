@@ -27,6 +27,17 @@ export const Route = createFileRoute("/api/extension/search")({
           const search = extensionSearchInputSchema.parse({
             query: url.searchParams.get("query") ?? undefined,
             favoritesOnly: url.searchParams.get("favoritesOnly") ?? undefined,
+            title: url.searchParams.get("title") ?? undefined,
+            artist: url.searchParams.get("artist") ?? undefined,
+            album: url.searchParams.get("album") ?? undefined,
+            creator: url.searchParams.get("creator") ?? undefined,
+            tuning: (() => {
+              const values = url.searchParams
+                .getAll("tuning")
+                .map((value) => value.trim())
+                .filter(Boolean);
+              return values.length > 0 ? values : undefined;
+            })(),
             parts: (() => {
               const values = url.searchParams
                 .getAll("parts")
@@ -35,6 +46,13 @@ export const Route = createFileRoute("/api/extension/search")({
               return values.length > 0 ? values : undefined;
             })(),
             partsMatchMode: url.searchParams.get("partsMatchMode") ?? undefined,
+            year: (() => {
+              const values = url.searchParams
+                .getAll("year")
+                .map((value) => value.trim())
+                .filter(Boolean);
+              return values.length > 0 ? values : undefined;
+            })(),
             page: url.searchParams.get("page") ?? undefined,
             pageSize: url.searchParams.get("pageSize") ?? undefined,
           });

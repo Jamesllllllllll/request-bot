@@ -54,6 +54,7 @@ const d1DatabaseId = process.env.CLOUDFLARE_D1_DATABASE_ID;
 const sessionKvId = process.env.CLOUDFLARE_SESSION_KV_ID;
 const twitchBotUsername = process.env.TWITCH_BOT_USERNAME;
 const twitchScopes = process.env.TWITCH_SCOPES;
+const twitchExtensionClientId = process.env.TWITCH_EXTENSION_CLIENT_ID;
 
 if (mode !== "preview" && mode !== "production") {
   throw new Error("`--mode` must be `preview` or `production`.");
@@ -181,19 +182,28 @@ frontendConfig.vars = {
   ...(frontendConfig.vars ?? {}),
   APP_URL: appUrl,
   ...(twitchBotUsername ? { TWITCH_BOT_USERNAME: twitchBotUsername } : {}),
+  ...(twitchExtensionClientId
+    ? { TWITCH_EXTENSION_CLIENT_ID: twitchExtensionClientId }
+    : {}),
   ...(twitchScopes ? { TWITCH_SCOPES: twitchScopes } : {}),
 };
 backendConfig.vars = {
   ...(backendConfig.vars ?? {}),
   APP_URL: appUrl,
   ...(twitchBotUsername ? { TWITCH_BOT_USERNAME: twitchBotUsername } : {}),
+  ...(twitchExtensionClientId
+    ? { TWITCH_EXTENSION_CLIENT_ID: twitchExtensionClientId }
+    : {}),
 };
 
 const suffixLabel = mode === "preview" ? "preview" : "production";
 const frontendOutputPath = join(outputDir, `wrangler.${suffixLabel}.jsonc`);
 const backendOutputPath = join(outputDir, `wrangler.aux.${suffixLabel}.jsonc`);
 
-writeFileSync(frontendOutputPath, `${JSON.stringify(frontendConfig, null, 2)}\n`);
+writeFileSync(
+  frontendOutputPath,
+  `${JSON.stringify(frontendConfig, null, 2)}\n`
+);
 writeFileSync(backendOutputPath, `${JSON.stringify(backendConfig, null, 2)}\n`);
 
 console.log(

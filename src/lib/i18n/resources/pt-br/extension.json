@@ -93,7 +93,8 @@
     "filtersLabel": "Filtros",
     "favoritesOnly": "Somente favoritos",
     "defaultPathsSummary": "Padroes do streamer: {paths} · {mode}",
-    "resetFilters": "Redefinir",
+    "resetFilters": "Redefinir para o padrao",
+    "loadingFilters": "Carregando filtros...",
     "matchAny": "ALGUM",
     "matchAll": "TODOS",
     "noResults": "Nenhuma musica correspondeu a essa busca.",
@@ -114,7 +115,8 @@
     "editVip": "Editar VIP",
     "vipWithCost": "VIP ({count})",
     "editVipWithCost": "Editar VIP ({count})",
-    "cancel": "Cancelar"
+    "cancel": "Cancelar",
+    "reset": "Redefinir"
   },
   "playlistItem": {
     "unknownSong": "Musica desconhecida",

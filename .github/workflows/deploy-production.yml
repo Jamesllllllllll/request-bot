@@ -24,6 +24,7 @@ jobs:
       CLOUDFLARE_SESSION_KV_ID: ${{ secrets.CLOUDFLARE_SESSION_KV_ID }}
       APP_URL: ${{ secrets.APP_URL }}
       TWITCH_BOT_USERNAME: ${{ vars.TWITCH_BOT_USERNAME }}
+      TWITCH_EXTENSION_CLIENT_ID: ${{ vars.TWITCH_EXTENSION_CLIENT_ID }}
       TWITCH_SCOPES: ${{ vars.TWITCH_SCOPES }}
 
     steps:

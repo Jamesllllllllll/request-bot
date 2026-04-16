@@ -93,7 +93,8 @@
     "filtersLabel": "Filter",
     "favoritesOnly": "Nur Favoriten",
     "defaultPathsSummary": "Streamer-Standardeinstellungen:{paths} · {mode}",
-    "resetFilters": "Zurücksetzen",
+    "resetFilters": "Auf Standard zurücksetzen",
+    "loadingFilters": "Filter werden geladen...",
     "matchAny": "BELIEBIG",
     "matchAll": "ALLE",
     "noResults": "Für diese Suche stimmten keine Lieder überein.",
@@ -114,7 +115,8 @@
     "editVip": "VIP bearbeiten",
     "vipWithCost": "VIP ({count})",
     "editVipWithCost": "VIP bearbeiten ({count})",
-    "cancel": "Abbrechen"
+    "cancel": "Abbrechen",
+    "reset": "Zurucksetzen"
   },
   "playlistItem": {
     "unknownSong": "Unbekanntes Lied",

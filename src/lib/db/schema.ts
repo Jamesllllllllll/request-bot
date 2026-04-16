@@ -886,6 +886,8 @@ export const catalogSongs = sqliteTable(
     authorId: integer("author_id"),
     creatorName: text("creator_name"),
     groupedProjectId: integer("grouped_project_id"),
+    canonicalGroupKey: text("canonical_group_key"),
+    canonicalGroupingSource: text("canonical_grouping_source"),
     artistsFtJson: text("artists_ft_json"),
     tagsJson: text("tags_json"),
     genresJson: text("genres_json"),
@@ -976,6 +978,10 @@ export const catalogSongs = sqliteTable(
     index("catalog_songs_artist_title_idx").on(table.artistName, table.title),
     index("catalog_songs_creator_idx").on(table.creatorName),
     index("catalog_songs_grouped_project_idx").on(table.groupedProjectId),
+    index("catalog_songs_canonical_group_idx").on(table.canonicalGroupKey),
+    index("catalog_songs_canonical_group_source_idx").on(
+      table.canonicalGroupingSource
+    ),
     index("catalog_songs_source_updated_idx").on(table.sourceUpdatedAt),
     index("catalog_songs_downloads_idx").on(table.downloads),
   ]

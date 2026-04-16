@@ -96,8 +96,11 @@ echo "<TWITCH_CLIENT_SECRET>" | npx wrangler secret put TWITCH_CLIENT_SECRET --c
 echo "<TWITCH_TOKEN_ENCRYPTION_SECRET>" | npx wrangler secret put TWITCH_TOKEN_ENCRYPTION_SECRET --config wrangler.aux.jsonc
 echo "<INTERNAL_API_SECRET>" | npx wrangler secret put INTERNAL_API_SECRET --config wrangler.aux.jsonc
 echo "<TWITCH_EVENTSUB_SECRET>" | npx wrangler secret put TWITCH_EVENTSUB_SECRET --config wrangler.aux.jsonc
+echo "<TWITCH_EXTENSION_SECRET>" | npx wrangler secret put TWITCH_EXTENSION_SECRET --config wrangler.aux.jsonc
 echo "<SENTRY_DSN>" | npx wrangler secret put SENTRY_DSN --config wrangler.aux.jsonc
 ```
+
+Set `TWITCH_EXTENSION_CLIENT_ID` in `.env.deploy` or GitHub repository variables so the generated frontend and backend Worker configs can include it.
 
 ## Remote Database Setup
 
@@ -167,6 +170,7 @@ Required GitHub repository secrets:
 Required GitHub repository variables:
 
 - `TWITCH_BOT_USERNAME`
+- `TWITCH_EXTENSION_CLIENT_ID`
 - `TWITCH_SCOPES`
 - `SENTRY_ENVIRONMENT`
 

@@ -2098,7 +2098,31 @@ class ChannelPlaylistDurableObjectBase {
       const notifyReason: PlaylistStreamNotifyReason =
         isPlaylistStreamNotifyReason(reason) ? reason : "playlist";
 
-      await sendExtensionPlaylistPubSubMessage(this.env, {
+      const didSend = await sendExtensionPlaylistPubSubMessage(this.env, {
+        broadcasterId: channel.twitchChannelId,
+        reason: notifyReason,
+      });
+
+      if (!didSend) {
+        console.warn(
+          "Skipping Twitch extension PubSub invalidation; backend extension PubSub config is incomplete",
+          {
+            channelId,
+            broadcasterId: channel.twitchChannelId,
+            reason: notifyReason,
+            hasExtensionClientId: Boolean(
+              this.env.TWITCH_EXTENSION_CLIENT_ID?.trim()
+            ),
+            hasExtensionSecret: Boolean(
+              this.env.TWITCH_EXTENSION_SECRET?.trim()
+            ),
+          }
+        );
+        return;
+      }
+
+      console.info("Twitch extension PubSub invalidation sent", {
+        channelId,
         broadcasterId: channel.twitchChannelId,
         reason: notifyReason,
       });

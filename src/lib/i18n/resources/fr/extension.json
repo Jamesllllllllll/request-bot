@@ -93,7 +93,8 @@
     "filtersLabel": "Filtres",
     "favoritesOnly": "Favoris uniquement",
     "defaultPathsSummary": "Filtres du streamer : {paths} · {mode}",
-    "resetFilters": "Reinitialiser",
+    "resetFilters": "Reinitialiser par defaut",
+    "loadingFilters": "Chargement des filtres...",
     "matchAny": "UN",
     "matchAll": "TOUS",
     "noResults": "Aucune chanson ne correspond a cette recherche.",
@@ -114,7 +115,8 @@
     "editVip": "Modifier VIP",
     "vipWithCost": "VIP ({count})",
     "editVipWithCost": "Modifier VIP ({count})",
-    "cancel": "Annuler"
+    "cancel": "Annuler",
+    "reset": "Reinitialiser"
   },
   "playlistItem": {
     "unknownSong": "Chanson inconnue",

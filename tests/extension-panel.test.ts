@@ -734,6 +734,36 @@ describe("extension panel service", () => {
     );
   });
 
+  it("passes advanced text, tuning, and year filters through extension search", async () => {
+    await searchExtensionCatalog({
+      env,
+      auth,
+      search: {
+        query: undefined,
+        title: "Trooper",
+        artist: "Iron Maiden",
+        album: "Piece of Mind",
+        creator: "RiffPilot",
+        tuning: [1, 4],
+        year: [1983, 2013],
+        page: 1,
+        pageSize: 10,
+      },
+    });
+
+    expect(searchCatalogSongs).toHaveBeenCalledWith(
+      env,
+      expect.objectContaining({
+        title: "Trooper",
+        artist: "Iron Maiden",
+        album: "Piece of Mind",
+        creator: "RiffPilot",
+        tuning: [1, 4],
+        year: [1983, 2013],
+      })
+    );
+  });
+
   it("skips blacklist exclusions when blacklist rules are off", async () => {
     vi.mocked(getChannelSettingsByChannelId).mockResolvedValue({
       blacklistEnabled: false,

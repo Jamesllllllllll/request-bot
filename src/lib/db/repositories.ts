@@ -1253,6 +1253,8 @@ export async function getChannelPreferredChartersByChannelId(
 const catalogSongGroupingColumns = {
   id: true,
   groupedProjectId: true,
+  canonicalGroupKey: true,
+  canonicalGroupingSource: true,
   artistId: true,
   authorId: true,
   title: true,
@@ -1286,6 +1288,8 @@ const catalogSongGroupingColumns = {
 type CatalogSongGroupingRow = {
   id: string;
   groupedProjectId: number | null;
+  canonicalGroupKey: string | null;
+  canonicalGroupingSource: string | null;
   artistId: number | null;
   authorId: number | null;
   title: string;
@@ -1321,6 +1325,13 @@ type SongGroupMemberFallbackKey = {
   artistKey: string;
 };
 
+type StoredCatalogSongGroup<TSong> = {
+  groupKey: string;
+  groupingSource: SongGroupingSource;
+  songs: TSong[];
+  groupedProjectIds: number[];
+};
+
 const normalizedSongTitleSql = sql`trim(lower(coalesce(${catalogSongs.title}, '')))`;
 const normalizedSongArtistSql = sql`
   CASE
@@ -1337,6 +1348,94 @@ const catalogPrimaryGroupKeySql = sql`
     ELSE 'fallback:' || ${normalizedSongArtistSql} || '|' || ${normalizedSongTitleSql}
   END
 `;
+const catalogResolvedGroupKeySql = sql`coalesce(${catalogSongs.canonicalGroupKey}, ${catalogPrimaryGroupKeySql})`;
+
+function isSongGroupingSource(
+  value: string | null | undefined
+): value is SongGroupingSource {
+  return (
+    value === "groupedProjectId" || value === "fallback" || value === "both"
+  );
+}
+
+function canUseStoredCatalogGrouping(
+  rows: Array<{
+    canonicalGroupKey?: string | null;
+    canonicalGroupingSource?: string | null;
+  }>
+) {
+  return rows.every(
+    (row) =>
+      typeof row.canonicalGroupKey === "string" &&
+      row.canonicalGroupKey.length > 0 &&
+      isSongGroupingSource(row.canonicalGroupingSource)
+  );
+}
+
+function buildCatalogCanonicalGroupKey(group: {
+  groupingSource: SongGroupingSource;
+  songs: Array<{ id: string }>;
+}) {
+  const representativeSongId = [
+    ...group.songs.map((song) => song.id),
+  ].sort()[0];
+  return `${group.groupingSource}:${representativeSongId ?? "unknown"}`;
+}
+
+function groupCatalogRowsByStoredCanonicalGroup<
+  TSong extends {
+    id: string;
+    groupedProjectId?: number | null;
+    canonicalGroupKey?: string | null;
+    canonicalGroupingSource?: string | null;
+  },
+>(songs: TSong[]): StoredCatalogSongGroup<TSong>[] {
+  const uniqueSongs = [
+    ...new Map(songs.map((song) => [song.id, song])).values(),
+  ];
+  const groupsByKey = new Map<
+    string,
+    {
+      groupingSource: SongGroupingSource;
+      songs: TSong[];
+      groupedProjectIds: Set<number>;
+    }
+  >();
+
+  for (const song of uniqueSongs) {
+    if (
+      typeof song.canonicalGroupKey !== "string" ||
+      !song.canonicalGroupKey ||
+      !isSongGroupingSource(song.canonicalGroupingSource)
+    ) {
+      continue;
+    }
+
+    const current = groupsByKey.get(song.canonicalGroupKey) ?? {
+      groupingSource: song.canonicalGroupingSource,
+      songs: [],
+      groupedProjectIds: new Set<number>(),
+    };
+    current.songs.push(song);
+    if (
+      typeof song.groupedProjectId === "number" &&
+      Number.isInteger(song.groupedProjectId) &&
+      song.groupedProjectId > 0
+    ) {
+      current.groupedProjectIds.add(song.groupedProjectId);
+    }
+    groupsByKey.set(song.canonicalGroupKey, current);
+  }
+
+  return [...groupsByKey.entries()].map(([groupKey, group]) => ({
+    groupKey,
+    groupingSource: group.groupingSource,
+    songs: group.songs,
+    groupedProjectIds: [...group.groupedProjectIds].sort(
+      (left, right) => left - right
+    ),
+  }));
+}
 
 function getCatalogSongGroupFallbackKeyParts(
   song: Pick<CatalogSongGroupingRow, "artistName" | "title">
@@ -1381,6 +1480,21 @@ function buildCatalogSongFallbackWhereSql(
 }
 
 function toCatalogSongGroupSummary(rows: CatalogSongGroupingRow[]) {
+  if (canUseStoredCatalogGrouping(rows)) {
+    return groupCatalogRowsByStoredCanonicalGroup(rows).map((group) => ({
+      groupKey: group.groupKey,
+      groupingSource: group.groupingSource,
+      songs: group.songs.map((song) => ({
+        id: song.id,
+        groupedProjectId: song.groupedProjectId,
+        title: song.title,
+        artist: song.artistName,
+      })),
+      groupedProjectIds: group.groupedProjectIds,
+      fallbackKeys: [] as string[],
+    }));
+  }
+
   return buildSongGroups(
     rows.map((row) => ({
       id: row.id,
@@ -1391,7 +1505,37 @@ function toCatalogSongGroupSummary(rows: CatalogSongGroupingRow[]) {
   );
 }
 
-async function getCatalogSongGroupRowsForSeedSongs(
+async function getCatalogSongGroupRowsForSeedSongsByCanonicalKey(
+  env: AppEnv,
+  seedSongs: CatalogSongGroupingRow[]
+) {
+  const groupKeys = [
+    ...new Set(
+      seedSongs
+        .map((song) => song.canonicalGroupKey)
+        .filter(
+          (value): value is string =>
+            typeof value === "string" && value.length > 0
+        )
+    ),
+  ];
+  if (groupKeys.length === 0) {
+    return [];
+  }
+
+  const rows: CatalogSongGroupingRow[] = [];
+  for (const batchKeys of chunkArray(groupKeys, D1_IN_LIST_BATCH_SIZE)) {
+    const batchRows = (await getDb(env).query.catalogSongs.findMany({
+      where: inArray(catalogSongs.canonicalGroupKey, batchKeys),
+      columns: catalogSongGroupingColumns,
+    })) as CatalogSongGroupingRow[];
+    rows.push(...batchRows);
+  }
+
+  return [...new Map(rows.map((row) => [row.id, row])).values()];
+}
+
+async function getCatalogSongGroupRowsForSeedSongsByGraph(
   env: AppEnv,
   seedSongs: CatalogSongGroupingRow[]
 ) {
@@ -1465,6 +1609,8 @@ async function getCatalogSongGroupRowsForSeedSongs(
         SELECT
           catalog_songs.id AS id,
           catalog_songs.grouped_project_id AS groupedProjectId,
+          catalog_songs.canonical_group_key AS canonicalGroupKey,
+          catalog_songs.canonical_grouping_source AS canonicalGroupingSource,
           catalog_songs.artist_id AS artistId,
           catalog_songs.author_id AS authorId,
           catalog_songs.title AS title,
@@ -1506,6 +1652,21 @@ async function getCatalogSongGroupRowsForSeedSongs(
   return [...songsById.values()];
 }
 
+async function getCatalogSongGroupRowsForSeedSongs(
+  env: AppEnv,
+  seedSongs: CatalogSongGroupingRow[]
+) {
+  if (seedSongs.length === 0) {
+    return [];
+  }
+
+  if (canUseStoredCatalogGrouping(seedSongs)) {
+    return getCatalogSongGroupRowsForSeedSongsByCanonicalKey(env, seedSongs);
+  }
+
+  return getCatalogSongGroupRowsForSeedSongsByGraph(env, seedSongs);
+}
+
 export async function getCatalogSongGroupRowsForSongId(
   env: AppEnv,
   songId: string
@@ -1543,6 +1704,95 @@ export async function getCatalogSongGroupRowsForSongIds(
   return getCatalogSongGroupRowsForSeedSongs(env, seedSongs);
 }
 
+function buildCatalogCanonicalGroupAssignments(rows: CatalogSongGroupingRow[]) {
+  return buildSongGroups(
+    rows.map((row) => ({
+      id: row.id,
+      groupedProjectId: row.groupedProjectId,
+      title: row.title,
+      artist: row.artistName,
+    }))
+  ).flatMap((group) =>
+    group.songs.map((song) => ({
+      id: song.id,
+      canonicalGroupKey: buildCatalogCanonicalGroupKey(group),
+      canonicalGroupingSource: group.groupingSource,
+    }))
+  );
+}
+
+async function refreshCatalogSongCanonicalGroupsForSongs(
+  env: AppEnv,
+  input: {
+    songIds: string[];
+    previousCanonicalGroupKeys?: string[];
+  }
+) {
+  const normalizedSongIds = [...new Set(input.songIds.filter(Boolean))];
+  const previousCanonicalGroupKeys = [
+    ...new Set(
+      (input.previousCanonicalGroupKeys ?? []).filter(
+        (value): value is string => Boolean(value)
+      )
+    ),
+  ];
+  if (
+    normalizedSongIds.length === 0 &&
+    previousCanonicalGroupKeys.length === 0
+  ) {
+    return;
+  }
+
+  const db = getDb(env);
+  const seedRows: CatalogSongGroupingRow[] = [];
+
+  for (const batchIds of chunkArray(normalizedSongIds, D1_IN_LIST_BATCH_SIZE)) {
+    const batchRows = (await db.query.catalogSongs.findMany({
+      where: inArray(catalogSongs.id, batchIds),
+      columns: catalogSongGroupingColumns,
+    })) as CatalogSongGroupingRow[];
+    seedRows.push(...batchRows);
+  }
+
+  for (const batchKeys of chunkArray(
+    previousCanonicalGroupKeys,
+    D1_IN_LIST_BATCH_SIZE
+  )) {
+    const batchRows = (await db.query.catalogSongs.findMany({
+      where: inArray(catalogSongs.canonicalGroupKey, batchKeys),
+      columns: catalogSongGroupingColumns,
+    })) as CatalogSongGroupingRow[];
+    seedRows.push(...batchRows);
+  }
+
+  const affectedRows = await getCatalogSongGroupRowsForSeedSongsByGraph(env, [
+    ...new Map(seedRows.map((row) => [row.id, row])).values(),
+  ]);
+  if (affectedRows.length === 0) {
+    return;
+  }
+
+  const assignmentsById = new Map(
+    buildCatalogCanonicalGroupAssignments(affectedRows).map((assignment) => [
+      assignment.id,
+      assignment,
+    ])
+  );
+
+  await db.transaction(async (tx) => {
+    for (const row of affectedRows) {
+      const assignment = assignmentsById.get(row.id);
+      await tx
+        .update(catalogSongs)
+        .set({
+          canonicalGroupKey: assignment?.canonicalGroupKey ?? null,
+          canonicalGroupingSource: assignment?.canonicalGroupingSource ?? null,
+        })
+        .where(eq(catalogSongs.id, row.id));
+    }
+  });
+}
+
 function getFavoriteRowGroupKeys(rows: CatalogSongGroupingRow[]) {
   return toCatalogSongGroupSummary(rows).map((group) => group.groupKey);
 }
@@ -1571,6 +1821,8 @@ export async function getChannelFavoritedSongGroupKeys(
       SELECT
         catalog_songs.id AS id,
         catalog_songs.grouped_project_id AS groupedProjectId,
+        catalog_songs.canonical_group_key AS canonicalGroupKey,
+        catalog_songs.canonical_grouping_source AS canonicalGroupingSource,
         catalog_songs.artist_id AS artistId,
         catalog_songs.author_id AS authorId,
         catalog_songs.title AS title,
@@ -1665,6 +1917,8 @@ export async function getChannelFavoriteSongsPage(
     favoritedAt: number;
     sourceSongId: number;
     groupedProjectId: number | null;
+    canonicalGroupKey: string | null;
+    canonicalGroupingSource: string | null;
     artistId: number | null;
     authorId: number | null;
     title: string;
@@ -1685,6 +1939,8 @@ export async function getChannelFavoriteSongsPage(
       channel_favorite_charts.created_at AS favoritedAt,
       catalog_songs.source_song_id AS sourceSongId,
       catalog_songs.grouped_project_id AS groupedProjectId,
+      catalog_songs.canonical_group_key AS canonicalGroupKey,
+      catalog_songs.canonical_grouping_source AS canonicalGroupingSource,
       catalog_songs.artist_id AS artistId,
       catalog_songs.author_id AS authorId,
       catalog_songs.title AS title,
@@ -1715,6 +1971,8 @@ export async function getChannelFavoriteSongsPage(
     unwrapD1Rows(rows).map((row) => ({
       id: row.id,
       groupedProjectId: row.groupedProjectId,
+      canonicalGroupKey: row.canonicalGroupKey,
+      canonicalGroupingSource: row.canonicalGroupingSource,
       artistId: row.artistId,
       authorId: row.authorId,
       title: row.title,
@@ -1749,6 +2007,10 @@ export async function getChannelFavoriteSongsPage(
     unwrapD1Rows(rows).map((row) => ({
       id: row.id,
       favoritedAt: row.favoritedAt,
+      groupKey: row.canonicalGroupKey ?? undefined,
+      groupingSource: isSongGroupingSource(row.canonicalGroupingSource)
+        ? row.canonicalGroupingSource
+        : undefined,
       sourceId: row.sourceSongId,
       groupedProjectId: row.groupedProjectId ?? undefined,
       artistId: row.artistId ?? undefined,
@@ -2535,6 +2797,8 @@ type CatalogSearchRow = {
   id: string;
   sourceSongId: number;
   groupedProjectId: number | null;
+  canonicalGroupKey: string | null;
+  canonicalGroupingSource: string | null;
   artistId: number | null;
   authorId: number | null;
   title: string;
@@ -2579,6 +2843,8 @@ function toCatalogSearchRowFromGroupingRow(input: {
     id: input.row.id,
     sourceSongId: input.row.sourceSongId ?? 0,
     groupedProjectId: input.row.groupedProjectId,
+    canonicalGroupKey: input.row.canonicalGroupKey,
+    canonicalGroupingSource: input.row.canonicalGroupingSource,
     artistId: input.row.artistId,
     authorId: input.row.authorId,
     title: input.row.title,
@@ -2754,14 +3020,17 @@ function buildGroupedCatalogSearchResults(input: {
   pageSize?: number;
 }) {
   const rowsById = new Map(input.rows.map((row) => [row.id, row]));
-
-  const groupedResults = buildSongGroups(
-    input.rows.map((row) => ({
-      id: row.id,
-      groupedProjectId: row.groupedProjectId,
-      title: row.title,
-      artist: row.artistName,
-    }))
+  const groupedResults = (
+    canUseStoredCatalogGrouping(input.rows)
+      ? groupCatalogRowsByStoredCanonicalGroup(input.rows)
+      : buildSongGroups(
+          input.rows.map((row) => ({
+            id: row.id,
+            groupedProjectId: row.groupedProjectId,
+            title: row.title,
+            artist: row.artistName,
+          }))
+        )
   )
     .map((group) => {
       const groupRows = group.songs
@@ -3620,6 +3889,8 @@ export async function searchCatalogSongs(
         catalog_songs.id,
         catalog_songs.source_song_id AS sourceSongId,
         catalog_songs.grouped_project_id AS groupedProjectId,
+        catalog_songs.canonical_group_key AS canonicalGroupKey,
+        catalog_songs.canonical_grouping_source AS canonicalGroupingSource,
         catalog_songs.artist_id AS artistId,
         catalog_songs.author_id AS authorId,
         catalog_songs.title,
@@ -3665,6 +3936,8 @@ export async function searchCatalogSongs(
             catalog_songs.id,
             catalog_songs.source_song_id AS sourceSongId,
             catalog_songs.grouped_project_id AS groupedProjectId,
+            catalog_songs.canonical_group_key AS canonicalGroupKey,
+            catalog_songs.canonical_grouping_source AS canonicalGroupingSource,
             catalog_songs.artist_id AS artistId,
             catalog_songs.author_id AS authorId,
             catalog_songs.title,
@@ -4069,13 +4342,17 @@ export async function getCatalogGroupedSongsReportPage(
   const normalizedQuery = normalizeSearchPhrase(input.query ?? "");
   const groupingSourceFilter = input.groupingSource ?? "all";
 
-  const groupedRows = buildSongGroups(
-    catalogRows.map((row) => ({
-      id: row.id,
-      groupedProjectId: row.groupedProjectId,
-      title: row.title,
-      artist: row.artistName,
-    }))
+  const groupedRows = (
+    canUseStoredCatalogGrouping(catalogRows)
+      ? groupCatalogRowsByStoredCanonicalGroup(catalogRows)
+      : buildSongGroups(
+          catalogRows.map((row) => ({
+            id: row.id,
+            groupedProjectId: row.groupedProjectId,
+            title: row.title,
+            artist: row.artistName,
+          }))
+        )
   )
     .filter((group) => group.songs.length > 1)
     .map((group) => {
@@ -4426,7 +4703,7 @@ export async function getCatalogSearchFilterOptions(env: AppEnv) {
       ORDER BY tuningId ASC
     `),
     db.all<{ catalogTotal: number }>(sql`
-      SELECT COUNT(DISTINCT ${catalogPrimaryGroupKeySql}) AS catalogTotal
+      SELECT COUNT(DISTINCT ${catalogResolvedGroupKeySql}) AS catalogTotal
       FROM catalog_songs
     `),
   ]);
@@ -4472,6 +4749,8 @@ export async function upsertCatalogSongs(
         id: string;
         source: string;
         sourceSongId: number;
+        canonicalGroupKey: string | null;
+        canonicalGroupingSource: string | null;
         artistId: number | null;
         title: string;
         artistName: string;
@@ -4534,6 +4813,8 @@ export async function upsertCatalogSongs(
             id,
             source,
             source_song_id AS sourceSongId,
+            canonical_group_key AS canonicalGroupKey,
+            canonical_grouping_source AS canonicalGroupingSource,
             artist_id AS artistId,
             title,
             artist_name AS artistName,
@@ -4608,6 +4889,7 @@ export async function upsertCatalogSongs(
   let updated = 0;
   let skipped = 0;
   const changedSongIds: string[] = [];
+  const previousCanonicalGroupKeys = new Set<string>();
 
   for (const song of songs) {
     if (song.sourceSongId == null) {
@@ -4620,6 +4902,10 @@ export async function upsertCatalogSongs(
       if (!catalogSongNeedsUpdate(existing, song)) {
         skipped += 1;
         continue;
+      }
+
+      if (existing.canonicalGroupKey) {
+        previousCanonicalGroupKeys.add(existing.canonicalGroupKey);
       }
 
       await db
@@ -4691,6 +4977,10 @@ export async function upsertCatalogSongs(
   }
 
   if (inserted > 0 || updated > 0) {
+    await refreshCatalogSongCanonicalGroupsForSongs(env, {
+      songIds: changedSongIds,
+      previousCanonicalGroupKeys: [...previousCanonicalGroupKeys],
+    });
     await bumpCatalogSearchVersion(env);
   }
 

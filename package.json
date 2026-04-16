@@ -2,7 +2,7 @@
   "name": "request-bot",
   "private": true,
   "type": "module",
-  "version": "0.8.0",
+  "version": "0.9.0",
   "engines": {
     "node": ">=22"
   },
@@ -30,6 +30,8 @@
     "db:generate": "drizzle-kit generate",
     "db:migrate": "node scripts/run-db-migrate.mjs --local",
     "db:migrate:remote": "node scripts/run-remote-operation.mjs db:migrate:remote",
+    "db:refresh:catalog-groups:local": "node scripts/refresh-catalog-canonical-groups.mjs local",
+    "db:refresh:catalog-groups:remote": "node scripts/run-remote-operation.mjs db:refresh:catalog-groups:remote",
     "db:reset:local": "node scripts/reset-local-d1.mjs",
     "db:seed:sample:local": "node scripts/seed-sample-catalog.mjs local",
     "db:bootstrap:local": "npm run db:reset:local && npm run db:migrate && npm run db:seed:sample:local",

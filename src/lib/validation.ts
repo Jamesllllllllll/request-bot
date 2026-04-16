@@ -514,8 +514,17 @@ export const extensionSearchInputSchema = z
         z.boolean().optional()
       )
       .default(false),
+    title: z.string().trim().max(200).optional(),
+    artist: z.string().trim().max(200).optional(),
+    album: z.string().trim().max(200).optional(),
+    creator: z.string().trim().max(200).optional(),
+    tuning: z
+      .array(z.coerce.number().int().positive())
+      .max(allKnownTuningIds.length)
+      .optional(),
     parts: z.array(z.enum(pathOptions)).max(pathOptions.length).optional(),
     partsMatchMode: z.enum(["any", "all"]).default("any"),
+    year: z.array(z.coerce.number().int().min(1).max(2100)).max(200).optional(),
     page: z.coerce.number().int().min(1).default(1),
     pageSize: z.coerce.number().int().min(1).max(25).default(10),
   })

@@ -118,7 +118,18 @@ function handleStdoutLine(rawLine) {
     trimmed.startsWith("Logs were written to ")
   ) {
     printLine(trimmed);
+    return;
   }
+
+  if (trimmed.includes("database is locked")) {
+    printLine(trimmed);
+    printLine(
+      "Local D1 database is locked. Stop any stale local request-bot dev/worker process and rerun the command."
+    );
+    return;
+  }
+
+  printLine(trimmed);
 }
 
 function flushBuffer(buffer, handler) {

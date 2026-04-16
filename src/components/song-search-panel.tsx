@@ -56,17 +56,16 @@ import {
   buildRequestedPathQuery,
   type RequestPathOption,
 } from "~/lib/requested-paths";
+import {
+  normalizeSearchFilterOptionsResponse,
+  type SearchFilterOptionsResponse,
+  type SearchFilterOptionsWireResponse,
+} from "~/lib/song-search/filter-options";
 import type { SongSearchResult } from "~/lib/song-search/types";
 import {
   formatCompactTuningSummary,
   getUniqueTunings,
 } from "~/lib/tuning-summary";
-import {
-  compareTuningIds,
-  getTuningOptionById,
-  parseTuningIds,
-  type TuningOption,
-} from "~/lib/tunings";
 import { cn, getErrorMessage } from "~/lib/utils";
 
 type SearchField = "any" | "title" | "artist" | "album" | "creator";
@@ -84,18 +83,6 @@ type SearchResponse = {
   page: number;
   pageSize: number;
   hasNextPage?: boolean;
-};
-
-type SearchFilterOptionsResponse = {
-  catalogTotal: number;
-  tunings: TuningOption[];
-  years: number[];
-};
-
-type SearchFilterOptionsWireResponse = {
-  catalogTotal?: number;
-  tunings: Array<TuningOption | string>;
-  years: number[];
 };
 
 type MultiSelectOption = {
@@ -120,55 +107,6 @@ function getUserFriendlySearchErrorMessage(error: unknown, fallback: string) {
   }
 
   return message;
-}
-
-function normalizeSearchFilterOptionsResponse(
-  input: SearchFilterOptionsWireResponse | null
-): SearchFilterOptionsResponse {
-  if (!input) {
-    return {
-      catalogTotal: 0,
-      tunings: [],
-      years: [],
-    };
-  }
-
-  const tuningOptionsById = new Map<number, TuningOption>();
-
-  for (const option of input.tunings ?? []) {
-    if (
-      option &&
-      typeof option === "object" &&
-      typeof option.id === "number" &&
-      typeof option.label === "string"
-    ) {
-      tuningOptionsById.set(option.id, option);
-      continue;
-    }
-
-    if (typeof option !== "string") {
-      continue;
-    }
-
-    for (const tuningId of parseTuningIds([option])) {
-      const normalizedOption = getTuningOptionById(tuningId, option);
-      if (normalizedOption) {
-        tuningOptionsById.set(normalizedOption.id, normalizedOption);
-      }
-    }
-  }
-
-  return {
-    catalogTotal:
-      typeof input.catalogTotal === "number" &&
-      Number.isFinite(input.catalogTotal)
-        ? input.catalogTotal
-        : 0,
-    tunings: [...tuningOptionsById.values()].sort((left, right) =>
-      compareTuningIds(left.id, right.id)
-    ),
-    years: Array.isArray(input.years) ? input.years : [],
-  };
 }
 
 export function buildRequestCommand(

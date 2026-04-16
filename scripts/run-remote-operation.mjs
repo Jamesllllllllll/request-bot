@@ -15,6 +15,13 @@ const operations = {
       "node scripts/seed-sample-catalog.mjs remote",
     ],
   },
+  "db:refresh:catalog-groups:remote": {
+    localAlternative: "npm run db:refresh:catalog-groups:local",
+    commands: [
+      "npm run deploy:prepare:source",
+      "node scripts/refresh-catalog-canonical-groups.mjs remote",
+    ],
+  },
   "db:bootstrap:remote": {
     localAlternative: "npm run db:bootstrap:local",
     commands: [
@@ -25,7 +32,9 @@ const operations = {
   },
   "deploy:backend": {
     localAlternative: null,
-    commands: ["wrangler deploy --config .generated/wrangler.aux.production.jsonc"],
+    commands: [
+      "wrangler deploy --config .generated/wrangler.aux.production.jsonc",
+    ],
   },
   "deploy:frontend": {
     localAlternative: null,
@@ -50,8 +59,7 @@ if (!operationName || !(operationName in operations)) {
 }
 
 const operation = operations[operationName];
-const inCi =
-  process.env.CI === "true" || process.env.GITHUB_ACTIONS === "true";
+const inCi = process.env.CI === "true" || process.env.GITHUB_ACTIONS === "true";
 const allowOverride = process.env.ALLOW_REMOTE_OPERATIONS === "1";
 
 if (!inCi && !allowOverride) {
@@ -70,9 +78,7 @@ if (!inCi && !allowOverride) {
   );
   console.error("when changes are merged to main.");
   console.error("");
-  console.error(
-    "If you intentionally need a maintainer override, rerun with:"
-  );
+  console.error("If you intentionally need a maintainer override, rerun with:");
   console.error(`  ALLOW_REMOTE_OPERATIONS=1 npm run ${operationName}`);
   console.error("");
   process.exit(1);

@@ -2,6 +2,21 @@
 
 All notable changes to this project are documented here.
 
+## [0.9.0] - 2026-04-16
+
+### Added
+- Song search now supports a fuller set of filters across the website and Twitch panel, making it easier to narrow results without leaving the current view.
+
+### Changed
+- The Twitch panel search experience is more compact and easier to scan, with collapsible filter and quick request sections so results stay in view.
+- The Twitch panel now keeps preferred path defaults in place more consistently when filters are reset.
+- Random song requests in the Twitch panel are more flexible, with quicker artist-based picks.
+- Search, favorites, and version picking now stay aligned more reliably around grouped song versions.
+
+### Fixed
+- Live Twitch panel updates are more reliable in production.
+- Search and playlist views stay responsive more consistently on larger catalogs.
+
 ## [0.8.0] - 2026-04-15
 
 ### Added

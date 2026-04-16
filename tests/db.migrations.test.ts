@@ -211,7 +211,12 @@ select name
 from sqlite_master
 where type='index'
   and tbl_name='catalog_songs'
-  and name in ('catalog_songs_grouped_project_idx', 'catalog_songs_grouping_fallback_idx')
+  and name in (
+    'catalog_songs_grouped_project_idx',
+    'catalog_songs_grouping_fallback_idx',
+    'catalog_songs_canonical_group_idx',
+    'catalog_songs_canonical_group_source_idx'
+  )
 order by name
 """).fetchall()
 con.commit()
@@ -229,8 +234,109 @@ print(json.dumps(rows))
     );
 
     expect(JSON.parse(output)).toEqual([
+      ["catalog_songs_canonical_group_idx"],
+      ["catalog_songs_canonical_group_source_idx"],
       ["catalog_songs_grouped_project_idx"],
       ["catalog_songs_grouping_fallback_idx"],
+    ]);
+  });
+
+  test("fresh migrated database keeps catalog FTS in sync on updates", () => {
+    const tempDir = mkdtempSync(join(tmpdir(), "request-bot-db-"));
+    const dbPath = join(tempDir, "test.sqlite");
+    const migrationPaths = readdirSync(join(process.cwd(), "drizzle"))
+      .filter((name) => name.endsWith(".sql"))
+      .sort()
+      .map((name) => join(process.cwd(), "drizzle", name));
+
+    const script = `
+import json
+import sqlite3
+import sys
+
+db_path = sys.argv[1]
+migration_paths = json.loads(sys.argv[2])
+
+con = sqlite3.connect(db_path)
+cur = con.cursor()
+
+for migration_path in migration_paths:
+    with open(migration_path, "r", encoding="utf-8") as file:
+        sql = file.read()
+    cur.executescript(sql)
+
+cur.execute("""
+insert into catalog_songs (
+  id,
+  source,
+  source_song_id,
+  title,
+  artist_name,
+  album_name,
+  creator_name,
+  parts_json,
+  has_lead,
+  has_rhythm,
+  has_bass,
+  has_vocals,
+  has_bonus_arrangements,
+  has_alternate_arrangements,
+  is_disabled,
+  is_abandoned,
+  is_trending,
+  file_pc_available,
+  file_mac_available
+) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+""", (
+    "cat_test",
+    "library",
+    1001,
+    "Catalog Test",
+    "Catalog Artist",
+    "Original Album",
+    "Original Creator",
+    json.dumps(["lead"]),
+    1,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    1,
+    0
+))
+
+cur.execute(
+    "update catalog_songs set creator_name = ?, album_name = ? where id = ?",
+    ("Updated Creator", "Updated Album", "cat_test")
+)
+
+row = cur.execute("""
+select song_id, creator_name, album_name
+from catalog_song_fts
+where rowid = (select rowid from catalog_songs where id = 'cat_test')
+""").fetchone()
+con.commit()
+con.close()
+print(json.dumps(row))
+`;
+
+    const output = execFileSync(
+      pythonCommand,
+      ["-", dbPath, JSON.stringify(migrationPaths)],
+      {
+        input: script,
+        encoding: "utf8",
+      }
+    );
+
+    expect(JSON.parse(output)).toEqual([
+      "cat_test",
+      "Updated Creator",
+      "Updated Album",
     ]);
   });
 

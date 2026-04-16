@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { searchInputSchema } from "~/lib/validation";
+import {
+  extensionSearchInputSchema,
+  searchInputSchema,
+} from "~/lib/validation";
 
 describe("searchInputSchema", () => {
   it("rejects legacy lyrics paths", () => {
@@ -84,6 +87,33 @@ describe("searchInputSchema", () => {
     expect(parsed.success).toBe(false);
     expect(parsed.error?.issues[0]?.message).toBe(
       "Favorites-only search requires a channel."
+    );
+  });
+});
+
+describe("extensionSearchInputSchema", () => {
+  it("allows advanced filter browsing without a text query", () => {
+    const parsed = extensionSearchInputSchema.safeParse({
+      title: "Metal",
+      tuning: [1],
+      year: [2014],
+      page: 1,
+      pageSize: 10,
+    });
+
+    expect(parsed.success).toBe(true);
+  });
+
+  it("still requires typed queries to be at least 3 characters", () => {
+    const parsed = extensionSearchInputSchema.safeParse({
+      query: "ab",
+      page: 1,
+      pageSize: 10,
+    });
+
+    expect(parsed.success).toBe(false);
+    expect(parsed.error?.issues[0]?.message).toBe(
+      "Search terms must be at least 3 characters."
     );
   });
 });

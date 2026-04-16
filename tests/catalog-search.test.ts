@@ -16,6 +16,8 @@ function toGroupingRow(row: {
   id: string;
   sourceSongId: number;
   groupedProjectId: number | null;
+  canonicalGroupKey?: string | null;
+  canonicalGroupingSource?: "groupedProjectId" | "fallback" | "both" | null;
   artistId: number | null;
   authorId: number | null;
   title: string;
@@ -34,6 +36,8 @@ function toGroupingRow(row: {
 }) {
   return {
     ...row,
+    canonicalGroupKey: row.canonicalGroupKey ?? null,
+    canonicalGroupingSource: row.canonicalGroupingSource ?? null,
     leadTuningId: null,
     leadTuningName: null,
     rhythmTuningId: null,
@@ -596,5 +600,95 @@ describe("searchCatalogSongs", () => {
         },
       ],
     });
+  });
+
+  it("uses stored canonical groups when present instead of fallback graph expansion", async () => {
+    const matchedRows = [
+      {
+        id: "song-main",
+        sourceSongId: 99001,
+        groupedProjectId: null,
+        canonicalGroupKey: "fallback:song-main",
+        canonicalGroupingSource: "fallback" as const,
+        artistId: 77,
+        authorId: 42,
+        title: "Velvet Static",
+        artistName: "The Example Band",
+        albumName: "Siamese Dream",
+        creatorName: "Charter One",
+        tuningSummary: "E Standard",
+        partsJson: '["lead"]',
+        durationText: "5:17",
+        durationSeconds: 317,
+        year: 1993,
+        sourceUpdatedAt: 2,
+        downloads: 300,
+        hasLyrics: 1,
+        source: "library",
+        isPreferredCharter: 0,
+        relevance: 90,
+      },
+    ];
+    const siblingRows = [
+      toGroupingRow(matchedRows[0]),
+      toGroupingRow({
+        id: "song-alt",
+        sourceSongId: 99002,
+        groupedProjectId: null,
+        canonicalGroupKey: "fallback:song-main",
+        canonicalGroupingSource: "fallback",
+        artistId: 77,
+        authorId: 99,
+        title: "Velvet Static",
+        artistName: "Example Band",
+        albumName: "Siamese Dream",
+        creatorName: "Charter Two",
+        tuningSummary: "Eb Standard",
+        partsJson: '["rhythm"]',
+        durationText: "5:17",
+        durationSeconds: 317,
+        year: 1993,
+        sourceUpdatedAt: 1,
+        downloads: 250,
+        hasLyrics: 1,
+        source: "library",
+      }),
+    ];
+    const dbAll = vi.fn().mockResolvedValueOnce(matchedRows);
+    const dbFindMany = vi
+      .fn()
+      .mockResolvedValueOnce([toGroupingRow(matchedRows[0])])
+      .mockResolvedValueOnce(siblingRows);
+
+    vi.mocked(getDb).mockReturnValue({
+      all: dbAll,
+      query: {
+        catalogSongs: {
+          findMany: dbFindMany,
+        },
+      },
+    } as never);
+
+    await expect(
+      searchCatalogSongs(env, {
+        query: "Velvet Static",
+        page: 1,
+        pageSize: 10,
+        sortBy: "relevance",
+        sortDirection: "desc",
+      })
+    ).resolves.toMatchObject({
+      total: 1,
+      results: [
+        {
+          id: "song-main",
+          versionCount: 2,
+          groupingSource: "fallback",
+        },
+      ],
+    });
+
+    expect(dbAll).toHaveBeenCalledTimes(1);
+    expect(dbFindMany).toHaveBeenCalledTimes(2);
   });
 });

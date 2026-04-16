@@ -93,7 +93,8 @@
     "filtersLabel": "Filters",
     "favoritesOnly": "Favorites only",
     "defaultPathsSummary": "Streamer defaults: {paths} · {mode}",
-    "resetFilters": "Reset",
+    "resetFilters": "Reset to default",
+    "loadingFilters": "Loading filters...",
     "matchAny": "ANY",
     "matchAll": "ALL",
     "noResults": "No songs matched that search.",
@@ -114,7 +115,8 @@
     "editVip": "Edit VIP",
     "vipWithCost": "VIP ({count})",
     "editVipWithCost": "Edit VIP ({count})",
-    "cancel": "Cancel"
+    "cancel": "Cancel",
+    "reset": "Reset"
   },
   "playlistItem": {
     "unknownSong": "Unknown song",

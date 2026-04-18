@@ -5,6 +5,7 @@ import { getSessionUserId } from "~/lib/auth/session.server";
 import { callBackend, notifyPlaylistStream } from "~/lib/backend";
 import {
   createAuditLog,
+  ensureRockSnifferRelayToken,
   ensureStreamElementsTipWebhookToken,
   getActiveBroadcasterAuthorizationForChannel,
   getBotAuthorization,
@@ -19,6 +20,10 @@ import {
   getRequiredPathsSetting,
   normalizeAllowedRequestPaths,
 } from "~/lib/request-policy";
+import {
+  buildRockSnifferAddonDownloadUrl,
+  buildRockSnifferRelayUrl,
+} from "~/lib/rocksniffer/integration";
 import { parseStoredTuningIds } from "~/lib/tunings";
 import { getTwitchUser } from "~/lib/twitch/api";
 import {
@@ -55,11 +60,15 @@ export const Route = createFileRoute("/api/dashboard/settings")({
 
         const [
           botAuthorization,
+          rockSnifferRelayToken,
           streamElementsTipWebhookToken,
           broadcasterAuthorization,
           filterOptions,
         ] = await Promise.all([
           getBotAuthorization(runtimeEnv),
+          state.settings
+            ? ensureRockSnifferRelayToken(runtimeEnv, state.channel.id)
+            : null,
           state.settings
             ? ensureStreamElementsTipWebhookToken(runtimeEnv, state.channel.id)
             : null,
@@ -116,6 +125,16 @@ export const Route = createFileRoute("/api/dashboard/settings")({
             : null,
           tuningOptions: filterOptions.tunings,
           integrations: {
+            rockSnifferRelayUrl: rockSnifferRelayToken
+              ? buildRockSnifferRelayUrl(
+                  runtimeEnv.APP_URL,
+                  state.channel.slug,
+                  rockSnifferRelayToken
+                )
+              : null,
+            rockSnifferAddonDownloadUrl: buildRockSnifferAddonDownloadUrl(
+              runtimeEnv.APP_URL
+            ),
             streamElementsTipRelayUrl: streamElementsTipWebhookToken
               ? `${runtimeEnv.APP_URL}/api/integrations/streamelements/${state.channel.slug}/${streamElementsTipWebhookToken}`
               : null,

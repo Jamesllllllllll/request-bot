@@ -1,0 +1,547 @@
+@import url("https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=Space+Grotesk:wght@500;700&display=swap");
+
+:root {
+  color-scheme: dark;
+  --shell-gutter: 1.25rem;
+  --font-body: "IBM Plex Sans", sans-serif;
+  --font-accent: "Space Grotesk", var(--font-body);
+  --bg: #0c1219;
+  --bg-elevated: #121923;
+  --panel: rgba(18, 20, 26, 0.88);
+  --panel-strong: #13161d;
+  --panel-soft: #181c24;
+  --panel-muted: #0f1218;
+  --text: #f4f2ed;
+  --muted: #b9bfcc;
+  --brand: #da4f36;
+  --brand-strong: #f06642;
+  --brand-deep: #f1d2ac;
+  --accent: #6d7688;
+  --accent-strong: #9aa4bb;
+  --success: #3ecf8e;
+  --warning: #f4b861;
+  --danger: #ff6b6b;
+  --border: rgba(255, 255, 255, 0.08);
+  --border-strong: rgba(255, 255, 255, 0.14);
+  --shadow: 0 28px 80px rgba(0, 0, 0, 0.45);
+  --shadow-soft: 0 12px 32px rgba(0, 0, 0, 0.24);
+  --app-background:
+    linear-gradient(180deg, #121a24 0%, #0c1219 44%, #091017 100%),
+    radial-gradient(circle at 7% 5%, rgba(255, 255, 255, 0.14), transparent 20%),
+    radial-gradient(circle at top right, rgba(145, 159, 188, 0.11), transparent 22%),
+    radial-gradient(circle at 78% 14%, rgba(127, 184, 171, 0.05), transparent 18%),
+    radial-gradient(circle at 50% 120%, rgba(118, 136, 154, 0.07), transparent 30%);
+  --glow:
+    0 0 0 1px rgba(240, 102, 66, 0.1), 0 18px 50px rgba(218, 79, 54, 0.14);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  min-height: 100%;
+  background-color: var(--bg);
+  background-image: var(--app-background);
+  background-attachment: fixed;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  color: var(--text);
+  font-family: var(--font-body);
+  background: transparent;
+  position: relative;
+  isolation: isolate;
+}
+
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: -2;
+  pointer-events: none;
+  opacity: 0.18;
+  background-image:
+    radial-gradient(rgba(255, 255, 255, 0.14) 0.6px, transparent 0.6px),
+    radial-gradient(rgba(255, 255, 255, 0.1) 0.6px, transparent 0.6px);
+  background-position:
+    0 0,
+    11px 13px;
+  background-size: 18px 18px;
+  mix-blend-mode: soft-light;
+}
+
+body::after {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background-image:
+    linear-gradient(rgba(255, 255, 255, 0.04) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.04) 1px, transparent 1px);
+  background-size: 24px 24px;
+  background-position: -1px -1px;
+  opacity: 0.18;
+  mask-image: linear-gradient(180deg, rgba(0, 0, 0, 0.8), transparent 88%);
+}
+
+a {
+  color: inherit;
+}
+
+button,
+input {
+  font: inherit;
+}
+
+button:not(:disabled) {
+  cursor: pointer;
+}
+
+h1,
+h2,
+.song-title,
+.status-value,
+.hero-value {
+  font-family: var(--font-accent);
+  letter-spacing: -0.03em;
+}
+
+.shell {
+  width: min(1160px, calc(100% - 2rem));
+  margin: 0 auto;
+  min-height: 100vh;
+  padding: 1.25rem 0 2.5rem;
+  position: relative;
+}
+
+.shell::before,
+.shell::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  background: var(--border);
+  pointer-events: none;
+}
+
+.shell::before {
+  left: var(--shell-gutter);
+}
+
+.shell::after {
+  right: var(--shell-gutter);
+}
+
+.shell__stack {
+  display: grid;
+  gap: 0.85rem;
+  position: relative;
+  z-index: 1;
+}
+
+.layout {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 1rem;
+}
+
+.layout > .panel {
+  flex: 1 1 320px;
+  min-width: min(100%, 320px);
+}
+
+.panel {
+  position: relative;
+  overflow: hidden;
+  padding: 1.15rem;
+  border: 1px solid var(--border);
+  background: rgba(18, 20, 26, 0.9);
+  box-shadow: var(--shadow-soft);
+  backdrop-filter: blur(14px);
+}
+
+.panel::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background:
+    radial-gradient(circle at top left, rgba(255, 255, 255, 0.055), transparent 22%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.025), transparent 36%);
+  opacity: 0.9;
+}
+
+.panel > * {
+  position: relative;
+  z-index: 1;
+}
+
+.hero {
+  display: grid;
+  gap: 0.55rem;
+  padding: 1.3rem 1.4rem;
+}
+
+.hero h1 {
+  margin: 0;
+  font-size: clamp(2rem, 4vw, 2.8rem);
+  line-height: 0.98;
+}
+
+.hero-copy,
+.panel-heading p,
+.field-note,
+.status-detail,
+.song-detail,
+.song-meta,
+.steps {
+  color: var(--muted);
+}
+
+.hero-copy,
+.panel-heading p,
+.status-detail,
+.song-detail,
+.song-meta,
+.steps,
+.field-note {
+  line-height: 1.55;
+}
+
+.hero-copy {
+  margin: 0;
+  font-size: 0.98rem;
+}
+
+.field-label {
+  margin: 0;
+  font-size: 0.74rem;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--accent-strong);
+}
+
+.panel-heading {
+  display: grid;
+  gap: 0.35rem;
+  margin-bottom: 0.9rem;
+  padding-bottom: 0.85rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.panel-heading h2 {
+  margin: 0;
+  font-size: clamp(1.45rem, 3vw, 2rem);
+  line-height: 1.02;
+}
+
+.panel-heading p {
+  margin: 0;
+  max-width: 42rem;
+}
+
+.eyebrow {
+  margin: 0;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--brand-deep);
+}
+
+.status-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 0.65rem;
+}
+
+.status-card,
+.song-card {
+  position: relative;
+  display: grid;
+  gap: 0.45rem;
+  padding: 1rem;
+  border: 1px solid var(--border);
+  background: rgba(15, 18, 24, 0.9);
+}
+
+.status-card::before,
+.song-card::before {
+  content: "";
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 3px;
+  background: rgba(154, 164, 187, 0.45);
+}
+
+.status-card.is-success::before {
+  background: rgba(62, 207, 142, 0.85);
+}
+
+.status-card.is-warning::before {
+  background: rgba(244, 184, 97, 0.88);
+}
+
+.status-card.is-danger::before {
+  background: rgba(255, 107, 107, 0.9);
+}
+
+.status-card.is-success {
+  background: rgba(18, 45, 34, 0.82);
+}
+
+.status-card.is-warning {
+  background: rgba(54, 35, 11, 0.78);
+}
+
+.status-card.is-danger {
+  background: rgba(51, 20, 20, 0.8);
+}
+
+.status-value {
+  margin: 0;
+  font-size: 1.35rem;
+  line-height: 1.05;
+}
+
+.status-detail {
+  margin: 0;
+}
+
+.form-grid {
+  display: grid;
+  gap: 0.85rem;
+}
+
+.addon-release {
+  display: grid;
+  gap: 0.6rem;
+  padding-top: 0.85rem;
+  border-top: 1px solid var(--border);
+}
+
+.addon-release__value {
+  margin: 0;
+  font-family: var(--font-accent);
+  font-size: 1.15rem;
+  line-height: 1.05;
+}
+
+.addon-release__actions {
+  margin-top: 0.1rem;
+}
+
+input {
+  width: 100%;
+  min-height: 3.2rem;
+  padding: 0 1rem;
+  border: 1px solid var(--border-strong);
+  background: rgba(12, 18, 25, 0.86);
+  color: var(--text);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.03);
+}
+
+input::placeholder {
+  color: rgba(185, 191, 204, 0.5);
+}
+
+input:hover {
+  border-color: rgba(255, 255, 255, 0.2);
+}
+
+input:focus {
+  outline: none;
+  border-color: rgba(240, 102, 66, 0.72);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.04),
+    var(--glow);
+}
+
+.button-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+}
+
+button {
+  min-height: 3rem;
+  padding: 0 1rem;
+  border-radius: 3px;
+  border: 1px solid rgba(240, 102, 66, 0.48);
+  background: var(--brand);
+  color: #fff7f2;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+  box-shadow: none;
+  transition:
+    box-shadow 140ms ease,
+    border-color 140ms ease,
+    background-color 140ms ease;
+}
+
+button.secondary {
+  border-color: var(--border-strong);
+  background: rgba(18, 25, 35, 0.82);
+  color: var(--text);
+  box-shadow: none;
+}
+
+.button-link {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 3rem;
+  padding: 0 1rem;
+  border-radius: 3px;
+  border: 1px solid rgba(240, 102, 66, 0.48);
+  background: var(--brand);
+  color: #fff7f2;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+  text-decoration: none;
+  transition:
+    box-shadow 140ms ease,
+    border-color 140ms ease,
+    background-color 140ms ease;
+}
+
+.button-link.secondary {
+  border-color: var(--border-strong);
+  background: rgba(18, 25, 35, 0.82);
+  color: var(--text);
+  box-shadow: none;
+}
+
+button:hover {
+  border-color: rgba(240, 102, 66, 0.72);
+  background: var(--brand-strong);
+  box-shadow: none;
+}
+
+.button-link:hover,
+button.secondary:hover {
+  border-color: rgba(255, 255, 255, 0.18);
+  background: rgba(24, 28, 36, 0.95);
+  box-shadow: var(--shadow-soft);
+}
+
+.button-link:not(.secondary):hover {
+  border-color: rgba(240, 102, 66, 0.72);
+  background: var(--brand-strong);
+  box-shadow: none;
+}
+
+button:focus-visible {
+  outline: none;
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 255, 255, 0.04),
+    var(--glow);
+}
+
+.button-link:focus-visible {
+  outline: none;
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 255, 255, 0.04),
+    var(--glow);
+}
+
+button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+  transform: none;
+  box-shadow: none;
+}
+
+.is-hidden {
+  display: none !important;
+}
+
+.field-note {
+  margin: 0;
+}
+
+.field-note:empty {
+  display: none;
+}
+
+.field-note.is-success {
+  color: var(--success);
+}
+
+.field-note.is-warning {
+  color: var(--warning);
+}
+
+.field-note.is-danger {
+  color: var(--danger);
+}
+
+.song-card {
+  gap: 0.65rem;
+}
+
+.song-card.is-empty {
+  gap: 0.35rem;
+}
+
+.song-title {
+  margin: 0;
+  font-size: clamp(1.65rem, 3vw, 2.2rem);
+  line-height: 1.02;
+  max-width: 16ch;
+}
+
+.song-title.is-empty {
+  font-size: 1.25rem;
+  max-width: none;
+}
+
+.song-meta,
+.song-detail {
+  margin: 0;
+}
+
+::selection {
+  background: rgba(240, 102, 66, 0.3);
+  color: var(--text);
+}
+
+@media (max-width: 960px) {
+  :root {
+    --shell-gutter: 0.875rem;
+  }
+
+  .hero {
+    min-height: 0;
+  }
+}
+
+@media (max-width: 720px) {
+  :root {
+    --shell-gutter: 0.75rem;
+  }
+
+  .shell {
+    width: min(100% - 1rem, 1160px);
+    padding-top: 0.85rem;
+  }
+
+  .panel {
+    padding: 1rem;
+  }
+
+  .button-row {
+    flex-direction: column;
+  }
+
+  button {
+    width: 100%;
+  }
+}

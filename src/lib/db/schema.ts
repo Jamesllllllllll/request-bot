@@ -297,6 +297,7 @@ export const channelSettings = sqliteTable("channel_settings", {
   streamElementsTipWebhookToken: text("streamelements_tip_webhook_token")
     .notNull()
     .default(""),
+  rockSnifferRelayToken: text("rocksniffer_relay_token").notNull().default(""),
   duplicateWindowSeconds: integer("duplicate_window_seconds")
     .notNull()
     .default(900),

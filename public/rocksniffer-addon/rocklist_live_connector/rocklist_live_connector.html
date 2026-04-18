@@ -1,0 +1,112 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#0c1219" />
+    <title>RockList.Live Connector</title>
+    <link rel="stylesheet" type="text/css" href="style.css" />
+    <script src="../config.js"></script>
+    <script src="../config-ui.js"></script>
+    <script src="../_deps/jquery-3.2.1.js"></script>
+    <script src="../_deps/sniffer-poller.js"></script>
+    <script src="../_deps/sniffer-storage.js"></script>
+    <script src="script.js"></script>
+  </head>
+  <body>
+    <div class="shell">
+      <div class="shell__stack">
+        <header class="hero panel">
+          <p class="eyebrow">RockList.Live</p>
+          <h1>RockSniffer sync</h1>
+          <p class="hero-copy">
+            Leave this page open while you play. When a song starts in
+            Rocksmith and matches a song on your playlist, RockList.Live marks
+            it as playing now.
+          </p>
+        </header>
+
+        <main class="layout">
+          <section class="panel">
+            <div class="panel-heading">
+              <h2>Status</h2>
+            </div>
+            <div class="status-grid">
+              <article class="status-card">
+                <p class="eyebrow">RockSniffer</p>
+                <p class="status-value" id="rocksniffer-status">Waiting for data</p>
+                <p class="status-detail" id="rocksniffer-detail">
+                  Waiting for RockSniffer.
+                </p>
+              </article>
+              <article class="status-card">
+                <p class="eyebrow">Queue sync</p>
+                <p class="status-value" id="sync-status">Waiting</p>
+                <p class="status-detail" id="sync-detail">
+                  Waiting for the next song.
+                </p>
+              </article>
+            </div>
+          </section>
+
+          <section class="panel">
+            <div class="panel-heading">
+              <h2>Relay URL</h2>
+            </div>
+            <form id="relay-form" class="form-grid">
+              <label class="field-label" for="relay-url">Relay URL</label>
+              <input
+                id="relay-url"
+                name="relayUrl"
+                type="url"
+                inputmode="url"
+                placeholder="https://..."
+                autocomplete="off"
+                spellcheck="false"
+              />
+              <div class="button-row">
+                <button type="submit" id="save-relay">Save relay URL</button>
+                <button type="button" class="secondary" id="clear-relay">
+                  Clear saved URL
+                </button>
+              </div>
+              <p class="field-note" id="relay-feedback"></p>
+              <div class="addon-release">
+                <p class="field-label">Addon version</p>
+                <p class="addon-release__value" id="addon-release-value">
+                  2026-04-17-1836
+                </p>
+                <p class="field-note" id="addon-release-detail">
+                  Save your relay URL to check for updates.
+                </p>
+                <div class="button-row addon-release__actions is-hidden" id="addon-release-actions">
+                  <a
+                    class="button-link secondary"
+                    id="addon-release-download"
+                    href="#"
+                    target="_blank"
+                    rel="noreferrer noopener"
+                  >
+                    Download latest
+                  </a>
+                </div>
+              </div>
+            </form>
+          </section>
+
+          <section class="panel">
+            <div class="panel-heading">
+              <h2>Last song</h2>
+            </div>
+            <div class="song-card">
+              <p class="song-title" id="last-song-title">No song seen yet</p>
+              <p class="song-meta" id="last-song-artist">Waiting for RockSniffer</p>
+              <p class="song-detail" id="last-song-arrangement"></p>
+              <p class="song-detail" id="last-song-state"></p>
+            </div>
+          </section>
+        </main>
+      </div>
+    </div>
+  </body>
+</html>

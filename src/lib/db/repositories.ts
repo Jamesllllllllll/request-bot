@@ -2068,6 +2068,10 @@ function nextStreamElementsTipWebhookToken() {
   return createId("setip");
 }
 
+function nextRockSnifferRelayToken() {
+  return createId("rsrelay");
+}
+
 export async function ensureOverlayAccessToken(env: AppEnv, channelId: string) {
   const existing = await getChannelSettingsByChannelId(env, channelId);
 
@@ -2118,6 +2122,28 @@ export async function ensureStreamElementsTipWebhookToken(
     .update(channelSettings)
     .set({
       streamElementsTipWebhookToken: token,
+      updatedAt: Date.now(),
+    })
+    .where(eq(channelSettings.channelId, channelId));
+
+  return token;
+}
+
+export async function ensureRockSnifferRelayToken(
+  env: AppEnv,
+  channelId: string
+) {
+  const existing = await getChannelSettingsByChannelId(env, channelId);
+
+  if (existing?.rockSnifferRelayToken) {
+    return existing.rockSnifferRelayToken;
+  }
+
+  const token = nextRockSnifferRelayToken();
+  await getDb(env)
+    .update(channelSettings)
+    .set({
+      rockSnifferRelayToken: token,
       updatedAt: Date.now(),
     })
     .where(eq(channelSettings.channelId, channelId));
@@ -2433,6 +2459,22 @@ function buildCatalogTuningIdsJson() {
   )`;
 }
 
+function buildJsonIntegerMembershipSubquery(values: number[]) {
+  return sql`(
+    SELECT CAST(value AS INTEGER)
+    FROM json_each(${JSON.stringify(values)})
+    WHERE value IS NOT NULL
+  )`;
+}
+
+function buildJsonTextMembershipSubquery(values: string[]) {
+  return sql`(
+    SELECT CAST(value AS TEXT)
+    FROM json_each(${JSON.stringify(values)})
+    WHERE value IS NOT NULL
+  )`;
+}
+
 function buildCatalogAnySelectedTuningCondition(
   tunings: Array<number | string>
 ) {
@@ -2442,15 +2484,15 @@ function buildCatalogAnySelectedTuningCondition(
     return null;
   }
 
+  const selectedTuningIds =
+    buildJsonIntegerMembershipSubquery(normalizedTuningIds);
+
   return sql`
     EXISTS (
       SELECT 1
       FROM json_each(${buildCatalogTuningIdsJson()}) AS tuning_entry
       WHERE tuning_entry.value IS NOT NULL
-        AND CAST(tuning_entry.value AS INTEGER) IN ${sql`(${sql.join(
-          normalizedTuningIds.map((tuningId) => sql`${tuningId}`),
-          sql`, `
-        )})`}
+        AND CAST(tuning_entry.value AS INTEGER) IN ${selectedTuningIds}
     )
   `;
 }
@@ -2464,6 +2506,9 @@ function buildCatalogAllowedTuningsCondition(
     return null;
   }
 
+  const allowedTuningIds =
+    buildJsonIntegerMembershipSubquery(normalizedTuningIds);
+
   return sql`
     EXISTS (
       SELECT 1
@@ -2474,10 +2519,7 @@ function buildCatalogAllowedTuningsCondition(
       SELECT 1
       FROM json_each(${buildCatalogTuningIdsJson()}) AS tuning_entry
       WHERE tuning_entry.value IS NOT NULL
-        AND CAST(tuning_entry.value AS INTEGER) NOT IN ${sql`(${sql.join(
-          normalizedTuningIds.map((tuningId) => sql`${tuningId}`),
-          sql`, `
-        )})`}
+        AND CAST(tuning_entry.value AS INTEGER) NOT IN ${allowedTuningIds}
     )
   `;
 }
@@ -3574,44 +3616,48 @@ export async function searchCatalogSongs(
     (groupedProjectId): groupedProjectId is number =>
       Number.isInteger(groupedProjectId) && groupedProjectId > 0
   );
+  const excludedSongIdSet =
+    excludedSongIds.length > 0
+      ? buildJsonIntegerMembershipSubquery(excludedSongIds)
+      : null;
+  const excludedGroupedProjectIdSet =
+    excludedGroupedProjectIds.length > 0
+      ? buildJsonIntegerMembershipSubquery(excludedGroupedProjectIds)
+      : null;
+  const excludedArtistIdSet =
+    excludedArtistIds.length > 0
+      ? buildJsonIntegerMembershipSubquery(excludedArtistIds)
+      : null;
+  const excludedAuthorIdSet =
+    excludedAuthorIds.length > 0
+      ? buildJsonIntegerMembershipSubquery(excludedAuthorIds)
+      : null;
+  const excludedArtistNameSet =
+    normalizedExcludedArtists.length > 0
+      ? buildJsonTextMembershipSubquery(normalizedExcludedArtists)
+      : null;
+  const excludedCreatorNameSet =
+    normalizedExcludedCreators.length > 0
+      ? buildJsonTextMembershipSubquery(normalizedExcludedCreators)
+      : null;
   const blacklistConditions = [
     excludedSongIds.length
-      ? sql`${catalogSongs.sourceSongId} NOT IN ${sql`(${sql.join(
-          excludedSongIds.map((songId) => sql`${songId}`),
-          sql`, `
-        )})`}`
+      ? sql`${catalogSongs.sourceSongId} NOT IN ${excludedSongIdSet}`
       : null,
     excludedGroupedProjectIds.length
-      ? sql`(${catalogSongs.groupedProjectId} IS NULL OR ${catalogSongs.groupedProjectId} NOT IN ${sql`(${sql.join(
-          excludedGroupedProjectIds.map(
-            (groupedProjectId) => sql`${groupedProjectId}`
-          ),
-          sql`, `
-        )})`})`
+      ? sql`(${catalogSongs.groupedProjectId} IS NULL OR ${catalogSongs.groupedProjectId} NOT IN ${excludedGroupedProjectIdSet})`
       : null,
     excludedArtistIds.length
-      ? sql`(${catalogSongs.artistId} IS NULL OR ${catalogSongs.artistId} NOT IN ${sql`(${sql.join(
-          excludedArtistIds.map((artistId) => sql`${artistId}`),
-          sql`, `
-        )})`})`
+      ? sql`(${catalogSongs.artistId} IS NULL OR ${catalogSongs.artistId} NOT IN ${excludedArtistIdSet})`
       : null,
     normalizedExcludedArtists.length
-      ? sql`lower(coalesce(${catalogSongs.artistName}, '')) NOT IN ${sql`(${sql.join(
-          normalizedExcludedArtists.map((name) => sql`${name}`),
-          sql`, `
-        )})`}`
+      ? sql`lower(coalesce(${catalogSongs.artistName}, '')) NOT IN ${excludedArtistNameSet}`
       : null,
     excludedAuthorIds.length
-      ? sql`(${catalogSongs.authorId} IS NULL OR ${catalogSongs.authorId} NOT IN ${sql`(${sql.join(
-          excludedAuthorIds.map((authorId) => sql`${authorId}`),
-          sql`, `
-        )})`})`
+      ? sql`(${catalogSongs.authorId} IS NULL OR ${catalogSongs.authorId} NOT IN ${excludedAuthorIdSet})`
       : null,
     normalizedExcludedCreators.length
-      ? sql`lower(coalesce(${catalogSongs.creatorName}, '')) NOT IN ${sql`(${sql.join(
-          normalizedExcludedCreators.map((name) => sql`${name}`),
-          sql`, `
-        )})`}`
+      ? sql`lower(coalesce(${catalogSongs.creatorName}, '')) NOT IN ${excludedCreatorNameSet}`
       : null,
   ].filter(
     (condition): condition is ReturnType<typeof sql> => condition !== null

@@ -2,7 +2,7 @@
   "name": "request-bot",
   "private": true,
   "type": "module",
-  "version": "0.9.0",
+  "version": "0.10.0",
   "engines": {
     "node": ">=22"
   },
@@ -17,6 +17,7 @@
     "pretypecheck": "npm run routes:generate && npm run db:sync-latest-migration",
     "predeploy": "npm run db:sync-latest-migration",
     "dev": "vite dev --port 9000",
+    "tunnel": "node scripts/tunnel.mjs",
     "build": "vite build",
     "build:extension:panel": "vite build --config vite.extension.config.ts",
     "build:extension:package": "npm run build:extension:panel && node scripts/package-extension-panel.mjs",

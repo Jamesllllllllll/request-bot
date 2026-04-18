@@ -2,6 +2,17 @@
 
 All notable changes to this project are documented here.
 
+## [0.10.0] - 2026-04-18
+
+### Added
+- Dashboard settings now include a RockSniffer addon download and setup flow, making it possible to keep the current song in sync automatically while you play.
+
+### Changed
+- The RockSniffer addon setup is easier to follow, with clearer local launch steps, version-aware downloads, and a safer queue handoff when a matching song starts.
+
+### Fixed
+- Search stays more reliable during broader filtered lookups.
+
 ## [0.9.0] - 2026-04-16
 
 ### Added

@@ -373,6 +373,63 @@ describe("searchCatalogSongs", () => {
     );
   });
 
+  it("keeps multi-token blacklist searches under the D1 variable limit", async () => {
+    const capturedSql: unknown[] = [];
+    const dbAll = vi.fn().mockImplementation((query) => {
+      capturedSql.push(query);
+      return Promise.resolve([]);
+    });
+
+    vi.mocked(getDb).mockReturnValue({
+      all: dbAll,
+    } as never);
+
+    await expect(
+      searchCatalogSongs(env, {
+        query: "take me home",
+        parts: ["lead"],
+        allowedTuningsFilter: [
+          1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 19, 20, 32,
+          33, 34, 35, 43, 56, 57, 58, 59, 60, 61, 62, 63,
+        ],
+        excludeSongIds: [99077, 99080],
+        excludeArtistIds: [
+          8871, 10494, 7311, 7235, 15666, 9141, 15756, 165, 3931, 5790, 469,
+          424,
+        ],
+        excludeArtistNames: [
+          "aerosmith gareth evans",
+          "brian may ft nathan evans",
+          "castlevania",
+          "castlevania ii simon s quest",
+          "dolly spartans",
+          "eva simons",
+          "eva under fire",
+          "evanescence",
+          "evans blue",
+          "sparta",
+          "the hooters",
+          "the offspring",
+        ],
+        excludeAuthorIds: [2638],
+        excludeCreatorNames: ["hikikomori"],
+        page: 1,
+        pageSize: 10,
+        sortBy: "relevance",
+        sortDirection: "desc",
+      })
+    ).resolves.toMatchObject({
+      total: 0,
+      results: [],
+    });
+
+    const dialect = new SQLiteAsyncDialect();
+    const rowsQuery = dialect.sqlToQuery(capturedSql[0] as never);
+
+    expect(rowsQuery.params.length).toBeLessThan(100);
+    expect(rowsQuery.sql).toContain("json_each(?)");
+  });
+
   it("prioritizes preferred charters in ranking and exposes the flag in results", async () => {
     const capturedSql: unknown[] = [];
     const matchedRows = [

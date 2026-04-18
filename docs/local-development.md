@@ -74,6 +74,7 @@ For this repo, treat `http://localhost:9000` as the default existing dev app. Be
 ## Day-To-Day Commands
 
 - `npm run dev`
+- `npm run tunnel`
 - `npm run db:migrate`
 - `npm run check:prepush`
 - `npm run check:ship`
@@ -118,25 +119,31 @@ Use that tunnel first for sign-in and other auth-sensitive browser checks.
 
 EventSub and Twitch panel hosted testing also work better with a public HTTPS URL.
 
-Cloudflare Tunnel flow:
+Start the existing tunnel with:
 
 ```bash
-cloudflared login
-cloudflared tunnel create request-bot-dev
-cloudflared tunnel route dns request-bot-dev dev.example.com
-cloudflared tunnel run <your-tunnel-id>
+npm run tunnel
 ```
+
+That script points `https://dev.itsaunix.systems` at `http://localhost:9000` using the repo-local Cloudflare tunnel defaults and the credentials file under your local `.cloudflared` folder.
+
+Override the defaults with:
+
+- `REQUEST_BOT_TUNNEL_ID`
+- `REQUEST_BOT_TUNNEL_HOST`
+- `REQUEST_BOT_TUNNEL_URL`
+- `REQUEST_BOT_TUNNEL_CREDENTIALS_FILE`
 
 If you need to recreate the tunnel yourself, then set:
 
-- `APP_URL=https://dev.example.com`
-- `VITE_ALLOWED_HOSTS=dev.example.com` if Vite blocks the hostname
-- `VITE_TWITCH_EXTENSION_API_BASE_URL=https://dev.example.com` for the standalone panel build
+- `APP_URL=https://dev.itsaunix.systems`
+- `VITE_ALLOWED_HOSTS=dev.itsaunix.systems` if Vite blocks the hostname
+- `VITE_TWITCH_EXTENSION_API_BASE_URL=https://dev.itsaunix.systems` for the standalone panel build
 
 Also register these Twitch redirect URIs:
 
-- `https://dev.example.com/auth/twitch/callback`
-- `https://dev.example.com/auth/twitch/bot/callback`
+- `https://dev.itsaunix.systems/auth/twitch/callback`
+- `https://dev.itsaunix.systems/auth/twitch/bot/callback`
 
 `ngrok http 9000` is the simpler alternative when you do not need a stable hostname.
 

@@ -832,6 +832,41 @@ export const twitchAuthorizations = sqliteTable(
   ]
 );
 
+export const youtubeAuthorizations = sqliteTable(
+  "youtube_authorizations",
+  {
+    id: text("id").primaryKey(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id),
+    channelId: text("channel_id")
+      .notNull()
+      .references(() => channels.id),
+    youtubeChannelId: text("youtube_channel_id").notNull(),
+    channelTitle: text("channel_title").notNull(),
+    channelCustomUrl: text("channel_custom_url"),
+    thumbnailUrl: text("thumbnail_url"),
+    accessTokenEncrypted: text("access_token_encrypted").notNull(),
+    refreshTokenEncrypted: text("refresh_token_encrypted"),
+    scopes: text("scopes").notNull(),
+    tokenType: text("token_type").notNull(),
+    expiresAt: integer("expires_at"),
+    createdAt: integer("created_at")
+      .notNull()
+      .default(sql`(unixepoch() * 1000)`),
+    updatedAt: integer("updated_at")
+      .notNull()
+      .default(sql`(unixepoch() * 1000)`),
+  },
+  (table) => [
+    uniqueIndex("youtube_authorizations_channel_uidx").on(table.channelId),
+    uniqueIndex("youtube_authorizations_youtube_channel_uidx").on(
+      table.youtubeChannelId
+    ),
+    index("youtube_authorizations_user_idx").on(table.userId),
+  ]
+);
+
 export const eventSubSubscriptions = sqliteTable(
   "eventsub_subscriptions",
   {
@@ -1046,6 +1081,8 @@ export type AuditLogInsert = typeof auditLogs.$inferInsert;
 export type PlayedSongInsert = typeof playedSongs.$inferInsert;
 export type TwitchAuthorizationInsert =
   typeof twitchAuthorizations.$inferInsert;
+export type YouTubeAuthorizationInsert =
+  typeof youtubeAuthorizations.$inferInsert;
 export type EventSubSubscriptionInsert =
   typeof eventSubSubscriptions.$inferInsert;
 export type EventSubDeliveryInsert = typeof eventSubDeliveries.$inferInsert;

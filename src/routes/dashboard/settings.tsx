@@ -57,7 +57,7 @@ import { getBotStatusKey } from "~/lib/bot-status";
 import { buildChannelInstructions } from "~/lib/channel-instructions";
 import { pathOptions } from "~/lib/channel-options";
 import { useAppLocale, useLocaleTranslation } from "~/lib/i18n/client";
-import { formatNumber } from "~/lib/i18n/format";
+import { formatDate, formatNumber } from "~/lib/i18n/format";
 import { defaultLocale, localeOptions } from "~/lib/i18n/locales";
 import { getLocalizedPageTitle } from "~/lib/i18n/metadata";
 import {
@@ -113,12 +113,48 @@ type DashboardSettingsData = {
     rockSnifferRelayUrl: string | null;
     rockSnifferAddonDownloadUrl: string | null;
     streamElementsTipRelayUrl: string | null;
+    youtube: {
+      available: boolean;
+      connected: boolean;
+      channelTitle: string | null;
+      channelCustomUrl: string | null;
+      updatedAt: number | null;
+    };
   };
   channelPointRewardsEligibility: ChannelPointRewardEligibility;
   bot: {
     connected: boolean;
     configuredUsername: string;
   };
+};
+
+type YouTubeIntegrationStatusData = {
+  available: boolean;
+  connected: boolean;
+  account: null | {
+    youtubeChannelId: string;
+    channelTitle: string;
+    channelCustomUrl: string | null;
+    thumbnailUrl: string | null;
+    updatedAt: number;
+  };
+  activeBroadcast: null | {
+    id: string;
+    title: string;
+    liveChatId: string;
+    publishedAt: string | null;
+  };
+  recentMessages: Array<{
+    id: string;
+    authorDisplayName: string;
+    authorChannelId: string | null;
+    messageText: string;
+    publishedAt: string | null;
+    isOwner: boolean;
+    isModerator: boolean;
+    isSponsor: boolean;
+  }>;
+  statusError: string | null;
 };
 
 type ViewerSessionData = {
@@ -278,6 +314,13 @@ function DashboardSettingsPage() {
   const [rockSnifferRelayUrlCopied, setRockSnifferRelayUrlCopied] =
     useState(false);
   const [relayUrlCopied, setRelayUrlCopied] = useState(false);
+  const [youtubeTestMessage, setYoutubeTestMessage] = useState(
+    "RockList.Live YouTube test"
+  );
+  const [youtubeNotice, setYoutubeNotice] = useState<null | {
+    tone: "success" | "warning" | "danger";
+    message: string;
+  }>(null);
   const sessionQuery = useQuery<ViewerSessionData>({
     queryKey: ["viewer-session"],
     queryFn: async () => {
@@ -330,6 +373,44 @@ function DashboardSettingsPage() {
   const [officialDlcOpen, setOfficialDlcOpen] = useState(false);
   const [allowedTuningsOpen, setAllowedTuningsOpen] = useState(false);
   const [requiredPathsOpen, setRequiredPathsOpen] = useState(false);
+  const youtubeIntegration = settingsQuery.data?.integrations.youtube ?? {
+    available: false,
+    connected: false,
+    channelTitle: null,
+    channelCustomUrl: null,
+    updatedAt: null,
+  };
+  const youtubeStatusQuery = useQuery({
+    queryKey: [
+      "dashboard-youtube-integration",
+      youtubeIntegration.connected,
+      youtubeIntegration.updatedAt,
+    ],
+    queryFn: async (): Promise<YouTubeIntegrationStatusData> => {
+      const response = await fetch("/api/dashboard/integrations/youtube");
+      const body = (await response.json().catch(() => null)) as
+        | YouTubeIntegrationStatusData
+        | { message?: string }
+        | null;
+
+      if (!response.ok) {
+        throw new Error(
+          body && "message" in body
+            ? (body.message ?? "Unable to load YouTube integration status.")
+            : "Unable to load YouTube integration status."
+        );
+      }
+
+      return body as YouTubeIntegrationStatusData;
+    },
+    enabled:
+      !sessionQuery.isLoading &&
+      hasOwnerChannel &&
+      (youtubeIntegration.available || youtubeIntegration.connected),
+    staleTime: 30_000,
+    refetchOnWindowFocus: false,
+    placeholderData: (previousData) => previousData,
+  });
 
   useEffect(() => {
     if (hasHydratedForm || settingsQuery.data === undefined) {
@@ -475,6 +556,93 @@ function DashboardSettingsPage() {
       finishSaveBatch(false);
     },
   });
+  const sendYouTubeTestMessageMutation = useMutation({
+    mutationFn: async () => {
+      const response = await fetch("/api/dashboard/integrations/youtube", {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({
+          message: youtubeTestMessage,
+        }),
+      });
+      const body = (await response.json().catch(() => null)) as
+        | { message?: string }
+        | { displayMessage?: string }
+        | null;
+
+      if (!response.ok) {
+        throw new Error(
+          body && "message" in body
+            ? (body.message ?? "Unable to send YouTube test message.")
+            : "Unable to send YouTube test message."
+        );
+      }
+
+      return body as { displayMessage?: string };
+    },
+    onMutate: () => {
+      setYoutubeNotice(null);
+    },
+    onSuccess: async () => {
+      setYoutubeNotice({
+        tone: "success",
+        message: "YouTube test message sent.",
+      });
+      await queryClient.invalidateQueries({
+        queryKey: ["dashboard-youtube-integration"],
+      });
+    },
+    onError: (error) => {
+      setYoutubeNotice({
+        tone: "danger",
+        message:
+          getErrorMessage(error) || "Unable to send YouTube test message.",
+      });
+    },
+  });
+  const disconnectYouTubeMutation = useMutation({
+    mutationFn: async () => {
+      const response = await fetch("/api/dashboard/integrations/youtube", {
+        method: "DELETE",
+      });
+      const body = (await response.json().catch(() => null)) as {
+        message?: string;
+      } | null;
+
+      if (!response.ok) {
+        throw new Error(
+          body?.message ?? "Unable to disconnect YouTube right now."
+        );
+      }
+
+      return body;
+    },
+    onMutate: () => {
+      setYoutubeNotice(null);
+    },
+    onSuccess: async () => {
+      setYoutubeNotice({
+        tone: "success",
+        message: "YouTube disconnected.",
+      });
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["dashboard-settings"] }),
+        queryClient.invalidateQueries({
+          queryKey: ["dashboard-youtube-integration"],
+        }),
+      ]);
+    },
+    onError: (error) => {
+      setYoutubeNotice({
+        tone: "danger",
+        message:
+          getErrorMessage(error) || "Unable to disconnect YouTube right now.",
+      });
+    },
+  });
+
   const status = settingsQuery.data?.channel?.botReadyState ?? "disabled";
   const manageableChannels =
     sessionQuery.data?.viewer?.manageableChannels
@@ -524,6 +692,26 @@ function DashboardSettingsPage() {
     settingsQuery.data?.integrations.rockSnifferRelayUrl ?? null;
   const rockSnifferAddonDownloadUrl =
     settingsQuery.data?.integrations.rockSnifferAddonDownloadUrl ?? null;
+  const youtubeStatus = youtubeStatusQuery.data ?? null;
+  const youtubeAccount =
+    youtubeStatus?.account ??
+    (youtubeIntegration.connected
+      ? {
+          youtubeChannelId: "",
+          channelTitle: youtubeIntegration.channelTitle ?? "Connected account",
+          channelCustomUrl: youtubeIntegration.channelCustomUrl,
+          thumbnailUrl: null,
+          updatedAt: youtubeIntegration.updatedAt ?? Date.now(),
+        }
+      : null);
+  const youtubeActiveBroadcast = youtubeStatus?.activeBroadcast ?? null;
+  const showYouTubeIntegrationCard =
+    youtubeIntegration.available || youtubeIntegration.connected;
+  const canSendYouTubeTestMessage =
+    youtubeIntegration.connected &&
+    !!youtubeActiveBroadcast &&
+    !youtubeStatus?.statusError &&
+    youtubeTestMessage.trim().length > 0;
   const channelPointRewardsEligibility =
     settingsQuery.data?.channelPointRewardsEligibility ??
     unknownChannelPointRewardEligibility;
@@ -1250,6 +1438,246 @@ function DashboardSettingsPage() {
                     </div>
                   </CardContent>
                 </Card>
+
+                {showYouTubeIntegrationCard ? (
+                  <Card className="dashboard-settings__section">
+                    <CardHeader>
+                      <CardTitle
+                        as="h2"
+                        className="text-xl leading-tight md:text-2xl"
+                      >
+                        YouTube chat test
+                      </CardTitle>
+                      <CardDescription>
+                        Connect your YouTube channel and verify live chat access
+                        before broader adapter work.
+                      </CardDescription>
+                    </CardHeader>
+                    <CardContent className="grid items-start gap-4 lg:grid-cols-[minmax(0,1.1fr)_minmax(0,0.9fr)]">
+                      <div className="grid gap-4">
+                        <div className="grid gap-3 border border-(--border) bg-(--panel-soft) p-4">
+                          <div className="flex flex-wrap items-center justify-between gap-3">
+                            <div className="grid gap-1">
+                              <p className="text-sm font-medium text-(--text)">
+                                Connection
+                              </p>
+                              <p className="text-sm leading-6 text-(--muted)">
+                                {youtubeIntegration.connected
+                                  ? "Connected to YouTube for chat testing."
+                                  : "Connect the YouTube channel you want to test."}
+                              </p>
+                            </div>
+                            <Badge
+                              variant={
+                                youtubeIntegration.connected
+                                  ? "default"
+                                  : "outline"
+                              }
+                              className={
+                                youtubeIntegration.connected
+                                  ? "bg-red-600 text-white"
+                                  : undefined
+                              }
+                            >
+                              {youtubeIntegration.connected
+                                ? "Connected"
+                                : "Not connected"}
+                            </Badge>
+                          </div>
+
+                          {youtubeAccount ? (
+                            <div className="grid gap-1 text-sm leading-6 text-(--muted)">
+                              <p className="font-medium text-(--text)">
+                                {youtubeAccount.channelTitle}
+                              </p>
+                              {youtubeAccount.channelCustomUrl ? (
+                                <p>{youtubeAccount.channelCustomUrl}</p>
+                              ) : null}
+                              {youtubeAccount.updatedAt ? (
+                                <p>
+                                  Updated{" "}
+                                  {formatDate(
+                                    locale,
+                                    youtubeAccount.updatedAt,
+                                    {
+                                      dateStyle: "medium",
+                                      timeStyle: "short",
+                                    }
+                                  )}
+                                </p>
+                              ) : null}
+                            </div>
+                          ) : null}
+
+                          {youtubeNotice ? (
+                            <Banner tone={youtubeNotice.tone}>
+                              {youtubeNotice.message}
+                            </Banner>
+                          ) : null}
+                          {youtubeStatusQuery.error ? (
+                            <Banner tone="danger">
+                              {getErrorMessage(youtubeStatusQuery.error) ||
+                                "Unable to load YouTube integration status."}
+                            </Banner>
+                          ) : null}
+                          {youtubeStatus?.statusError ? (
+                            <Banner tone="warning">
+                              {youtubeStatus.statusError}
+                            </Banner>
+                          ) : null}
+
+                          <div className="flex flex-wrap gap-2">
+                            <Button asChild variant="outline">
+                              <a
+                                href="/auth/youtube/start?redirectTo=%2Fdashboard%2Fsettings"
+                                className="no-underline"
+                              >
+                                {youtubeIntegration.connected
+                                  ? "Reconnect YouTube"
+                                  : "Connect YouTube"}
+                              </a>
+                            </Button>
+                            {youtubeIntegration.connected ? (
+                              <>
+                                <Button
+                                  type="button"
+                                  variant="outline"
+                                  onClick={() => youtubeStatusQuery.refetch()}
+                                  disabled={youtubeStatusQuery.isFetching}
+                                >
+                                  {youtubeStatusQuery.isFetching
+                                    ? "Refreshing"
+                                    : "Refresh status"}
+                                </Button>
+                                <Button
+                                  type="button"
+                                  variant="outline"
+                                  onClick={() =>
+                                    disconnectYouTubeMutation.mutate()
+                                  }
+                                  disabled={disconnectYouTubeMutation.isPending}
+                                >
+                                  {disconnectYouTubeMutation.isPending
+                                    ? "Disconnecting"
+                                    : "Disconnect"}
+                                </Button>
+                              </>
+                            ) : null}
+                          </div>
+                        </div>
+
+                        <div className="grid gap-3 border border-(--border) bg-(--panel-muted) p-4">
+                          <p className="text-sm font-medium text-(--text)">
+                            Live chat status
+                          </p>
+                          <p className="text-sm leading-6 text-(--muted)">
+                            {youtubeStatusQuery.isLoading
+                              ? "Checking YouTube live chat."
+                              : youtubeActiveBroadcast
+                                ? "Live chat is reachable and ready for a test message."
+                                : youtubeIntegration.connected
+                                  ? "Connected. No active YouTube live stream is available right now."
+                                  : "Connect YouTube to check live chat."}
+                          </p>
+                          {youtubeActiveBroadcast ? (
+                            <div className="grid gap-1 text-sm leading-6 text-(--muted)">
+                              <p className="font-medium text-(--text)">
+                                {youtubeActiveBroadcast.title}
+                              </p>
+                              {youtubeActiveBroadcast.publishedAt ? (
+                                <p>
+                                  Started{" "}
+                                  {formatDate(
+                                    locale,
+                                    youtubeActiveBroadcast.publishedAt,
+                                    {
+                                      dateStyle: "medium",
+                                      timeStyle: "short",
+                                    }
+                                  )}
+                                </p>
+                              ) : null}
+                            </div>
+                          ) : null}
+                        </div>
+                      </div>
+
+                      <div className="grid gap-4">
+                        <div className="grid gap-3 border border-(--border) bg-(--panel-soft) p-4">
+                          <p className="text-sm font-medium text-(--text)">
+                            Send test message
+                          </p>
+                          <p className="text-sm leading-6 text-(--muted)">
+                            Send one manual message to confirm posting works in
+                            your current YouTube live chat.
+                          </p>
+                          <Input
+                            value={youtubeTestMessage}
+                            onChange={(event) =>
+                              setYoutubeTestMessage(event.target.value)
+                            }
+                            maxLength={200}
+                            disabled={!youtubeIntegration.connected}
+                          />
+                          <Button
+                            type="button"
+                            onClick={() =>
+                              sendYouTubeTestMessageMutation.mutate()
+                            }
+                            disabled={
+                              !canSendYouTubeTestMessage ||
+                              sendYouTubeTestMessageMutation.isPending
+                            }
+                          >
+                            {sendYouTubeTestMessageMutation.isPending
+                              ? "Sending"
+                              : "Send test message"}
+                          </Button>
+                          {!youtubeActiveBroadcast &&
+                          youtubeIntegration.connected ? (
+                            <p className="text-xs leading-5 text-(--muted)">
+                              Go live on YouTube first, then refresh status.
+                            </p>
+                          ) : null}
+                        </div>
+
+                        {youtubeIntegration.connected ? (
+                          <div className="grid gap-3 border border-(--border) bg-(--panel-soft) p-4">
+                            <p className="text-sm font-medium text-(--text)">
+                              Recent chat
+                            </p>
+                            {youtubeStatus?.recentMessages.length ? (
+                              <div className="grid gap-2">
+                                {youtubeStatus.recentMessages
+                                  .slice(-8)
+                                  .reverse()
+                                  .map((message) => (
+                                    <div
+                                      key={message.id}
+                                      className="grid gap-0.5 border border-(--border) bg-(--panel-muted) p-3 text-sm"
+                                    >
+                                      <p className="font-medium text-(--text)">
+                                        {message.authorDisplayName}
+                                      </p>
+                                      <p className="text-(--muted)">
+                                        {message.messageText}
+                                      </p>
+                                    </div>
+                                  ))}
+                              </div>
+                            ) : (
+                              <p className="text-sm leading-6 text-(--muted)">
+                                {youtubeActiveBroadcast
+                                  ? "No recent messages were returned yet."
+                                  : "Recent messages appear here when a live chat is available."}
+                              </p>
+                            )}
+                          </div>
+                        ) : null}
+                      </div>
+                    </CardContent>
+                  </Card>
+                ) : null}
               </TabsContent>
 
               <TabsContent

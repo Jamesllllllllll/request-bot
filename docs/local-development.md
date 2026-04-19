@@ -47,6 +47,12 @@ Add these when you test Twitch auth, EventSub, bot flows, or the panel:
 - `ADMIN_TWITCH_USER_IDS`
 - `TWITCH_BOT_USERNAME`
 
+Add these when you test the YouTube chat connection:
+
+- `YOUTUBE_CLIENT_ID`
+- `YOUTUBE_CLIENT_SECRET`
+- `YOUTUBE_TOKEN_ENCRYPTION_SECRET`
+
 Use `VITE_ALLOWED_HOSTS` when you need extra local hostnames, and `VITE_TWITCH_EXTENSION_API_BASE_URL` when the standalone panel build needs a different app origin.
 
 4. Bootstrap the app database:
@@ -145,6 +151,10 @@ Also register these Twitch redirect URIs:
 - `https://dev.itsaunix.systems/auth/twitch/callback`
 - `https://dev.itsaunix.systems/auth/twitch/bot/callback`
 
+If you test the YouTube chat connection through the tunnel, also register:
+
+- `https://dev.itsaunix.systems/auth/youtube/callback`
+
 `ngrok http 9000` is the simpler alternative when you do not need a stable hostname.
 
 Do not start a second local dev server on another port unless `http://localhost:9000` and `https://dev.itsaunix.systems` are both unavailable or you intentionally need a separate instance.
@@ -163,6 +173,22 @@ Safe default:
 - use a separate test broadcaster
 - use a separate test bot account
 - do not keep local and production EventSub subscriptions active for the same broadcaster during debugging
+
+## YouTube Chat Testing
+
+The current YouTube test flow is intentionally narrow:
+
+- connect your own YouTube channel from dashboard settings
+- let the app detect your active YouTube live broadcast
+- verify that chat can be read and that a manual test message can be posted
+
+For Google OAuth setup during testing:
+
+- enable the YouTube Data API in your Google Cloud project
+- create a web OAuth client
+- add `https://dev.itsaunix.systems/auth/youtube/callback` as an authorized redirect URI
+- keep the OAuth consent screen in Testing while you validate the flow locally
+- add the Google account you use for testing as a test user if needed
 
 ## Verification
 

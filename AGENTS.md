@@ -20,6 +20,13 @@
 - Do not use specific song titles, artist names, chart examples, or catalog contents as public examples in UI copy, documentation, or repo instructions unless the user explicitly asks for them.
 - Keep public-facing copy neutral about catalog contents and focus on product behavior instead of example entries.
 
+## GitHub Issues
+
+- Keep GitHub issue writing very concise.
+- Use informal, conversational language instead of formal product-spec language.
+- Preserve the existing issue template or heading structure when rewriting an issue unless there is a clear reason to change it.
+- Keep issue comments short and practical.
+
 ## Runtime And Browser Checks
 
 - For this repo, assume the app is normally already running at `http://localhost:9000`.

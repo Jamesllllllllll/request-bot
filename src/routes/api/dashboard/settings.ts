@@ -11,6 +11,7 @@ import {
   getBotAuthorization,
   getCatalogSearchFilterOptions,
   getDashboardState,
+  getYouTubeAuthorizationForChannel,
   updateSettings,
 } from "~/lib/db/repositories";
 import type { AppEnv } from "~/lib/env";
@@ -34,6 +35,7 @@ import { getChannelPointRewardWarningMessageFromWarnings } from "~/lib/twitch/ch
 import { getErrorMessage, json } from "~/lib/utils";
 import { settingsInputSchema } from "~/lib/validation";
 import { parseVipTokenDurationThresholds } from "~/lib/vip-token-duration-thresholds";
+import { isYouTubeConfigured } from "~/lib/youtube/api";
 
 async function requireDashboardState(request: Request, runtimeEnv: AppEnv) {
   const userId = await getSessionUserId(request, runtimeEnv);
@@ -64,6 +66,7 @@ export const Route = createFileRoute("/api/dashboard/settings")({
           streamElementsTipWebhookToken,
           broadcasterAuthorization,
           filterOptions,
+          youtubeAuthorization,
         ] = await Promise.all([
           getBotAuthorization(runtimeEnv),
           state.settings
@@ -77,6 +80,9 @@ export const Route = createFileRoute("/api/dashboard/settings")({
             state.channel.id
           ),
           getCatalogSearchFilterOptions(runtimeEnv),
+          isYouTubeConfigured(runtimeEnv)
+            ? getYouTubeAuthorizationForChannel(runtimeEnv, state.channel.id)
+            : Promise.resolve(null),
         ]);
         let channelPointRewardsEligibility =
           unknownChannelPointRewardEligibility;
@@ -138,6 +144,13 @@ export const Route = createFileRoute("/api/dashboard/settings")({
             streamElementsTipRelayUrl: streamElementsTipWebhookToken
               ? `${runtimeEnv.APP_URL}/api/integrations/streamelements/${state.channel.slug}/${streamElementsTipWebhookToken}`
               : null,
+            youtube: {
+              available: isYouTubeConfigured(runtimeEnv),
+              connected: !!youtubeAuthorization,
+              channelTitle: youtubeAuthorization?.channelTitle ?? null,
+              channelCustomUrl: youtubeAuthorization?.channelCustomUrl ?? null,
+              updatedAt: youtubeAuthorization?.updatedAt ?? null,
+            },
           },
           channelPointRewardsEligibility,
           playedSongs: state.playedSongs,

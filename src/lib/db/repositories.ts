@@ -64,6 +64,14 @@ import {
   normalizeVipTokenCount,
   subtractVipTokenRedemption,
 } from "~/lib/vip-tokens";
+import {
+  getOwnYouTubeChannel,
+  refreshYouTubeAccessToken,
+} from "~/lib/youtube/api";
+import {
+  encryptYouTubeToken,
+  readStoredYouTubeToken,
+} from "~/lib/youtube/token-encryption";
 import { getDb } from "./client";
 import {
   type AuditLogInsert,
@@ -107,6 +115,7 @@ import {
   type VipRequestCooldownInsert,
   vipRequestCooldowns,
   vipTokens,
+  youtubeAuthorizations,
 } from "./schema";
 
 const CATALOG_SONG_MUTABLE_FIELDS: Array<keyof CatalogSongInsert> = [
@@ -167,6 +176,7 @@ const CATALOG_SONG_MUTABLE_FIELDS: Array<keyof CatalogSongInsert> = [
 ];
 
 type TwitchAuthorizationRow = typeof twitchAuthorizations.$inferSelect;
+type YouTubeAuthorizationRow = typeof youtubeAuthorizations.$inferSelect;
 
 function parseAdminTwitchUserIds(env: AppEnv) {
   return new Set(
@@ -465,6 +475,61 @@ export async function saveTwitchAuthorization(
         tokenType: input.tokenType,
         scopes: JSON.stringify(input.scopes),
         expiresAt: input.expiresAt,
+        updatedAt: Date.now(),
+      },
+    });
+}
+
+export async function saveYouTubeAuthorization(
+  env: AppEnv,
+  input: {
+    userId: string;
+    channelId: string;
+    youtubeChannelId: string;
+    channelTitle: string;
+    channelCustomUrl?: string | null;
+    thumbnailUrl?: string | null;
+    accessToken: string;
+    refreshToken?: string | null;
+    tokenType: string;
+    scopes: string[];
+    expiresAt?: number | null;
+  }
+) {
+  const encryptedTokens = await encryptYouTubeAuthorizationTokens(env, {
+    accessToken: input.accessToken,
+    refreshToken: input.refreshToken ?? null,
+  });
+
+  await getDb(env)
+    .insert(youtubeAuthorizations)
+    .values({
+      id: createId("yta"),
+      userId: input.userId,
+      channelId: input.channelId,
+      youtubeChannelId: input.youtubeChannelId,
+      channelTitle: input.channelTitle,
+      channelCustomUrl: input.channelCustomUrl ?? null,
+      thumbnailUrl: input.thumbnailUrl ?? null,
+      accessTokenEncrypted: encryptedTokens.accessTokenEncrypted,
+      refreshTokenEncrypted: encryptedTokens.refreshTokenEncrypted,
+      tokenType: input.tokenType,
+      scopes: JSON.stringify(input.scopes),
+      expiresAt: input.expiresAt ?? null,
+    })
+    .onConflictDoUpdate({
+      target: youtubeAuthorizations.channelId,
+      set: {
+        userId: input.userId,
+        youtubeChannelId: input.youtubeChannelId,
+        channelTitle: input.channelTitle,
+        channelCustomUrl: input.channelCustomUrl ?? null,
+        thumbnailUrl: input.thumbnailUrl ?? null,
+        accessTokenEncrypted: encryptedTokens.accessTokenEncrypted,
+        refreshTokenEncrypted: encryptedTokens.refreshTokenEncrypted,
+        tokenType: input.tokenType,
+        scopes: JSON.stringify(input.scopes),
+        expiresAt: input.expiresAt ?? null,
         updatedAt: Date.now(),
       },
     });
@@ -6052,6 +6117,38 @@ export async function createPlayedSong(
     });
 }
 
+export async function getYouTubeAuthorizationForChannel(
+  env: AppEnv,
+  channelId: string
+) {
+  const authorization = await getDb(env).query.youtubeAuthorizations.findFirst({
+    where: eq(youtubeAuthorizations.channelId, channelId),
+  });
+
+  return resolveYouTubeAuthorization(env, authorization);
+}
+
+export async function getActiveYouTubeAuthorizationForChannel(
+  env: AppEnv,
+  channelId: string
+) {
+  const authorization = await getYouTubeAuthorizationForChannel(env, channelId);
+  if (!authorization) {
+    return null;
+  }
+
+  return refreshYouTubeAuthorizationIfNeeded(env, authorization);
+}
+
+export async function deleteYouTubeAuthorization(
+  env: AppEnv,
+  channelId: string
+) {
+  await getDb(env)
+    .delete(youtubeAuthorizations)
+    .where(eq(youtubeAuthorizations.channelId, channelId));
+}
+
 export async function getAuthorizationForChannel(
   env: AppEnv,
   channelId: string
@@ -6147,6 +6244,45 @@ export async function updateTwitchAuthorizationTokens(
     .where(eq(twitchAuthorizations.id, authorizationId));
 }
 
+export async function updateYouTubeAuthorizationTokens(
+  env: AppEnv,
+  authorizationId: string,
+  input: {
+    accessToken: string;
+    refreshToken?: string | null;
+    expiresAt?: number | null;
+    scopes?: string[];
+    tokenType?: string;
+    channelTitle?: string;
+    channelCustomUrl?: string | null;
+    thumbnailUrl?: string | null;
+  }
+) {
+  const encryptedTokens = await encryptYouTubeAuthorizationTokens(env, {
+    accessToken: input.accessToken,
+    refreshToken: input.refreshToken ?? null,
+  });
+
+  await getDb(env)
+    .update(youtubeAuthorizations)
+    .set({
+      accessTokenEncrypted: encryptedTokens.accessTokenEncrypted,
+      refreshTokenEncrypted: encryptedTokens.refreshTokenEncrypted,
+      expiresAt: input.expiresAt ?? null,
+      scopes: input.scopes ? JSON.stringify(input.scopes) : undefined,
+      tokenType: input.tokenType ?? undefined,
+      channelTitle: input.channelTitle ?? undefined,
+      channelCustomUrl:
+        input.channelCustomUrl === undefined
+          ? undefined
+          : input.channelCustomUrl,
+      thumbnailUrl:
+        input.thumbnailUrl === undefined ? undefined : input.thumbnailUrl,
+      updatedAt: Date.now(),
+    })
+    .where(eq(youtubeAuthorizations.id, authorizationId));
+}
+
 async function encryptTwitchAuthorizationTokens(
   env: AppEnv,
   input: {
@@ -6159,6 +6295,26 @@ async function encryptTwitchAuthorizationTokens(
     input.refreshToken == null
       ? Promise.resolve(null)
       : encryptTwitchToken(env, input.refreshToken),
+  ]);
+
+  return {
+    accessTokenEncrypted,
+    refreshTokenEncrypted,
+  };
+}
+
+async function encryptYouTubeAuthorizationTokens(
+  env: AppEnv,
+  input: {
+    accessToken: string;
+    refreshToken?: string | null;
+  }
+) {
+  const [accessTokenEncrypted, refreshTokenEncrypted] = await Promise.all([
+    encryptYouTubeToken(env, input.accessToken),
+    input.refreshToken == null
+      ? Promise.resolve(null)
+      : encryptYouTubeToken(env, input.refreshToken),
   ]);
 
   return {
@@ -6206,6 +6362,54 @@ async function resolveTwitchAuthorization(
       .update(twitchAuthorizations)
       .set(encryptedUpdates)
       .where(eq(twitchAuthorizations.id, authorization.id));
+  }
+
+  return {
+    ...authorization,
+    accessTokenEncrypted: accessToken.value,
+    refreshTokenEncrypted: refreshToken?.value ?? null,
+  };
+}
+
+async function resolveYouTubeAuthorization(
+  env: AppEnv,
+  authorization: YouTubeAuthorizationRow | undefined
+) {
+  if (!authorization) {
+    return authorization;
+  }
+
+  const [accessToken, refreshToken] = await Promise.all([
+    readStoredYouTubeToken(env, authorization.accessTokenEncrypted),
+    authorization.refreshTokenEncrypted == null
+      ? Promise.resolve(null)
+      : readStoredYouTubeToken(env, authorization.refreshTokenEncrypted),
+  ]);
+
+  if (accessToken.needsReencryption || refreshToken?.needsReencryption) {
+    const encryptedUpdates: {
+      accessTokenEncrypted?: string;
+      refreshTokenEncrypted?: string | null;
+    } = {};
+
+    if (accessToken.needsReencryption) {
+      encryptedUpdates.accessTokenEncrypted = await encryptYouTubeToken(
+        env,
+        accessToken.value
+      );
+    }
+
+    if (refreshToken?.needsReencryption) {
+      encryptedUpdates.refreshTokenEncrypted = await encryptYouTubeToken(
+        env,
+        refreshToken.value
+      );
+    }
+
+    await getDb(env)
+      .update(youtubeAuthorizations)
+      .set(encryptedUpdates)
+      .where(eq(youtubeAuthorizations.id, authorization.id));
   }
 
   return {
@@ -6752,6 +6956,88 @@ async function refreshBroadcasterAuthorization(
       refreshedToken.scope ?? parseAuthorizationScopes(authorization.scopes)
     ),
     tokenType: refreshedToken.token_type,
+  };
+}
+
+async function refreshYouTubeAuthorizationIfNeeded(
+  env: AppEnv,
+  authorization: NonNullable<
+    Awaited<ReturnType<typeof getYouTubeAuthorizationForChannel>>
+  >
+) {
+  if (
+    !authorization.refreshTokenEncrypted ||
+    !authorization.expiresAt ||
+    authorization.expiresAt > Date.now() + 60_000
+  ) {
+    return authorization;
+  }
+
+  return refreshYouTubeAuthorization(env, authorization);
+}
+
+async function refreshYouTubeAuthorization(
+  env: AppEnv,
+  authorization: NonNullable<
+    Awaited<ReturnType<typeof getYouTubeAuthorizationForChannel>>
+  >
+) {
+  const refreshedToken = await refreshYouTubeAccessToken(
+    env,
+    authorization.refreshTokenEncrypted ?? ""
+  );
+  const nextScopes =
+    typeof refreshedToken.scope === "string"
+      ? refreshedToken.scope.split(" ").filter(Boolean)
+      : parseAuthorizationScopes(authorization.scopes);
+
+  let nextChannelTitle = authorization.channelTitle;
+  let nextChannelCustomUrl = authorization.channelCustomUrl;
+  let nextThumbnailUrl = authorization.thumbnailUrl;
+
+  try {
+    const youtubeChannel = await getOwnYouTubeChannel(
+      refreshedToken.access_token
+    );
+
+    nextChannelTitle = youtubeChannel.title;
+    nextChannelCustomUrl = youtubeChannel.customUrl;
+    nextThumbnailUrl = youtubeChannel.thumbnailUrl;
+  } catch (error) {
+    console.warn("Unable to refresh stored YouTube channel profile", {
+      channelId: authorization.channelId,
+      youtubeChannelId: authorization.youtubeChannelId,
+      error: error instanceof Error ? error.message : String(error),
+    });
+  }
+
+  await updateYouTubeAuthorizationTokens(env, authorization.id, {
+    accessToken: refreshedToken.access_token,
+    refreshToken:
+      refreshedToken.refresh_token ?? authorization.refreshTokenEncrypted,
+    expiresAt: refreshedToken.expires_in
+      ? Date.now() + refreshedToken.expires_in * 1000
+      : authorization.expiresAt,
+    scopes: nextScopes,
+    tokenType: refreshedToken.token_type,
+    channelTitle: nextChannelTitle,
+    channelCustomUrl: nextChannelCustomUrl,
+    thumbnailUrl: nextThumbnailUrl,
+  });
+
+  return {
+    ...authorization,
+    accessTokenEncrypted: refreshedToken.access_token,
+    refreshTokenEncrypted:
+      refreshedToken.refresh_token ?? authorization.refreshTokenEncrypted,
+    expiresAt: refreshedToken.expires_in
+      ? Date.now() + refreshedToken.expires_in * 1000
+      : authorization.expiresAt,
+    scopes: JSON.stringify(nextScopes),
+    tokenType: refreshedToken.token_type,
+    channelTitle: nextChannelTitle,
+    channelCustomUrl: nextChannelCustomUrl,
+    thumbnailUrl: nextThumbnailUrl,
   };
 }
 

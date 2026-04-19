@@ -133,6 +133,10 @@
         "label": "Moderación",
         "description": "Revisa las instrucciones del canal, la aplicación de reglas y los controles para moderadores."
       },
+      "rockSniffer": {
+        "label": "RockSniffer",
+        "description": "Descarga el addon y conecta la pagina local del addon."
+      },
       "overlay": {
         "label": "Overlay",
         "description": "Ajusta el overlay del stream sin salir de la página."
@@ -471,6 +475,14 @@
         "manageBlockedViewers": "Gestionar espectadores bloqueados",
         "manageVipTokens": "Gestionar tokens VIP",
         "manageTags": "Gestionar tags"
+      },
+      "rockSniffer": {
+        "title": "RockSniffer",
+        "description": "Descarga el addon y conecta la pagina local del addon.",
+        "relayUrl": "URL del relay",
+        "downloadAddon": "Descargar addon",
+        "openAddonPage": "Abrir pagina del addon",
+        "runningHint": "Abrir pagina del addon funciona cuando RockSniffer ya esta en ejecucion."
       }
     }
   },

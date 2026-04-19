@@ -6,11 +6,12 @@ import {
   ExternalLink,
   Flame,
   ListMusic,
+  Play,
   Radio,
   Search,
   Settings2,
 } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Button } from "~/components/ui/button";
 import { Skeleton } from "~/components/ui/skeleton";
 import type {
@@ -20,6 +21,11 @@ import type {
 } from "~/lib/home/community";
 import { useLocaleTranslation } from "~/lib/i18n/client";
 import { getLocalizedPageTitle } from "~/lib/i18n/metadata";
+import {
+  getTwitchEmbedParentHost,
+  loadTwitchPlayerScript,
+  type TwitchPlayerInstance,
+} from "~/lib/twitch/embed";
 import { viewerSessionQueryOptions } from "~/lib/viewer-session-query";
 
 const HOME_LIVE_CHANNELS_CACHE_KEY = "request-bot:home-live-channels:v2";
@@ -273,6 +279,7 @@ function HomePage() {
             ) : featuredChannel ? (
               <>
                 <FeaturedLiveChannelCard
+                  key={featuredChannel.id}
                   channel={featuredChannel}
                   communityAddon={
                     !showDemoChannels &&
@@ -315,6 +322,7 @@ function FeaturedLiveChannelCard(props: {
 }) {
   const { t } = useLocaleTranslation("home");
   const { channel } = props;
+  const previewAlt = t("live.previewAlt", { displayName: channel.displayName });
   const playlistHref =
     channel.playlistHref === undefined
       ? `/${channel.slug}`
@@ -322,16 +330,9 @@ function FeaturedLiveChannelCard(props: {
 
   return (
     <div className="overflow-hidden border border-(--border-strong) bg-(--panel-soft)">
-      {channel.streamThumbnailUrl ? (
+      {channel.streamThumbnailUrl || channel.login ? (
         <div className="border-b border-(--border)">
-          <img
-            src={channel.streamThumbnailUrl}
-            alt={t("live.previewAlt", { displayName: channel.displayName })}
-            className="block aspect-video max-h-[420px] w-full object-cover"
-            loading="eager"
-            fetchPriority="high"
-            decoding="async"
-          />
+          <FeaturedLiveChannelPreview channel={channel} alt={previewAlt} />
         </div>
       ) : null}
       <div className="p-6 md:p-7">
@@ -429,6 +430,165 @@ function FeaturedLiveChannelCard(props: {
           </div>
         ) : null}
       </div>
+    </div>
+  );
+}
+
+function FeaturedLiveChannelPreview(props: {
+  channel: HomeLiveChannel;
+  alt: string;
+}) {
+  const { t } = useLocaleTranslation("home");
+  const { channel } = props;
+  const [playerParentHost, setPlayerParentHost] = useState<string | null>(null);
+  const [playerReady, setPlayerReady] = useState(false);
+  const [playerVisible, setPlayerVisible] = useState(false);
+  const [playerFailed, setPlayerFailed] = useState(false);
+  const [pendingUserPlayback, setPendingUserPlayback] = useState(false);
+  const playerRef = useRef<TwitchPlayerInstance | null>(null);
+  const playerId = `featured-live-player-${channel.id}`;
+
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+
+    setPlayerParentHost(getTwitchEmbedParentHost(window.location));
+  }, []);
+
+  useEffect(() => {
+    setPlayerReady(false);
+    setPlayerVisible(false);
+    setPlayerFailed(false);
+    setPendingUserPlayback(false);
+    playerRef.current = null;
+  }, [channel.id, channel.login]);
+
+  useEffect(() => {
+    if (typeof document === "undefined" || !playerParentHost || playerFailed) {
+      return;
+    }
+
+    let cancelled = false;
+    const markReady = () => {
+      if (cancelled) {
+        return;
+      }
+
+      setPlayerReady(true);
+    };
+    const markPlaying = () => {
+      if (cancelled) {
+        return;
+      }
+
+      setPlayerReady(true);
+      setPlayerVisible(true);
+      setPendingUserPlayback(false);
+    };
+
+    void loadTwitchPlayerScript()
+      .then((TwitchPlayer) => {
+        if (cancelled) {
+          return;
+        }
+
+        const container = document.getElementById(playerId);
+        if (!container) {
+          return;
+        }
+
+        container.replaceChildren();
+
+        const player = new TwitchPlayer(playerId, {
+          channel: channel.login,
+          parent: [playerParentHost],
+          width: "100%",
+          height: "100%",
+          autoplay: true,
+          muted: true,
+        });
+        playerRef.current = player;
+
+        player.addEventListener(TwitchPlayer.READY, markReady);
+        player.addEventListener(TwitchPlayer.PLAYING, markPlaying);
+        player.addEventListener(TwitchPlayer.PLAYBACK_BLOCKED, markReady);
+      })
+      .catch((error: unknown) => {
+        if (cancelled) {
+          return;
+        }
+
+        console.warn("Unable to load the Twitch homepage embed.", {
+          login: channel.login,
+          error: error instanceof Error ? error.message : String(error),
+        });
+        setPlayerFailed(true);
+      });
+
+    return () => {
+      cancelled = true;
+      playerRef.current = null;
+      document.getElementById(playerId)?.replaceChildren();
+    };
+  }, [channel.login, playerFailed, playerId, playerParentHost]);
+
+  useEffect(() => {
+    if (!pendingUserPlayback || !playerReady || !playerRef.current) {
+      return;
+    }
+
+    playerRef.current.setMuted(true);
+    playerRef.current.play();
+    setPlayerVisible(true);
+  }, [pendingUserPlayback, playerReady]);
+
+  const handlePlayClick = () => {
+    setPendingUserPlayback(true);
+
+    if (!playerRef.current) {
+      return;
+    }
+
+    playerRef.current.setMuted(true);
+    playerRef.current.play();
+    setPlayerVisible(true);
+  };
+
+  return (
+    <div className="relative aspect-video max-h-[420px] w-full overflow-hidden bg-black">
+      {channel.streamThumbnailUrl ? (
+        <img
+          src={channel.streamThumbnailUrl}
+          alt={props.alt}
+          className={`absolute inset-0 h-full w-full object-cover transition-opacity duration-300 ${
+            playerVisible ? "opacity-0" : "opacity-100"
+          }`}
+          loading="eager"
+          fetchPriority="high"
+          decoding="async"
+        />
+      ) : null}
+      {!playerFailed && playerParentHost ? (
+        <div
+          id={playerId}
+          className={`absolute inset-0 transition-opacity duration-300 ${
+            playerVisible ? "opacity-100" : "opacity-0"
+          }`}
+        />
+      ) : null}
+      {!playerFailed && playerParentHost && !playerVisible ? (
+        <button
+          type="button"
+          onClick={handlePlayClick}
+          className="absolute inset-x-0 bottom-5 mx-auto inline-flex w-auto items-center gap-3 border border-white/15 bg-black/75 px-4 py-3 text-sm font-semibold tracking-[0.08em] text-white backdrop-blur-sm transition-colors hover:bg-black/85"
+        >
+          <span className="inline-flex h-10 w-10 items-center justify-center rounded-full bg-(--accent-strong) text-black">
+            <Play className="ml-0.5 h-5 w-5 fill-current" />
+          </span>
+          {t("live.playStream", { ns: "home" })}
+        </button>
+      ) : null}
     </div>
   );
 }

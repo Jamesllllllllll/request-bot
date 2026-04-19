@@ -2,6 +2,14 @@
 
 All notable changes to this project are documented here.
 
+## [0.10.1] - 2026-04-18
+
+### Added
+- The featured live streamer on the homepage can now start playing right from the site with a muted Twitch player and a clear play button when the browser waits for interaction.
+
+### Changed
+- RockSniffer setup now has its own settings section in the sidebar, with a simpler local addon flow that focuses on the relay URL and the two actions you need most.
+
 ## [0.10.0] - 2026-04-18
 
 ### Added

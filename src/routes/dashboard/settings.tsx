@@ -148,6 +148,7 @@ type SettingsTabValue =
   | "limits"
   | "rewards"
   | "moderation"
+  | "rockSniffer"
   | "overlay";
 
 const mockOwnedOfficialDlcRows = [
@@ -474,7 +475,6 @@ function DashboardSettingsPage() {
       finishSaveBatch(false);
     },
   });
-
   const status = settingsQuery.data?.channel?.botReadyState ?? "disabled";
   const manageableChannels =
     sessionQuery.data?.viewer?.manageableChannels
@@ -586,6 +586,11 @@ function DashboardSettingsPage() {
       icon: Shield,
     },
     {
+      value: "rockSniffer" as const,
+      label: t("settings.tabs.rockSniffer.label"),
+      icon: Monitor,
+    },
+    {
       value: "overlay" as const,
       label: t("settings.tabs.overlay.label"),
       icon: Monitor,
@@ -646,6 +651,10 @@ function DashboardSettingsPage() {
       ...current,
       allowedTunings: toggleArrayValue(current.allowedTunings, tuningId),
     }));
+  }
+
+  function openRockSnifferAddonPage() {
+    window.open(rockSnifferAddonLocalUrl, "_blank", "noopener,noreferrer");
   }
 
   function toggleAllowedRequestPath(path: (typeof requestPathOptions)[number]) {
@@ -1238,110 +1247,6 @@ function DashboardSettingsPage() {
                           </div>
                         </FieldBlock>
                       </SettingsSubsection>
-                    </div>
-                  </CardContent>
-                </Card>
-
-                <Card className="dashboard-settings__section">
-                  <CardHeader>
-                    <CardTitle
-                      as="h2"
-                      className="text-xl leading-tight md:text-2xl"
-                    >
-                      RockSniffer addon
-                    </CardTitle>
-                    <CardDescription>
-                      Set the current song automatically when RockSniffer sees a
-                      new song start.
-                    </CardDescription>
-                  </CardHeader>
-                  <CardContent className="grid items-start gap-4 lg:grid-cols-[minmax(0,1.1fr)_minmax(0,0.9fr)]">
-                    <div className="grid gap-4">
-                      <FieldBlock
-                        label="Relay URL"
-                        description="Paste this into the addon once. The addon stores it locally after you save."
-                      >
-                        <div className="grid min-w-0 grid-cols-[minmax(0,1fr)_auto] items-stretch gap-2">
-                          <Input
-                            value={rockSnifferRelayUrl ?? ""}
-                            readOnly
-                            disabled={!rockSnifferRelayUrl}
-                          />
-                          <Button
-                            type="button"
-                            variant="outline"
-                            onClick={copyRockSnifferRelayUrl}
-                            disabled={!rockSnifferRelayUrl}
-                            className="self-stretch"
-                          >
-                            <Copy className="h-4 w-4" />
-                            {rockSnifferRelayUrlCopied
-                              ? t("settings.actions.copied")
-                              : t("settings.actions.copyUrl")}
-                          </Button>
-                        </div>
-                      </FieldBlock>
-                      <div className="grid gap-2 border border-(--border) bg-(--panel-muted) p-4">
-                        <p className="text-sm font-medium text-(--text)">
-                          Setup
-                        </p>
-                        <ol className="grid list-decimal gap-2 pl-5 text-sm leading-6 text-(--muted)">
-                          <li>Download and extract the addon package.</li>
-                          <li>
-                            Place the extracted folder in RockSniffer&apos;s
-                            addons folder.
-                          </li>
-                          <li>Start RockSniffer.</li>
-                          <li>
-                            Open the connector page from RockSniffer, paste this
-                            relay URL, and save.
-                          </li>
-                          <li>
-                            Keep the addon page open in a browser tab or OBS
-                            browser source while you play.
-                          </li>
-                        </ol>
-                      </div>
-                    </div>
-
-                    <div className="grid gap-3 border border-(--border) bg-(--panel-soft) p-4">
-                      <p className="text-sm font-medium text-(--text)">
-                        Addon package
-                      </p>
-                      <p className="text-sm leading-6 text-(--muted)">
-                        The first release listens for song starts and sets the
-                        matching queued song as current. It does not
-                        automatically mark songs as played.
-                      </p>
-                      <div className="flex flex-wrap gap-2">
-                        <Button
-                          asChild
-                          variant="outline"
-                          disabled={!rockSnifferAddonDownloadUrl}
-                        >
-                          <a
-                            href={rockSnifferAddonDownloadUrl ?? "#"}
-                            target="_blank"
-                            rel="noreferrer"
-                            className="no-underline"
-                          >
-                            Download addon
-                          </a>
-                        </Button>
-                        <Button asChild variant="outline">
-                          <a
-                            href={rockSnifferAddonLocalUrl}
-                            target="_blank"
-                            rel="noreferrer"
-                            className="no-underline"
-                          >
-                            Open addon page
-                          </a>
-                        </Button>
-                      </div>
-                      <p className="text-xs leading-5 text-(--muted)">
-                        Start RockSniffer first, then open the local addon page.
-                      </p>
                     </div>
                   </CardContent>
                 </Card>
@@ -2795,6 +2700,79 @@ function DashboardSettingsPage() {
                     <pre className="overflow-x-auto whitespace-pre-wrap border border-(--border) bg-(--panel) p-4 text-sm leading-6 text-(--text)">
                       {channelInstructions}
                     </pre>
+                  </CardContent>
+                </Card>
+              </TabsContent>
+
+              <TabsContent
+                value="rockSniffer"
+                forceMount
+                className="mt-0 flex-none outline-none data-[state=inactive]:hidden"
+              >
+                <Card className="dashboard-settings__section">
+                  <CardHeader>
+                    <CardTitle
+                      as="h2"
+                      className="text-xl leading-tight md:text-2xl"
+                    >
+                      {t("settings.sections.rockSniffer.title")}
+                    </CardTitle>
+                    <CardDescription>
+                      {t("settings.sections.rockSniffer.description")}
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent className="grid max-w-3xl gap-4">
+                    <FieldBlock
+                      label={t("settings.sections.rockSniffer.relayUrl")}
+                    >
+                      <div className="grid min-w-0 grid-cols-[minmax(0,1fr)_auto] items-stretch gap-2">
+                        <Input
+                          value={rockSnifferRelayUrl ?? ""}
+                          readOnly
+                          disabled={!rockSnifferRelayUrl}
+                        />
+                        <Button
+                          type="button"
+                          variant="outline"
+                          onClick={copyRockSnifferRelayUrl}
+                          disabled={!rockSnifferRelayUrl}
+                          className="self-stretch"
+                        >
+                          <Copy className="h-4 w-4" />
+                          {rockSnifferRelayUrlCopied
+                            ? t("settings.actions.copied")
+                            : t("settings.actions.copyUrl")}
+                        </Button>
+                      </div>
+                    </FieldBlock>
+
+                    <div className="flex flex-wrap gap-2">
+                      <Button
+                        asChild
+                        variant="outline"
+                        disabled={!rockSnifferAddonDownloadUrl}
+                      >
+                        <a
+                          href={rockSnifferAddonDownloadUrl ?? "#"}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="no-underline"
+                        >
+                          {t("settings.sections.rockSniffer.downloadAddon")}
+                        </a>
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        onClick={openRockSnifferAddonPage}
+                      >
+                        {t("settings.sections.rockSniffer.openAddonPage")}
+                      </Button>
+                    </div>
+
+                    <p className="text-sm leading-6 text-(--muted)">
+                      {t("settings.sections.rockSniffer.runningHint")}
+                    </p>
                   </CardContent>
                 </Card>
               </TabsContent>

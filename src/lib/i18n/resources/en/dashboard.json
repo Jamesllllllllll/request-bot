@@ -133,6 +133,10 @@
         "label": "Moderation",
         "description": "Review channel instructions, rule enforcement, and moderator controls."
       },
+      "rockSniffer": {
+        "label": "RockSniffer",
+        "description": "Download the addon and connect the local addon page."
+      },
       "overlay": {
         "label": "Overlay",
         "description": "Tune the stream overlay without leaving the page."
@@ -471,6 +475,14 @@
         "manageBlockedViewers": "Manage blocked viewers",
         "manageVipTokens": "Manage VIP tokens",
         "manageTags": "Manage tags"
+      },
+      "rockSniffer": {
+        "title": "RockSniffer",
+        "description": "Download the addon and connect the local addon page.",
+        "relayUrl": "Relay URL",
+        "downloadAddon": "Download addon",
+        "openAddonPage": "Open addon page",
+        "runningHint": "Open addon page works when RockSniffer is already running."
       }
     }
   },

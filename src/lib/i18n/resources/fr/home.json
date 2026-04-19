@@ -54,6 +54,7 @@
     "nowPlaying": "En cours",
     "upNext": "Ensuite",
     "nextRequest": "Prochaine demande",
+    "playStream": "Lancer le stream",
     "openPlaylist": "Ouvrir la playlist",
     "watchOnTwitch": "Regarder sur Twitch"
   }

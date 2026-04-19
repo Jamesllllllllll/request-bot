@@ -54,6 +54,7 @@
     "nowPlaying": "Now playing",
     "upNext": "Up next",
     "nextRequest": "Next request",
+    "playStream": "Play stream",
     "openPlaylist": "Open playlist",
     "watchOnTwitch": "Watch on Twitch"
   }
